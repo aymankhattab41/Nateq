@@ -1275,7 +1275,7 @@ internal class EmbeddedEngineDownloaderController(
 
         // جلب سجل المضيف فوراً
         fragment.lifecycleScope.launch {
-            val log = EngineHostClient.getLog(ctx, entry.id, maxLines = 40)
+            val log = EngineHostClient.getLog(ctx, entry.id, maxLines = 100)
             renderDialogContent(
                 dialogView,
                 entry,
@@ -1318,7 +1318,7 @@ internal class EmbeddedEngineDownloaderController(
                 val updatedLog = EngineHostClient.getLog(
                     ctx,
                     entry.id,
-                    maxLines = 40
+                    maxLines = 100
                 )
                 renderDialogContent(
                     dialogView,
@@ -1349,7 +1349,7 @@ internal class EmbeddedEngineDownloaderController(
                     val updatedLog = EngineHostClient.getLog(
                         ctx,
                         entry.id,
-                        maxLines = 40
+                        maxLines = 100
                     )
                     renderDialogContent(
                         dialogView,
@@ -1406,7 +1406,7 @@ internal class EmbeddedEngineDownloaderController(
                 val updatedLog = EngineHostClient.getLog(
                     ctx,
                     entry.id,
-                    maxLines = 40
+                    maxLines = 100
                 )
                 renderDialogContent(
                     dialogView,
@@ -1426,7 +1426,7 @@ internal class EmbeddedEngineDownloaderController(
                 val log = EngineHostClient.getLog(
                     ctx,
                     entry.id,
-                    maxLines = 40
+                    maxLines = 100
                 )
                 val diagText = buildDiagnostics(
                     ctx,

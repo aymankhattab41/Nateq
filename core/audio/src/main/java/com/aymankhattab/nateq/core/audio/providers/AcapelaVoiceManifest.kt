@@ -1,6 +1,10 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import android.util.Log
+import com.aymankhattab.nateq.core.audio.enginehost.HostLog
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import java.io.File
+import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -650,6 +654,119 @@ object AcapelaVoiceManifest {
         )
     }
 
+    private fun diagLog(msg: String) {
+        runCatching { Log.i("AcapelaManifest", msg) }
+        runCatching { HostLog.i(HostProtocol.ENGINE_ACAPELA, msg) }
+    }
+
+    private fun maskContent(s: String): String {
+        if (s.isEmpty()) return "(فارغ)"
+        if (s.length <= 4) return "$s (طول=${s.length})"
+        val head = s.take(2)
+        val tail = s.takeLast(2)
+        return "$head...$tail (طول=${s.length})"
+    }
+
+    private fun checkUtf8Validity(
+        bytes: ByteArray
+    ): Pair<Boolean, String?> {
+        val decoder = StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        return try {
+            decoder.decode(ByteBuffer.wrap(bytes))
+            true to null
+        } catch (t: Throwable) {
+            false to "${t.javaClass.simpleName}: ${t.message}"
+        }
+    }
+
+    private fun logCandidateFile(label: String, f: File) {
+        val exists = f.exists()
+        val existsStr = if (exists) "نعم" else "لا"
+        val size = if (exists) {
+            runCatching { f.length() }.getOrDefault(0L)
+        } else {
+            0L
+        }
+        val type = when {
+            !exists -> "غير موجود"
+            f.isDirectory -> "مجلد"
+            f.isFile -> "ملف"
+            else -> "آخر"
+        }
+        diagLog(
+            "[مسار مرشح] $label | ${f.name} | موجود=$existsStr | " +
+                "حجم=$size بايت | نوع=$type"
+        )
+    }
+
+    private fun logCandidatePaths(dir: File) {
+        logCandidateFile("voice dir", dir)
+        dir.parentFile?.let { p ->
+            logCandidateFile("parent dir", p)
+        }
+        val targets = listOf(
+            "0x00169729",
+            "config.yaml",
+            "engines.yaml",
+            "salma_lf.txt",
+            "registration.txt",
+            "voice.json",
+            "config.json",
+            "multivoice.json"
+        )
+        val dirsToCheck = listOfNotNull(dir, dir.parentFile)
+        for (d in dirsToCheck) {
+            val dLabel = if (d == dir) "voice_dir" else "parent_dir"
+            for (name in targets) {
+                logCandidateFile("$dLabel/$name", File(d, name))
+            }
+            d.listFiles { f ->
+                f.isFile && f.extension.equals("inf", ignoreCase = true)
+            }?.forEach { inf ->
+                logCandidateFile("$dLabel/.inf", inf)
+            }
+            d.listFiles { f ->
+                f.isFile && f.name.endsWith("_lf.txt", ignoreCase = true) &&
+                    f.name != "salma_lf.txt"
+            }?.forEach { lf ->
+                logCandidateFile("$dLabel/*_lf.txt", lf)
+            }
+        }
+    }
+
+    fun findAllHexRegistrationFiles(dir: File): List<File> {
+        val found = LinkedHashSet<File>()
+        runCatching {
+            dir.walkTopDown().maxDepth(3).forEach { f ->
+                if (f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)) {
+                    found.add(f)
+                }
+            }
+        }
+        var cur: File? = dir.parentFile
+        var depth = 0
+        while (cur != null && depth < 5) {
+            val p = cur
+            runCatching {
+                p.listFiles()?.forEach { f ->
+                    if (f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)) {
+                        found.add(f)
+                    } else if (f.isDirectory) {
+                        f.listFiles { sub ->
+                            sub.isFile &&
+                                sub.name.matches(HEX_REGISTRATION_REGEX)
+                        }?.forEach { found.add(it) }
+                    }
+                }
+            }
+            cur = p.parentFile
+            depth++
+        }
+        return found.toList()
+    }
+
     /**
      * بيانات تسجيل الحزمة الممتدة (metadata) — **لا اسم ملف `0x...`**.
      *
@@ -666,16 +783,58 @@ object AcapelaVoiceManifest {
         rawReg: String? = null,
         rawParam: String? = null
     ): String {
+        diagLog("[تشخيص التسجيل] بدء فحص التسجيل لمجلد: ${dir.name}")
+        logCandidatePaths(dir)
+
+        val allHexCopies = findAllHexRegistrationFiles(dir)
+        diagLog(
+            "[نسخ المفتاح] عدد نسخ المفتاح المكتشفة: ${allHexCopies.size}"
+        )
+        allHexCopies.forEachIndexed { idx, f ->
+            val sz = runCatching { f.length() }.getOrDefault(0L)
+            diagLog(
+                "[نسخة مفتاح #$idx] المجلد: ${f.parentFile?.absolutePath} | " +
+                    "الاسم: ${f.name} | الحجم: $sz بايت"
+            )
+        }
+        val pickedHex = findHexRegistrationFile(dir)
+        diagLog(
+            "[المفتاح المختار] الملف الذي اختاره findHexRegistrationFile: " +
+                (pickedHex?.absolutePath ?: "لا يوجد")
+        )
+
         rawReg?.let { value ->
             val trimmed = value.trim()
-            if (isRegistrationMetadata(trimmed)) return trimmed
+            val valid = isRegistrationMetadata(trimmed)
+            diagLog("[فحص مباشر] rawReg: طول=${trimmed.length}, صالح=$valid")
+            if (valid) {
+                diagLog("[نتيجة التسجيل] تم اعتماد rawReg بنجاح")
+                return trimmed
+            }
         }
-        findRegistrationInJson(dir)?.let { return it }
-        findRegistrationInHexFile(dir)?.let { return it }
-        findRegistrationInYaml(dir)?.let { return it }
+
+        findRegistrationInJson(dir)?.let {
+            diagLog("[نتيجة التسجيل] تم اعتماد التسجيل من ملف JSON")
+            return it
+        }
+
+        findRegistrationInHexFile(dir)?.let {
+            diagLog("[نتيجة التسجيل] تم اعتماد التسجيل من محتوى ملف المفتاح")
+            return it
+        }
+
+        findRegistrationInYaml(dir)?.let {
+            diagLog("[نتيجة التسجيل] تم اعتماد التسجيل من ملف YAML")
+            return it
+        }
+
         val paramCandidate = rawParam?.takeIf { it.isNotBlank() }
             ?: findParamInJson(dir)
         if (!paramCandidate.isNullOrBlank()) {
+            diagLog(
+                "[فحص param] محاولة فك تشفير param " +
+                    "(طول=${paramCandidate.length})"
+            )
             val decoded = runCatching {
                 AcapelaMetadataCodec.fromAssets().decode(paramCandidate)
             }.getOrNull()
@@ -686,13 +845,35 @@ object AcapelaVoiceManifest {
                 } else {
                     decoded.trim()
                 }
-                if (isRegistrationMetadata(meta)) return meta
+                val valid = isRegistrationMetadata(meta)
+                diagLog(
+                    "[فحص param] الناتج المفكوك: طول=${meta.length}, " +
+                        "صالح=$valid"
+                )
+                if (valid) {
+                    diagLog("[نتيجة التسجيل] تم اعتماد التسجيل من param")
+                    return meta
+                }
+            } else {
+                diagLog("[فحص param] تعذّر فك تشفير param")
             }
         }
-        readRegistrationTxt(dir)?.let { return it }
-        dir.parentFile?.let { parent ->
-            readRegistrationTxt(parent)?.let { return it }
+
+        readRegistrationTxt(dir)?.let {
+            diagLog("[نتيجة التسجيل] تم اعتماد التسجيل من registration.txt")
+            return it
         }
+        dir.parentFile?.let { parent ->
+            readRegistrationTxt(parent)?.let {
+                diagLog(
+                    "[نتيجة التسجيل] تم اعتماد التسجيل من " +
+                        "registration.txt في المجلد الأب"
+                )
+                return it
+            }
+        }
+
+        diagLog("[نتيجة التسجيل] لم يُعثر على بيانات تسجيل صالحة (empty)")
         return ""
     }
 
@@ -709,7 +890,12 @@ object AcapelaVoiceManifest {
         val text = runCatching {
             regTxt.readText(StandardCharsets.ISO_8859_1).trim()
         }.getOrNull().orEmpty()
-        return text.takeIf { isRegistrationMetadata(it) }
+        val valid = isRegistrationMetadata(text)
+        diagLog(
+            "[فحص registration.txt] في ${dir.name}: " +
+                "طول=${text.length}, صالح=$valid"
+        )
+        return text.takeIf { valid }
     }
 
     private fun findParamInJson(dir: File): String? {
@@ -725,7 +911,14 @@ object AcapelaVoiceManifest {
                     }.getOrNull()
                     if (content != null && content.contains("\"param\"")) {
                         val m = regex.find(content)
-                        if (m != null) return m.groupValues[1]
+                        if (m != null) {
+                            val p = m.groupValues[1]
+                            diagLog(
+                                "[فحص JSON] ${f.name} في ${d.name}: " +
+                                    "طول param=${p.length}"
+                            )
+                            return p
+                        }
                     }
                 }
             }
@@ -747,18 +940,234 @@ object AcapelaVoiceManifest {
                 if (!content.contains("\"registration\"")) continue
                 val value = regex.find(content)?.groupValues
                     ?.getOrNull(1)?.trim().orEmpty()
+                diagLog(
+                    "[فحص JSON] ${f.name} في ${d.name}: " +
+                        "طول registration=${value.length}"
+                )
                 if (isRegistrationMetadata(value)) return value
             }
         }
         return null
     }
 
+    internal data class ParsedKeyCandidate(
+        val token: String,
+        val lineKey: String,
+        val isPreferred: Boolean,
+        val lineIndex: Int,
+        val tokenIndex: Int
+    )
+
+    private fun stripMatchingQuotes(s: String): String {
+        val t = s.trim()
+        if ((t.startsWith('"') && t.endsWith('"') && t.length >= 2) ||
+            (t.startsWith('\'') && t.endsWith('\'') && t.length >= 2)
+        ) {
+            return t.substring(1, t.length - 1).trim()
+        }
+        return t
+    }
+
+    internal fun maskFileShape(raw: String): String {
+        val sb = StringBuilder(raw.length)
+        var i = 0
+        while (i < raw.length) {
+            val ch = raw[i]
+            when {
+                ch == '\r' -> {
+                    if (i + 1 < raw.length && raw[i + 1] == '\n') {
+                        // لا نطبع شيئاً لـ \r إن تلاها \n
+                    } else {
+                        sb.append('⏎')
+                    }
+                }
+                ch == '\n' -> sb.append('⏎')
+                ch in 'a'..'z' || ch in 'A'..'Z' -> sb.append('a')
+                ch in '0'..'9' -> sb.append('9')
+                ch.isLetter() -> sb.append('a')
+                ch.isDigit() -> sb.append('9')
+                else -> sb.append(ch)
+            }
+            i++
+        }
+        return sb.toString()
+    }
+
+    internal fun parseHexKeyTokens(
+        rawText: String
+    ): Pair<List<ParsedKeyCandidate>, Int> {
+        val lines = rawText.lines()
+        val candidates = mutableListOf<ParsedKeyCandidate>()
+        for ((lineIdx, rawLine) in lines.withIndex()) {
+            if (rawLine.trimStart().startsWith('#')) continue
+            val withoutComment = rawLine.substringBefore('#')
+            val trimmed = withoutComment.trim()
+            if (trimmed.isEmpty()) continue
+
+            val delimiterIdx = trimmed.indexOfAny(charArrayOf(':', '='))
+            val (lineKey, rawValue) = if (delimiterIdx != -1) {
+                trimmed.substring(0, delimiterIdx).trim() to
+                    trimmed.substring(delimiterIdx + 1).trim()
+            } else {
+                "" to trimmed
+            }
+
+            val unquoted = stripMatchingQuotes(rawValue)
+            if (unquoted.isEmpty()) continue
+
+            val isPref = lineKey.contains("reg", ignoreCase = true) ||
+                lineKey.contains("licen", ignoreCase = true)
+
+            val rawTokens = if (unquoted.contains(' ') ||
+                unquoted.contains('\t')
+            ) {
+                unquoted.split(Regex("\\s+"))
+            } else {
+                listOf(unquoted)
+            }
+
+            var tokIdx = 0
+            for (rawTok in rawTokens) {
+                val tok = stripMatchingQuotes(rawTok)
+                if (isRegistrationMetadata(tok)) {
+                    candidates.add(
+                        ParsedKeyCandidate(
+                            token = tok,
+                            lineKey = lineKey,
+                            isPreferred = isPref,
+                            lineIndex = lineIdx,
+                            tokenIndex = tokIdx
+                        )
+                    )
+                }
+                tokIdx++
+            }
+        }
+        return candidates to lines.size
+    }
+
+    internal fun selectBestKeyCandidate(
+        candidates: List<ParsedKeyCandidate>
+    ): ParsedKeyCandidate? {
+        if (candidates.isEmpty()) return null
+        if (candidates.size == 1) return candidates.first()
+
+        val preferred = candidates.filter { it.isPreferred }
+        return if (preferred.isNotEmpty()) {
+            preferred.maxWithOrNull(
+                compareBy<ParsedKeyCandidate> { it.token.length }
+                    .thenByDescending { -it.lineIndex }
+                    .thenByDescending { -it.tokenIndex }
+            )
+        } else {
+            candidates.maxWithOrNull(
+                compareBy<ParsedKeyCandidate> { it.token.length }
+                    .thenByDescending { -it.lineIndex }
+                    .thenByDescending { -it.tokenIndex }
+            )
+        }
+    }
+
+    internal fun parseHexKeyContent(rawText: String): String? {
+        if (rawText.isBlank()) return null
+        val (candidates, _) = parseHexKeyTokens(rawText)
+        return selectBestKeyCandidate(candidates)?.token
+    }
+
     private fun findRegistrationInHexFile(dir: File): String? {
-        val hexFile = findHexRegistrationFile(dir) ?: return null
-        val text = runCatching {
-            hexFile.readText(StandardCharsets.ISO_8859_1).trim()
-        }.getOrNull().orEmpty()
-        return text.takeIf { isRegistrationMetadata(it) }
+        val hexFile = findHexRegistrationFile(dir)
+        if (hexFile == null) {
+            diagLog(
+                "[فحص المفتاح] findHexRegistrationFile أعاد null: " +
+                    "لم يُعثر على ملف مفتاح"
+            )
+            return null
+        }
+        diagLog("[فحص المفتاح] فحص الملف: ${hexFile.absolutePath}")
+        if (!hexFile.exists()) {
+            diagLog(
+                "[فحص المفتاح] رُفض: الملف غير موجود " +
+                    "(${hexFile.absolutePath})"
+            )
+            return null
+        }
+        if (!hexFile.isFile) {
+            diagLog(
+                "[فحص المفتاح] رُفض: المسار ليس ملفاً عادياً " +
+                    "(wrong directory / not a file)"
+            )
+            return null
+        }
+
+        var readEx: Throwable? = null
+        val rawBytes = runCatching {
+            hexFile.readBytes()
+        }.onFailure { readEx = it }.getOrNull()
+
+        if (rawBytes == null) {
+            val errName = readEx?.javaClass?.simpleName ?: "Exception"
+            val errMsg = readEx?.message ?: "unknown"
+            diagLog(
+                "[فحص المفتاح] رُفض: استثناء أثناء قراءة الملف " +
+                    "(exception: $errName: $errMsg)"
+            )
+            return null
+        }
+
+        diagLog("[فحص المفتاح] عدد البايتات المقروءة: ${rawBytes.size} بايت")
+        if (rawBytes.isEmpty()) {
+            diagLog("[فحص المفتاح] رُفض: الملف فارغ (empty: 0 bytes)")
+            return null
+        }
+
+        val (isUtf8, utf8Err) = checkUtf8Validity(rawBytes)
+        diagLog(
+            "[فحص المفتاح] هل المحتوى UTF-8 صالح: " +
+                if (isUtf8) "نعم" else "لا ($utf8Err)"
+        )
+
+        val rawText = if (isUtf8) {
+            String(rawBytes, StandardCharsets.UTF_8)
+        } else {
+            String(rawBytes, StandardCharsets.ISO_8859_1)
+        }
+
+        val maskedShape = maskFileShape(rawText)
+        diagLog("[شكل ملف المفتاح المقنّع] $maskedShape")
+
+        val keyLines = rawText.lines()
+        val lineLengths = keyLines.mapIndexed { idx, line ->
+            "L${idx + 1}:${line.length}"
+        }.joinToString(", ")
+        diagLog(
+            "[أطوال أسطر المفتاح] عدد الأسطر: ${keyLines.size} | " +
+                "الأطوال: $lineLengths"
+        )
+
+        val (candidates, linesCount) = parseHexKeyTokens(rawText)
+        diagLog(
+            "[تحليل المفتاح] الأسطر المفحوصة: $linesCount | " +
+                "الرموز المطابقة: ${candidates.size}"
+        )
+
+        val chosen = selectBestKeyCandidate(candidates)
+        if (chosen != null) {
+            diagLog(
+                "[تحليل المفتاح] السطر المختار=${chosen.lineIndex + 1}, " +
+                    "الرمز المختار=${chosen.tokenIndex + 1}, " +
+                    "طول=${chosen.token.length}, " +
+                    "معاينة=${maskContent(chosen.token)}, " +
+                    "المفتاح=${chosen.lineKey.ifEmpty { "(bare)" }}"
+            )
+            diagLog("[فحص المفتاح] تم قبول محتوى المفتاح بنجاح كبيانات تسجيل!")
+            return chosen.token
+        } else {
+            diagLog(
+                "[فحص المفتاح] رُفض: لم يتم العثور على أي رمز " +
+                    "يطابق نمط بيانات التسجيل"
+            )
+            return null
+        }
     }
 
     private val YAML_REGISTRATION_REGEX = Regex(
@@ -771,14 +1180,50 @@ object AcapelaVoiceManifest {
         for (d in dirs) {
             for (name in candidates) {
                 val f = File(d, name)
-                if (!f.isFile || !f.exists()) continue
+                val exists = f.isFile && f.exists()
+                diagLog(
+                    "[فحص YAML] ${f.name} في ${d.name} | " +
+                        "موجود=${if (exists) "نعم" else "لا"} | " +
+                        "حجم=${if (exists) f.length() else 0} بايت"
+                )
+                if (!exists) continue
+                var readEx: Throwable? = null
                 val content = runCatching {
                     f.readText(StandardCharsets.UTF_8)
-                }.getOrNull() ?: continue
-                if (!content.contains("registration")) continue
-                val value = YAML_REGISTRATION_REGEX.find(content)?.groupValues
-                    ?.getOrNull(1)?.trim().orEmpty()
-                if (isRegistrationMetadata(value)) return value
+                }.onFailure { readEx = it }.getOrNull()
+                if (content == null) {
+                    diagLog(
+                        "[فحص YAML] تعذّر قراءة ${f.name} " +
+                            "(exception: ${readEx?.message})"
+                    )
+                    continue
+                }
+                val hasWord = content.contains("registration")
+                diagLog(
+                    "[فحص YAML] ${f.name}: يحتوي كلمة registration: " +
+                        if (hasWord) "نعم" else "لا"
+                )
+                if (!hasWord) continue
+                val match = YAML_REGISTRATION_REGEX.find(content)
+                val matched = match != null
+                diagLog(
+                    "[فحص YAML] ${f.name}: تطابق نمط registration regex: " +
+                        if (matched) "نعم" else "لا"
+                )
+                if (matched) {
+                    val captured = match!!.groupValues.getOrNull(1)
+                        ?.trim().orEmpty()
+                    diagLog(
+                        "[فحص YAML] ${f.name}: طول المجموعة الملتقطة: " +
+                            "${captured.length} محرف"
+                    )
+                    val valid = isRegistrationMetadata(captured)
+                    diagLog(
+                        "[فحص YAML] ${f.name}: هل بيانات التسجيل صالحة: " +
+                            if (valid) "نعم" else "لا"
+                    )
+                    if (valid) return captured
+                }
             }
         }
         return null
