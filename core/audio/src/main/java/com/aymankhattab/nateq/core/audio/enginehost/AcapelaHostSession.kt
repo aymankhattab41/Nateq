@@ -18,6 +18,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
@@ -77,11 +78,72 @@ internal class AcapelaHostSession(
         /** عدد أحرف القطعة الواحدة — مطابق لتقسيم MultiTTS. */
         private const val CHUNK_CHARS = 200
 
+        /** نصٌّ قصير لفحص قبول بيانات التسجيل قبل النطق الحقيقي. */
+        private const val REGISTRATION_PROBE_TEXT = "مرحبا"
+
+        /** سقف زمني لكل مرشح تسجيل (فتح المحرك + تجربة نطق قصيرة). */
+        private const val PROBE_PER_CANDIDATE_MS = 6_000L
+
+        /** ملف حفظ حرف المرشح الناجح بجانب الصوت (بقاء بعد إعادة التشغيل). */
+        private const val REGISTRATION_CHOICE_FILE =
+            ".nateq_acapela_registration"
+
+        /**
+         * مرشح بيانات تسجيل واحد: حرفه المعلن في السجل وقيمته الحقيقية.
+         * القيمة لا تُسجَّل إطلاقاً — الطول والحرف فقط.
+         */
+        internal data class RegistrationCandidate(
+            val letter: Char,
+            val value: String
+        )
+
         internal fun calculateSpeedPercent(rate: Float): Int =
             (rate * 100f).roundToInt().coerceIn(30, 400)
 
         internal fun calculatePitchPercent(pitch: Float): Int =
             (pitch * 100f).roundToInt().coerceIn(50, 200)
+
+        /**
+         * مرشحات بيانات التسجيل من ملف المفتاح `0x...` بالترتيب المقرر:
+         *
+         * - `a`: المحتوى كاملاً كما هو (بما فيه الاقتباس والمسافات و`#`
+         *   والأسطر الجديدة).
+         * - `b`: المحتوى نفسه والأسطر الجديدة مستبدلة بمسافة واحدة.
+         * - `c`: السطر الأول وحده بعد إزالة علامتَي الاقتباس المحيطتين.
+         * - `d`: السطر الأول وحده مع إبقاء الاقتباسين.
+         * - `e`: الرمز الحالي المقروء من بيانات الصوت.
+         *
+         * **لا يُسجَّل محتوى أي مرشح** — الحرف والطول وكود العودة فقط.
+         */
+        internal fun registrationCandidates(
+            dir: File,
+            current: String
+        ): List<RegistrationCandidate> {
+            val raw = AcapelaVoiceManifest.findHexRegistrationFile(dir)
+                ?.let { file ->
+                    runCatching {
+                        file.readText(StandardCharsets.UTF_8)
+                    }.getOrNull()
+                }
+                .orEmpty()
+                .removePrefix("\uFEFF")
+            val full = raw.trim()
+            val oneLine = full.replace(Regex("\\r\\n|[\\r\\n]"), " ").trim()
+            val firstLine = full.lineSequence().firstOrNull()
+                ?.trim().orEmpty()
+            val firstUnquoted = firstLine
+                .removeSurrounding("\"").trim()
+            return listOf(
+                'a' to full,
+                'b' to oneLine,
+                'c' to firstUnquoted,
+                'd' to firstLine,
+                'e' to current.trim()
+            )
+                .filter { it.second.isNotEmpty() }
+                .distinctBy { it.second }
+                .map { RegistrationCandidate(it.first, it.second) }
+        }
 
         private fun withTrailingSlash(path: String): String =
             if (path.endsWith(File.separator)) path else path + File.separator
@@ -184,6 +246,12 @@ internal class AcapelaHostSession(
     @Volatile
     private var extendedKey: String? = null
 
+    /**
+     * المرشح الناجح لكل صوت بعد فحصه مرة واحدة (مفتاح: مجلد + متحدث).
+     * يُسقَط عند فشل النطق فيُعاد الفحص، وإلا تكرّر الفحص كل طلب.
+     */
+    private val chosenRegistrations = ConcurrentHashMap<String, Char>()
+
     private var dataDirectory: File? = null
 
     /** الاسم الذي نجح تحميله في [acatts] (الاسم الخام لا المطبّع). */
@@ -212,6 +280,8 @@ internal class AcapelaHostSession(
 
     private val headerWritten = AtomicBoolean(false)
     private val audioReceived = AtomicBoolean(false)
+    private val totalAudioSamples = AtomicLong(0L)
+    private val totalAudioBytes = AtomicLong(0L)
     private val lastAudioTime = AtomicLong(0L)
 
     override fun init(dataDir: String): HostResult {
@@ -308,7 +378,7 @@ internal class AcapelaHostSession(
     }
 
     private fun loadRuntimeLicense(inst: acattsandroid): Int {
-        return try {
+        val res = try {
             context.assets.open("acapela/runtime.dat").use { stream ->
                 val dataIn = DataInputStream(stream)
                 val uid = dataIn.readLong()
@@ -330,6 +400,8 @@ internal class AcapelaHostSession(
                 AcapelaLicense.LICENSE
             )
         }
+        Log.i(TAG, "كود عودة nSetLicense الكلاسيكي: $res")
+        return res
     }
 
     /** بايتات PCM من المحرك الممتد (16 بت، قناة واحدة). */
@@ -341,6 +413,9 @@ internal class AcapelaHostSession(
             return
         }
         if (bytes == null || length <= 0) return
+
+        totalAudioBytes.addAndGet(length.toLong())
+        totalAudioSamples.addAndGet((length / 2).toLong())
 
         if (!headerWritten.getAndSet(true)) {
             sink.writeHeader(currentSampleRate, 1)
@@ -408,6 +483,8 @@ internal class AcapelaHostSession(
 
         headerWritten.set(false)
         audioReceived.set(false)
+        totalAudioSamples.set(0L)
+        totalAudioBytes.set(0L)
         lastAudioTime.set(SystemClock.uptimeMillis())
 
         try {
@@ -426,12 +503,11 @@ internal class AcapelaHostSession(
             } else {
                 "classic"
             }
-            Log.i(
-                TAG,
-                "مسار النطق: $chosenPath, regLen=" +
-                    "${voice.registration.length}, id=${voice.id}, " +
-                    "raw=${voice.rawSpeaker}, dir=${voice.dir.name}"
-            )
+            val speakLog = "مسار النطق: path=$chosenPath, " +
+                "registration.length=${voice.registration.length}, " +
+                "id=${voice.id}, raw=${voice.rawSpeaker}, dir=${voice.dir.name}"
+            Log.i(TAG, speakLog)
+            HostLog.i(HostProtocol.ENGINE_ACAPELA, speakLog)
 
             // معدل العينات من `.inf` (`freq`) هو ما يخرج به المحرك
             // الممتد؛ والكلاسيكي يصحّحه بناتج `nLoadVoice` قبل أول
@@ -467,6 +543,10 @@ internal class AcapelaHostSession(
                     "فشل المسار الممتد (${extended.code}): " +
                         "${extended.message} — محاولة الكلاسيكي"
                 )
+                headerWritten.set(false)
+                audioReceived.set(false)
+                totalAudioSamples.set(0L)
+                totalAudioBytes.set(0L)
                 val native = speakNative(
                     voice = voice,
                     chunks = chunks,
@@ -479,10 +559,15 @@ internal class AcapelaHostSession(
             }
 
             if (isHdPackageWithoutRegistration(voice)) {
+                val hdMsg = "حزمة الصوت عالية الجودة (HD) تفتقر إلى بيانات " +
+                    "التسجيل، يرجى إعادة استيراد الحزمة كاملة"
+                val hdLog = "فشل النطق: HD_REGISTRATION_MISSING - " +
+                    "path=classic, registration.length=0, id=${voice.id}"
+                Log.w(TAG, hdLog)
+                HostLog.w(HostProtocol.ENGINE_ACAPELA, hdLog)
                 return HostResult.failure(
                     "HD_REGISTRATION_MISSING",
-                    "حزمة الصوت عالية الجودة (HD) تفتقر إلى بيانات " +
-                        "التسجيل، يرجى إعادة استيراد الحزمة كاملة"
+                    hdMsg
                 )
             }
 
@@ -581,6 +666,7 @@ internal class AcapelaHostSession(
             } finally {
                 sink.exitNativeCall()
             }
+            Log.i(TAG, "كود عودة nSpeak الكلاسيكي: $speakRes")
             if (speakRes != 0) {
                 Log.e(
                     TAG,
@@ -596,16 +682,27 @@ internal class AcapelaHostSession(
             awaitChunkEnd(inst, chunk.length, sink, cancelled)
         }
 
-        if (!audioReceived.get()) {
+        val samples = totalAudioSamples.get()
+        val bytes = totalAudioBytes.get()
+        Log.i(
+            TAG,
+            "بعد nSpeak الكلاسيكي: عينات=$samples، بايتات=$bytes"
+        )
+
+        if (!audioReceived.get() || bytes == 0L) {
             Log.e(
                 TAG,
-                "Acapela لم يصدر صوتاً: voice=${voice.rawSpeaker}" +
-                    " lang=${lastLanguageOf(inst)}" +
-                    " lastError=${lastErrorOf(inst)}"
+                "SPEAK_NO_AUDIO: path=classic, " +
+                    "registration.length=${voice.registration.length}, " +
+                    "samples=$samples, bytes=$bytes, " +
+                    "voice=${voice.rawSpeaker}, " +
+                    "lang=${lastLanguageOf(inst)}, " +
+                    "lastError=${lastErrorOf(inst)}"
             )
             return HostResult.failure(
                 "SPEAK_NO_AUDIO",
-                "لم يصدر المحرك أي صوت للصوت ${voice.voiceName}"
+                "لم يصدر المحرك أي صوت للصوت ${voice.voiceName} " +
+                    "(path=classic, reg.len=${voice.registration.length})"
             )
         }
         return HostResult(ok = true)
@@ -628,6 +725,7 @@ internal class AcapelaHostSession(
         try {
             for (cand in candidates) {
                 loadRes = inst.nLoadVoice(cand)
+                Log.i(TAG, "كود عودة nLoadVoice($cand): $loadRes")
                 if (loadRes > 0) {
                     loadedName = cand
                     break
@@ -641,6 +739,11 @@ internal class AcapelaHostSession(
                 runCatching { inst.nGetVoiceList(voicePaths) }
                 for (cand in candidates) {
                     loadRes = inst.nLoadVoice(cand)
+                    Log.i(
+                        TAG,
+                        "كود عودة nLoadVoice($cand) بعد " +
+                            "nGetVoiceList: $loadRes"
+                    )
                     if (loadRes > 0) {
                         loadedName = cand
                         break
@@ -688,13 +791,22 @@ internal class AcapelaHostSession(
             inst.nSetSpeechRate(speed.toFloat())
         }.getOrDefault(-1)
         if (rateCode != 0) {
-            Log.w(TAG, "nSetSpeechRate($speed) فشل: $rateCode")
-            return
+            val err = lastErrorOf(inst)
+            Log.w(
+                TAG,
+                "تحذير غير قاتل: nSetSpeechRate($speed) فشل: $rateCode " +
+                    "(nGetLastError=$err)"
+            )
         }
         val shapeCode = runCatching { inst.nSetShape(shape.toFloat()) }
             .getOrDefault(-1)
         if (shapeCode != 0) {
-            Log.w(TAG, "nSetShape($shape) فشل: $shapeCode")
+            val err = lastErrorOf(inst)
+            Log.w(
+                TAG,
+                "تحذير غير قاتل: nSetShape($shape) فشل: $shapeCode " +
+                    "(nGetLastError=$err)"
+            )
         }
         if (diagnosticsEnabled()) {
             Log.d(
@@ -750,7 +862,7 @@ internal class AcapelaHostSession(
         cancelled: AtomicBoolean
     ): HostResult {
         val openResult = runCatching {
-            openExtendedEngine(voice)
+            openExtendedEngine(voice, sink, cancelled)
         }.getOrElse { t ->
             Log.w(TAG, "فشل تهيئة المحرك الممتد باستثناء", t)
             HostResult.failure(
@@ -770,11 +882,15 @@ internal class AcapelaHostSession(
             speed,
             pitchPercent,
             AcapelaParameters.PropertyWriter { k, v ->
-                srv.nSetProperty(k, v)
+                setExtendedProperty(srv, k, v)
             }
         )
         if (paramCode != 0) {
-            Log.w(TAG, "فشل ضبط معاملات الحزمة الممتدة: $paramCode")
+            Log.w(
+                TAG,
+                "تحذير غير قاتل: تعذر ضبط بعض معاملات " +
+                    "الحزمة الممتدة: $paramCode"
+            )
         }
 
         val nativeCapMs = SynthesisBudget.inactivityBudgetMs(
@@ -790,8 +906,10 @@ internal class AcapelaHostSession(
             } finally {
                 sink.exitNativeCall()
             }
+            Log.i(TAG, "كود عودة nSpeak الممتد: $speakRes")
             if (speakRes != 0) {
                 Log.e(TAG, "فشل nSpeak في Acapela الممتد: $speakRes")
+                forgetRegistration(voice)
                 return HostResult.failure(
                     "SPEAK_ERROR",
                     "فشل استدعاء nSpeak الممتد: $speakRes"
@@ -800,10 +918,25 @@ internal class AcapelaHostSession(
             awaitExtendedChunkEnd(chunk.length, sink, cancelled)
         }
 
-        if (!audioReceived.get()) {
+        val samples = totalAudioSamples.get()
+        val bytes = totalAudioBytes.get()
+        Log.i(
+            TAG,
+            "بعد nSpeak الممتد: عينات=$samples، بايتات=$bytes"
+        )
+
+        if (!audioReceived.get() || bytes == 0L) {
+            Log.w(
+                TAG,
+                "SPEAK_NO_AUDIO: path=extended, " +
+                    "registration.length=${voice.registration.length}, " +
+                    "samples=$samples, bytes=$bytes"
+            )
+            forgetRegistration(voice)
             return HostResult.failure(
                 "SPEAK_NO_AUDIO",
-                "لم يصدر محرك Acapela الممتد أي صوت"
+                "لم يصدر محرك Acapela الممتد أي صوت (path=extended, " +
+                    "registration.length=${voice.registration.length})"
             )
         }
         return HostResult(ok = true)
@@ -840,14 +973,41 @@ internal class AcapelaHostSession(
     }
 
     /**
-     * فتح خدمة الحزمة الممتدة بالتسلسل الذي يفرضه MultiTTS حرفياً.
+     * فتح خدمة الحزمة الممتدة مع اختيار بيانات تسجيل مقبولة.
+     *
+     * الفحص يقع مرة واحدة لكل صوت: يُجرَّب المرشح المحفوظ أولاً، فإن
+     * فشل (أو لم يُحفظ شيء) تُجرَّب بقية المرشحات بالترتيب المقرر،
+     * ويُحفظ أول مرشح ينتج عيّنات صوتية. وبعد النجاح تُفتح خدمة نطق
+     * حقيقية بنفس البيانات لأن ردّ نداء الصوت مربوط عند البناء.
+     *
      * يعود `null` عند الجاهزية أو فشلاً معنوناً يسمّي الخطوة.
      */
-    private fun openExtendedEngine(
-        voice: AcapelaVoiceManifest.VoiceInfo
+    private suspend fun openExtendedEngine(
+        voice: AcapelaVoiceManifest.VoiceInfo,
+        sink: PcmSink,
+        cancelled: AtomicBoolean
     ): HostResult? {
-        val key = "${voice.dir.absolutePath}|${voice.registration}"
-        if (extendedKey == key && extendedService != null) return null
+        val voiceKey = registrationKey(voice)
+        val candidates = registrationCandidates(
+            voice.dir,
+            voice.registration
+        )
+        if (candidates.isEmpty()) {
+            return HostResult.failure(
+                "REGISTRATION_MISSING",
+                "لا توجد بيانات تسجيل في ${voice.dir.name}"
+            )
+        }
+
+        val memoLetter = chosenRegistrations[voiceKey]
+            ?: storedRegistrationLetter(voice)
+        val memo = candidates.firstOrNull { it.letter == memoLetter }
+        val effective = memo?.value ?: voice.registration
+        if (extendedKey == "$voiceKey|$effective" &&
+            extendedService != null
+        ) {
+            return null
+        }
         closeExtended()
 
         val iso3 = iso3Of(voice.locale) ?: return HostResult.failure(
@@ -859,80 +1019,316 @@ internal class AcapelaHostSession(
         AcapelaVoiceManifest.normalizeExtensionsCase(voice.dir)
         File(voice.dir, "userdicos").mkdirs()
 
+        Log.i(
+            TAG,
+            "بدء تهيئة المحرك الممتد: ${candidates.size} مرشحاً للتسجيل"
+        )
+
+        // المرشح المحفوظ أولاً، ثم الباقي بترتيبه المقرر. التوقّف عند
+        // أول ناجح يجعل الفحص اللاحق نداءً واحداً فقط.
+        val ordered = if (memoLetter == null) {
+            candidates
+        } else {
+            candidates.sortedBy { if (it.letter == memoLetter) 0 else 1 }
+        }
+        val outcomes = mutableListOf<ProbeOutcome>()
+        var accepted: RegistrationCandidate? = null
+        for (candidate in ordered) {
+            if (cancelled.get()) {
+                return HostResult.failure("CANCELLED", "أُلغي الطلب")
+            }
+            val outcome = probeRegistration(
+                voice = voice,
+                iso3 = iso3,
+                candidate = candidate,
+                sink = sink,
+                cancelled = cancelled
+            )
+            outcomes.add(outcome)
+            if (outcome.accepted) {
+                accepted = candidate
+                break
+            }
+        }
+        if (accepted == null) {
+            logAllCandidatesFailed(outcomes)
+            return HostResult.failure(
+                "REGISTRATION_REJECTED",
+                "رُفضت كل بيانات التسجيل المجرَّبة: " +
+                    outcomes.joinToString(",") {
+                        it.candidate.letter.toString()
+                    }
+            )
+        }
+
+        chosenRegistrations[voiceKey] = accepted.letter
+        storeRegistrationLetter(voice, accepted.letter)
         val srv = AcattsandroidService(
             { bytes, len -> handleRawAudioBytes(bytes, len) },
-            voice.registration
+            accepted.value
         )
-        var opened = false
-        try {
-            val initRes = srv.nInit(directoryArgument(voice.dir))
-            if (initRes != 0) {
-                Log.e(TAG, "nInit فشل ($initRes) في ${voice.dir.path}")
-                return HostResult.failure(
-                    "ENGINE_INIT_FAILED",
-                    "nInit فشل بالكود $initRes في ${voice.dir.name}"
-                )
-            }
-
-            val modeRes = srv.nSetVoiceMode(VOICE_MODE_HD)
-            if (modeRes != 0) {
-                return HostResult.failure(
-                    "VOICE_MODE_FAILED",
-                    "nSetVoiceMode($VOICE_MODE_HD) فشل: $modeRes"
-                )
-            }
-
-            if (AcapelaVoiceManifest.hasUtf8Userdico(voice.dir)) {
-                val utf8Res = srv.nUtf8Mode(iso3.language, iso3.country)
-                if (utf8Res < 0) {
-                    return HostResult.failure(
-                        "UTF8_MODE_FAILED",
-                        "nUtf8Mode فشل: $utf8Res"
-                    )
-                }
-            }
-
-            val langRes = srv.nSetLanguage(iso3.language, iso3.country, "")
-            if (langRes != 0) {
-                return HostResult.failure(
-                    "LANGUAGE_FAILED",
-                    "nSetLanguage(${iso3.language}, ${iso3.country})" +
-                        " فشل: $langRes"
-                )
-            }
-
-            val speaker = voice.rawSpeaker ?: voice.voiceName
-            val voiceRes = srv.nSetCurrentVoice(speaker)
-            if (voiceRes != 0) {
-                return HostResult.failure(
-                    "VOICE_LOAD_FAILED",
-                    "nSetCurrentVoice($speaker) فشل: $voiceRes"
-                )
-            }
-
-            val pauseRes = srv.nSetProperty(
-                PUNCTUATION_PAUSE_KEY,
-                PUNCTUATION_PAUSE_VALUE
-            )
-            if (pauseRes != 0) {
-                return HostResult.failure(
-                    "PROPERTY_FAILED",
-                    "nSetProperty($PUNCTUATION_PAUSE_KEY) فشل: $pauseRes"
-                )
-            }
-
-            opened = true
-            extendedService = srv
-            extendedKey = key
-            Log.i(
-                TAG,
-                "حزمة Acapela ممتدة جاهزة: $speaker " +
-                    "(${iso3.language}-${iso3.country})"
-            )
-            return null
-        } finally {
-            if (!opened) runCatching { srv.nShutdown() }
+        val codes = ProbeCodes()
+        val failure = configureExtended(srv, voice, iso3, codes)
+        logProbe(voice, accepted, codes)
+        if (failure != null) {
+            runCatching { srv.nShutdown() }
+            forgetRegistration(voice)
+            return failure
         }
+        extendedService = srv
+        extendedKey = "$voiceKey|${accepted.value}"
+        val speaker = voice.rawSpeaker ?: voice.voiceName
+        Log.i(
+            TAG,
+            "حزمة Acapela ممتدة جاهزة: $speaker " +
+                "(${iso3.language}-${iso3.country})، " +
+                "مرشح التسجيل=${accepted.letter}"
+        )
+        return null
+    }
+
+    /** مفتاح حفظ اختيار التسجيل لكل صوت (مجلد + متحدث). */
+    private fun registrationKey(
+        voice: AcapelaVoiceManifest.VoiceInfo
+    ): String = "${voice.dir.absolutePath}|" +
+        (voice.rawSpeaker ?: voice.voiceName)
+
+    /** إسقاط الاختيار المحفوظ فيُعاد الفحص عند الطلب التالي. */
+    private fun forgetRegistration(
+        voice: AcapelaVoiceManifest.VoiceInfo
+    ) {
+        chosenRegistrations.remove(registrationKey(voice))
+        runCatching {
+            File(voice.dir, REGISTRATION_CHOICE_FILE).delete()
+        }
+    }
+
+    /** حرف المرشح المحفوظ بجانب الصوت (إن وُجد وكان صالحاً). */
+    private fun storedRegistrationLetter(
+        voice: AcapelaVoiceManifest.VoiceInfo
+    ): Char? {
+        val stored = runCatching {
+            File(voice.dir, REGISTRATION_CHOICE_FILE)
+                .takeIf { it.isFile }
+                ?.readText(StandardCharsets.UTF_8)
+        }.getOrNull() ?: return null
+        return stored.trim().firstOrNull()?.takeIf { it in 'a'..'e' }
+    }
+
+    /** حفظ حرف المرشح الناجح بجانب الصوت؛ فشل الكتابة غير قاتل. */
+    private fun storeRegistrationLetter(
+        voice: AcapelaVoiceManifest.VoiceInfo,
+        letter: Char
+    ) {
+        runCatching {
+            File(voice.dir, REGISTRATION_CHOICE_FILE)
+                .writeText(letter.toString(), StandardCharsets.UTF_8)
+        }.onFailure {
+            Log.w(TAG, "تعذر حفظ اختيار التسجيل بجانب الصوت", it)
+        }
+    }
+
+    /** أكواد نداءات مرشح واحد؛ الحقول غير المنفَّذة تبقى `null`. */
+    private class ProbeCodes {
+        var init: Int? = null
+        var mode: Int? = null
+        var utf8: Int? = null
+        var language: Int? = null
+        var voice: Int? = null
+        var pause: Int? = null
+        var speak: Int? = null
+        var samples: Long? = null
+
+        fun format(): String = listOfNotNull(
+            init?.let { "nInit=$it" },
+            mode?.let { "nSetVoiceMode=$it" },
+            utf8?.let { "nUtf8Mode=$it" },
+            language?.let { "nSetLanguage=$it" },
+            voice?.let { "nSetCurrentVoice=$it" },
+            pause?.let { "nSetProperty=$it" },
+            speak?.let { "nSpeak=$it" },
+            samples?.let { "samples=$it" }
+        ).joinToString(", ")
+    }
+
+    private class ProbeOutcome(
+        val candidate: RegistrationCandidate,
+        val codes: ProbeCodes,
+        val accepted: Boolean
+    )
+
+    /**
+     * تسلسل التهيئة نفسه لكل مرشح، مع تسجيل كود كل نداء. يعود `null`
+     * عند نجاح التسلسل، أو فشلاً معنوناً يسمّي الخطوة.
+     */
+    private fun configureExtended(
+        srv: AcattsandroidService,
+        voice: AcapelaVoiceManifest.VoiceInfo,
+        iso3: Iso3,
+        codes: ProbeCodes
+    ): HostResult? {
+        codes.init = srv.nInit(directoryArgument(voice.dir))
+        if (codes.init != 0) {
+            return HostResult.failure(
+                "ENGINE_INIT_FAILED",
+                "nInit فشل بالكود ${codes.init} في ${voice.dir.name}"
+            )
+        }
+
+        codes.mode = srv.nSetVoiceMode(VOICE_MODE_HD)
+        if (codes.mode != 0) {
+            return HostResult.failure(
+                "VOICE_MODE_FAILED",
+                "nSetVoiceMode($VOICE_MODE_HD) فشل: ${codes.mode}"
+            )
+        }
+
+        if (AcapelaVoiceManifest.hasUtf8Userdico(voice.dir)) {
+            val utf8Res = srv.nUtf8Mode(iso3.language, iso3.country)
+            codes.utf8 = utf8Res
+            if (utf8Res < 0) {
+                return HostResult.failure(
+                    "UTF8_MODE_FAILED",
+                    "nUtf8Mode فشل: $utf8Res"
+                )
+            }
+        }
+
+        codes.language = srv.nSetLanguage(iso3.language, iso3.country, "")
+        if (codes.language != 0) {
+            return HostResult.failure(
+                "LANGUAGE_FAILED",
+                "nSetLanguage(${iso3.language}, ${iso3.country})" +
+                    " فشل: ${codes.language}"
+            )
+        }
+
+        val speaker = voice.rawSpeaker ?: voice.voiceName
+        codes.voice = srv.nSetCurrentVoice(speaker)
+        if (codes.voice != 0) {
+            return HostResult.failure(
+                "VOICE_LOAD_FAILED",
+                "nSetCurrentVoice($speaker) فشل: ${codes.voice}"
+            )
+        }
+
+        // فشل هذا النداء تحذيري غير قاتل: لا يحجب المرشح.
+        codes.pause = setExtendedProperty(
+            srv,
+            PUNCTUATION_PAUSE_KEY,
+            PUNCTUATION_PAUSE_VALUE
+        )
+        return null
+    }
+
+    /**
+     * تجربة مرشح واحد على خدمةٍ منفصلة بعدّاد عيّنات لا يكتب في
+     * [PcmSink]، فلا يتسرّب صوت التجربة إلى نطق المستخدم.
+     */
+    private suspend fun probeRegistration(
+        voice: AcapelaVoiceManifest.VoiceInfo,
+        iso3: Iso3,
+        candidate: RegistrationCandidate,
+        sink: PcmSink,
+        cancelled: AtomicBoolean
+    ): ProbeOutcome {
+        val samples = AtomicLong(0L)
+        val codes = ProbeCodes()
+        val srv = AcattsandroidService(
+            { _, len ->
+                if (len > 0) samples.addAndGet((len / 2).toLong())
+            },
+            candidate.value
+        )
+        var windowOpen = false
+        try {
+            val failure = configureExtended(srv, voice, iso3, codes)
+            if (failure == null) {
+                sink.enterNativeCall(PROBE_PER_CANDIDATE_MS)
+                windowOpen = true
+                val speakRes = runCatching {
+                    srv.nSpeak(REGISTRATION_PROBE_TEXT, null)
+                }.getOrElse { t ->
+                    Log.w(TAG, "استثناء أثناء nSpeak التجريبي", t)
+                    -1
+                }
+                codes.speak = speakRes
+                val started = SystemClock.uptimeMillis()
+                var lastPing = started
+                while (!cancelled.get() && samples.get() == 0L) {
+                    val now = SystemClock.uptimeMillis()
+                    if (now - started >= PROBE_PER_CANDIDATE_MS) break
+                    if (now - lastPing >= PING_INTERVAL_MS) {
+                        runCatching { sink.ping() }
+                        lastPing = now
+                    }
+                    delay(WAIT_STEP_MS)
+                }
+                codes.samples = samples.get()
+            }
+            logProbe(voice, candidate, codes)
+            if (failure != null) {
+                Log.w(
+                    TAG,
+                    "مرشح التسجيل ${candidate.letter} مرفوض: " +
+                        "${failure.code} — ${failure.message}"
+                )
+            }
+            val accepted = failure == null &&
+                codes.speak == 0 &&
+                (codes.samples ?: 0L) > 0L
+            return ProbeOutcome(candidate, codes, accepted)
+        } finally {
+            if (windowOpen) runCatching { sink.exitNativeCall() }
+            runCatching { srv.nStop() }
+            runCatching { srv.nShutdown() }
+        }
+    }
+
+    /** سطر تشخيص واحد لكل مرشح: الحرف والطول وأكواد النداءات فقط. */
+    private fun logProbe(
+        voice: AcapelaVoiceManifest.VoiceInfo,
+        candidate: RegistrationCandidate,
+        codes: ProbeCodes
+    ) {
+        val speaker = voice.rawSpeaker ?: voice.voiceName
+        val line = "فحص تسجيل: letter=${candidate.letter}, " +
+            "len=${candidate.value.length}, " +
+            "codes=[${codes.format()}], voice=$speaker"
+        Log.i(TAG, line)
+        HostLog.i(HostProtocol.ENGINE_ACAPELA, line)
+    }
+
+    /** سطر واحد واضح عند رفض كل المرشحات: الحروف وأكواد العودة. */
+    private fun logAllCandidatesFailed(outcomes: List<ProbeOutcome>) {
+        val line = "فشل كل مرشحات التسجيل: " +
+            outcomes.joinToString(" | ") {
+                "${it.candidate.letter}(" +
+                    "len=${it.candidate.value.length}, " +
+                    "${it.codes.format()})"
+            }
+        Log.e(TAG, line)
+        HostLog.e(HostProtocol.ENGINE_ACAPELA, line)
+    }
+
+    private fun setExtendedProperty(
+        srv: AcattsandroidService,
+        name: String,
+        value: String
+    ): Int {
+        val res = runCatching { srv.nSetProperty(name, value) }
+            .getOrDefault(-1)
+        if (res != 0) {
+            val lastErrText = acatts?.let {
+                "nGetLastError=${lastErrorOf(it)}"
+            } ?: "nGetLastError=غير متاح"
+            Log.w(
+                TAG,
+                "تحذير غير قاتل: nSetProperty(name=$name, value=$value) " +
+                    "فشل بالكود: $res ($lastErrText)"
+            )
+        }
+        return res
     }
 
     /** وسيط `nInit`: مسار المجلد منتهياً بفاصل، كما يفعل MultiTTS. */
@@ -983,6 +1379,9 @@ internal class AcapelaHostSession(
             return
         }
         if (length <= 0) return
+
+        totalAudioSamples.addAndGet(length.toLong())
+        totalAudioBytes.addAndGet((length * 2).toLong())
 
         if (!headerWritten.getAndSet(true)) {
             sink.writeHeader(currentSampleRate, 1)

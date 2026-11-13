@@ -2,7 +2,10 @@ package com.aymankhattab.nateq.core.audio.enginehost
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /**
  * اختبارات تحويل السرعة/النبرة وتقسيم النص لقطع محرك Acapela.
@@ -11,6 +14,9 @@ import org.junit.Test
  * فلا تُبتَر كلمة ولا يُسقَط نص. الضمُّ يستعيد الكلمات كلها بالترتيب.
  */
 class AcapelaSpeechTagTest {
+
+    @get:Rule
+    val tempFolder = TemporaryFolder()
 
     @Test
     fun calculateSpeedPercent_convertsRateProperly() {
@@ -60,5 +66,40 @@ class AcapelaSpeechTagTest {
         val chunks = AcapelaHostSession.splitAcapelaChunks(text, 120)
 
         assertTrue(chunks.all { !it.startsWith(" ") && !it.endsWith(" ") })
+    }
+
+    /**
+     * عقد ترتيب المرشحات: (a) المحتوى كاملاً كما هو، (b) نفسه والأسطر
+     * الجديدة مسافةٌ واحدة، (c) السطر الأول بلا اقتباس، (d) السطر الأول
+     * مع الاقتباس، (e) الرمز الحالي. ولا يُسقَط مرشحٌ مختلف.
+     */
+    @Test
+    fun registrationCandidates_followsTheAgreedOrder() {
+        val dir = tempFolder.newFolder("voice")
+        File(dir, "0x00169729").writeText(
+            "\"key#9876#token\"\nABCD\nEFGH\n",
+            Charsets.UTF_8
+        )
+
+        val candidates = AcapelaHostSession.registrationCandidates(
+            dir,
+            "7e88"
+        )
+
+        assertEquals(
+            listOf('a', 'b', 'c', 'd', 'e'),
+            candidates.map { it.letter }
+        )
+        assertEquals(
+            "\"key#9876#token\"\nABCD\nEFGH",
+            candidates[0].value
+        )
+        assertEquals(
+            "\"key#9876#token\" ABCD EFGH",
+            candidates[1].value
+        )
+        assertEquals("key#9876#token", candidates[2].value)
+        assertEquals("\"key#9876#token\"", candidates[3].value)
+        assertEquals("7e88", candidates[4].value)
     }
 }

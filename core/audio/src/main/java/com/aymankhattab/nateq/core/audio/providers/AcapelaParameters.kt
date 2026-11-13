@@ -30,13 +30,13 @@ object AcapelaParameters {
         pitch: Int,
         writer: PropertyWriter
     ): Int {
+        var firstError = 0
         val p = writer.set("pitch", registeredPitch(pitch).toString())
-        if (p != 0) return p
+        if (p != 0 && firstError == 0) firstError = p
         val v = writer.set("volume", "0")
-        return if (v == 0) {
-            writer.set("rate", sdkRate(rate).toString())
-        } else {
-            v
-        }
+        if (v != 0 && firstError == 0) firstError = v
+        val r = writer.set("rate", sdkRate(rate).toString())
+        if (r != 0 && firstError == 0) firstError = r
+        return firstError
     }
 }

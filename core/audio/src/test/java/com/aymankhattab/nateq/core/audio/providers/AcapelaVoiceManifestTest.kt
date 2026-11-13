@@ -292,6 +292,19 @@ class AcapelaVoiceManifestTest {
     }
 
     @Test
+    fun acapelaParameters_applyRegisteredContinuesOnError() {
+        val map = mutableMapOf<String, String>()
+        val code = AcapelaParameters.applyRegistered(120, 100) { k, v ->
+            map[k] = v
+            if (k == "pitch") -1 else 0
+        }
+        assertEquals(-1, code)
+        assertEquals("120", map["rate"])
+        assertEquals("100", map["pitch"])
+        assertEquals("0", map["volume"])
+    }
+
+    @Test
     fun resolveRegistration_readsDirectRegistrationField() {
         val baseDir = tempFolder.newFolder("voice_json_test")
         val jsonFile = File(baseDir, "voice.json")
@@ -304,7 +317,7 @@ class AcapelaVoiceManifestTest {
     @Test
     fun resolveRegistration_rejectsHexFileNameAsMetadata() {
         val baseDir = tempFolder.newFolder("hex_only")
-        File(baseDir, "0x1A2B3C4D").writeText("invalid spaces key")
+        File(baseDir, "0x1A2B3C4D").writeText("??? !!! ***")
 
         // اسم الملف ليس بيانات تسجيل: تمريره للمحرك الممتد يُفسد بناؤه.
         assertEquals("", AcapelaVoiceManifest.resolveRegistration(baseDir))
@@ -321,9 +334,18 @@ class AcapelaVoiceManifestTest {
 
     @Test
     fun resolveRegistration_rejectsInvalidHexFileContent() {
-        val dirSpaces = tempFolder.newFolder("hex_spaces")
-        File(dirSpaces, "0x00112233").writeText("has spaces invalid")
-        assertEquals("", AcapelaVoiceManifest.resolveRegistration(dirSpaces))
+        val dirInvalid = tempFolder.newFolder("hex_invalid")
+        File(dirInvalid, "0x00112233").writeText("??? !!! ***")
+        assertEquals("", AcapelaVoiceManifest.resolveRegistration(dirInvalid))
+
+        val dirCommentsOnly = tempFolder.newFolder("hex_comments")
+        File(dirCommentsOnly, "0x00223344").writeText(
+            "# only comments\n# no tokens\n"
+        )
+        assertEquals(
+            "",
+            AcapelaVoiceManifest.resolveRegistration(dirCommentsOnly)
+        )
 
         val dirHexContent = tempFolder.newFolder("hex_itself")
         File(dirHexContent, "0x00445566").writeText("0x00169729")
@@ -334,6 +356,58 @@ class AcapelaVoiceManifestTest {
         val dirTooLong = tempFolder.newFolder("hex_too_long")
         File(dirTooLong, "0x00778899").writeText("a".repeat(300))
         assertEquals("", AcapelaVoiceManifest.resolveRegistration(dirTooLong))
+    }
+
+    @Test
+    fun resolveRegistration_readsHexFileWithCommentsAndQuotes() {
+        val baseDir = tempFolder.newFolder("hex_structured")
+        File(baseDir, "0x00169729").writeText(
+            "# Key file for Salma HD\n" +
+                "registration: \"AR_SA_HD_KEY_9988\" # trailing comment\n"
+        )
+        val reg = AcapelaVoiceManifest.resolveRegistration(baseDir)
+        assertEquals("AR_SA_HD_KEY_9988", reg)
+    }
+
+    @Test
+    fun resolveRegistration_readsBareQuotedKeyWithComment() {
+        val baseDir = tempFolder.newFolder("hex_bare_quoted")
+        File(baseDir, "0x00169729").writeText(
+            "\"bare_salma_meta_123\" # comment for key\n"
+        )
+        val reg = AcapelaVoiceManifest.resolveRegistration(baseDir)
+        assertEquals("bare_salma_meta_123", reg)
+    }
+
+    @Test
+    fun resolveRegistration_prefersRegistrationOrLicenseKey() {
+        val baseDir = tempFolder.newFolder("hex_prefer_reg")
+        File(baseDir, "0x00169729").writeText(
+            "name = \"Salma\"\n" +
+                "license = \"PREF_LIC_123\"\n" +
+                "other = \"LONGER_NON_PREFERRED_TOKEN_456\"\n"
+        )
+        val reg = AcapelaVoiceManifest.resolveRegistration(baseDir)
+        assertEquals("PREF_LIC_123", reg)
+    }
+
+    @Test
+    fun resolveRegistration_picksLongestWhenNoKeyPreferred() {
+        val baseDir = tempFolder.newFolder("hex_longest")
+        File(baseDir, "0x00169729").writeText(
+            "foo = \"short\"\n" +
+                "bar = \"longest_token_value_789\"\n"
+        )
+        val reg = AcapelaVoiceManifest.resolveRegistration(baseDir)
+        assertEquals("longest_token_value_789", reg)
+    }
+
+    @Test
+    fun maskFileShape_replacesLettersAndDigits() {
+        val shape = AcapelaVoiceManifest.maskFileShape(
+            "# Comment\nreg: \"KEY_123\" # info"
+        )
+        assertEquals("# aaaaaaa⏎aaa: \"aaa_999\" # aaaa", shape)
     }
 
     @Test
@@ -372,7 +446,10 @@ class AcapelaVoiceManifestTest {
         )
 
         val info = AcapelaVoiceManifest.parseVoice(voiceDir)
-        assertEquals(Locale("ar", "SA"), info.locale)
+        assertEquals(
+            Locale.Builder().setLanguage("ar").setRegion("SA").build(),
+            info.locale
+        )
     }
 
     @Test
