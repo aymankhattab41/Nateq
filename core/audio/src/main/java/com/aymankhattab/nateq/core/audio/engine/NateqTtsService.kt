@@ -2304,13 +2304,15 @@ class NateqTtsService : TextToSpeechService() {
         val effPitch: Float
         val effVol: Float
 
-        if (isEmergency) {
+        if (isEmergency &&
+            (LanguageCode.isArabic(segTag) || convert?.convertEngine == null)
+        ) {
             val em = EmergencyVoice.load(applicationContext)
             effTargetEngine = if (em.isSaved) em.engine else null
             effVoiceName = if (em.isSaved) em.voice else null
-            // بلا صوت طوارئ محفوظ يبقى معدل الطلب كما هو، فلا
-            // يهبط إلى 1.0 عند تعثّر المحرك (وهو عَرَض «البطء»).
-            effRate = if (em.isSaved) em.rate else finalRate
+            // معدل الطلب الفعلي يبقى كما هو في حالة الطوارئ فلا يهبط
+            // إلى 1.0 عند تعثّر المحرك (وهو عَرَض «البطء»).
+            effRate = finalRate
             effPitch = if (em.isSaved) em.pitch else finalPitch
             effVol = if (em.isSaved) em.volume else finalVolume
         } else {

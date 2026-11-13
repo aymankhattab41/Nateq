@@ -115,7 +115,10 @@ class AcapelaEmbeddedVoiceProvider(
             engineId = engineId,
             dataDir = dir
         )
-        if (res.ok) return true
+        if (res.ok) {
+            EngineStatusRegistry.noteReady(PROVIDER_ID)
+            return true
+        }
         if (res.code == "CRASHED_LAST_RUN" && !crashRetryDone) {
             crashRetryDone = true
             Log.w(TAG, "شفاء Acapela بعد انهيار سابق: إعادة قسرية")
@@ -125,7 +128,10 @@ class AcapelaEmbeddedVoiceProvider(
                 dataDir = dir,
                 force = true
             )
-            if (retried.ok) return true
+            if (retried.ok) {
+                EngineStatusRegistry.noteReady(PROVIDER_ID)
+                return true
+            }
             EngineStatusRegistry.noteFailure(
                 PROVIDER_ID,
                 retried.code,

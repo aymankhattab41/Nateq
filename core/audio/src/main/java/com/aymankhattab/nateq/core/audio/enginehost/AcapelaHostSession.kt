@@ -83,6 +83,9 @@ internal class AcapelaHostSession(
         internal fun calculatePitchPercent(pitch: Float): Int =
             (pitch * 100f).roundToInt().coerceIn(50, 200)
 
+        private fun withTrailingSlash(path: String): String =
+            if (path.endsWith(File.separator)) path else path + File.separator
+
         /**
          * مسارات البحث عن الأصوات، مع تجهيز المجلدات بما تحتاجه
          * المكتبة (بلا توليد تهيئة مصطنعة — انظر
@@ -165,6 +168,7 @@ internal class AcapelaHostSession(
             v.rawSpeaker.equals(query, ignoreCase = true) ||
                 v.voiceName.equals(query, ignoreCase = true) ||
                 v.id.equals(query, ignoreCase = true) ||
+                v.dir.name.equals(query, ignoreCase = true) ||
                 v.displayName.startsWith(query, ignoreCase = true)
     }
 
@@ -254,7 +258,11 @@ internal class AcapelaHostSession(
                 context,
                 EmbeddedStorage.Engine.ACAPELA
             )
-            val paths = collectVoiceSearchPaths(dir, extraDirs)
+            val rawPaths = collectVoiceSearchPaths(dir, extraDirs)
+            val paths = rawPaths.flatMap { p ->
+                val slashed = withTrailingSlash(p)
+                if (slashed == p) listOf(p) else listOf(p, slashed)
+            }.distinct().toTypedArray()
             val listed = inst.nGetVoiceList(paths)
             val voices = manifestVoices(dir, extraDirs)
             Log.i(
@@ -586,6 +594,12 @@ internal class AcapelaHostSession(
         sink: PcmSink,
         nativeCapMs: Long
     ): HostResult? {
+        val voicePaths = arrayOf(
+            withTrailingSlash(voice.dir.canonicalPath),
+            withTrailingSlash(voice.dir.absolutePath)
+        )
+        runCatching { inst.nGetVoiceList(voicePaths) }
+
         val candidates = candidateNames(voice)
         var loadRes = -1
         var loadedName: String? = null
@@ -890,11 +904,30 @@ internal class AcapelaHostSession(
      * `nSetLanguage` إن غابت، وMultiTTS يشترط `ll-CC` في `.inf`.
      */
     private fun iso3Of(locale: Locale): Iso3? {
-        val language = runCatching { locale.isO3Language }
+        val lang = runCatching { locale.isO3Language }
             .getOrDefault("")
-        val country = runCatching { locale.isO3Country }.getOrDefault("")
-        if (language.length != 3 || country.length != 3) return null
-        return Iso3(language, country)
+        var country = runCatching { locale.isO3Country }
+            .getOrDefault("")
+        if (country.length != 3) {
+            val defCountry = AcapelaVoiceManifest.defaultCountryForLanguage(
+                locale.language
+            ) ?: "SA"
+            val fallbackLocale = Locale.Builder()
+                .setLanguage(locale.language)
+                .setRegion(defCountry)
+                .build()
+            country = runCatching { fallbackLocale.isO3Country }
+                .getOrDefault("")
+        }
+        val effLang = if (lang.length == 3) lang else {
+            val fallbackLocale = Locale.Builder()
+                .setLanguage(locale.language.ifBlank { "ar" })
+                .setRegion("SA")
+                .build()
+            runCatching { fallbackLocale.isO3Language }.getOrDefault("ara")
+        }
+        if (effLang.length != 3 || country.length != 3) return null
+        return Iso3(effLang, country)
     }
 
     override fun onAudioAvailable(samples: ShortArray, length: Int) {

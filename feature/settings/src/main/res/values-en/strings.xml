@@ -713,6 +713,7 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Comprehensive fix for embedded Acapela engine initialization and preview following MultiTTS architecture: trailing slash enforcement for voice search paths and dynamic voice directory re-indexing before nLoadVoice to prevent voice load errors, automatic country ISO3 derivation for the extended engine to eliminate VOICE_LOCALE_UNKNOWN, definitive separation in CategoryResolver between embedded Acapela and external Play Store voices, and safeguarding emergency mode to prevent speed drops or loss of multi-language conversion for non-Arabic segments.
 • Full Acapela embedded engine alignment with MultiTTS architecture: implemented exact classic and extended initialization flows, removed blocking speech verification on init, enforced MODE=prep_hd, 200-char chunking, automatic 0x... hex key copying, correct sample rates and locale extraction, and dead code cleanup.
 • Comprehensive fix for Acapela embedded engine import, initialization, and voice preview matching the reverse-engineered reference: support extended engine initialization, auto-load registration keys and userdicos, and normalize file extension casing for native C libraries.
 • Resolved speech delay, speed drop, and loss of automatic multi-language switching (\"slows down then recovers\"): removed blocking delay loop on numeric/emoji segments and prevented false emergency lock.
