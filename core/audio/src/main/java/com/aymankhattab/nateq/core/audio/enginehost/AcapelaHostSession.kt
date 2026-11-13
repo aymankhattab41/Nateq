@@ -81,9 +81,6 @@ internal class AcapelaHostSession(
         /** نصٌّ قصير لفحص قبول بيانات التسجيل قبل النطق الحقيقي. */
         private const val REGISTRATION_PROBE_TEXT = "مرحبا"
 
-        /** سقف زمني لكل مرشح تسجيل (فتح المحرك + تجربة نطق قصيرة). */
-        private const val PROBE_PER_CANDIDATE_MS = 6_000L
-
         /** ملف حفظ حرف المرشح الناجح بجانب الصوت (بقاء بعد إعادة التشغيل). */
         private const val REGISTRATION_CHOICE_FILE =
             ".nateq_acapela_registration"
@@ -1033,16 +1030,34 @@ internal class AcapelaHostSession(
         }
         val outcomes = mutableListOf<ProbeOutcome>()
         var accepted: RegistrationCandidate? = null
+        var exhausted = false
+        // ميزانيةٌ واحدة للفحص كلّه لا لكل مرشح: مجموعُ (فحص + نطق)
+        // يجب أن يبقى داخل مهلة الطلب/المعاينة، وإلا انتهت المهلة
+        // قبل ظهور أول صوت فبدا الفشل بلا سبب. والمرشحُ المرفوض
+        // يعود فوراً (كود nSpeak غير صفري) فلا يستهلك من الميزانية.
+        val deadline = SystemClock.uptimeMillis() +
+            SynthesisBudget.registrationProbeBudgetMs()
         for (candidate in ordered) {
             if (cancelled.get()) {
                 return HostResult.failure("CANCELLED", "أُلغي الطلب")
             }
+            val remaining = deadline - SystemClock.uptimeMillis()
+            if (remaining <= 0L) {
+                exhausted = true
+                break
+            }
+            Log.i(
+                TAG,
+                "تجربة تسجيل: letter=${candidate.letter}, " +
+                    "len=${candidate.value.length}, متبقٍ=${remaining}ms"
+            )
             val outcome = probeRegistration(
                 voice = voice,
                 iso3 = iso3,
                 candidate = candidate,
                 sink = sink,
-                cancelled = cancelled
+                cancelled = cancelled,
+                waitMs = remaining
             )
             outcomes.add(outcome)
             if (outcome.accepted) {
@@ -1051,7 +1066,7 @@ internal class AcapelaHostSession(
             }
         }
         if (accepted == null) {
-            logAllCandidatesFailed(outcomes)
+            logAllCandidatesFailed(outcomes, exhausted)
             return HostResult.failure(
                 "REGISTRATION_REJECTED",
                 "رُفضت كل بيانات التسجيل المجرَّبة: " +
@@ -1230,7 +1245,8 @@ internal class AcapelaHostSession(
         iso3: Iso3,
         candidate: RegistrationCandidate,
         sink: PcmSink,
-        cancelled: AtomicBoolean
+        cancelled: AtomicBoolean,
+        waitMs: Long
     ): ProbeOutcome {
         val samples = AtomicLong(0L)
         val codes = ProbeCodes()
@@ -1244,7 +1260,7 @@ internal class AcapelaHostSession(
         try {
             val failure = configureExtended(srv, voice, iso3, codes)
             if (failure == null) {
-                sink.enterNativeCall(PROBE_PER_CANDIDATE_MS)
+                sink.enterNativeCall(waitMs)
                 windowOpen = true
                 val speakRes = runCatching {
                     srv.nSpeak(REGISTRATION_PROBE_TEXT, null)
@@ -1253,16 +1269,21 @@ internal class AcapelaHostSession(
                     -1
                 }
                 codes.speak = speakRes
-                val started = SystemClock.uptimeMillis()
-                var lastPing = started
-                while (!cancelled.get() && samples.get() == 0L) {
-                    val now = SystemClock.uptimeMillis()
-                    if (now - started >= PROBE_PER_CANDIDATE_MS) break
-                    if (now - lastPing >= PING_INTERVAL_MS) {
-                        runCatching { sink.ping() }
-                        lastPing = now
+                // كودٌ غير صفري = رفضٌ فوري، فلا معنى لانتظار عيّناتٍ
+                // لن تأتي. انتظارُه الكامل لكل مرشح هو ما أطال الفحص
+                // حتى انتهت مهلة المعاينة قبل ظهور أي نتيجة.
+                if (speakRes == 0) {
+                    val started = SystemClock.uptimeMillis()
+                    var lastPing = started
+                    while (!cancelled.get() && samples.get() == 0L) {
+                        val now = SystemClock.uptimeMillis()
+                        if (now - started >= waitMs) break
+                        if (now - lastPing >= PING_INTERVAL_MS) {
+                            runCatching { sink.ping() }
+                            lastPing = now
+                        }
+                        delay(WAIT_STEP_MS)
                     }
-                    delay(WAIT_STEP_MS)
                 }
                 codes.samples = samples.get()
             }
@@ -1300,13 +1321,22 @@ internal class AcapelaHostSession(
     }
 
     /** سطر واحد واضح عند رفض كل المرشحات: الحروف وأكواد العودة. */
-    private fun logAllCandidatesFailed(outcomes: List<ProbeOutcome>) {
-        val line = "فشل كل مرشحات التسجيل: " +
+    private fun logAllCandidatesFailed(
+        outcomes: List<ProbeOutcome>,
+        exhausted: Boolean
+    ) {
+        val spent = if (exhausted) " — نفدت ميزانية الفحص قبل تجربة الباقي"
+        else ""
+        val tried = if (outcomes.isEmpty()) {
+            "لم يُجرَّب أي مرشح"
+        } else {
             outcomes.joinToString(" | ") {
                 "${it.candidate.letter}(" +
                     "len=${it.candidate.value.length}, " +
                     "${it.codes.format()})"
             }
+        }
+        val line = "فشل كل مرشحات التسجيل: $tried$spent"
         Log.e(TAG, line)
         HostLog.e(HostProtocol.ENGINE_ACAPELA, line)
     }
