@@ -65,6 +65,7 @@ import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.VoiceIdContract
 import dagger.hilt.android.AndroidEntryPoint
 
+import java.io.File
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
@@ -1698,11 +1699,7 @@ class NateqTtsService : TextToSpeechService() {
                     applicationContext,
                     EmbeddedStorage.Engine.ACAPELA
                 )
-                val acVoices = acDirs.flatMap {
-                    AcapelaVoiceManifest.listVoices(it)
-                }.distinctBy {
-                    "${it.dir.absolutePath}|${it.id.lowercase(Locale.ROOT)}"
-                }
+                val acVoices = collectAcapelaVoices(acDirs)
                 val installedAr = acVoices.firstOrNull {
                     LanguageCode.isArabic(it.locale.language)
                 }?.voiceName
@@ -1925,6 +1922,22 @@ class NateqTtsService : TextToSpeechService() {
         val nativeChannels: Int,
         val chunks: List<ByteArray>
     )
+
+    /**
+     * تعداد أصوات Acapela من كل مجلدات البحث على الخيط الخلفي مع التخزين
+     * المؤقت — لا يُلمس القرص على الخيط الرئيسي، والتكرار بلا إعادة قراءة.
+     */
+    private suspend fun collectAcapelaVoices(
+        dirs: List<File>
+    ): List<AcapelaVoiceManifest.VoiceInfo> {
+        val all = mutableListOf<AcapelaVoiceManifest.VoiceInfo>()
+        for (dir in dirs) {
+            all.addAll(AcapelaVoiceManifest.cachedVoices(dir))
+        }
+        return all.distinctBy {
+            "${it.dir.absolutePath}|${it.id.lowercase(Locale.ROOT)}"
+        }
+    }
 
     /** يحلّ مقطعاً لغوياً كاملاً: تجهيز النص بدليل لغته، حل الصوت مع سقوط
      *  الجهاز الافتراضي، خلاصة أشرطة التحويل (السرعة/النبرة/الصوت)، ثم توجيه
@@ -2219,11 +2232,7 @@ class NateqTtsService : TextToSpeechService() {
                 applicationContext,
                 EmbeddedStorage.Engine.ACAPELA
             )
-            val acVoices = acDirs.flatMap {
-                AcapelaVoiceManifest.listVoices(it)
-            }.distinctBy {
-                "${it.dir.absolutePath}|${it.id.lowercase(Locale.ROOT)}"
-            }
+            val acVoices = collectAcapelaVoices(acDirs)
             val installedAr = acVoices.firstOrNull {
                 LanguageCode.isArabic(it.locale.language)
             }?.voiceName

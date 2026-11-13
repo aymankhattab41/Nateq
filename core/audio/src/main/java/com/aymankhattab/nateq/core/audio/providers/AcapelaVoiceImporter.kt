@@ -419,9 +419,15 @@ object AcapelaVoiceImporter {
     ): ImportResult {
         // تصفير سجل التعثر لإلغاء أي حظر طوارئ قائم فوراً
         CategoryFailureTracker.reset()
-        AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
-        AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
-        val voices = AcapelaVoiceManifest.listVoices(baseDir)
+        // الكتابة والقراءة معاً على IO: الاستيراد ينتهي بنسخ ملفات،
+        // وقارئ المانيفست لا يُشغَّل على الخيط الرئيسي هنا إطلاقاً.
+        val voices = withContext(Dispatchers.IO) {
+            AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
+            AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+            // الملفات تغيّرت للتوّ: لا يجوز أن تُقرأ لقطة سابقة.
+            AcapelaVoiceManifest.invalidateVoicesCache()
+            AcapelaVoiceManifest.listVoices(baseDir)
+        }
         if (voices.isEmpty()) {
             return ImportResult(success = false, errorMessage = emptyMessage)
         }

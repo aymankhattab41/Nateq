@@ -7,7 +7,12 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * فحص وتعداد أصوات Acapela على القرص
@@ -26,6 +31,31 @@ object AcapelaVoiceManifest {
     internal val DATA_EXTENSIONS = setOf(
         "bvcu", "dat", "bnf", "pho", "mdd", "hdr"
     )
+
+    /**
+     * عمر نتيجة التعداد المخزَّنة (ms).
+     *
+     * التخزين لا يُغني عن الإبطال: البصمة [EmbeddedStorage.lastBumpTime]
+     * ترتفع مع كل استيراد أو تنزيل أو حذف فيُعاد التعداد فوراً. أما
+     * الـTTL فيغطي التغيير الخارجي (ملف يُحذف من مدير الملفات مثلاً)
+     * فيحدّه بثلاثين ثانية بدل أن يبقى قديماً إلى الأبد.
+     */
+    private const val VOICES_CACHE_TTL_MS = 30_000L
+
+    /** لقطة تعداد صوت واحد في مجلد بحث واحد. */
+    private data class VoicesCacheEntry(
+        val bumpTime: Long,
+        val stampMs: Long,
+        val voices: List<VoiceInfo>
+    )
+
+    private val voicesCache =
+        ConcurrentHashMap<String, VoicesCacheEntry>()
+
+    /** يمنع تعدادين متوازيين فيُقرأ القرص مرتين لنفس المجلد. */
+    private val voicesCacheMutex = Mutex()
+
+    private fun monotonicMs(): Long = System.nanoTime() / 1_000_000L
 
     /**
      * بيانات صوت Acapela كما وردت على القرص.
@@ -1236,6 +1266,9 @@ object AcapelaVoiceManifest {
      * **لا تُكتب أي ملفات هنا:** مكتبة Acapela الأصلية تبني مسار `.ini`
      * من اسم `.inf`، فأي `.inf` مُصطنع بلا `.ini` مقابل يُفسد تحميل
      * الصوت. التعداد قراءةٌ خالصة.
+     *
+     * هذه هي النواة المتزامنة (للاختبارات وسياقات الخيوط الخلفية فقط).
+     * أي مستدعٍ على الخيط الرئيسي يستعمل [cachedVoices] بدلاً منها.
      */
     fun listVoices(baseDir: File): List<VoiceInfo> {
         if (!baseDir.exists() || !baseDir.isDirectory) return emptyList()
@@ -1274,6 +1307,83 @@ object AcapelaVoiceManifest {
         return result.distinctBy {
             "${it.dir.absolutePath}|${it.id.lowercase(Locale.ROOT)}"
         }
+    }
+
+    /**
+     * تعداد الأصوات مع تخزين مؤقت على [Dispatchers.IO].
+     *
+     * هو المسار المصرَّح به من الواجهة ومسار النطق: قراءة المانيفست تفتح
+     * ملفات `.inf` وتشقّ شجرة المجلدات، فلا تُنفَّذ على الخيط الرئيسي
+     * أبداً. النتيجة تُخزَّن لكل مجلد وتُبطَل عند تغيّر بصمة
+     * [EmbeddedStorage.lastBumpTime] أو عند تجاوز [VOICES_CACHE_TTL_MS].
+     */
+    suspend fun cachedVoices(baseDir: File): List<VoiceInfo> =
+        readVoicesCached(baseDir, VOICES_CACHE_TTL_MS, ::monotonicMs)
+
+    /**
+     * نسخة [cachedVoices] بحقن الساعة والمدة — تُستخدم في الاختبارات
+     * لإثبات أن القراءة لا تتكرر وأن الإبطال يعمل، بلا انتظار فعلي.
+     */
+    internal suspend fun readVoicesCached(
+        baseDir: File,
+        ttlMs: Long,
+        clockMs: () -> Long
+    ): List<VoiceInfo> = withContext(Dispatchers.IO) {
+        val key = baseDir.absolutePath
+        voicesCacheMutex.withLock {
+            val bump = EmbeddedStorage.lastBumpTime
+            val now = clockMs()
+            val hit = voicesCache[key]
+            if (hit != null && hit.bumpTime == bump &&
+                now - hit.stampMs in 0..ttlMs
+            ) {
+                hit.voices
+            } else {
+                val fresh = listVoices(baseDir)
+                voicesCache[key] = VoicesCacheEntry(bump, now, fresh)
+                fresh
+            }
+        }
+    }
+
+    /**
+     * لقطة التعداد المخزَّن **بلا أي قراءة قرص** — آمنة على الخيط الرئيسي.
+     *
+     * [voices] آخر تعداد معروف، و[fresh] يعني مطابقته لبصمة
+     * [EmbeddedStorage.lastBumpTime] وللحد الزمني. عند `fresh = false` لا
+     * يجوز الاعتماد على اللقطة كمصدر حقيقة، بل يُشغَّل تعداد خلفي
+     * ([cachedVoices]) ثم تُقرأ اللقطة من جديد.
+     */
+    data class VoicesSnapshot(
+        val voices: List<VoiceInfo>,
+        val fresh: Boolean
+    )
+
+    fun voicesSnapshot(baseDir: File): VoicesSnapshot =
+        readVoicesSnapshot(baseDir, ::monotonicMs)
+
+    /** نسخة [voicesSnapshot] بساعة محقونة — تُثبت الطزاجة في الاختبار. */
+    internal fun readVoicesSnapshot(
+        baseDir: File,
+        clockMs: () -> Long
+    ): VoicesSnapshot {
+        val hit = voicesCache[baseDir.absolutePath]
+            ?: return VoicesSnapshot(emptyList(), fresh = false)
+        val age = clockMs() - hit.stampMs
+        val fresh = hit.bumpTime == EmbeddedStorage.lastBumpTime &&
+            age in 0..VOICES_CACHE_TTL_MS
+        return VoicesSnapshot(hit.voices, fresh)
+    }
+
+    /**
+     * إبطال كل النتائج المخزَّنة فوراً.
+     *
+     * يُستدعى صراحةً بعد الكتابة على القرص (استيراد/تنزيل/حذف) مع أن
+     * [EmbeddedStorage.bumpVersion] يكفي وحده؛ الإبطال الصريح يحمي
+     * الحالات التي تُغيّر الملفات ثم تقرأ قبل أن تُرفع البصمة.
+     */
+    fun invalidateVoicesCache() {
+        voicesCache.clear()
     }
 
     /**
