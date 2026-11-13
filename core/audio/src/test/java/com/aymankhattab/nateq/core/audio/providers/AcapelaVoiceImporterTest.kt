@@ -77,4 +77,49 @@ class AcapelaVoiceImporterTest {
         assertFalse(result.success)
         assertTrue(result.errorMessage?.isNotBlank() == true)
     }
+
+    @Test
+    fun importFromZip_twice_yieldsOneVoiceDirAndOneVoice() = runBlocking {
+        val zipFile = File(tempFolder.root, "salma.zip")
+        java.util.zip.ZipOutputStream(
+            java.io.FileOutputStream(zipFile)
+        ).use { zos ->
+            zos.putNextEntry(java.util.zip.ZipEntry("salma/salma.inf"))
+            zos.write(
+                "Speaker=Salma\nIsoCode=ara\nfreq=22050".toByteArray()
+            )
+            zos.closeEntry()
+            zos.putNextEntry(java.util.zip.ZipEntry("salma/salma.dat"))
+            zos.write(ByteArray(15_000))
+            zos.closeEntry()
+        }
+
+        val uri = android.net.Uri.fromFile(zipFile)
+        val res1 = AcapelaVoiceImporter.importFromZip(
+            context,
+            uri,
+            "Salma.zip"
+        )
+        assertTrue(res1.success)
+
+        val res2 = AcapelaVoiceImporter.importFromZip(
+            context,
+            uri,
+            "Salma.zip"
+        )
+        assertTrue(res2.success)
+
+        val baseDir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        val voiceDirs = baseDir.listFiles { f ->
+            f.isDirectory
+        } ?: emptyArray()
+        assertEquals(1, voiceDirs.size)
+
+        val voices = AcapelaVoiceManifest.listVoices(baseDir)
+        assertEquals(1, voices.size)
+        assertEquals("Salma", voices.first().voiceName)
+    }
 }

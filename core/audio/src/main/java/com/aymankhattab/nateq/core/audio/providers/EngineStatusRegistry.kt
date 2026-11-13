@@ -47,13 +47,20 @@ object EngineStatusRegistry {
         EXPERIMENTAL
     }
 
+    data class SpeakFailure(
+        val code: String,
+        val message: String? = null,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
     /** حالة محرك واحدة مع سببها وآخر رسالة خطأ. */
     data class EngineStatus(
         val engineId: String,
         val state: State,
         val code: String? = null,
         val lastError: String? = null,
-        val updatedAt: Long = System.currentTimeMillis()
+        val updatedAt: Long = System.currentTimeMillis(),
+        val lastSpeakFailure: SpeakFailure? = null
     )
 
     /**
@@ -121,6 +128,11 @@ object EngineStatusRegistry {
             if (status.code != null) put("code", status.code)
             if (status.lastError != null) put("message", status.lastError)
             put("updatedAt", status.updatedAt)
+            status.lastSpeakFailure?.let { sf ->
+                put("lastSpeakCode", sf.code)
+                if (sf.message != null) put("lastSpeakMessage", sf.message)
+                put("lastSpeakTime", sf.timestamp)
+            }
         }
         val tmp = File(filesDir, "engine_status_$norm.json.tmp")
         try {
@@ -154,12 +166,27 @@ object EngineStatusRegistry {
                 json.optString("message").takeIf { it.isNotBlank() }
             } else null
             val time = json.optLong("updatedAt", 0L)
+            val lastSpeakCode = if (
+                json.has("lastSpeakCode") && !json.isNull("lastSpeakCode")
+            ) {
+                json.optString("lastSpeakCode").takeIf { it.isNotBlank() }
+            } else null
+            val lastSpeakMsg = if (
+                json.has("lastSpeakMessage") && !json.isNull("lastSpeakMessage")
+            ) {
+                json.optString("lastSpeakMessage").takeIf { it.isNotBlank() }
+            } else null
+            val lastSpeakTime = json.optLong("lastSpeakTime", 0L)
+            val lastSpeakFailure = if (lastSpeakCode != null) {
+                SpeakFailure(lastSpeakCode, lastSpeakMsg, lastSpeakTime)
+            } else null
             EngineStatus(
                 engineId = id,
                 state = state,
                 code = code,
                 lastError = msg,
-                updatedAt = time
+                updatedAt = time,
+                lastSpeakFailure = lastSpeakFailure
             )
         } catch (_: Throwable) {
             null
@@ -174,16 +201,61 @@ object EngineStatusRegistry {
         message: String? = null
     ) {
         val norm = normalizeId(engineId)
+        val prev = statuses[norm]
+            ?: defaultFilesDir?.let { readStatusFile(it, norm) }
         val status = EngineStatus(
             engineId = norm,
             state = state,
             code = code,
             lastError = message,
-            updatedAt = nowProvider()
+            updatedAt = nowProvider(),
+            lastSpeakFailure = prev?.lastSpeakFailure
         )
         statuses[norm] = status
         defaultFilesDir?.let { dir ->
             writeStatusFile(dir, status)
+        }
+    }
+
+    /**
+     * تسجيل فشل نطق مخصص (لا يمسح بالـ READY ويبقى حتى نجاح النطق
+     * اللاحق أو الإفراغ الكامل).
+     */
+    fun noteSpeakFailure(engineId: String, code: String?, message: String?) {
+        val norm = normalizeId(engineId)
+        val current = statuses[norm]
+            ?: defaultFilesDir?.let { readStatusFile(it, norm) }
+        val safeCode = code ?: "UNKNOWN"
+        val speakFailure = SpeakFailure(
+            code = safeCode,
+            message = message,
+            timestamp = nowProvider()
+        )
+        val updated = current?.copy(
+            lastSpeakFailure = speakFailure
+        ) ?: EngineStatus(
+            engineId = norm,
+            state = State.READY,
+            lastSpeakFailure = speakFailure,
+            updatedAt = nowProvider()
+        )
+        statuses[norm] = updated
+        defaultFilesDir?.let { dir ->
+            writeStatusFile(dir, updated)
+        }
+    }
+
+    /** تصفية فشل النطق عند نجاح نطق لاحق. */
+    fun noteSpeakSuccess(engineId: String) {
+        val norm = normalizeId(engineId)
+        val current = statuses[norm]
+            ?: defaultFilesDir?.let { readStatusFile(it, norm) }
+        if (current?.lastSpeakFailure != null) {
+            val updated = current.copy(lastSpeakFailure = null)
+            statuses[norm] = updated
+            defaultFilesDir?.let { dir ->
+                writeStatusFile(dir, updated)
+            }
         }
     }
 
@@ -349,7 +421,8 @@ object EngineStatusRegistry {
             return EngineStatus(
                 engineId = norm,
                 state = State.VOICES_PRESENT,
-                updatedAt = nowProvider()
+                updatedAt = nowProvider(),
+                lastSpeakFailure = recorded?.lastSpeakFailure
             )
         }
 
@@ -372,7 +445,8 @@ object EngineStatusRegistry {
         return EngineStatus(
             engineId = norm,
             state = State.NOT_INSTALLED,
-            updatedAt = nowProvider()
+            updatedAt = nowProvider(),
+            lastSpeakFailure = recorded?.lastSpeakFailure
         )
     }
 

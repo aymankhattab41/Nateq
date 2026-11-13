@@ -235,4 +235,57 @@ class EngineStatusRegistryTest {
             status.state
         )
     }
+
+    @Test
+    fun noteReady_doesNotClearLastSpeakFailure() {
+        val filesDir = androidx.test.core.app.ApplicationProvider
+            .getApplicationContext<android.content.Context>().filesDir
+        EngineStatusRegistry.setFilesDir(filesDir)
+
+        EngineStatusRegistry.noteSpeakFailure(
+            engine,
+            "HD_REGISTRATION_MISSING",
+            "بيانات مفقودة"
+        )
+        val afterFail = EngineStatusRegistry.statusOf(engine)
+        assertNotNull(afterFail?.lastSpeakFailure)
+        assertEquals(
+            "HD_REGISTRATION_MISSING",
+            afterFail?.lastSpeakFailure?.code
+        )
+
+        // noteReady لا يمسح آخر فشل نطق
+        EngineStatusRegistry.noteReady(engine)
+        val afterReady = EngineStatusRegistry.statusOf(engine)
+        assertEquals(EngineStatusRegistry.State.READY, afterReady?.state)
+        assertNotNull(afterReady?.lastSpeakFailure)
+        assertEquals(
+            "HD_REGISTRATION_MISSING",
+            afterReady?.lastSpeakFailure?.code
+        )
+
+        // نجاح النطق يمسح الفشل
+        EngineStatusRegistry.noteSpeakSuccess(engine)
+        val afterSuccess = EngineStatusRegistry.statusOf(engine)
+        assertNull(afterSuccess?.lastSpeakFailure)
+    }
+
+    @Test
+    fun lastSpeakFailure_persistsToDisk() {
+        val filesDir = androidx.test.core.app.ApplicationProvider
+            .getApplicationContext<android.content.Context>().filesDir
+        EngineStatusRegistry.setFilesDir(filesDir)
+
+        EngineStatusRegistry.noteSpeakFailure(
+            engine,
+            "SPEAK_NO_AUDIO",
+            "لا يوجد صوت"
+        )
+        EngineStatusRegistry.statusesClearOnly()
+
+        val disk = EngineStatusRegistry.readStatusFile(filesDir, engine)
+        assertNotNull(disk?.lastSpeakFailure)
+        assertEquals("SPEAK_NO_AUDIO", disk?.lastSpeakFailure?.code)
+        assertEquals("لا يوجد صوت", disk?.lastSpeakFailure?.message)
+    }
 }
