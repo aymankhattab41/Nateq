@@ -8,6 +8,7 @@ import com.acapelagroup.android.tts.acattsandroid
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.providers.AcapelaLicense
 import com.aymankhattab.nateq.core.audio.providers.AcapelaParameters
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceDiagnostics
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -555,6 +556,9 @@ internal class AcapelaHostSession(
                     sink = sink,
                     cancelled = cancelled
                 )
+                if (!native.ok) {
+                    logVoiceDiagnostics(voice, native.code ?: "UNKNOWN")
+                }
                 return if (native.ok) native else extended
             }
 
@@ -571,7 +575,7 @@ internal class AcapelaHostSession(
                 )
             }
 
-            return speakNative(
+            val classic = speakNative(
                 voice = voice,
                 chunks = chunks,
                 rate = req.rate,
@@ -579,6 +583,10 @@ internal class AcapelaHostSession(
                 sink = sink,
                 cancelled = cancelled
             )
+            if (!classic.ok) {
+                logVoiceDiagnostics(voice, classic.code ?: "UNKNOWN")
+            }
+            return classic
         } catch (t: Throwable) {
             Log.e(TAG, "خطأ أثناء نطق Acapela", t)
             return HostResult.failure(
@@ -1342,6 +1350,37 @@ internal class AcapelaHostSession(
         val line = "فشل كل مرشحات التسجيل: $tried$spent"
         Log.e(TAG, line)
         HostLog.e(HostProtocol.ENGINE_ACAPELA, line)
+    }
+
+    /**
+     * إخراج تشخيص القرص عند فشل النطق: جردُ مجلد الصوت، ومسارُ الرخصة
+     * المتوقع، وذيلُ `logfile.txt` الذي تكتبه المكتبة الأصلية. يدخل في
+     * زر «نسخ التشخيصات» عبر [HostLog]، ويُطبع كاملاً في Logcat.
+     */
+    private fun logVoiceDiagnostics(
+        voice: AcapelaVoiceManifest.VoiceInfo,
+        reason: String
+    ) {
+        val report = runCatching {
+            AcapelaVoiceDiagnostics.report(
+                rootDir = dataDirectory,
+                voiceDir = voice.dir,
+                configFile = voice.configFile,
+                registrationLength = voice.registration.length
+            )
+        }.getOrElse { t ->
+            "تعذر بناء التشخيص: ${t.javaClass.simpleName}"
+        }
+        Log.e(TAG, "تشخيص فشل الصوت ($reason):\n$report")
+        HostLog.e(
+            HostProtocol.ENGINE_ACAPELA,
+            "تشخيص فشل الصوت ($reason):"
+        )
+        report.lineSequence()
+            .filter { it.isNotBlank() }
+            .forEach { line ->
+                HostLog.e(HostProtocol.ENGINE_ACAPELA, "  $line")
+            }
     }
 
     private fun setExtendedProperty(
