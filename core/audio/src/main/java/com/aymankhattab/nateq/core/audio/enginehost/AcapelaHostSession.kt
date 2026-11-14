@@ -148,8 +148,8 @@ internal class AcapelaHostSession(
 
         /**
          * مسارات البحث عن الأصوات، مع تجهيز المجلدات بما تحتاجه
-         * المكتبة (بلا توليد تهيئة مصطنعة — انظر
-         * [AcapelaVoiceManifest.ensureVoiceConfigs]).
+         * المكتبة: تدقيق التهيئة المصطنعة وتوليد `.ini` الغائب
+         * (انظر [AcapelaVoiceManifest.ensureVoiceConfigs]).
          */
         internal fun collectVoiceSearchPaths(
             baseDir: File,
@@ -187,7 +187,7 @@ internal class AcapelaHostSession(
                     paths.add(base.absolutePath)
                 }
             }
-            // `ensureVoiceConfigs` قد تكتب ملفات `.inf` جديدة، فأي لقطة
+            // `ensureVoiceConfigs` قد تولّد ملف `.ini` غائباً، فأي لقطة
             // تعداد سابقة صارت قديمة وتُبطَل قبل أول قراءة لاحقة.
             AcapelaVoiceManifest.invalidateVoicesCache()
             return paths.toTypedArray()

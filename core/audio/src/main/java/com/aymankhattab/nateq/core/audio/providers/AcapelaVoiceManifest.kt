@@ -32,6 +32,47 @@ object AcapelaVoiceManifest {
         "bvcu", "dat", "bnf", "pho", "mdd", "hdr"
     )
 
+    /** امتداد ملف البيانات ← مفتاح التوجيه المقابل في `<stem>.ini`. */
+    private val INI_KEY_BY_EXTENSION = linkedMapOf(
+        "bvcu" to "FILEMAP",
+        "dat" to "FILE",
+        "bnf" to "BNF",
+        "phm" to "PHM",
+        "ivx" to "IVX",
+        "mbr" to "MBR",
+        "slv" to "SLV",
+        "sll" to "SLL",
+        "alf" to "ALF",
+        "erf" to "ERF",
+        "lpc" to "LPC",
+        "ann" to "ANN",
+        "pom" to "POM",
+        "hpa" to "HPA",
+        "stl" to "STL"
+    )
+
+    /**
+     * المفاتيح التوجيهية المقبولة من `.inf` عند توليد `.ini`.
+     *
+     * **ليست كلها:** `PATH` و`MODE` لهما في المحمّل نمطان يحتاجان رمزاً
+     * إضافياً بين المفتاح والقيمة (`PATH %s "%[^"]"`)، ولا يُخترع رمزٌ
+     * مجهول؛ والمجلد ووضع الصوت يصلان أصلاً إلى `load_voice`.
+     * و`ENDIAN_*` تصف ترتيب البايت لا ملفاً يُحمَّل.
+     */
+    private val INI_DIRECTIVE_KEYS = setOf(
+        "FILE", "FILEMAP", "BNF", "PHM", "IVX", "MBR", "SLV", "SLL",
+        "ALF", "ERF", "LPC", "ANN", "POM", "HPA", "STL"
+    )
+
+    /**
+     * سطر توجيه: `KEY = "value"` أو `KEY "value"` أو `KEY "value" [ RAM ]`.
+     * القيمة المقتبسة إلزامية، فالسطر بلا اقتباس ليس توجيهاً.
+     */
+    private val INI_DIRECTIVE_REGEX = Regex(
+        "([A-Za-z_][A-Za-z0-9_]*)\\s*(?:=\\s*)?\"([^\"]+)\"" +
+            "\\s*(?:\\[\\s*([^\\]]*?)\\s*])?"
+    )
+
     /**
      * عمر نتيجة التعداد المخزَّنة (ms).
      *
@@ -415,15 +456,18 @@ object AcapelaVoiceManifest {
      * إزالة ملفات التهيئة **المصطنعة** التي ثُبِت أنها بلا أي توجيه
      * صوتي، وعند وجود ملف `.inf` غنيّ سليم في المجلد نفسه فقط.
      *
-     * **لماذا الحذف لا الكتابة:** المكتبة الأصلية تبني مسار `.ini` من
-     * اسم `.inf`؛ فإن سبق سجلٌّ مصطنع (speaker فقط، بلا FILE/FILEMAP)
+     * **لماذا الحذف لا الكتابة هنا:** المكتبة الأصلية تبني مسار `.ini`
+     * من اسم `.inf`؛ فإن سبق سجلٌّ مصطنع (speaker فقط، بلا FILE/FILEMAP)
      * الصوتَ الحقيقي في `find_voices` فشل تحميل الصوت بصمت. وكانت
      * النسخة السابقة **تكتب** تهيئة مصطنعة وتستبدل الصالح، فتفقد
      * الصوت توجيهه — وهو مسار الصمت الأقوى. هنا قراءةٌ للتمييز
-     * وحذفٌ للمصطنع المثبت فقط.
+     * وحذفٌ للسجل المصطنع فقط.
      *
-     * **حماية الصوت العامل:** لا يُحذف `.ini` غنيّ أبداً، ولا يُحذف
-     * شيء إذا لم يوجد `.inf` غنيّ في المجلد نفسه.
+     * **`.ini` لا يُحذف هنا أبداً:** صار ملفاً نافعاً يُولَّد عند غيابه
+     * ([ensureIniFor])، وحذفُه يهدم التهيئة التي يعتمد عليها المحمّل.
+     *
+     * **حماية الصوت العامل:** لا يُحذف شيء إذا لم يوجد `.inf` غنيّ في
+     * المجلد نفسه.
      */
     fun pruneSyntheticConfigs(baseDir: File) {
         if (!baseDir.exists() || !baseDir.isDirectory) return
@@ -443,19 +487,13 @@ object AcapelaVoiceManifest {
                     )
                     if (corrIni.exists() && isRichConfig(corrIni)) continue
                     runCatching { inf.delete() }
-                    if (corrIni.exists() &&
-                        isContentlessConfig(corrIni)
-                    ) {
-                        runCatching { corrIni.delete() }
-                    }
                 }
             }
         }
     }
 
     /**
-     * تجهيز مجلدات الأصوات بما تحتاجه المكتبة الأصلية **دون توليد أي
-     * ملف تهيئة من الصفر**:
+     * تجهيز مجلدات الأصوات بما تحتاجه المكتبة الأصلية:
      *
      * 1. تطبيع امتدادات الملفات (`Inf` ← `inf`) بنسخةٍ لا تحذف الأصل.
      * 2. إنشاء `userdicos` لأن المكتبة تكتب فيه قواميس المستخدم.
@@ -464,13 +502,13 @@ object AcapelaVoiceManifest {
      *    بيانات تسجيل.
      * 4. إكمال مفاتيح `.inf` الناقصة فقط (`speaker` و`ISOCode`
      *    و`NAME` و`freq`) بصيغة `KEY = "value"` التي يقرأها المحمّل.
+     * 5. توليد `<stem>.ini` **عند غيابه فقط** — انظر [ensureIniFor]؛
+     *    فغيابه وحده يجعل `load_voice` يعيد `-10` ثم `nSpeak` بـ`-2`.
      *
-     * **لماذا لا يُولَّد `.inf` أو `.ini` أو `.cfg`:** عقد MultiTTS
-     * يبني `.ini` من اسم `.inf`، ويجمع من كل قيمة مقتبسة فيه مسار
-     * ملفٍ نسبيّ لينسخه إلى مجلد التهيئة. فملف `.inf` مصطنعٌ بمفاتيح
-     * وصفية فقط لا يحمل أي مسار بيانات، فيُشغّل المكتبة على مجلدٍ
-     * خالٍ من `.bvcu`/`.dat` فيفشل `nInit` — وهو جذر «فشل تهيئة
-     * المحرك». الحزم الحقيقية تحمل مفاتيحها ومساراتها بنفسها.
+     * **لا يُولَّد `.inf` مصطنع أبداً:** ملف `.inf` بلا مسارات بيانات
+     * يُشغّل المكتبة على مجلدٍ خالٍ فيفشل `nInit`. الحزم الحقيقية تحمل
+     * `.inf` بنفسها، والتوليد هنا محصورٌ في `.ini` المشتقّ من محتوى
+     * `.inf` ومن ملفات البيانات الموجودة فعلاً.
      */
     fun ensureVoiceConfigs(baseDir: File) {
         if (!baseDir.exists() || !baseDir.isDirectory) return
@@ -484,9 +522,136 @@ object AcapelaVoiceManifest {
                 } ?: emptyArray()
                 for (inf in infFiles) {
                     completeInfProperties(inf)
+                    ensureIniFor(inf)
                 }
             }
         }
+    }
+
+    /** سطر توجيه في `<stem>.ini`: مفتاحٌ وقيمةٌ وقسمُ تحميل. */
+    private data class IniEntry(
+        val key: String,
+        val value: String,
+        val section: String
+    )
+
+    /**
+     * توليد `<stem>.ini` **فقط عند غيابه**.
+     *
+     * **لماذا:** `find_voices` يشتقّ مسار ملف اللغة من مسار `.inf`
+     * (استبدال حرفه الأخير بـ`i`) ويحفظه، ثم يمرّره `load_voice` إلى
+     * `initLanguageDbaNewEx`. فإن غاب الملف أعاد `NULL`، فعاد
+     * `load_voice` بـ`-10` وظلّ مؤشّر الصوت فارغاً ففشل `nSpeak` بـ`-2`
+     * بلا عيّنات — وهو عين العطل الذي نعالجه.
+     *
+     * **الصيغة:** `KEY "value" [ RAM ]`؛ فعدّاد الأسطر الأول
+     * (`%s "%[^"]"`) يقبلها فتتجاوز البوابة الحاسمة (سطرٌ واحد على
+     * الأقل وإلا `NULL`)، وعدّاد الدورة الثاني
+     * (`%s "%[^"]" [ %[^] ] ]`) يحوّلها إلى مُدخل فعلي يُمرَّر إلى
+     * `BABILE_init`. والسطر العاري `KEY "value"` يمرّ من البوابة وحدها
+     * ولا يصير مُدخلاً، فلا يكفي.
+     *
+     * **المصدر:** توجيهات `.inf` نفسها أولاً، ثم تُستكمل المفاتيح
+     * الغائبة من ملفات البيانات الموجودة فعلاً على القرص. ولا تُكتب
+     * قيمةٌ بلا ملفٍ يقابلها، ولا يُكتب ملف إن لم يبق توجيه صالح.
+     */
+    private fun ensureIniFor(inf: File) {
+        val dir = inf.parentFile ?: return
+        val ini = File(dir, "${inf.nameWithoutExtension}.ini")
+        if (ini.exists()) return
+        val fromInf = directivesFromInf(inf, dir)
+        val covered = fromInf.map { it.key }.toSet()
+        val entries = fromInf + entriesFromDataFiles(dir)
+            .filter { it.key !in covered }
+        if (entries.isEmpty()) return
+        val content = buildString {
+            for (entry in entries) {
+                append(entry.key).append(" \"").append(entry.value)
+                    .append("\" [ ").append(entry.section).append(" ]\n")
+            }
+        }
+        val written = runCatching {
+            ini.writeText(content, StandardCharsets.ISO_8859_1)
+            ini.isFile
+        }.getOrDefault(false)
+        if (written) {
+            diagLog(
+                "توليد ${ini.name} (${entries.size} توجيهاً): " +
+                    entries.joinToString(",") { it.key }
+            )
+        }
+    }
+
+    /** التوجيهات المقروءة من `.inf` والموجودة ملفاتها فعلاً. */
+    private fun directivesFromInf(
+        inf: File,
+        dir: File
+    ): List<IniEntry> {
+        val text = runCatching {
+            inf.readText(StandardCharsets.ISO_8859_1)
+        }.getOrNull() ?: return emptyList()
+        val seen = mutableSetOf<String>()
+        val entries = mutableListOf<IniEntry>()
+        for (line in text.lineSequence()) {
+            for (match in INI_DIRECTIVE_REGEX.findAll(line)) {
+                val key = match.groupValues[1].uppercase(Locale.ROOT)
+                if (key !in INI_DIRECTIVE_KEYS) continue
+                val value = resolveVoiceFile(dir, match.groupValues[2])
+                    ?: continue
+                if (!seen.add("$key|$value")) continue
+                val section = match.groupValues[3].trim()
+                    .ifEmpty { "RAM" }
+                entries.add(IniEntry(key, value, section))
+            }
+        }
+        return entries
+    }
+
+    /**
+     * بديلٌ عند `.inf` بلا توجيهات: تُشتق التوجيهات من ملفات البيانات
+     * الموجودة فعلاً، فتبقى التهيئة مطابقةً لما على القرص.
+     */
+    private fun entriesFromDataFiles(dir: File): List<IniEntry> =
+        dir.walkTopDown().maxDepth(3)
+            .filter { it.isFile && it.length() > 0L }
+            .mapNotNull { file ->
+                val key = INI_KEY_BY_EXTENSION[
+                    file.extension.lowercase(Locale.ROOT)
+                ] ?: return@mapNotNull null
+                IniEntry(
+                    key,
+                    file.relativeTo(dir).path.replace('\\', '/'),
+                    "RAM"
+                )
+            }
+            .sortedBy { it.value.lowercase(Locale.ROOT) }
+            .distinctBy { "${it.key}|${it.value}" }
+            .toList()
+
+    /**
+     * مطابقة قيمة توجيهٍ بملفٍ موجود فعلاً داخل مجلد الصوت (بلا حساسية
+     * لحالة الأحرف)، وإرجاع مسارٍ نسبيٍّ يفهمه المحمّل. القيمة التي لا
+     * ملف لها تُسقط: تهيئةٌ تشير إلى ملف غائب تُفشل التحميل.
+     */
+    private fun resolveVoiceFile(dir: File, raw: String): String? {
+        val cleaned = raw.trim().trim('"').replace('\\', '/')
+            .removePrefix("./")
+        if (cleaned.isEmpty()) return null
+        if (File(dir, cleaned).isFile) return cleaned
+        val wanted = cleaned.lowercase(Locale.ROOT)
+        val wantedName = wanted.substringAfterLast('/')
+        var byName: String? = null
+        for (file in dir.walkTopDown().maxDepth(3)) {
+            if (!file.isFile) continue
+            val rel = file.relativeTo(dir).path.replace('\\', '/')
+            if (rel.lowercase(Locale.ROOT) == wanted) return rel
+            if (byName == null &&
+                file.name.lowercase(Locale.ROOT) == wantedName
+            ) {
+                byName = rel
+            }
+        }
+        return byName
     }
 
     /** نسخ ملف المفتاح `0x...` إلى مجلد الصوت نفسه (عقد MultiTTS). */

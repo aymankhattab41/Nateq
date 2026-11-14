@@ -191,11 +191,12 @@ class AcapelaVoiceManifestTest {
         assertTrue(mainInf.exists())
         assertTrue(mainIni.exists())
         assertFalse(stubInf.exists())
-        assertFalse(stubIni.exists())
+        // `.ini` لم يعد يُحذف: صار ملفاً نافعاً يُولَّد عند غيابه.
+        assertTrue(stubIni.exists())
     }
 
     @Test
-    fun ensureVoiceConfigs_neverGeneratesConfigForBvcuOnlyVoice() {
+    fun ensureVoiceConfigs_neverGeneratesIniWithoutInf() {
         val baseDir = tempFolder.newFolder("bvcu_only")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
         File(voiceFolder, "ar_sa_hd_salma_22k_lf.bvcu")
@@ -205,7 +206,7 @@ class AcapelaVoiceManifestTest {
 
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
 
-        // لا يُولَّد أي ملف تهيئة: المصطنع بلا مسارات بيانات يُفشل nInit.
+        // بلا `.inf` لا يرى `find_voices` المجلد أصلاً، فلا قيمة لـ`.ini`.
         assertFalse(File(voiceFolder, "Salma.inf").exists())
         assertFalse(File(voiceFolder, "Salma.ini").exists())
         assertFalse(File(voiceFolder, "Salma.cfg").exists())
@@ -252,6 +253,107 @@ class AcapelaVoiceManifestTest {
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
 
         assertTrue(File(voiceFolder, "0x1A2B3C4D").isFile)
+    }
+
+    @Test
+    fun ensureVoiceConfigs_generatesIniFromInfDirectives() {
+        val baseDir = tempFolder.newFolder("ini_from_inf")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
+        File(voiceFolder, "salma.dat").writeBytes(ByteArray(10_000))
+        File(voiceFolder, "salma_lf.bnf").writeBytes(ByteArray(10_000))
+        File(voiceFolder, "salma.inf").writeText(
+            "[Voice]\n" +
+                "speaker = \"Salma\"\n" +
+                "ISOCode = \"ara-SAU\"\n" +
+                "freq = \"22050\"\n" +
+                "FILEMAP = \"salma.bvcu\"\n" +
+                "BNF \"salma_lf.bnf\" [ RAM ]\n"
+        )
+
+        AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+
+        val text = File(voiceFolder, "salma.ini").readText()
+        assertTrue(text.contains("FILEMAP \"salma.bvcu\" [ RAM ]"))
+        assertTrue(text.contains("BNF \"salma_lf.bnf\" [ RAM ]"))
+        // المفاتيح الوصفية لا تُنقل إلى ملف اللغة: المحمّل لا يعرفها.
+        assertFalse(text.contains("speaker", ignoreCase = true))
+        assertFalse(text.contains("ISOCode", ignoreCase = true))
+        assertFalse(text.contains("freq", ignoreCase = true))
+    }
+
+    @Test
+    fun ensureVoiceConfigs_generatesRamSuffixedQuotedLines() {
+        val baseDir = tempFolder.newFolder("ini_line_shape")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "salma.inf").writeText(
+            "[Voice]\nspeaker = \"Salma\"\n"
+        )
+        File(voiceFolder, "salma_lf.slv").writeBytes(ByteArray(2_000))
+        File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
+
+        AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+
+        val lines = File(voiceFolder, "salma.ini").readLines()
+        assertTrue(lines.isNotEmpty())
+        // الصيغة تمرّ من بوّابة `%s "%[^"]"` ومن مُدخلات `[ %[^] ] ]`.
+        val shape = Regex("^[A-Z]+ \"[^\"]+\" \\[ [A-Z_]+ ]$")
+        for (line in lines) {
+            assertTrue("سطر تهيئة غير مطابق: $line", shape.matches(line))
+        }
+    }
+
+    @Test
+    fun ensureVoiceConfigs_derivesIniFromDataFiles() {
+        val baseDir = tempFolder.newFolder("ini_from_files")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "salma.inf").writeText(
+            "[Voice]\nspeaker = \"Salma\"\nISOCode = \"ara-SAU\"\n"
+        )
+        File(voiceFolder, "salma_lf.bvcu").writeBytes(ByteArray(10_000))
+        val nested = File(voiceFolder, "salma_lf").apply { mkdirs() }
+        File(nested, "salma_lf.sll").writeBytes(ByteArray(1_000))
+
+        AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+
+        val text = File(voiceFolder, "salma.ini").readText()
+        assertTrue(text.contains("FILEMAP \"salma_lf.bvcu\" [ RAM ]"))
+        // الملف المتداخل يُذكر بمسار نسبي يفهمه المحمّل.
+        assertTrue(text.contains("SLL \"salma_lf/salma_lf.sll\" [ RAM ]"))
+    }
+
+    @Test
+    fun ensureVoiceConfigs_leavesExistingIniUntouched() {
+        val baseDir = tempFolder.newFolder("ini_existing")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
+        File(voiceFolder, "salma.inf").writeText(
+            "[Voice]\nspeaker = \"Salma\"\n"
+        )
+        val original = "PATH RAM \".\"\n" +
+            "FILEMAP \"salma.bvcu\" [ RAM ]\n"
+        val ini = File(voiceFolder, "salma.ini")
+        ini.writeText(original)
+
+        AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+
+        assertEquals(original, ini.readText())
+    }
+
+    @Test
+    fun ensureVoiceConfigs_skipsDirectivesPointingToMissingFiles() {
+        val baseDir = tempFolder.newFolder("ini_missing_target")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "salma.inf").writeText(
+            "[Voice]\n" +
+                "speaker = \"Salma\"\n" +
+                "FILEMAP \"ghost.bvcu\" [ RAM ]\n"
+        )
+
+        AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+
+        // لا ملف بيانات ولا توجيه صالح: لا تهيئة تُشير إلى العدم.
+        assertFalse(File(voiceFolder, "salma.ini").exists())
     }
 
     @Test
