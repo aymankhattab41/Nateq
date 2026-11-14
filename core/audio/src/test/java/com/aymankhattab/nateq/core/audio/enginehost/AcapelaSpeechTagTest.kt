@@ -69,9 +69,9 @@ class AcapelaSpeechTagTest {
     }
 
     /**
-     * عقد ترتيب المرشحات: (a) المحتوى كاملاً كما هو، (b) نفسه والأسطر
-     * الجديدة مسافةٌ واحدة، (c) السطر الأول بلا اقتباس، (d) السطر الأول
-     * مع الاقتباس، (e) الرمز الحالي. ولا يُسقَط مرشحٌ مختلف.
+     * عقد ترتيب المرشحات من ملف 0x... بلا config.yaml:
+     * (a) المحتوى كاملاً، (b) الأسطر مسافةٌ، (c) السطر الأول بلا
+     * اقتباس، (d) مع الاقتباس، (e) الرمز الحالي.
      */
     @Test
     fun registrationCandidates_followsTheAgreedOrder() {
@@ -101,5 +101,90 @@ class AcapelaSpeechTagTest {
         assertEquals("key#9876#token", candidates[2].value)
         assertEquals("\"key#9876#token\"", candidates[3].value)
         assertEquals("7e88", candidates[4].value)
+    }
+
+    /**
+     * عقد مرشحات config.yaml: تأتي أولاً (f,g,h,i,j,k) قبل مرشحات
+     * الملف، وتُشتق من سطر param (voiceCode,email,hexCode).
+     *
+     * - f: email,hexCode
+     * - g: hexCode,email
+     * - h: hexCode وحده
+     * - i: email وحده
+     * - j: سطر param كاملاً
+     * - k: voiceCode وحده
+     */
+    @Test
+    fun registrationCandidates_configYamlParamComesBefore0xFile() {
+        val dir = tempFolder.newFolder("salma22k_hq")
+        // config.yaml فيه سطر param بالصيغة: voiceCode,email,hexCode
+        File(dir, "config.yaml").writeText(
+            "speaker: salma\n" +
+                "param: salma22k_hq," +
+                "test@example.com," +
+                "abcdef1234567890\n",
+            Charsets.UTF_8
+        )
+        // ملف 0x... احتياطي
+        File(dir, "0x00169729").writeText(
+            "hexFileContent\n",
+            Charsets.UTF_8
+        )
+
+        val candidates = AcapelaHostSession.registrationCandidates(
+            dir,
+            "currentReg"
+        )
+
+        // config.yaml يجب أن يأتي أولاً
+        val letters = candidates.map { it.letter }
+        val fIdx = letters.indexOf('f')
+        val aIdx = letters.indexOf('a')
+        assertTrue(
+            "مرشح f (config.yaml) يجب أن يسبق مرشح a (0x...)",
+            fIdx in letters.indices && aIdx in letters.indices &&
+                fIdx < aIdx
+        )
+
+        // التحقق من قيم المرشحات المشتقة
+        val byLetter = candidates.associateBy { it.letter }
+        assertEquals(
+            "test@example.com,abcdef1234567890",
+            byLetter['f']?.value
+        )
+        assertEquals(
+            "abcdef1234567890,test@example.com",
+            byLetter['g']?.value
+        )
+        assertEquals("abcdef1234567890", byLetter['h']?.value)
+        assertEquals("test@example.com", byLetter['i']?.value)
+        assertEquals("salma22k_hq", byLetter['k']?.value)
+    }
+
+    /**
+     * عقد splitConfigYamlParam: يُقسَّم السطر على فاصلة ويُعيد الأجزاء
+     * الثلاثة، وما دون ثلاثة أجزاء يُعيد null.
+     */
+    @Test
+    fun splitConfigYamlParam_parsesThreeParts() {
+        val manifest = com.aymankhattab.nateq.core.audio.providers
+            .AcapelaVoiceManifest
+
+        val result = manifest.splitConfigYamlParam(
+            "salma22k_hq,user@host.com,1234567890abcdef"
+        )
+        assertEquals(
+            Triple(
+                "salma22k_hq",
+                "user@host.com",
+                "1234567890abcdef"
+            ),
+            result
+        )
+
+        // أقل من ثلاثة أجزاء
+        assertEquals(null, manifest.splitConfigYamlParam("only,two"))
+        assertEquals(null, manifest.splitConfigYamlParam("single"))
+        assertEquals(null, manifest.splitConfigYamlParam(""))
     }
 }

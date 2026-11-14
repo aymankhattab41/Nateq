@@ -1425,6 +1425,66 @@ object AcapelaVoiceManifest {
     }
 
     /**
+     * قراءة سطر `param` من `config.yaml` في مجلد الصوت أو مجلده الأب،
+     * وإرجاعه خاماً بلا فك تشفير. البحث يبحث عن سطر:
+     *   `param: VALUE` أو `param = VALUE` أو `"param": "VALUE"`.
+     *
+     * يُستخدم من [AcapelaHostSession.registrationCandidates] لبناء
+     * مرشحات التسجيل المشتقة من حزمة MultiTTS (voiceId,email,hexCode).
+     */
+    fun readParamFromConfigYaml(voiceDir: File): String? {
+        val dirs = listOfNotNull(voiceDir, voiceDir.parentFile)
+        val paramRegex = Regex(
+            """(?:^|\n)\s*"?param"?\s*[:=]\s*"?([^"\r\n#]+)"?""",
+            setOf(RegexOption.MULTILINE)
+        )
+        for (d in dirs) {
+            val f = File(d, "config.yaml")
+            if (!f.isFile) continue
+            val content = runCatching {
+                f.readText(StandardCharsets.UTF_8)
+            }.getOrNull() ?: continue
+            val match = paramRegex.find(content) ?: continue
+            val raw = match.groupValues.getOrNull(1)?.trim()
+                .orEmpty()
+            if (raw.isNotBlank()) {
+                diagLog(
+                    "[config.yaml] عُثر على param في ${d.name}/" +
+                        "config.yaml (طول=${raw.length})"
+                )
+                return raw
+            }
+        }
+        diagLog("[config.yaml] لم يُعثر على param في config.yaml")
+        return null
+    }
+
+    /**
+     * تقسيم سطر `param` المكوّن من ثلاثة أجزاء مفصولة بفاصلة:
+     * `voiceCode,email,hexCode16` — ويُعيد الأجزاء الثلاثة أو null
+     * إن لم يتطابق الشكل.
+     *
+     * الصيغة المتوقعة:
+     *   جزء[0] = كود الصوت (مثل salma22k_hq)
+     *   جزء[1] = الإيميل
+     *   جزء[2] = كود 16 حرف hex
+     */
+    fun splitConfigYamlParam(
+        raw: String
+    ): Triple<String, String, String>? {
+        val parts = raw.split(',')
+        if (parts.size < 3) return null
+        val voiceCode = parts[0].trim()
+        val email = parts[1].trim()
+        val hexCode = parts[2].trim()
+        if (voiceCode.isBlank() ||
+            email.isBlank() ||
+            hexCode.isBlank()
+        ) return null
+        return Triple(voiceCode, email, hexCode)
+    }
+
+    /**
      * قائمة الأصوات المفروزة من كل المجلدات
      * والمجلدات الفرعية.
      *

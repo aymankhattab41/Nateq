@@ -102,13 +102,23 @@ internal class AcapelaHostSession(
             (pitch * 100f).roundToInt().coerceIn(50, 200)
 
         /**
-         * مرشحات بيانات التسجيل من ملف المفتاح `0x...` بالترتيب المقرر:
+         * مرشحات بيانات التسجيل بالترتيب المقرر:
          *
-         * - `a`: المحتوى كاملاً كما هو (بما فيه الاقتباس والمسافات و`#`
-         *   والأسطر الجديدة).
-         * - `b`: المحتوى نفسه والأسطر الجديدة مستبدلة بمسافة واحدة.
-         * - `c`: السطر الأول وحده بعد إزالة علامتَي الاقتباس المحيطتين.
-         * - `d`: السطر الأول وحده مع إبقاء الاقتباسين.
+         * **مرشحات config.yaml (الأولوية العليا):**
+         * يقرأ سطر `param` من `config.yaml` في مجلد الصوت، يُقسَّم
+         * على فاصلة إلى: [voiceCode, email, hexCode].
+         * - `f`: email,hexCode (المرشح الرئيسي)
+         * - `g`: hexCode,email (ترتيب عكسي)
+         * - `h`: hexCode وحده
+         * - `i`: email وحده
+         * - `j`: سطر param كاملاً كما هو
+         * - `k`: voiceCode وحده
+         *
+         * **مرشحات ملف 0x... (احتياطي):**
+         * - `a`: المحتوى كاملاً كما هو.
+         * - `b`: المحتوى والأسطر الجديدة مستبدلة بمسافة.
+         * - `c`: السطر الأول بعد إزالة الاقتباسين.
+         * - `d`: السطر الأول مع إبقاء الاقتباسين.
          * - `e`: الرمز الحالي المقروء من بيانات الصوت.
          *
          * **لا يُسجَّل محتوى أي مرشح** — الحرف والطول وكود العودة فقط.
@@ -117,6 +127,37 @@ internal class AcapelaHostSession(
             dir: File,
             current: String
         ): List<RegistrationCandidate> {
+            val result = mutableListOf<RegistrationCandidate>()
+
+            // ── مرشحات config.yaml ──
+            val rawParam =
+                AcapelaVoiceManifest.readParamFromConfigYaml(dir)
+            if (!rawParam.isNullOrBlank()) {
+                val parsed = AcapelaVoiceManifest
+                    .splitConfigYamlParam(rawParam)
+                if (parsed != null) {
+                    val (voiceCode, email, hexCode) = parsed
+                    listOf(
+                        'f' to "$email,$hexCode",
+                        'g' to "$hexCode,$email",
+                        'h' to hexCode,
+                        'i' to email,
+                        'j' to rawParam,
+                        'k' to voiceCode
+                    ).filter { it.second.isNotBlank() }
+                        .distinctBy { it.second }
+                        .forEach { (letter, value) ->
+                            result.add(
+                                RegistrationCandidate(letter, value)
+                            )
+                        }
+                } else {
+                    // param موجود لكن غير مقسَّم لثلاثة: نجرّبه كاملاً
+                    result.add(RegistrationCandidate('j', rawParam))
+                }
+            }
+
+            // ── مرشحات ملف 0x... (احتياطي) ──
             val raw = AcapelaVoiceManifest.findHexRegistrationFile(dir)
                 ?.let { file ->
                     runCatching {
@@ -126,21 +167,27 @@ internal class AcapelaHostSession(
                 .orEmpty()
                 .removePrefix("\uFEFF")
             val full = raw.trim()
-            val oneLine = full.replace(Regex("\\r\\n|[\\r\\n]"), " ").trim()
+            val oneLine = full.replace(
+                Regex("\\r\\n|[\\r\\n]"),
+                " "
+            ).trim()
             val firstLine = full.lineSequence().firstOrNull()
                 ?.trim().orEmpty()
             val firstUnquoted = firstLine
                 .removeSurrounding("\"").trim()
-            return listOf(
+            listOf(
                 'a' to full,
                 'b' to oneLine,
                 'c' to firstUnquoted,
                 'd' to firstLine,
                 'e' to current.trim()
-            )
-                .filter { it.second.isNotEmpty() }
+            ).filter { it.second.isNotEmpty() }
                 .distinctBy { it.second }
-                .map { RegistrationCandidate(it.first, it.second) }
+                .forEach { (letter, value) ->
+                    result.add(RegistrationCandidate(letter, value))
+                }
+
+            return result.distinctBy { it.value }
         }
 
         private fun withTrailingSlash(path: String): String =
@@ -1138,7 +1185,7 @@ internal class AcapelaHostSession(
                 .takeIf { it.isFile }
                 ?.readText(StandardCharsets.UTF_8)
         }.getOrNull() ?: return null
-        return stored.trim().firstOrNull()?.takeIf { it in 'a'..'e' }
+        return stored.trim().firstOrNull()?.takeIf { it in 'a'..'k' }
     }
 
     /** حفظ حرف المرشح الناجح بجانب الصوت؛ فشل الكتابة غير قاتل. */
