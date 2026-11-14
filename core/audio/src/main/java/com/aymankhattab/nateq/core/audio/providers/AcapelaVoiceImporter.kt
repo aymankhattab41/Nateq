@@ -155,6 +155,17 @@ object AcapelaVoiceImporter {
                     ) || f.name.equals("registration.txt", ignoreCase = true))
                 }
 
+            // البحث عن config.yaml في شجرة الملفات المستخرجة:
+            // قد يكون في مجلد مُشفَّر بـbase64 أو في جذر الحزمة
+            val configYamlSource = tempUnpack.walkTopDown()
+                .maxDepth(6)
+                .firstOrNull { f ->
+                    f.isFile && f.name.equals(
+                        "config.yaml",
+                        ignoreCase = true
+                    )
+                }
+
             // البحث عن مجلدات الأصوات الصالحة داخل المجلد المؤقت
             var voiceDirs = AcapelaVoiceManifest.completeVoiceDirs(tempUnpack)
             if (voiceDirs.isEmpty()) {
@@ -245,6 +256,27 @@ object AcapelaVoiceImporter {
                         hexFile.copyTo(
                             File(targetDir, hexFile.name),
                             overwrite = true
+                        )
+                    }
+                }
+                // نسخ config.yaml إلى مجلد الصوت — ضروري لفحص التسجيل
+                if (configYamlSource != null) {
+                    runCatching {
+                        configYamlSource.copyTo(
+                            File(targetDir, "config.yaml"),
+                            overwrite = true
+                        )
+                    }.onSuccess {
+                        Log.i(
+                            TAG,
+                            "نسخ config.yaml إلى ${targetDir.name}/" +
+                                "config.yaml"
+                        )
+                    }.onFailure { t ->
+                        Log.w(
+                            TAG,
+                            "تعذّر نسخ config.yaml إلى ${targetDir.name}",
+                            t
                         )
                     }
                 }

@@ -87,11 +87,14 @@ internal class AcapelaHostSession(
             ".nateq_acapela_registration"
 
         /**
-         * مرشح بيانات تسجيل واحد: حرفه المعلن في السجل وقيمته الحقيقية.
-         * القيمة لا تُسجَّل إطلاقاً — الطول والحرف فقط.
+         * مرشح بيانات تسجيل واحد.
+         * - [letter]: حرف داخلي للحفظ والمقارنة.
+         * - [label]: اسم واضح يُكتب في السجل (بلا قيمة حقيقية).
+         * - [value]: القيمة الفعلية — لا تُسجَّل إطلاقاً.
          */
         internal data class RegistrationCandidate(
             val letter: Char,
+            val label: String,
             val value: String
         )
 
@@ -107,21 +110,22 @@ internal class AcapelaHostSession(
          * **مرشحات config.yaml (الأولوية العليا):**
          * يقرأ سطر `param` من `config.yaml` في مجلد الصوت، يُقسَّم
          * على فاصلة إلى: [voiceCode, email, hexCode].
-         * - `f`: email,hexCode (المرشح الرئيسي)
-         * - `g`: hexCode,email (ترتيب عكسي)
-         * - `h`: hexCode وحده
-         * - `i`: email وحده
-         * - `j`: سطر param كاملاً كما هو
-         * - `k`: voiceCode وحده
+         * - `f` / email_code: email,hexCode
+         * - `g` / code_email: hexCode,email
+         * - `h` / code_only: hexCode وحده
+         * - `i` / email_only: email وحده
+         * - `j` / full_param: سطر param كاملاً
+         * - `k` / voice_code: voiceCode وحده
          *
-         * **مرشحات ملف 0x... (احتياطي):**
-         * - `a`: المحتوى كاملاً كما هو.
-         * - `b`: المحتوى والأسطر الجديدة مستبدلة بمسافة.
-         * - `c`: السطر الأول بعد إزالة الاقتباسين.
-         * - `d`: السطر الأول مع إبقاء الاقتباسين.
-         * - `e`: الرمز الحالي المقروء من بيانات الصوت.
+         * **مرشحات ملف 0x... (احتياطي — فقط إن غاب config.yaml
+         * أو فشلت كل مرشحاته):**
+         * - `a` / hex_full: المحتوى كاملاً كما هو.
+         * - `b` / hex_oneline: المحتوى والأسطر مسافة.
+         * - `c` / hex_first_unquoted: السطر الأول بلا اقتباس.
+         * - `d` / hex_first_line: السطر الأول مع الاقتباس.
+         * - `e` / hex_current: الرمز الحالي من بيانات الصوت.
          *
-         * **لا يُسجَّل محتوى أي مرشح** — الحرف والطول وكود العودة فقط.
+         * **لا يُسجَّل محتوى أي مرشح** — label والطول وأكواد العودة.
          */
         internal fun registrationCandidates(
             dir: File,
@@ -138,26 +142,29 @@ internal class AcapelaHostSession(
                 if (parsed != null) {
                     val (voiceCode, email, hexCode) = parsed
                     listOf(
-                        'f' to "$email,$hexCode",
-                        'g' to "$hexCode,$email",
-                        'h' to hexCode,
-                        'i' to email,
-                        'j' to rawParam,
-                        'k' to voiceCode
-                    ).filter { it.second.isNotBlank() }
-                        .distinctBy { it.second }
-                        .forEach { (letter, value) ->
+                        Triple('f', "email_code", "$email,$hexCode"),
+                        Triple('g', "code_email", "$hexCode,$email"),
+                        Triple('h', "code_only", hexCode),
+                        Triple('i', "email_only", email),
+                        Triple('j', "full_param", rawParam),
+                        Triple('k', "voice_code", voiceCode)
+                    ).filter { it.third.isNotBlank() }
+                        .distinctBy { it.third }
+                        .forEach { (letter, label, value) ->
                             result.add(
-                                RegistrationCandidate(letter, value)
+                                RegistrationCandidate(
+                                    letter, label, value
+                                )
                             )
                         }
                 } else {
-                    // param موجود لكن غير مقسَّم لثلاثة: نجرّبه كاملاً
-                    result.add(RegistrationCandidate('j', rawParam))
+                    result.add(
+                        RegistrationCandidate('j', "full_param", rawParam)
+                    )
                 }
             }
 
-            // ── مرشحات ملف 0x... (احتياطي) ──
+            // ── مرشحات ملف 0x... (احتياطي فقط) ──
             val raw = AcapelaVoiceManifest.findHexRegistrationFile(dir)
                 ?.let { file ->
                     runCatching {
@@ -176,15 +183,17 @@ internal class AcapelaHostSession(
             val firstUnquoted = firstLine
                 .removeSurrounding("\"").trim()
             listOf(
-                'a' to full,
-                'b' to oneLine,
-                'c' to firstUnquoted,
-                'd' to firstLine,
-                'e' to current.trim()
-            ).filter { it.second.isNotEmpty() }
-                .distinctBy { it.second }
-                .forEach { (letter, value) ->
-                    result.add(RegistrationCandidate(letter, value))
+                Triple('a', "hex_full", full),
+                Triple('b', "hex_oneline", oneLine),
+                Triple('c', "hex_first_unquoted", firstUnquoted),
+                Triple('d', "hex_first_line", firstLine),
+                Triple('e', "hex_current", current.trim())
+            ).filter { it.third.isNotEmpty() }
+                .distinctBy { it.third }
+                .forEach { (letter, label, value) ->
+                    result.add(
+                        RegistrationCandidate(letter, label, value)
+                    )
                 }
 
             return result.distinctBy { it.value }
@@ -1074,6 +1083,9 @@ internal class AcapelaHostSession(
         AcapelaVoiceManifest.normalizeExtensionsCase(voice.dir)
         File(voice.dir, "userdicos").mkdirs()
 
+        // تشخيص ملفات الصوت مرة واحدة عند بداية الفحص
+        AcapelaVoiceManifest.logVoiceFilesDiagnostics(voice.dir)
+
         Log.i(
             TAG,
             "بدء تهيئة المحرك الممتد: ${candidates.size} مرشحاً للتسجيل"
@@ -1364,33 +1376,38 @@ internal class AcapelaHostSession(
         }
     }
 
-    /** سطر تشخيص واحد لكل مرشح: الحرف والطول وأكواد النداءات فقط. */
+    /** سطر تشخيص واحد لكل مرشح: label والطول وأكواد النداءات فقط. */
     private fun logProbe(
         voice: AcapelaVoiceManifest.VoiceInfo,
         candidate: RegistrationCandidate,
         codes: ProbeCodes
     ) {
         val speaker = voice.rawSpeaker ?: voice.voiceName
-        val line = "فحص تسجيل: letter=${candidate.letter}, " +
+        val line = "فحص تسجيل: candidate=${candidate.label}" +
+            "(${candidate.letter}), " +
             "len=${candidate.value.length}, " +
             "codes=[${codes.format()}], voice=$speaker"
         Log.i(TAG, line)
         HostLog.i(HostProtocol.ENGINE_ACAPELA, line)
     }
 
-    /** سطر واحد واضح عند رفض كل المرشحات: الحروف وأكواد العودة. */
+    /**
+     * سطر واحد واضح عند رفض كل المرشحات:
+     * اسم كل مرشح (label) وأكواد nSetProperty وnSpeak — بلا قيم.
+     */
     private fun logAllCandidatesFailed(
         outcomes: List<ProbeOutcome>,
         exhausted: Boolean
     ) {
-        val spent = if (exhausted) " — نفدت ميزانية الفحص قبل تجربة الباقي"
-        else ""
+        val spent =
+            if (exhausted) " — نفدت ميزانية الفحص قبل تجربة الباقي"
+            else ""
         val tried = if (outcomes.isEmpty()) {
             "لم يُجرَّب أي مرشح"
         } else {
             outcomes.joinToString(" | ") {
-                "${it.candidate.letter}(" +
-                    "len=${it.candidate.value.length}, " +
+                "${it.candidate.label}(${it.candidate.letter}," +
+                    "len=${it.candidate.value.length}," +
                     "${it.codes.format()})"
             }
         }

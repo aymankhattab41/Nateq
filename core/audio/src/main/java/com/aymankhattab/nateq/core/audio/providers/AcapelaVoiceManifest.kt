@@ -854,6 +854,99 @@ object AcapelaVoiceManifest {
         runCatching { HostLog.i(HostProtocol.ENGINE_ACAPELA, msg) }
     }
 
+    /**
+     * تشخيص حالة ملفات الصوت الحرجة بعد الاستيراد:
+     * - هل `config.yaml` موجود وعدد أجزاء `param` وأطوالها
+     * - محتوى مقنَّع وحجم `salma_lf.txt`
+     * - محتوى مقنَّع وحجم ملف `.inf`
+     *
+     * لا تُسجَّل قيم الإيميل أو الكود — الأطوال فقط.
+     */
+    fun logVoiceFilesDiagnostics(voiceDir: File) {
+        diagLog("[تشخيص ملفات الصوت] المجلد: ${voiceDir.name}")
+
+        // config.yaml
+        val configYaml = File(voiceDir, "config.yaml")
+        val configExists = configYaml.isFile
+        diagLog(
+            "[config.yaml] موجود=${if (configExists) "نعم" else "لا"}" +
+                (if (configExists) " | حجم=${configYaml.length()} بايت"
+                else "")
+        )
+        if (configExists) {
+            val rawParam = readParamFromConfigYaml(voiceDir)
+            if (rawParam != null) {
+                val parts = rawParam.split(',')
+                val lengths = parts.mapIndexed { i, p ->
+                    "جزء$i:${p.trim().length}"
+                }.joinToString(", ")
+                diagLog(
+                    "[config.yaml/param] عدد الأجزاء=${parts.size}" +
+                        " | الأطوال=[$lengths]"
+                )
+            } else {
+                diagLog("[config.yaml/param] سطر param غير موجود")
+            }
+        }
+
+        // salma_lf.txt أو أي *_lf.txt
+        val lfFiles = voiceDir.listFiles { f ->
+            f.isFile && f.name.endsWith("_lf.txt", ignoreCase = true)
+        } ?: emptyArray()
+        if (lfFiles.isEmpty()) {
+            diagLog("[*_lf.txt] غير موجود")
+        } else {
+            for (lf in lfFiles) {
+                val bytes = runCatching { lf.readBytes() }
+                    .getOrDefault(ByteArray(0))
+                val masked = maskBytes(bytes, 32)
+                diagLog(
+                    "[${lf.name}] حجم=${lf.length()} بايت" +
+                        " | معاينة_مقنَّعة=$masked"
+                )
+            }
+        }
+
+        // ملف .inf
+        val infFiles = voiceDir.listFiles { f ->
+            f.isFile && f.extension.equals("inf", ignoreCase = true)
+        } ?: emptyArray()
+        if (infFiles.isEmpty()) {
+            diagLog("[.inf] غير موجود")
+        } else {
+            for (inf in infFiles) {
+                val bytes = runCatching { inf.readBytes() }
+                    .getOrDefault(ByteArray(0))
+                val masked = maskBytes(bytes, 48)
+                diagLog(
+                    "[${inf.name}] حجم=${inf.length()} بايت" +
+                        " | معاينة_مقنَّعة=$masked"
+                )
+            }
+        }
+    }
+
+    /**
+     * معاينة مقنَّعة لأول [previewLen] بايت: الأحرف الأبجدية تُخفى
+     * بـ`a`، الأرقام بـ`9`، علامات الترقيم والمسافات تُبقى كما هي.
+     */
+    private fun maskBytes(bytes: ByteArray, previewLen: Int): String {
+        val preview = bytes.take(previewLen)
+        val sb = StringBuilder()
+        for (b in preview) {
+            val c = b.toInt().and(0xFF).toChar()
+            when {
+                c.isLetter() -> sb.append('a')
+                c.isDigit() -> sb.append('9')
+                c == '\n' -> sb.append('↵')
+                c == '\r' -> { /* تجاهل */ }
+                else -> sb.append(c)
+            }
+        }
+        val hidden = bytes.size - preview.size
+        return if (hidden > 0) "$sb…(+$hidden)" else sb.toString()
+    }
+
     private fun maskContent(s: String): String {
         if (s.isEmpty()) return "(فارغ)"
         if (s.length <= 4) return "$s (طول=${s.length})"
@@ -1072,11 +1165,29 @@ object AcapelaVoiceManifest {
         return ""
     }
 
-    /** عقد MultiTTS لبيانات التسجيل: محارف آمنة فقط بلا مسافات. */
-    private fun isRegistrationMetadata(value: String): Boolean =
-        value.isNotBlank() &&
-            !value.matches(HEX_REGISTRATION_REGEX) &&
-            value.matches(REGISTRATION_METADATA_REGEX)
+    /**
+     * عقد MultiTTS لبيانات التسجيل: محارف آمنة فقط بلا مسافات،
+     * وطول يكفي لأن يكون بيانات حقيقية (8 أحرف فأكثر)، ويحتوي
+     * على حرف `@` أو `.` أو `-` أو `_` ليميّزها من رمز hex قصير
+     * مثل `7e88`.
+     *
+     * **السبب:** ملف `0x...` قد يحتوي `7e88` فيتجاوز
+     * [REGISTRATION_METADATA_REGEX] رغم أنه ليس بيانات تسجيل.
+     * القيمة الصحيحة من MultiTTS تحتوي دائماً على `@` (إيميل)
+     * أو فاصلة (email,code) أو `-` بمعنى ملحوظ.
+     */
+    internal fun isRegistrationMetadata(value: String): Boolean {
+        if (value.isBlank()) return false
+        if (value.matches(HEX_REGISTRATION_REGEX)) return false
+        if (!value.matches(REGISTRATION_METADATA_REGEX)) return false
+        if (value.length < 8) return false
+        val hasStructure = value.contains('@') ||
+            value.contains(',') ||
+            (value.contains('.') && value.length > 12) ||
+            (value.contains('-') && value.length > 12) ||
+            (value.contains('_') && value.length > 12)
+        return hasStructure
+    }
 
     /** قراءة `registration.txt` إن كانت بيانات metadata لا اسم ملف. */
     private fun readRegistrationTxt(dir: File): String? {
