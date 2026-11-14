@@ -21,6 +21,7 @@ import com.aymankhattab.nateq.core.audio.providers.DownloadHttpHelper
 import com.aymankhattab.nateq.core.audio.providers.DownloadLog
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceDiagnostics
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftCatalogItem
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftDownloader
@@ -1898,10 +1899,27 @@ internal class EmbeddedEngineDownloaderController(
             "الحجم الكلي: $sizeText" +
             filesSummary
 
-        return if (hostLog.isNotBlank()) {
-            "$baseDiag\n\n--- سجل المضيف (:engine_host) ---\n$hostLog"
+        val acapelaFiles = if (
+            entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+        ) {
+            val tree = resolveEngineDataDir(ctx, entry.id)?.let { dir ->
+                AcapelaVoiceDiagnostics.scanRoot(dir)
+            }.orEmpty()
+            if (tree.isNotBlank()) {
+                "\n\n--- تشخيص ملفات Acapela ---\n$tree"
+            } else {
+                ""
+            }
         } else {
-            baseDiag
+            ""
+        }
+
+        val fullDiag = baseDiag + acapelaFiles
+
+        return if (hostLog.isNotBlank()) {
+            "$fullDiag\n\n--- سجل المضيف (:engine_host) ---\n$hostLog"
+        } else {
+            fullDiag
         }
     }
 
