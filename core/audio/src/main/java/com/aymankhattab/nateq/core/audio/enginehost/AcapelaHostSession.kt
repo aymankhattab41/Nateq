@@ -23,6 +23,8 @@ import java.nio.ByteOrder
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -1691,6 +1693,26 @@ internal class AcapelaHostSession(
         }
     }
 
+    private fun recordAcapelaBreadcrumb(call: String) {
+        runCatching {
+            val f = File(context.cacheDir, "last_acapela_call.txt")
+            val ts = SimpleDateFormat(
+                "HH:mm:ss.SSS",
+                Locale.US
+            ).format(Date())
+            f.writeText("[$ts] $call\n", StandardCharsets.UTF_8)
+        }
+    }
+
+    private fun recordTrialProgress(trial: VoiceLoadTrialResult) {
+        runCatching {
+            val f = File(context.cacheDir, "acapela_trials_progress.txt")
+            val line = "${trial.method} => كود nSpeak: ${trial.speakCode} " +
+                "| عينات PCM: ${trial.samples}\n"
+            f.appendText(line, StandardCharsets.UTF_8)
+        }
+    }
+
     private suspend fun executeVoiceLoadTrial(
         label: String,
         trialDir: File,
@@ -1739,8 +1761,10 @@ internal class AcapelaHostSession(
             "(فارغ)"
         }
 
+        recordAcapelaBreadcrumb("[$label] nInit($stagePath)")
         val initRes = srv.nInit(stagePath)
         val modeRes = if (initRes == 0 && !skipVoiceMode) {
+            recordAcapelaBreadcrumb("[$label] nSetVoiceMode($voiceMode)")
             srv.nSetVoiceMode(voiceMode)
         } else -1
 
@@ -1828,6 +1852,14 @@ internal class AcapelaHostSession(
         } else null
 
         val cbToPass = if (useRealCallback) synthCallback else null
+        val cbName = if (cbToPass != null) {
+            "AcapelaSynthesisCallback"
+        } else {
+            "null"
+        }
+        recordAcapelaBreadcrumb(
+            "[$label] nSpeak(text='$probeText', cb=$cbName)"
+        )
         val speakRes = if (initRes == 0) {
             runCatching {
                 srv.nSpeak(probeText, cbToPass)
@@ -1836,6 +1868,9 @@ internal class AcapelaHostSession(
                 -2
             }
         } else -1
+        recordAcapelaBreadcrumb(
+            "[$label] انتهى nSpeak: كود=$speakRes"
+        )
 
         if (speakRes == 0) {
             val started = SystemClock.uptimeMillis()
@@ -2043,6 +2078,11 @@ internal class AcapelaHostSession(
                 String(b, StandardCharsets.ISO_8859_1)
             }.getOrDefault("\u00e3\u00d1\u00cd\u00c8\u00c7")
 
+            runCatching {
+                File(context.cacheDir, "last_acapela_call.txt").delete()
+                File(context.cacheDir, "acapela_trials_progress.txt").delete()
+            }
+
             val trial1 = executeVoiceLoadTrial(
                 label = "1) UTF-8 + callback حقيقي " +
                     "(ترتيب utf8->lang->voice)",
@@ -2058,6 +2098,7 @@ internal class AcapelaHostSession(
                 trailingSlash = true
             )
             val trialsList = mutableListOf(trial1)
+            recordTrialProgress(trial1)
 
             if (trial1.speakCode == -2) {
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
@@ -2080,6 +2121,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial2)
+                recordTrialProgress(trial2)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial2.service?.let {
@@ -2101,6 +2143,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial3)
+                recordTrialProgress(trial3)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial3.service?.let {
@@ -2122,6 +2165,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial4)
+                recordTrialProgress(trial4)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial4.service?.let {
@@ -2143,6 +2187,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial5)
+                recordTrialProgress(trial5)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial5.service?.let {
@@ -2164,6 +2209,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial6)
+                recordTrialProgress(trial6)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial6.service?.let {
@@ -2185,6 +2231,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial7)
+                recordTrialProgress(trial7)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial7.service?.let {
@@ -2206,6 +2253,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial8)
+                recordTrialProgress(trial8)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial8.service?.let {
@@ -2227,6 +2275,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial9)
+                recordTrialProgress(trial9)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial9.service?.let {
@@ -2248,6 +2297,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial10)
+                recordTrialProgress(trial10)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial10.service?.let {
@@ -2269,6 +2319,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial11)
+                recordTrialProgress(trial11)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial11.service?.let {
@@ -2290,6 +2341,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial12)
+                recordTrialProgress(trial12)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial12.service?.let {
@@ -2311,6 +2363,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial13)
+                recordTrialProgress(trial13)
 
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 trial13.service?.let {
@@ -2332,6 +2385,7 @@ internal class AcapelaHostSession(
                     trailingSlash = true
                 )
                 trialsList.add(trial14)
+                recordTrialProgress(trial14)
             }
 
             // فحص النجاح وحفظ ملف WAV للنطق التجريبي "مرحبا"
@@ -2346,16 +2400,16 @@ internal class AcapelaHostSession(
                         "acapela_marhaba_trial.wav"
                     )
                     AcapelaVoiceDiagnostics.savePcmAsWav(wavFile, pcmData)
+                    val wav10712 = File(
+                        context.cacheDir,
+                        "acapela_marhaba_10712.wav"
+                    )
+                    AcapelaVoiceDiagnostics.savePcmAsWav(wav10712, pcmData)
                     val wav10711 = File(
                         context.cacheDir,
                         "acapela_marhaba_10711.wav"
                     )
                     AcapelaVoiceDiagnostics.savePcmAsWav(wav10711, pcmData)
-                    val wav10710 = File(
-                        context.cacheDir,
-                        "acapela_marhaba_10710.wav"
-                    )
-                    AcapelaVoiceDiagnostics.savePcmAsWav(wav10710, pcmData)
                     Log.i(
                         TAG,
                         "تم حفظ ملف نطق مرحبا: ${wavFile.absolutePath} " +
@@ -2369,7 +2423,7 @@ internal class AcapelaHostSession(
                 ?: trial1
 
             val literalResults = buildString {
-                appendLine("=== [نتائج محاولات نطق Acapela 10711] ===")
+                appendLine("=== [نتائج محاولات نطق Acapela 10712] ===")
                 trialsList.forEach { t ->
                     appendLine(
                         "${t.method} => كود nSpeak: ${t.speakCode} " +
@@ -2391,7 +2445,7 @@ internal class AcapelaHostSession(
             } else {
                 "فشل كافة محاولات نطق Acapela"
             }
-            val topSummary = "[تشخيص محاولات Acapela 10711] " +
+            val topSummary = "[تشخيص محاولات Acapela 10712] " +
                 "$trialSummary | النتيجة: $outcome"
             Log.i(TAG, topSummary)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
@@ -2417,7 +2471,7 @@ internal class AcapelaHostSession(
                     }
                 }.trimEnd()
                 reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
-                File(context.cacheDir, "acapela_full_diagnostic_10711.txt")
+                File(context.cacheDir, "acapela_full_diagnostic_10712.txt")
                     .writeText(fullTrialsText, StandardCharsets.UTF_8)
             }
 
@@ -2463,7 +2517,7 @@ internal class AcapelaHostSession(
             val sw = java.io.StringWriter()
             t.printStackTrace(java.io.PrintWriter(sw))
             val errText =
-                "=== [استثناء يمنع تشغيل اختبار التوليفات 10711] ===\n" +
+                "=== [استثناء يمنع تشغيل اختبار التوليفات 10712] ===\n" +
                     "نوع الخطأ: ${t.javaClass.name}\n" +
                     "الرسالة: ${t.message ?: "بدون رسالة"}\n" +
                     "تتبع المكدس:\n$sw"
@@ -2472,7 +2526,7 @@ internal class AcapelaHostSession(
             runCatching {
                 File(context.cacheDir, "acapela_diagnostic_report.txt")
                     .writeText(errText, StandardCharsets.UTF_8)
-                File(context.cacheDir, "acapela_full_diagnostic_10711.txt")
+                File(context.cacheDir, "acapela_full_diagnostic_10712.txt")
                     .writeText(errText, StandardCharsets.UTF_8)
             }
             return HostResult.failure(

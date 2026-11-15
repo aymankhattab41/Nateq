@@ -5,9 +5,14 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
+import java.io.File
+import java.io.FileOutputStream
+import java.io.PrintStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -353,6 +358,23 @@ class EmbeddedEngineHostService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        runCatching {
+            val stderrFile = File(cacheDir, "engine_host_stderr.log")
+            if (stderrFile.length() > 500_000L) {
+                stderrFile.delete()
+            }
+            val fd = Os.open(
+                stderrFile.absolutePath,
+                OsConstants.O_WRONLY or
+                    OsConstants.O_CREAT or
+                    OsConstants.O_APPEND,
+                420
+            )
+            Os.dup2(fd, 2)
+            Os.close(fd)
+            val fos = FileOutputStream(stderrFile, true)
+            System.setErr(PrintStream(fos, true))
+        }
         // قبل أي استخدام للمحرك: عطّل fdsan في هذه العملية.
         // libNuanceVocalizer.so يغلق واصفاً مملوكاً لـFILE* بـclose خام
         // (vplatform_file_Close)، وهو ما يُجهض العملية عند تفعيل fdsan

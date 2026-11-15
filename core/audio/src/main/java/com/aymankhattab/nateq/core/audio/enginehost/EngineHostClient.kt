@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.enginehost
 
+import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -16,6 +17,7 @@ import com.aymankhattab.nateq.core.common.VisibleEngines
 import java.io.BufferedInputStream
 import java.io.DataInputStream
 import java.io.FileInputStream
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -69,6 +71,39 @@ object EngineHostClient {
     @Volatile
     private var appContext: Context? = null
 
+    @Volatile
+    var lastCallSent: String = "لا يوجد نداء مسجّل"
+        private set
+
+    @Volatile
+    var lastCallSentTimeMs: Long = 0L
+        private set
+
+    @Volatile
+    var lastFrameReceived: String = "لم يُستلم أي إطار عبر الأنبوب"
+        private set
+
+    @Volatile
+    var framesReceivedCount: Int = 0
+        private set
+
+    @Volatile
+    var hostConnectedAtUptimeMs: Long = 0L
+        internal set
+
+    @Volatile
+    var hostConnectedAtWallMs: Long = 0L
+        internal set
+
+    @Volatile
+    var lastKnownHostPid: Int = -1
+        internal set
+
+    private fun recordCallSent(call: String) {
+        lastCallSentTimeMs = System.currentTimeMillis()
+        lastCallSent = call
+    }
+
     private val rebindScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO
     )
@@ -109,6 +144,7 @@ object EngineHostClient {
         val id = HostProtocol.normalizeEngineId(engineId)
         setContext(context)
         lastDataDirs[id] = dataDir
+        recordCallSent("init(engineId=$id, dataDir=$dataDir, force=$force)")
         if (!force && initializedEngines[id] == dataDir) {
             return HostResult(ok = true)
         }
@@ -138,6 +174,7 @@ object EngineHostClient {
         engineId: String
     ): HostVoicesResult {
         val id = HostProtocol.normalizeEngineId(engineId)
+        recordCallSent("listVoices(engineId=$id)")
         val call = callHost(context, id) { svc ->
             val decoded = HostProtocol.decodeVoicesResponse(
                 svc.listVoices(id, null)
@@ -169,6 +206,7 @@ object EngineHostClient {
         maxLines: Int = 200
     ): String {
         val id = HostProtocol.normalizeEngineId(engineId)
+        recordCallSent("getLog(engineId=$id, maxLines=$maxLines)")
         val call = callHost(context, id) { svc ->
             svc.getLog(id, maxLines) ?: ""
         }
@@ -197,6 +235,22 @@ object EngineHostClient {
         onAudioChunk: (ByteArray, Int) -> Unit
     ): HostResult {
         val id = HostProtocol.normalizeEngineId(engineId)
+        val textBytesLen = text.toByteArray(StandardCharsets.UTF_8).size
+        recordCallSent(
+            "synthesize(engineId=$id, voiceId=$voiceId, " +
+                "text='$text' (طول=${text.length} حرف، $textBytesLen بايت), " +
+                "rate=$rate, pitch=$pitch, volume=$volume)"
+        )
+        runCatching {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE)
+                as? ActivityManager
+            val hostProc = am?.runningAppProcesses?.firstOrNull {
+                it.processName.endsWith(":engine_host")
+            }
+            if (hostProc != null) {
+                lastKnownHostPid = hostProc.pid
+            }
+        }
         if (text.isEmpty()) {
             return HostResult.failure("EMPTY_TEXT", "نصّ فارغ")
         }
@@ -470,6 +524,8 @@ object EngineHostClient {
         val lastPieceDurationMs = AtomicLong(0L)
         val sampleRateRef = AtomicInteger(22050)
         val channelsRef = AtomicInteger(1)
+        lastFrameReceived = "لم يُستلم أي إطار عبر الأنبوب (EOF فوري)"
+        framesReceivedCount = 0
 
         val reader = Thread({
             try {
@@ -479,8 +535,12 @@ object EngineHostClient {
                     while (true) {
                         val frame = HostProtocol.readFrame(input)
                             ?: break
+                        framesReceivedCount++
                         when (frame) {
                             is HostProtocol.HostFrame.Format -> {
+                                lastFrameReceived =
+                                    "Format(sr=${frame.sampleRate}, " +
+                                        "ch=${frame.channels})"
                                 lastProgressAt.set(SystemClock.uptimeMillis())
                                 sampleRateRef.set(frame.sampleRate)
                                 channelsRef.set(frame.channels)
@@ -490,6 +550,8 @@ object EngineHostClient {
                                 )
                             }
                             is HostProtocol.HostFrame.Pcm -> {
+                                lastFrameReceived =
+                                    "Pcm(size=${frame.bytes.size}B)"
                                 val sr = sampleRateRef.get()
                                 val ch = channelsRef.get()
                                 if (sr > 0 && frame.bytes.isNotEmpty()) {
@@ -505,12 +567,17 @@ object EngineHostClient {
                                 )
                             }
                             is HostProtocol.HostFrame.Ping -> {
+                                lastFrameReceived = "Ping (نبضة تقدّم)"
                                 // نبضة تقدّم أثناء عملٍ أصليّ متزامن:
                                 // لا صوت فيها، لكنها تمنع حارس الخمول
                                 // من قطع نطقٍ سليم لا يبثّ إطارات.
                                 lastProgressAt.set(SystemClock.uptimeMillis())
                             }
                             is HostProtocol.HostFrame.End -> {
+                                lastFrameReceived =
+                                    "End(status=${frame.status}, " +
+                                        "code=${frame.code}, " +
+                                        "msg=${frame.message})"
                                 lastProgressAt.set(SystemClock.uptimeMillis())
                                 captured.set(frame.toResult())
                                 break
@@ -642,6 +709,20 @@ private class HostConnection(
         ) {
             val connected = IEmbeddedEngineHost.Stub.asInterface(binder)
             service = connected
+            EngineHostClient.hostConnectedAtUptimeMs =
+                SystemClock.uptimeMillis()
+            EngineHostClient.hostConnectedAtWallMs =
+                System.currentTimeMillis()
+            runCatching {
+                val am = app.getSystemService(Context.ACTIVITY_SERVICE)
+                    as? ActivityManager
+                val hostProc = am?.runningAppProcesses?.firstOrNull {
+                    it.processName.endsWith(":engine_host")
+                }
+                if (hostProc != null) {
+                    EngineHostClient.lastKnownHostPid = hostProc.pid
+                }
+            }
             try {
                 binder?.linkToDeath({ onBinderDied() }, 0)
             } catch (t: RemoteException) {
