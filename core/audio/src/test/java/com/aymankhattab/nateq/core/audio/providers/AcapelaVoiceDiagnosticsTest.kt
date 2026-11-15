@@ -282,4 +282,104 @@ class AcapelaVoiceDiagnosticsTest {
             root.deleteRecursively()
         }
     }
+
+    @Test
+    fun stageVoiceV2_copiesRequiredAndExcludesForbiddenFiles() {
+        val root = tempDir()
+        try {
+            File(root, "ar_sa.dca").writeText("dca")
+            File(root, "salma_22k_lf.bvcu").writeText("bvcu")
+            File(root, "ar_sa_hd_salma_22k_lf.bvcu.inf").writeText("inf")
+            File(root, "config.yaml").writeText("yaml")
+            File(root, "salma_lf.txt").writeText("txt")
+            File(root, "0x00169729").writeText("hex")
+            File(root, "3073.ini").writeText("forbidden")
+            File(root, "MSTTSLocArEG.ini").writeText("forbidden")
+            File(root, "logfile.txt").writeText("forbidden")
+            File(root, "test.nuul").writeText("forbidden")
+            val userdicos = File(root, "userdicos").apply { mkdirs() }
+            File(userdicos, "user.userdico").writeText("dico")
+
+            val v2 = AcapelaVoiceDiagnostics.stageVoiceV2(context, root)
+
+            assertTrue(File(v2, "ar_sa.dca").exists())
+            assertTrue(File(v2, "salma_22k_lf.bvcu").exists())
+            assertTrue(File(v2, "ar_sa_hd_salma_22k_lf.bvcu.inf").exists())
+            assertTrue(File(v2, "bvcu.inf").exists())
+            assertTrue(File(v2, "config.yaml").exists())
+            assertTrue(File(v2, "salma_lf.txt").exists())
+            assertTrue(File(v2, "0x00169729").exists())
+            assertTrue(File(v2, "userdicos/user.userdico").exists())
+            assertTrue(File(v2, "userdicos/ara-sau.userdico").exists())
+
+            // تأكيد استبعاد الملفات المحظورة
+            assertTrue(!File(v2, "3073.ini").exists())
+            assertTrue(!File(v2, "MSTTSLocArEG.ini").exists())
+            assertTrue(!File(v2, "logfile.txt").exists())
+            assertTrue(!File(v2, "test.nuul").exists())
+
+            // تأكيد كتابة ملفات .ini بسطرين
+            val ini = File(v2, "ar_sa_hd_salma_22k_lf.ini")
+            assertTrue(ini.exists())
+            val iniLines = ini.readLines()
+            assertEquals(2, iniLines.size)
+            assertEquals("MODE = \"MODE=prep_hd\"", iniLines[0])
+            assertTrue(
+                iniLines[1].contains("FILEMAP \"salma_22k_lf.bvcu\"")
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun writeStageV2Ini_writesExactlyTwoLinesToAllThreeFiles() {
+        val root = tempDir()
+        try {
+            AcapelaVoiceDiagnostics.writeStageV2Ini(
+                stageDir = root,
+                mode = "MODE=prep",
+                filemapDirective = "#1 FILEMAP \"salma_22k_lf.bvcu\""
+            )
+            val targets = listOf(
+                "ar_sa_hd_salma_22k_lf.ini",
+                "ar_sa_hd_salma_22k_lf.bvcu.ini",
+                "bvcu.ini"
+            )
+            for (t in targets) {
+                val f = File(root, t)
+                assertTrue(f.exists())
+                val iniLines = f.readLines()
+                assertEquals(2, iniLines.size)
+                assertEquals("MODE = \"MODE=prep\"", iniLines[0])
+                assertEquals(
+                    "#1 FILEMAP \"salma_22k_lf.bvcu\"",
+                    iniLines[1]
+                )
+            }
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun savePcmAsWav_createsValidWavHeaderWithAudioLength() {
+        val root = tempDir()
+        try {
+            val wavFile = File(root, "test_out.wav")
+            val pcm = ByteArray(100) { 1 }
+            val ok = AcapelaVoiceDiagnostics.savePcmAsWav(
+                file = wavFile,
+                pcmData = pcm,
+                sampleRate = 22050
+            )
+            assertTrue(ok)
+            assertTrue(wavFile.exists())
+            assertEquals(144L, wavFile.length())
+            val header = wavFile.readBytes().take(4).toByteArray()
+            assertEquals("RIFF", String(header))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }

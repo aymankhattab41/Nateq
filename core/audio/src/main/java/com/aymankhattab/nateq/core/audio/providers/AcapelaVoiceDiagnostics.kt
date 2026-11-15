@@ -312,15 +312,29 @@ object AcapelaVoiceDiagnostics {
             cache?.let { File(it, "acapela_stage_flat") },
             cache?.let { File(it, "acapela_stage_min") },
             cache?.let { File(it, "acapela_stage_nounplugged") },
+            cache?.let { File(it, "acapela_stage_v2") },
+            cache?.let { File(it, "acapela_marhaba_trial.wav") },
+            cache?.let { File(it, "acapela_marhaba_10708.wav") },
             files?.let { File(it, "Acapela") },
             files?.let { File(it, "acapela") }
         ).forEach { dir ->
             if (dir.exists()) {
-                dir.walkTopDown().filter {
-                    it.isFile && it.name.equals(LOG_FILE_NAME, true)
-                }.forEach { f -> runCatching { f.delete() } }
+                if (dir.isFile) {
+                    runCatching { dir.delete() }
+                } else {
+                    dir.walkTopDown().filter {
+                        it.isFile && it.name.equals(LOG_FILE_NAME, true)
+                    }.forEach { f -> runCatching { f.delete() } }
+                }
             }
         }
+        runCatching {
+            Runtime.getRuntime().exec(arrayOf("logcat", "-c")).waitFor()
+        }
+    }
+
+    /** مسح سجل logcat للعملية الحالية للبدء بسجل نظيف. */
+    fun clearNativeLogcat() {
         runCatching {
             Runtime.getRuntime().exec(arrayOf("logcat", "-c")).waitFor()
         }
@@ -650,6 +664,312 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
+     * كتابة ملفات .ini الثلاثة بنفس المحتوى حرفياً سطرين فقط:
+     * MODE = "..."
+     * #1 FILEMAP "salma_22k_lf.bvcu" ...
+     */
+    fun writeStageV2Ini(
+        stageDir: File,
+        mode: String,
+        filemapDirective: String
+    ) {
+        val content = "MODE = \"$mode\"\n$filemapDirective\n"
+        val targets = listOf(
+            File(stageDir, "ar_sa_hd_salma_22k_lf.ini"),
+            File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.ini"),
+            File(stageDir, "bvcu.ini")
+        )
+        for (f in targets) {
+            runCatching {
+                f.writeText(content, StandardCharsets.ISO_8859_1)
+            }
+        }
+    }
+
+    /**
+     * تجهيز مجلد مسطح [cache/acapela_stage_v2] يحتوي فقط على:
+     * ملفات ar_sa* وsalma_22k_lf.bvcu و.inf وconfig.yaml وsalma_lf.txt
+     * و0x00169729 وuserdicos/.
+     * ويستثني 3073.INI وMSTTSLocArEG.ini وlogfile.txt وأي ملف Microsoft
+     * أو .nuul.
+     */
+    fun stageVoiceV2(
+        context: Context,
+        sourceDir: File? = null
+    ): File {
+        val stageDir = File(context.cacheDir, "acapela_stage_v2")
+        if (stageDir.exists()) {
+            runCatching { stageDir.deleteRecursively() }
+        }
+        stageDir.mkdirs()
+        val userdicos = File(stageDir, "userdicos")
+        userdicos.mkdirs()
+
+        fun isExcluded(name: String): Boolean {
+            val lower = name.lowercase(java.util.Locale.ROOT)
+            return lower == "3073.ini" ||
+                lower == "msttslocalreg.ini" ||
+                lower == "logfile.txt" ||
+                lower.contains("microsoft") ||
+                lower.contains("mstts") ||
+                lower.endsWith(".nuul")
+        }
+
+        val candidateRoots = listOfNotNull(
+            sourceDir,
+            sourceDir?.parentFile,
+            context.filesDir?.let { File(it, "Acapela") },
+            context.filesDir?.let { File(it, "acapela") },
+            context.filesDir,
+            context.cacheDir?.let { File(it, "acapela_stage_flat") },
+            context.cacheDir?.let { File(it, "acapela_stage_parent") },
+            context.cacheDir?.let { File(it, "acapela_stage_direct") },
+            context.cacheDir
+        ).filter { it.exists() && it.isDirectory }
+            .distinctBy { it.absolutePath }
+
+        // 1. نسخ ملفات ar_sa* ومحتويات Salma/NLP/
+        for (root in candidateRoots) {
+            root.walkTopDown().maxDepth(6).forEach { file ->
+                if (file.isFile) {
+                    val name = file.name
+                    val parentName = file.parentFile?.name.orEmpty()
+                    val isNlpDir = parentName.equals("NLP", true)
+                    val isArSa = name.startsWith("ar_sa", true)
+                    val isNlpExt = name.endsWith(".dca", true) ||
+                        name.endsWith(".bnx", true) ||
+                        name.endsWith(".ldi", true) ||
+                        name.endsWith(".trz", true) ||
+                        name.endsWith(".cma", true) ||
+                        name.endsWith(".oso", true) ||
+                        name.endsWith(".gra", true)
+                    if ((isNlpDir || isArSa || isNlpExt) && !isExcluded(name)) {
+                        val dest = File(stageDir, name)
+                        if (!dest.exists() || dest.length() != file.length()) {
+                            runCatching { file.copyTo(dest, overwrite = true) }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. ملف الصوت salma_22k_lf.bvcu
+        val bvcu = findSalmaBvcuFile(context)
+            ?: candidateRoots.firstNotNullOfOrNull { root ->
+                root.walkTopDown().maxDepth(5).firstOrNull { f ->
+                    f.isFile && f.extension.equals("bvcu", true)
+                }
+            }
+        if (bvcu != null && bvcu.isFile) {
+            val destNamed = File(stageDir, "salma_22k_lf.bvcu")
+            if (!destNamed.exists() || destNamed.length() != bvcu.length()) {
+                runCatching {
+                    Files.createLink(destNamed.toPath(), bvcu.toPath())
+                }.onFailure {
+                    runCatching { bvcu.copyTo(destNamed, overwrite = true) }
+                }
+            }
+        }
+
+        // 3. ملفات .inf
+        val infSrc = candidateRoots.firstNotNullOfOrNull { r ->
+            r.walkTopDown().maxDepth(5).firstOrNull { f ->
+                f.isFile &&
+                    f.name.equals("ar_sa_hd_salma_22k_lf.bvcu.inf", true)
+            }
+        } ?: candidateRoots.firstNotNullOfOrNull { r ->
+            r.walkTopDown().maxDepth(5).firstOrNull { f ->
+                f.isFile && f.extension.equals("inf", true) &&
+                    !isExcluded(f.name)
+            }
+        }
+        if (infSrc != null && infSrc.isFile) {
+            val destInf1 = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.inf")
+            runCatching { infSrc.copyTo(destInf1, overwrite = true) }
+            val destInf2 = File(stageDir, "bvcu.inf")
+            runCatching { infSrc.copyTo(destInf2, overwrite = true) }
+        }
+
+        // 4. ملف config.yaml
+        val yamlSrc = AcapelaVoiceManifest.findConfigYamlWithParam(
+            candidateRoots
+        )?.first ?: candidateRoots.firstNotNullOfOrNull { r ->
+            r.walkTopDown().maxDepth(5).firstOrNull { f ->
+                f.isFile && f.name.equals("config.yaml", true)
+            }
+        }
+        if (yamlSrc != null && yamlSrc.isFile) {
+            val destYaml = File(stageDir, "config.yaml")
+            runCatching { yamlSrc.copyTo(destYaml, overwrite = true) }
+        }
+
+        // 5. ملف salma_lf.txt
+        val txtSrc = candidateRoots.firstNotNullOfOrNull { r ->
+            r.walkTopDown().maxDepth(5).firstOrNull { f ->
+                f.isFile && (
+                    f.name.equals("salma_lf.txt", true) ||
+                    f.name.endsWith("_lf.txt", true)
+                )
+            }
+        }
+        if (txtSrc != null && txtSrc.isFile) {
+            val destTxt = File(stageDir, "salma_lf.txt")
+            runCatching { txtSrc.copyTo(destTxt, overwrite = true) }
+        }
+
+        // 6. ملف 0x00169729
+        val hexSrc = candidateRoots.firstNotNullOfOrNull { r ->
+            AcapelaVoiceManifest.findHexRegistrationFile(r)
+        }
+        if (hexSrc != null && hexSrc.isFile) {
+            val destHex = File(stageDir, "0x00169729")
+            runCatching { hexSrc.copyTo(destHex, overwrite = true) }
+        }
+
+        // 7. ملفات userdicos/
+        for (root in candidateRoots) {
+            root.walkTopDown().maxDepth(5).forEach { f ->
+                if (f.isFile && f.name.endsWith(".userdico", true)) {
+                    val dstSub = File(userdicos, f.name)
+                    if (!dstSub.exists() || dstSub.length() != f.length()) {
+                        runCatching { f.copyTo(dstSub, overwrite = true) }
+                    }
+                }
+            }
+        }
+        val araDico = File(userdicos, "ara-sau.userdico")
+        val userDico = File(userdicos, "user.userdico")
+        if (!araDico.exists() && userDico.exists()) {
+            runCatching { userDico.copyTo(araDico, overwrite = true) }
+        }
+
+        // 8. ضمان خلو المجلد من أي ملف مستبعد
+        stageDir.listFiles()?.forEach { f ->
+            if (f.isFile && isExcluded(f.name)) {
+                runCatching { f.delete() }
+            }
+        }
+
+        // 9. كتابة ملفات .ini الثلاثة بالمحتوى الافتراضي الأولي
+        writeStageV2Ini(
+            stageDir = stageDir,
+            mode = "MODE=prep_hd",
+            filemapDirective = "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]"
+        )
+
+        return stageDir
+    }
+
+    /**
+     * استخراج وطباعة المحتوى الكامل للملف الأصلي 61 بايت
+     * [files/Acapela/Salma/salma_lf/ar_sa_hd_salma_22k_lf.ini].
+     */
+    fun getOriginalIniDump(context: Context): String {
+        val f = File(
+            context.filesDir,
+            "Acapela/Salma/salma_lf/ar_sa_hd_salma_22k_lf.ini"
+        ).takeIf { it.exists() }
+            ?: File(
+                context.filesDir,
+                "acapela/Salma/salma_lf/ar_sa_hd_salma_22k_lf.ini"
+            ).takeIf { it.exists() }
+            ?: findFileRecursively(
+                context,
+                "ar_sa_hd_salma_22k_lf.ini",
+                "salma_lf"
+            )
+            ?: findFileRecursively(context, "ar_sa_hd_salma_22k_lf.ini")
+
+        if (f == null || !f.exists()) {
+            return "الملف الأصلي ar_sa_hd_salma_22k_lf.ini غير موجود على القرص"
+        }
+        val bytes = runCatching { f.readBytes() }.getOrNull()
+            ?: return "تعذر قراءة الملف: ${f.absolutePath}"
+        val text = String(bytes, StandardCharsets.ISO_8859_1)
+        val hex = bytes.toList().chunked(16).joinToString("\n") { chunk ->
+            chunk.joinToString(" ") { "%02X".format(it) }
+        }
+        return buildString {
+            appendLine("المسار: ${f.absolutePath}")
+            appendLine("الحجم: ${bytes.size} بايت")
+            appendLine("المحتوى النصي:")
+            appendLine(text)
+            appendLine("المحتوى كـ Hex (${bytes.size} بايت):")
+            appendLine(hex)
+        }.trimEnd()
+    }
+
+    /**
+     * حفظ عينات PCM كملف صوتي WAV صالح بترويسة 44 بايت قياسية.
+     */
+    fun savePcmAsWav(
+        file: File,
+        pcmData: ByteArray,
+        sampleRate: Int = 22050,
+        channels: Int = 1,
+        bitsPerSample: Int = 16
+    ): Boolean {
+        return runCatching {
+            val totalAudioLen = pcmData.size.toLong()
+            val totalDataLen = totalAudioLen + 36L
+            val byteRate = sampleRate * channels * bitsPerSample / 8
+            val header = ByteArray(44)
+            header[0] = 'R'.code.toByte()
+            header[1] = 'I'.code.toByte()
+            header[2] = 'F'.code.toByte()
+            header[3] = 'F'.code.toByte()
+            header[4] = (totalDataLen and 0xffL).toByte()
+            header[5] = ((totalDataLen shr 8) and 0xffL).toByte()
+            header[6] = ((totalDataLen shr 16) and 0xffL).toByte()
+            header[7] = ((totalDataLen shr 24) and 0xffL).toByte()
+            header[8] = 'W'.code.toByte()
+            header[9] = 'A'.code.toByte()
+            header[10] = 'V'.code.toByte()
+            header[11] = 'E'.code.toByte()
+            header[12] = 'f'.code.toByte()
+            header[13] = 'm'.code.toByte()
+            header[14] = 't'.code.toByte()
+            header[15] = ' '.code.toByte()
+            header[16] = 16
+            header[17] = 0
+            header[18] = 0
+            header[19] = 0
+            header[20] = 1
+            header[21] = 0
+            header[22] = channels.toByte()
+            header[23] = 0
+            header[24] = (sampleRate and 0xff).toByte()
+            header[25] = ((sampleRate shr 8) and 0xff).toByte()
+            header[26] = ((sampleRate shr 16) and 0xff).toByte()
+            header[27] = ((sampleRate shr 24) and 0xff).toByte()
+            header[28] = (byteRate and 0xff).toByte()
+            header[29] = ((byteRate shr 8) and 0xff).toByte()
+            header[30] = ((byteRate shr 16) and 0xff).toByte()
+            header[31] = ((byteRate shr 24) and 0xff).toByte()
+            header[32] = (channels * bitsPerSample / 8).toByte()
+            header[33] = 0
+            header[34] = bitsPerSample.toByte()
+            header[35] = 0
+            header[36] = 'd'.code.toByte()
+            header[37] = 'a'.code.toByte()
+            header[38] = 't'.code.toByte()
+            header[39] = 'a'.code.toByte()
+            header[40] = (totalAudioLen and 0xffL).toByte()
+            header[41] = ((totalAudioLen shr 8) and 0xffL).toByte()
+            header[42] = ((totalAudioLen shr 16) and 0xffL).toByte()
+            header[43] = ((totalAudioLen shr 24) and 0xffL).toByte()
+
+            file.parentFile?.mkdirs()
+            file.outputStream().use { fos ->
+                fos.write(header)
+                fos.write(pcmData)
+                fos.flush()
+            }
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
      * قراءة محتوى الملف كاملاً كنص UTF-8 أو Hex dump إن كان ملفاً ثنائياً.
      */
     fun dumpFileContent(file: File?): String {
@@ -864,14 +1184,20 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10707) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10708) ===")
         sb.appendLine("==================================================")
+        sb.appendLine("")
+
+        // ── [البند 1] فحص الملف الأصلي 61 بايت (نص و Hex) ───────────────
+        sb.appendLine("--- [البند 1] فحص الملف الأصلي 61 بايت (نص و Hex) ---")
+        sb.appendLine(getOriginalIniDump(context))
         sb.appendLine("")
 
         val filesDir = context.filesDir
         val cacheDir = context.cacheDir
         val filesAcapela = File(filesDir, "Acapela")
         val altAcapela = File(filesDir, "acapela")
+        val cacheV2 = File(cacheDir, "acapela_stage_v2")
         val cacheFlat = File(cacheDir, "acapela_stage_flat")
         val cacheMin = File(cacheDir, "acapela_stage_min")
         val cacheNoUnp = File(cacheDir, "acapela_stage_nounplugged")
@@ -895,7 +1221,8 @@ object AcapelaVoiceDiagnostics {
             "logfile.txt"
         )
         for (fName in req1FlatFiles) {
-            val f = File(cacheFlat, fName).takeIf { it.exists() }
+            val f = File(cacheV2, fName).takeIf { it.exists() }
+                ?: File(cacheFlat, fName).takeIf { it.exists() }
                 ?: if (fName.equals("3073.INI", true)) {
                     File(cacheFlat, "3073.ini").takeIf { it.exists() }
                         ?: findFileRecursively(context, "3073.ini")
@@ -933,7 +1260,8 @@ object AcapelaVoiceDiagnostics {
             "salma_22k_lf.bvcu"
         )
         for (fName in req2Files) {
-            val f = File(cacheFlat, fName).takeIf { it.exists() }
+            val f = File(cacheV2, fName).takeIf { it.exists() }
+                ?: File(cacheFlat, fName).takeIf { it.exists() }
                 ?: if (fName.endsWith(".bvcu")) findSalmaBvcuFile(context)
                 else findFileRecursively(context, fName)
             sb.appendLine(getFileHexHeaderAndMd5(f))
@@ -947,6 +1275,7 @@ object AcapelaVoiceDiagnostics {
             sb.append(buildNestedDirectoryTree(altAcapela, "files/acapela"))
         }
         val cacheList = listOf(
+            cacheV2,
             cacheFlat,
             cacheMin,
             cacheNoUnp,
@@ -957,9 +1286,9 @@ object AcapelaVoiceDiagnostics {
         }
         sb.appendLine("")
 
-        // ── [البند 4 و 5] نتائج التوليفات الست وسجل المكتبة الأصلي ────────
+        // ── [البند 4 و 5] نتائج التوليفات وسجل المكتبة الأصلي ─────────────
         sb.appendLine(
-            "--- [البندان 4 و 5] نتائج التوليفات الست وسجل النداءات ---"
+            "--- [البندان 4 و 5] نتائج التوليفات وسجل النداءات ---"
         )
         val diagReport = File(cacheDir, "acapela_diagnostic_report.txt")
         if (diagReport.exists() && diagReport.length() > 0L) {
@@ -972,7 +1301,20 @@ object AcapelaVoiceDiagnostics {
                 sb.appendLine("  (ملف acapela_diagnostic_report.txt فارغ)")
             }
         } else {
-            sb.appendLine("  (بانتظار تنفيذ التوليفات الست عبر جلسة المحرك)")
+            sb.appendLine("  (بانتظار تنفيذ التوليفات عبر جلسة المحرك)")
+        }
+        sb.appendLine("")
+
+        // ── [البند 6] حالة ملف WAV التجريبي (مرحبا) ───────────────────────
+        sb.appendLine("--- [البند 6] حالة ملف WAV التجريبي (مرحبا) ---")
+        val trialWav = File(cacheDir, "acapela_marhaba_trial.wav")
+        if (trialWav.exists()) {
+            sb.appendLine(
+                "ملف WAV موجود: ${trialWav.absolutePath} " +
+                    "(${trialWav.length()} بايت)"
+            )
+        } else {
+            sb.appendLine("لم يُنتج ملف WAV بعد (عينات PCM = 0)")
         }
         sb.appendLine("")
 
@@ -986,7 +1328,9 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
-            File(cacheDir, "acapela_full_diagnostic_10707.txt")
+            File(cacheDir, "acapela_full_diagnostic_10708.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
+            File(cacheDir, "acapela_diagnostic_report.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
         }
 
