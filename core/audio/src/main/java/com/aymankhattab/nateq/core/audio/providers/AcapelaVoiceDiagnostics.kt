@@ -5,6 +5,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
+import android.util.Log
+import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -21,6 +24,8 @@ import java.security.MessageDigest
  * كل الدوال نقية تعمل على [File] كي تُختبر بمجلدات مؤقتة.
  */
 object AcapelaVoiceDiagnostics {
+
+    private const val TAG = "AcapelaVoiceDiagnostics"
 
     /** حدّ الملفات المعروضة في الجرد (الباقي يُعدّ لا يُسرد). */
     const val MAX_FILES = 24
@@ -314,9 +319,12 @@ object AcapelaVoiceDiagnostics {
             cache?.let { File(it, "acapela_stage_nounplugged") },
             cache?.let { File(it, "acapela_stage_v2") },
             cache?.let { File(it, "acapela_marhaba_trial.wav") },
+            cache?.let { File(it, "acapela_marhaba_10711.wav") },
             cache?.let { File(it, "acapela_marhaba_10710.wav") },
             cache?.let { File(it, "acapela_marhaba_10709.wav") },
             cache?.let { File(it, "acapela_marhaba_10708.wav") },
+            cache?.let { File(it, "acapela_diagnostic_report.txt") },
+            cache?.let { File(it, "acapela_full_diagnostic_10711.txt") },
             files?.let { File(it, "Acapela") },
             files?.let { File(it, "acapela") }
         ).forEach { dir ->
@@ -1283,30 +1291,91 @@ object AcapelaVoiceDiagnostics {
     suspend fun runDiagnosticProbe(context: Context) {
         clearOldLogs(context)
         stageVoiceFlat(context)
-        runCatching {
+        try {
             val provider = AcapelaEmbeddedVoiceProvider(context)
+            provider.shutdown()
+            EngineHostClient.release(context, HostProtocol.ENGINE_ACAPELA)
+            EngineHostClient.clearInitialized(HostProtocol.ENGINE_ACAPELA)
+
+            val baseDir = provider.resolveDataDir()
+            if (baseDir == null) {
+                val err =
+                    "=== [استثناء يمنع تشغيل اختبار التوليفات 10711] ===\n" +
+                        "تعذر تحديد مجلد أصوات Acapela " +
+                        "(resolveDataDir returned null)"
+                File(context.cacheDir, "acapela_diagnostic_report.txt")
+                    .writeText(err, StandardCharsets.UTF_8)
+                return
+            }
+
+            val initRes = EngineHostClient.init(
+                context = context,
+                engineId = HostProtocol.ENGINE_ACAPELA,
+                dataDir = baseDir.absolutePath,
+                force = true
+            )
+            if (!initRes.ok) {
+                val err =
+                    "=== [استثناء يمنع تشغيل اختبار التوليفات 10711] ===\n" +
+                        "فشل نداء EngineHostClient.init [${initRes.code}]: " +
+                        "${initRes.message}"
+                File(context.cacheDir, "acapela_diagnostic_report.txt")
+                    .writeText(err, StandardCharsets.UTF_8)
+                return
+            }
+
             val voices = provider.listVoices(java.util.Locale.ROOT)
             val voice = voices.firstOrNull {
                 it.id.contains("salma", ignoreCase = true)
             } ?: voices.firstOrNull() ?: VoiceDescriptor(
-                id = "salma22k_hq",
+                id = "ar_sa_hd_salma_22k_lf",
                 providerId = AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
                 displayName = "Salma",
                 locale = java.util.Locale.forLanguageTag("ar-SA")
             )
-            provider.synthesize(
-                text = "تجربة نطق ناطق",
-                voice = voice,
-                speechRate = 1.0f,
+            val voiceIdToPass = if (voice.id.isNotBlank()) voice.id else "Salma"
+
+            val synthRes = EngineHostClient.synthesize(
+                context = context,
+                engineId = HostProtocol.ENGINE_ACAPELA,
+                voiceId = voiceIdToPass,
+                text = "مرحبا",
+                rate = 1.0f,
                 pitch = 1.0f,
                 volume = 1.0f,
                 onFormatInfo = { _, _ -> },
-                onAudioChunk = { _, _ -> },
-                enginePackage = "acapela_embedded",
-                voiceLocale = java.util.Locale.forLanguageTag("ar-SA"),
-                desiredVoiceName = "salma22k_hq",
-                category = "default"
+                onAudioChunk = { _, _ -> }
             )
+
+            val diagReport =
+                File(context.cacheDir, "acapela_diagnostic_report.txt")
+            if (!diagReport.exists() || diagReport.length() == 0L) {
+                val status = EngineStatusRegistry.statusOf(
+                    AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+                )
+                val statusMsg =
+                    "=== [نتائج محاولات نطق Acapela 10711] ===\n" +
+                        "انتهى synthesize بنتيجة ok=${synthRes.ok} " +
+                        "[${synthRes.code ?: "—"}]: " +
+                        "${synthRes.message ?: "—"}\n" +
+                        "ولكن لم يُكتب ملف acapela_diagnostic_report.txt.\n" +
+                        "حالة المسجل: ${status?.state ?: "غير معروف"} | " +
+                        "آخر خطأ: ${status?.lastError ?: "لا يوجد"}"
+                diagReport.writeText(statusMsg, StandardCharsets.UTF_8)
+            }
+        } catch (t: Throwable) {
+            val sw = java.io.StringWriter()
+            t.printStackTrace(java.io.PrintWriter(sw))
+            val errText =
+                "=== [استثناء يمنع تشغيل اختبار التوليفات 10711] ===\n" +
+                    "نوع الخطأ: ${t.javaClass.name}\n" +
+                    "الرسالة: ${t.message ?: "بدون رسالة"}\n" +
+                    "تتبع المكدس:\n$sw"
+            Log.e(TAG, errText, t)
+            runCatching {
+                File(context.cacheDir, "acapela_diagnostic_report.txt")
+                    .writeText(errText, StandardCharsets.UTF_8)
+            }
         }
     }
 
@@ -1316,7 +1385,7 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10710) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10711) ===")
         sb.appendLine("==================================================")
         sb.appendLine("")
 
@@ -1425,7 +1494,8 @@ object AcapelaVoiceDiagnostics {
 
         // ── [البند 4 و 5] نتائج التوليفات وسجل المكتبة الأصلي ─────────────
         sb.appendLine(
-            "--- [البندان 4 و 5] نتائج التوليفات وسجل النداءات ---"
+            "--- [البندان 4 و 5] نتائج التوليفات وسجل النداءات " +
+                "(إصدار 10711) ---"
         )
         val diagReport = File(cacheDir, "acapela_diagnostic_report.txt")
         if (diagReport.exists() && diagReport.length() > 0L) {
@@ -1438,7 +1508,14 @@ object AcapelaVoiceDiagnostics {
                 sb.appendLine("  (ملف acapela_diagnostic_report.txt فارغ)")
             }
         } else {
-            sb.appendLine("  (بانتظار تنفيذ التوليفات عبر جلسة المحرك)")
+            val status = EngineStatusRegistry.statusOf(
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+            )
+            sb.appendLine("=== [نتائج محاولات نطق Acapela 10711] ===")
+            sb.appendLine("  (لم يُسجّل ملف التوليفات بعد)")
+            sb.appendLine("  حالة المحرك: ${status?.state ?: "غير معروف"}")
+            sb.appendLine("  كود الحالة: ${status?.code ?: "—"}")
+            sb.appendLine("  آخر خطأ: ${status?.lastError ?: "لا يوجد"}")
         }
         sb.appendLine("")
 
@@ -1465,13 +1542,13 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10711.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10710.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10709.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10708.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_diagnostic_report.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
         }
 
