@@ -2280,16 +2280,34 @@ internal class AcapelaHostSession(
                 File(context.cacheDir, "acapela_trials_progress.txt").delete()
             }
 
-            val rawParam = AcapelaVoiceManifest
+            val effectiveRawParam = rawParam ?: AcapelaVoiceManifest
                 .readParamFromConfigYaml(voice.dir).orEmpty()
-            val infLic = AcapelaVoiceDiagnostics
-                .extractLicenseFromInf(v2Dir).orEmpty()
-            val commercialLic = AcapelaLicense.LICENSE
+            val parsedParam = AcapelaVoiceManifest
+                .splitConfigYamlParam(effectiveRawParam)
+            val emailLen = parsedParam?.second?.length ?: 0
+            val hexCodeLen = parsedParam?.third?.length ?: 0
 
-            // ── تجربة 1: nSetLicense مع lic = param من config.yaml ──
+            val hexFileInV2 = File(v2Dir, "0x00169729")
+            val hexExists = hexFileInV2.exists()
+            val hexSize = if (hexExists) hexFileInV2.length() else 0L
+            val hexHasComm = if (hexExists) {
+                runCatching {
+                    hexFileInV2.readText(StandardCharsets.ISO_8859_1)
+                        .contains("COMMERCIAL")
+                }.getOrDefault(false)
+            } else false
+
+            val keyDiskStatus = "[فحص ملف الترخيص 10716] 0x00169729: " +
+                "موجود=$hexExists, حجم=$hexSize بايت, " +
+                "يحوي COMMERCIAL=$hexHasComm | أطوال: " +
+                "email=$emailLen, hexCode=$hexCodeLen, reg=$regLen"
+            Log.i(TAG, keyDiskStatus)
+            HostLog.i(HostProtocol.ENGINE_ACAPELA, keyDiskStatus)
+
+            // ── تجربة 1: مسار MultiTTS الأصلي (v2 مع NO_UTF8) ──
             AcapelaVoiceDiagnostics.clearNativeLogcat()
             val trial1 = executeVoiceLoadTrial(
-                label = "1) nSetLicense مع lic = param من config.yaml",
+                label = "1) مسار MultiTTS الأصلي (v2 مع NO_UTF8)",
                 trialDir = v2Dir,
                 speaker = effectiveSpeaker,
                 iso3 = iso3,
@@ -2297,20 +2315,19 @@ internal class AcapelaHostSession(
                 voice = voice,
                 voiceMode = "MODE=prep_hd",
                 probeText = REGISTRATION_PROBE_TEXT,
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                order = AcapelaSequenceOrder.NO_UTF8,
                 useRealCallback = true,
                 trailingSlash = true,
-                callSetLicense = true,
-                licenseStr = rawParam,
-                enableSetLog = true
+                callSetLicense = false,
+                enableSetLog = false
             )
             val trialsList = mutableListOf(trial1)
             recordTrialProgress(trial1)
 
-            // ── تجربة 2: nSetLicense مع lic فارغة "" ──
+            // ── تجربة 2: مسار MultiTTS مع nUtf8Mode (v2) ──
             AcapelaVoiceDiagnostics.clearNativeLogcat()
             val trial2 = executeVoiceLoadTrial(
-                label = "2) nSetLicense مع lic فارغة \"\"",
+                label = "2) مسار MultiTTS مع nUtf8Mode (v2)",
                 trialDir = v2Dir,
                 speaker = effectiveSpeaker,
                 iso3 = iso3,
@@ -2321,56 +2338,48 @@ internal class AcapelaHostSession(
                 order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
                 useRealCallback = true,
                 trailingSlash = true,
-                callSetLicense = true,
-                licenseStr = "",
-                enableSetLog = true
+                callSetLicense = false,
+                enableSetLog = false
             )
             trialsList.add(trial2)
             recordTrialProgress(trial2)
 
-            // ── تجربة 3: nSetLicense مع lic من ملف .inf ──
+            // ── تجربة 3: مسار MultiTTS مع تمرير param كاملاً (v2) ──
             AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val trial3Label = if (infLic.isNotBlank()) {
-                "3) nSetLicense مع lic من ملف .inf"
-            } else {
-                "3) nSetLicense مع lic من .inf (فارغة لعدم وجودها بالملف)"
-            }
             val trial3 = executeVoiceLoadTrial(
-                label = trial3Label,
+                label = "3) مسار MultiTTS مع تمرير param كاملاً (v2)",
                 trialDir = v2Dir,
                 speaker = effectiveSpeaker,
                 iso3 = iso3,
-                registration = registration,
+                registration = effectiveRawParam,
                 voice = voice,
                 voiceMode = "MODE=prep_hd",
                 probeText = REGISTRATION_PROBE_TEXT,
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                order = AcapelaSequenceOrder.NO_UTF8,
                 useRealCallback = true,
                 trailingSlash = true,
-                callSetLicense = true,
-                licenseStr = infLic,
-                enableSetLog = true
+                callSetLicense = false,
+                enableSetLog = false
             )
             trialsList.add(trial3)
             recordTrialProgress(trial3)
 
-            // ── تجربة 4: nSetLicense مع lic تجارية (AcapelaLicense) ──
+            // ── تجربة 4: مسار MultiTTS في مجلد الصوت الأصلي مباشرة ──
             AcapelaVoiceDiagnostics.clearNativeLogcat()
             val trial4 = executeVoiceLoadTrial(
-                label = "4) nSetLicense مع lic تجارية (AcapelaLicense)",
-                trialDir = v2Dir,
+                label = "4) مسار MultiTTS في مجلد الصوت الأصلي",
+                trialDir = voice.dir,
                 speaker = effectiveSpeaker,
                 iso3 = iso3,
                 registration = registration,
                 voice = voice,
                 voiceMode = "MODE=prep_hd",
                 probeText = REGISTRATION_PROBE_TEXT,
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                order = AcapelaSequenceOrder.NO_UTF8,
                 useRealCallback = true,
                 trailingSlash = true,
-                callSetLicense = true,
-                licenseStr = commercialLic,
-                enableSetLog = true
+                callSetLicense = false,
+                enableSetLog = false
             )
             trialsList.add(trial4)
             recordTrialProgress(trial4)
@@ -2387,6 +2396,11 @@ internal class AcapelaHostSession(
                         "acapela_marhaba_trial.wav"
                     )
                     AcapelaVoiceDiagnostics.savePcmAsWav(wavFile, pcmData)
+                    val wav10716 = File(
+                        context.cacheDir,
+                        "acapela_marhaba_10716.wav"
+                    )
+                    AcapelaVoiceDiagnostics.savePcmAsWav(wav10716, pcmData)
                     val wav10715 = File(
                         context.cacheDir,
                         "acapela_marhaba_10715.wav"
@@ -2420,14 +2434,12 @@ internal class AcapelaHostSession(
                 ?: trial1
 
             val literalResults = buildString {
-                appendLine("=== [نتائج محاولات نطق Acapela 10715] ===")
+                appendLine("=== [نتائج محاولات نطق Acapela 10716] ===")
                 trialsList.forEach { t ->
                     val ebStr = t.ebErrorCode?.toString() ?: "0"
                     val nlpStr = t.nlpErrorCode?.toString() ?: "0"
-                    val licRetStr = t.setLicenseCode?.toString() ?: "لم يُستدعَ"
                     appendLine(
-                        "${t.method} => كود nSetLicense: $licRetStr | " +
-                            "eb: $ebStr | nlpErr: $nlpStr | " +
+                        "${t.method} => eb: $ebStr | nlpErr: $nlpStr | " +
                             "nSpeak: ${t.speakCode} | عينات: ${t.samples}"
                     )
                 }
@@ -2438,8 +2450,7 @@ internal class AcapelaHostSession(
             val trialSummary = trialsList.joinToString(" | ") { t ->
                 val ebStr = t.ebErrorCode?.toString() ?: "0"
                 val nlpStr = t.nlpErrorCode?.toString() ?: "0"
-                val licRetStr = t.setLicenseCode?.toString() ?: "—"
-                "${t.method} (nSetLic=$licRetStr, eb=$ebStr, nlpErr=$nlpStr, " +
+                "${t.method} (eb=$ebStr, nlpErr=$nlpStr, " +
                     "pcm=${t.samples}, speak=${t.speakCode})"
             }
             val outcome = if (winningTrial != null) {
@@ -2447,7 +2458,7 @@ internal class AcapelaHostSession(
             } else {
                 "فشل كافة محاولات نطق Acapela"
             }
-            val topSummary = "[تشخيص محاولات Acapela 10715] " +
+            val topSummary = "[تشخيص محاولات Acapela 10716] " +
                 "$trialSummary | النتيجة: $outcome"
             Log.i(TAG, topSummary)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
@@ -2461,6 +2472,18 @@ internal class AcapelaHostSession(
                     appendLine(topSummary)
                     appendLine("")
                     appendLine(literalResults)
+                    appendLine("")
+                    appendLine(keyDiskStatus)
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getMultiTtsEmailHexCodeTrace()
+                    )
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getDiskLicenseFileDisassemblyAnalysis()
+                    )
                     appendLine("")
                     appendLine(
                         AcapelaVoiceDiagnostics
@@ -2489,6 +2512,8 @@ internal class AcapelaHostSession(
                     }
                 }.trimEnd()
                 reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10716.txt")
+                    .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10715.txt")
                     .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10714.txt")
@@ -2530,7 +2555,7 @@ internal class AcapelaHostSession(
             val sw = java.io.StringWriter()
             t.printStackTrace(java.io.PrintWriter(sw))
             val errText =
-                "=== [استثناء يمنع تشغيل اختبار التوليفات 10715] ===\n" +
+                "=== [استثناء يمنع تشغيل اختبار التوليفات 10716] ===\n" +
                     "نوع الخطأ: ${t.javaClass.name}\n" +
                     "الرسالة: ${t.message ?: "بدون رسالة"}\n" +
                     "تتبع المكدس:\n$sw"
@@ -2538,6 +2563,8 @@ internal class AcapelaHostSession(
             HostLog.e(HostProtocol.ENGINE_ACAPELA, errText)
             runCatching {
                 File(context.cacheDir, "acapela_diagnostic_report.txt")
+                    .writeText(errText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10716.txt")
                     .writeText(errText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10715.txt")
                     .writeText(errText, StandardCharsets.UTF_8)

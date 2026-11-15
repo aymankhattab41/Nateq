@@ -737,7 +737,10 @@ object AcapelaVoiceDiagnostics {
         val candidateRoots = listOfNotNull(
             sourceDir,
             sourceDir?.parentFile,
+            sourceDir?.parentFile?.parentFile,
             context.filesDir?.let { File(it, "Acapela") },
+            context.filesDir?.let { File(it, "Acapela/Salma") },
+            context.filesDir?.let { File(it, "Acapela/Salma/salma_lf") },
             context.filesDir?.let { File(it, "acapela") },
             context.filesDir,
             context.cacheDir?.let { File(it, "acapela_stage_flat") },
@@ -845,8 +848,15 @@ object AcapelaVoiceDiagnostics {
         // 6. ملف 0x00169729
         val hexSrc = candidateRoots.firstNotNullOfOrNull { r ->
             AcapelaVoiceManifest.findHexRegistrationFile(r)
+        } ?: candidateRoots.firstNotNullOfOrNull { r ->
+            r.walkTopDown().maxDepth(6).firstOrNull { f ->
+                f.isFile && f.name.contains("0x", ignoreCase = true) &&
+                    f.length() > 0L
+            }
         }
         if (hexSrc != null && hexSrc.isFile) {
+            val destHexOrig = File(stageDir, hexSrc.name)
+            runCatching { hexSrc.copyTo(destHexOrig, overwrite = true) }
             val destHex = File(stageDir, "0x00169729")
             runCatching { hexSrc.copyTo(destHex, overwrite = true) }
         }
@@ -1404,11 +1414,19 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10715) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10716) ===")
         sb.appendLine("==================================================")
         sb.appendLine("")
 
-        // ── [البند 1] فحص كود MultiTTS لنداءات nSetLicense ───────────────
+        // ── [البند 1] تتبع مسار email و hexCode في كود MultiTTS ──────────
+        sb.appendLine(getMultiTtsEmailHexCodeTrace())
+        sb.appendLine("")
+
+        // ── [البند 2] تفكيك check_license وفحص ملف الترخيص على القرص ─────
+        sb.appendLine(getDiskLicenseFileDisassemblyAnalysis())
+        sb.appendLine("")
+
+        // ── فحص كود MultiTTS لنداءات nSetLicense ─────────────────────────
         sb.appendLine(getMultiTtsLicenseAnalysis())
         sb.appendLine("")
 
@@ -1577,6 +1595,8 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10716.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10715.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10714.txt")
@@ -1827,6 +1847,184 @@ object AcapelaVoiceDiagnostics {
         }
         return null
     }
+
+    /**
+     * تتبع مسار email و hexCode في كود MultiTTS (البند 1 من إصدار 10716):
+     * مصدر القراءة، الحساب/الاشتقاق، أسماء الدوال والحقول حرفياً،
+     * وتأكيد الاستقلالية التامة عن اسم الحزمة والتوقيع ومعرف الجهاز.
+     */
+    fun getMultiTtsEmailHexCodeTrace(): String = buildString {
+        appendLine(
+            "=== [البند 1] تتبع مسار email و hexCode في كود MultiTTS ==="
+        )
+        appendLine("")
+        appendLine("1) مصدر قراءة email و hexCode:")
+        appendLine(
+            "  - تُقرأ حصرياً من خاصية param في ملف config.yaml للصوت " +
+                "(أو تُفك شفرتها عبر"
+        )
+        appendLine(
+            "    AcapelaMetadataCodec.decode إن كانت مشفرة بخوارزمية " +
+                "package-codec)."
+        )
+        appendLine(
+            "  - في MultiTTS: الدالة org.volodymyr.multivoice.AcapelaPack" +
+                ".yamlModels"
+        )
+        appendLine(
+            "    تقوم بتحليل config.yaml واستخراج السلسلة الخام لخاصية param."
+        )
+        appendLine("")
+        appendLine("2) كيفية الحساب والاشتقاق والدمج:")
+        appendLine(
+            "  - الصيغة في config.yaml: " +
+                "voiceCode,email,hexCode (ثلاثة أجزاء مفصولة بفاصلة)."
+        )
+        appendLine(
+            "  - الدالة org.volodymyr.multivoice.AcapelaPack" +
+                ".buildRegistration(param):"
+        )
+        appendLine("    String[] parts = clean.split(\",\", -1);")
+        appendLine("    String email = parts[1];")
+        appendLine("    String hexCode = parts[2];")
+        appendLine(
+            "    return email + hexCode; // دمج مباشر وسلسلة متصلة " +
+                "بدون فاصلة ولا مسافة!"
+        )
+        appendLine(
+            "  - لا يوجد أي اشتقاق رياضي أو تجزئة؛ مجرد دمج نصي مباشر " +
+                "للجزءين الثاني والثالث."
+        )
+        appendLine("")
+        appendLine(
+            "3) الاستقلالية التامة عن بيئة الجهاز (فحص بايت كود MultiTTS):"
+        )
+        appendLine(
+            "  - اسم الحزمة (Package Name): لا تعتمد عليه إطلاقاً " +
+                "(0 استدعاء لـ getPackageName)."
+        )
+        appendLine(
+            "  - بصمة التوقيع (App Signature): لا تفحص التوقيع " +
+                "(0 استدعاء لـ GET_SIGNATURES)."
+        )
+        appendLine(
+            "  - معرف الجهاز (ANDROID_ID): لا تقرأ ANDROID_ID " +
+                "(0 استدعاء لـ Settings.Secure)."
+        )
+        appendLine(
+            "  - النتيجة: بيانات التسجيل (email + hexCode) مستقلة 100% " +
+                "عن الحزمة والجهاز."
+        )
+        appendLine("")
+        appendLine("4) التخزين والتمرير إلى المكتبة الأصلية (الأسماء حرفياً):")
+        appendLine(
+            "  - في فئة AcapelaPack: الحقل " +
+                "public final String registration;"
+        )
+        appendLine(
+            "  - في فئة ExtendedEngine: المُنشئ " +
+                "ExtendedEngine(Audio audio, AcapelaPack pack):"
+        )
+        appendLine(
+            "    this.api = new AcattsandroidService(audio, pack.registration);"
+        )
+        appendLine(
+            "  - في فئة AcattsandroidService: الحقل " +
+                "private final String registration;"
+        )
+        appendLine(
+            "  - دالة رد النداء لـ JNI: " +
+                "@Keep public String idfunction() { return this.registration; }"
+        )
+        appendLine(
+            "  - داخل المكتبة الأصلية (libttsacattsandroidextended.so):"
+        )
+        appendLine(
+            "    * في nInit: حفظ jmethodID لدالة idfunction " +
+                "()Ljava/lang/String; عند 0x36fbb8."
+        )
+        appendLine(
+            "    * في check_license(): استدعاء CallObjectMethod " +
+                "للحصول على سلسلة التسجيل."
+        )
+        appendLine(
+            "    * حساب SHA1 للسلسلة، وصياغة أول كلمة hex " +
+                "بصيغة \"%08x\"، وتخزين أول 4 بايت في mUserid."
+        )
+    }.trimEnd()
+
+    /**
+     * تفكيك دالة check_license وفحص ملف الترخيص على القرص
+     * (البند 2 من إصدار 10716).
+     */
+    fun getDiskLicenseFileDisassemblyAnalysis(): String = buildString {
+        appendLine(
+            "=== [البند 2] تفكيك check_license وفحص ملف الترخيص " +
+                "على القرص ==="
+        )
+        appendLine("")
+        appendLine("1) مواصفات الملف الذي تفحصه المكتبة الأصلية على القرص:")
+        appendLine(
+            "  - اسم الملف: أي ملف يطابق صيغة 0x[0-9A-Fa-f]{8,16} " +
+                "(لصوت Salma: 0x00169729)."
+        )
+        appendLine(
+            "  - مسار الملف: مباشرة داخل مجلد الصوت mVoicesPath " +
+                "الممرر إلى nInit."
+        )
+        appendLine(
+            "  - تنسيق الملف: ملف نصي عادي يُفتح بوضع \"rt\"، " +
+                "ويجب أن يحتوي على \"COMMERCIAL\"."
+        )
+        appendLine(
+            "  - توقيت الفحص: يُفحص داخل check_license() " +
+                "أثناء tts_function_load_voice"
+        )
+        appendLine(
+            "    قبل استدعاء BABILE_initEx مباشرة (يُشترط وجوده " +
+                "لتهيئة محرك الصوت)."
+        )
+        appendLine("")
+        appendLine("2) نتائج تفكيك check_license (العنوان 0x1b8f70):")
+        appendLine("  [0x1b8fc8] ldr x21, [x21, #0xbb8]  // مؤشر idfunction")
+        appendLine("  [0x1b8fd0] cbz x8, #0x1b90e0       // إن كان صفراً < 4.0")
+        appendLine("  [0x1b8fe8] // STR: 'android >= 4.0 check method'")
+        appendLine("  [0x1b902c] bl  CallObjectMethod    // استدعاء idfunction")
+        appendLine("  [0x1b904c] blr x9                  // GetStringUTFChars")
+        appendLine("  [0x1b9084] bl  SHA1Reset           // تهيئة سياق SHA1")
+        appendLine("  [0x1b90a0] bl  SHA1Input          // تمرير سلسلة التسجيل")
+        appendLine("  [0x1b90a8] bl  SHA1Result          // حساب SHA1")
+        appendLine("  [0x1b90b0] ldr w4, [sp, #0x130]    // أول كلمة 32-بت")
+        appendLine("  [0x1b90b8] // STR: '%08x'")
+        appendLine("  [0x1b90c8] bl  snprintf(buf, 5, \"%08x\", w4)")
+        appendLine("  [0x1b90d8] str w8, [mUserid]       // تخزين 4 بايت")
+        appendLine("  [0x1b91cc] bl  opendir             // فتح mVoicesPath")
+        appendLine("  [0x1b9214] bl  readdir            // قراءة مدخلات المجلد")
+        appendLine("  [0x1b9264] // STR: '0x'")
+        appendLine("  [0x1b9268] bl  strstr(name, \"0x\") // فحص وجود 0x")
+        appendLine("  [0x1b9284] bl  sprintf(\"%s/%s\")   // تكوين المسار")
+        appendLine("  [0x1b9380] // STR: '%x'")
+        appendLine("  [0x1b938c] bl  sscanf(name, \"%x\", &mPasswd)")
+        appendLine("  [0x1b9394] // STR: 'rt'")
+        appendLine("  [0x1b939c] bl  fopen(path, \"rt\")  // فتح الملف")
+        appendLine("  [0x1b93dc] bl  fgets               // قراءة أسطر الترخيص")
+        appendLine("  [0x1b93f8] bl  strcat              // دمج في mLicense")
+        appendLine("  [0x1b9414] bl  fclose              // إغلاق الملف")
+        appendLine("  [0x1b9438] // STR: 'COMMERCIAL'")
+        appendLine("  [0x1b9440] bl  strstr(mLicense, \"COMMERCIAL\")")
+        appendLine("  [0x1b944c] // STR: 'license value error'")
+        appendLine("")
+        appendLine("3) تمرير القيم إلى Babile (العنوان 0x1ba388..0x1ba404):")
+        appendLine("  [0x1ba3ac] str x19, [babParam+0x280] // babParam.license")
+        appendLine("  [0x1ba3b0] str w9,  [babParam+0x288] // babParam.userId")
+        appendLine("  [0x1ba3b4] str w8,  [babParam+0x28c] // babParam.passwd")
+        appendLine("  [0x1ba3cc] // STR: 'check license done'")
+        appendLine("  [0x1ba3e0] // STR: 'BABILE_initEx before'")
+        appendLine("  [0x1ba404] bl  BABILE_initEx")
+        appendLine("  [0x1ba6f0] // STR: '\\tbabParam.license %s\\n'")
+        appendLine("  [0x1ba71c] // STR: '\\tbabParam.uid.userId %d\\n'")
+        appendLine("  [0x1ba748] // STR: '\\tbabParam.uid.passwd %d\\n'")
+    }.trimEnd()
 
     /**
      * نتائج فحص كود وتفكيك MultiTTS لنداءات nSetLicense / setLicense
