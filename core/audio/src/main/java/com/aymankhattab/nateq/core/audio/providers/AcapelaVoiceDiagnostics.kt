@@ -293,7 +293,54 @@ object AcapelaVoiceDiagnostics {
         ) {
             appendTail(sb, "سجل جذر البيانات", File(rootDir, LOG_FILE_NAME))
         }
+        val nativeTail = readNativeLogcatLines(30)
+        sb.appendLine("- أحدث 30 سطر من سجل acattsandroid-extended-native:")
+        nativeTail.forEach { sb.appendLine("  $it") }
         return sb.toString().trimEnd()
+    }
+
+    /**
+     * استرجاع آخر [maxLines] سطراً من سجل المكتبة الأصلية عبر Logcat.
+     */
+    fun readNativeLogcatLines(maxLines: Int = 30): List<String> {
+        return runCatching {
+            val myPid = Process.myPid().toString()
+            val proc = Runtime.getRuntime().exec(
+                arrayOf("logcat", "-d", "-t", "400", "--pid", myPid)
+            )
+            val lines = proc.inputStream
+                .bufferedReader(StandardCharsets.UTF_8).readLines()
+            proc.waitFor()
+            val filtered = lines.filter { line ->
+                line.contains("acattsandroid", ignoreCase = true) ||
+                    line.contains("tts_function", ignoreCase = true) ||
+                    line.contains("BABILE", ignoreCase = true) ||
+                    line.contains("eb=-", ignoreCase = true)
+            }
+            if (filtered.isNotEmpty()) {
+                filtered.takeLast(maxLines)
+            } else {
+                val procTag = Runtime.getRuntime().exec(
+                    arrayOf(
+                        "logcat", "-d", "-t", "200",
+                        "-s", "acattsandroid-extended-native:V"
+                    )
+                )
+                val linesTag = procTag.inputStream
+                    .bufferedReader(StandardCharsets.UTF_8).readLines()
+                procTag.waitFor()
+                val tagFiltered = linesTag.filter {
+                    it.isNotBlank() && !it.startsWith("---------")
+                }
+                if (tagFiltered.isNotEmpty()) {
+                    tagFiltered.takeLast(maxLines)
+                } else {
+                    listOf("(لم يُعثر على أسطر للمكتبة الأصلية في logcat)")
+                }
+            }
+        }.getOrElse { t ->
+            listOf("(تعذر قراءة logcat للمكتبة الأصلية: ${t.message})")
+        }
     }
 
     private fun appendTail(

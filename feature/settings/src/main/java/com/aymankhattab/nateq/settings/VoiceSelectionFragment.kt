@@ -2635,7 +2635,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         line.contains("NATEQ_TTS") ||
                             line.contains("ProtectedApp") ||
                             line.contains("A11y") ||
-                            line.contains("AndroidRuntime")
+                            line.contains("AndroidRuntime") ||
+                            line.contains("acattsandroid") ||
+                            line.contains("tts_function") ||
+                            line.contains("BABILE") ||
+                            line.contains("eb=-")
                     }
                     if (ttsFiltered.isNotEmpty()) {
                         appendLine(

@@ -1142,7 +1142,7 @@ internal class AcapelaHostSession(
         Log.i(TAG, singleMsg)
         HostLog.i(HostProtocol.ENGINE_ACAPELA, singleMsg)
 
-        val failure = configureExtendedDual(
+        val failure = configureExtendedTriple(
             voice = voice,
             iso3 = iso3,
             registration = registration,
@@ -1270,6 +1270,156 @@ internal class AcapelaHostSession(
         }
     }
 
+    private fun findBvcuFile(
+        voice: AcapelaVoiceManifest.VoiceInfo
+    ): File? {
+        val roots = listOfNotNull(
+            voice.dir,
+            voice.dir.parentFile,
+            File(context.filesDir, "Acapela"),
+            File(context.filesDir, "acapela"),
+            context.filesDir,
+            dataDirectory,
+            context.cacheDir
+        ).distinctBy { it.absolutePath }
+
+        for (root in roots) {
+            if (!root.exists()) continue
+            val found = root.walkTopDown().firstOrNull { f ->
+                f.isFile &&
+                    f.extension.equals("bvcu", ignoreCase = true) &&
+                    f.length() > 50_000L
+            }
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun buildNestedFileTree(
+        root: File,
+        label: String,
+        maxDepth: Int = 6
+    ): String {
+        val sb = StringBuilder()
+        sb.appendLine("=== شجرة مجلد $label: ${root.absolutePath} ===")
+        if (!root.exists()) {
+            sb.appendLine("  (المجلد غير موجود)")
+            return sb.toString()
+        }
+        if (!root.isDirectory) {
+            sb.appendLine("  - ${root.name} (${root.length()} بايت)")
+            return sb.toString()
+        }
+        fun walk(dir: File, indent: String, depth: Int) {
+            if (depth > maxDepth) {
+                sb.appendLine("$indent... [تجاوز أقصى عمق]")
+                return
+            }
+            val entries = dir.listFiles()?.sortedWith(
+                compareBy({ !it.isDirectory }, { it.name.lowercase() })
+            ) ?: return
+            if (entries.isEmpty()) {
+                sb.appendLine("$indent(مجلد فارغ)")
+                return
+            }
+            for (entry in entries) {
+                if (entry.isDirectory) {
+                    sb.appendLine("$indent[مجلد] ${entry.name}/")
+                    walk(entry, "$indent  ", depth + 1)
+                } else {
+                    val len = entry.length()
+                    val isBvcu = entry.extension
+                        .equals("bvcu", ignoreCase = true)
+                    val isBig = len >= 1_000_000L
+                    val tag = when {
+                        isBvcu && isBig ->
+                            " *** [ملف BVCU كبير: $len بايت] ***"
+                        isBvcu -> " * [ملف BVCU: $len بايت] *"
+                        isBig -> " * [ملف كبير: $len بايت] *"
+                        else -> ""
+                    }
+                    sb.appendLine("$indent- ${entry.name} ($len بايت)$tag")
+                }
+            }
+        }
+        walk(root, "  ", 1)
+        return sb.toString()
+    }
+
+    private fun logDiagnosticTrees(
+        voice: AcapelaVoiceManifest.VoiceInfo
+    ) {
+        val bvcuFile = findBvcuFile(voice)
+        val filesAcapela = File(context.filesDir, "Acapela")
+        val altAcapela = File(context.filesDir, "acapela")
+        val cacheStage = File(context.cacheDir, "acapela_stage")
+        val cacheDirect = File(context.cacheDir, "acapela_stage_direct")
+        val cacheParent = File(context.cacheDir, "acapela_stage_parent")
+
+        val sb = StringBuilder()
+        sb.appendLine("==================================================")
+        sb.appendLine("[تقرير جرد ملفات ومجلدات Acapela المتداخلة بالبايت]")
+        sb.appendLine("--------------------------------------------------")
+        sb.appendLine("[1] موقع ملف بيانات صوت Salma الكبير (.bvcu):")
+        if (bvcuFile != null) {
+            val parent = bvcuFile.parentFile
+            val grandParent = parent?.parentFile
+            val path = bvcuFile.absolutePath
+            sb.appendLine("  * المسار الكامل: $path")
+            sb.appendLine("  * اسم الملف: ${bvcuFile.name}")
+            sb.appendLine("  * الحجم: ${bvcuFile.length()} بايت")
+            sb.appendLine(
+                "  * المجلد الحاوي المباشر: ${parent?.name ?: "غير معروف"}"
+            )
+            sb.appendLine(
+                "  * المجلد الأب: ${grandParent?.name ?: "غير معروف"}"
+            )
+            sb.appendLine("  * داخل Salma: ${path.contains("Salma")}")
+            sb.appendLine("  * داخل salma_lf: ${path.contains("salma_lf")}")
+            sb.appendLine(
+                "  * داخل acapela_ara-SAU-Salma: " +
+                    path.contains("acapela_ara-SAU-Salma")
+            )
+        } else {
+            sb.appendLine(
+                "  * تنبيه: لم يُعثر على أي ملف .bvcu (>50KB) " +
+                    "في files أو cache!"
+            )
+        }
+        sb.appendLine("--------------------------------------------------")
+        sb.appendLine("[2] شجرة مجلد files/Acapela:")
+        sb.append(buildNestedFileTree(filesAcapela, "files/Acapela"))
+        if (altAcapela.exists() && altAcapela != filesAcapela) {
+            sb.append(buildNestedFileTree(altAcapela, "files/acapela"))
+        }
+        if (voice.dir.exists() &&
+            !voice.dir.absolutePath.startsWith(filesAcapela.absolutePath)
+        ) {
+            sb.append(
+                buildNestedFileTree(
+                    voice.dir,
+                    "voice.dir (${voice.dir.name})"
+                )
+            )
+        }
+        sb.appendLine("--------------------------------------------------")
+        sb.appendLine("[3] شجرة مجلدات cache/acapela_stage:")
+        val cacheDirs = listOf(cacheStage, cacheDirect, cacheParent)
+            .filter { it.exists() }
+        if (cacheDirs.isNotEmpty()) {
+            cacheDirs.forEach { dir ->
+                sb.append(buildNestedFileTree(dir, "cache/${dir.name}"))
+            }
+        } else {
+            sb.appendLine("  (لا توجد مجلدات مرحلية في cache)")
+        }
+        sb.appendLine("==================================================")
+
+        val fullText = sb.toString().trimEnd()
+        Log.i(TAG, fullText)
+        HostLog.i(HostProtocol.ENGINE_ACAPELA, fullText)
+    }
+
     private fun logPreLoadDiagnostics(
         voice: AcapelaVoiceManifest.VoiceInfo,
         pathPassed: String
@@ -1356,16 +1506,101 @@ internal class AcapelaHostSession(
         }.getOrElse { "maps_error: ${it.message}" }
     }
 
+    private fun prepareTrialDirectory(
+        trialDir: File,
+        voice: AcapelaVoiceManifest.VoiceInfo
+    ) {
+        if (!trialDir.exists()) {
+            trialDir.mkdirs()
+        }
+        val userdicos = File(trialDir, "userdicos")
+        if (!userdicos.exists()) {
+            userdicos.mkdirs()
+        }
+
+        val sourceDirs = listOfNotNull(
+            voice.dir,
+            voice.dir.parentFile,
+            File(voice.dir, "userdicos"),
+            File(context.filesDir, "Acapela/userdicos"),
+            File(context.cacheDir, "acapela_stage_parent/userdicos")
+        ).filter { it.isDirectory }
+
+        for (src in sourceDirs) {
+            src.listFiles { f ->
+                f.isFile && f.name.endsWith(".userdico", true)
+            }?.forEach { f ->
+                val dest = File(userdicos, f.name)
+                if (!dest.exists()) {
+                    runCatching { f.copyTo(dest, overwrite = false) }
+                }
+            }
+        }
+
+        trialDir.listFiles { f ->
+            f.isFile && f.extension.equals("inf", ignoreCase = true)
+        }?.forEach { inf ->
+            AcapelaVoiceManifest.ensureIniFor(inf)
+        }
+
+        trialDir.listFiles { f -> f.isDirectory }?.forEach { sub ->
+            sub.listFiles { f ->
+                f.isFile && f.extension.equals("inf", ignoreCase = true)
+            }?.forEach { inf ->
+                AcapelaVoiceManifest.ensureIniFor(inf)
+            }
+        }
+
+        val hasConfig = trialDir.listFiles { f ->
+            f.isFile && (
+                f.extension.equals("inf", true) ||
+                f.extension.equals("ini", true)
+            )
+        }?.isNotEmpty() == true
+
+        if (!hasConfig && voice.configFile != null &&
+            voice.configFile.isFile
+        ) {
+            val destConfig = File(trialDir, voice.configFile.name)
+            if (!destConfig.exists()) {
+                runCatching {
+                    voice.configFile.copyTo(destConfig, overwrite = false)
+                }
+            }
+            AcapelaVoiceManifest.ensureIniFor(destConfig)
+        }
+
+        val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(voice.dir)
+        if (hexFile != null && hexFile.isFile) {
+            val destHex = File(trialDir, hexFile.name)
+            if (!destHex.exists()) {
+                runCatching { hexFile.copyTo(destHex, overwrite = false) }
+            }
+        }
+
+        val yamlPair = AcapelaVoiceManifest.findConfigYamlWithParam(
+            listOfNotNull(voice.dir, voice.dir.parentFile)
+        )
+        if (yamlPair != null && yamlPair.first.isFile) {
+            val destYaml = File(trialDir, "config.yaml")
+            if (!destYaml.exists()) {
+                runCatching {
+                    yamlPair.first.copyTo(destYaml, overwrite = false)
+                }
+            }
+        }
+    }
+
     private suspend fun executeVoiceLoadTrial(
         label: String,
-        stageDir: File,
+        trialDir: File,
         speaker: String,
         iso3: Iso3,
         registration: String,
         voice: AcapelaVoiceManifest.VoiceInfo
     ): VoiceLoadTrialResult {
-        val stagePath = directoryArgument(stageDir)
-        logPreLoadDiagnostics(voice, stagePath)
+        prepareTrialDirectory(trialDir, voice)
+        val stagePath = directoryArgument(trialDir)
 
         val audioHandler = TrialAudio { bytes, len ->
             handleRawAudioBytes(bytes, len)
@@ -1377,91 +1612,65 @@ internal class AcapelaHostSession(
             registration
         )
 
+        val idFuncVal = runCatching {
+            srv.idfunction()
+        }.getOrNull().orEmpty()
+        val maskedReg = if (idFuncVal.length > 8) {
+            idFuncVal.take(4) + "*".repeat(idFuncVal.length - 8) +
+                idFuncVal.takeLast(4)
+        } else if (idFuncVal.isNotEmpty()) {
+            "****"
+        } else {
+            "(فارغ)"
+        }
+
         val initRes = srv.nInit(stagePath)
-        Log.i(TAG, "[$label] nInit=$initRes, path=$stagePath")
-        HostLog.i(
-            HostProtocol.ENGINE_ACAPELA,
-            "[$label] nInit=$initRes, path=$stagePath"
-        )
-        if (initRes != 0) {
-            runCatching { srv.nShutdown() }
-            return VoiceLoadTrialResult(
-                method = label,
-                path = stagePath,
-                initCode = initRes,
-                modeCode = -1,
-                langCode = -1,
-                voiceCode = -1,
-                speakCode = -1,
-                samples = 0L,
-                service = null,
-                audioHandler = audioHandler
+        val modeRes = if (initRes == 0) {
+            srv.nSetVoiceMode(VOICE_MODE_HD)
+        } else -1
+
+        val utf8Res = if (initRes == 0 && (
+                AcapelaVoiceManifest.hasUtf8Userdico(trialDir) ||
+                AcapelaVoiceManifest.hasUtf8Userdico(voice.dir)
             )
-        }
-
-        val modeRes = srv.nSetVoiceMode(VOICE_MODE_HD)
-        Log.i(TAG, "[$label] nSetVoiceMode=$modeRes")
-        HostLog.i(
-            HostProtocol.ENGINE_ACAPELA,
-            "[$label] nSetVoiceMode=$modeRes"
-        )
-
-        if (AcapelaVoiceManifest.hasUtf8Userdico(stageDir) ||
-            AcapelaVoiceManifest.hasUtf8Userdico(voice.dir)
         ) {
-            val utf8Res = srv.nUtf8Mode(iso3.language, iso3.country)
-            Log.i(TAG, "[$label] nUtf8Mode=$utf8Res")
-            HostLog.i(
-                HostProtocol.ENGINE_ACAPELA,
-                "[$label] nUtf8Mode=$utf8Res"
-            )
+            srv.nUtf8Mode(iso3.language, iso3.country)
+        } else null
+
+        val langRes = if (initRes == 0) {
+            srv.nSetLanguage(iso3.language, iso3.country, "")
+        } else -1
+
+        var voiceRes = if (initRes == 0) {
+            srv.nSetCurrentVoice(speaker)
+        } else -1
+        var triedAltVoice: String? = null
+        var altVoiceRes: Int? = null
+
+        if (initRes == 0 && voiceRes != 0 && speaker != trialDir.name) {
+            val alt = trialDir.name
+            triedAltVoice = alt
+            val res = srv.nSetCurrentVoice(alt)
+            altVoiceRes = res
+            if (res == 0) voiceRes = res
         }
 
-        val langRes = srv.nSetLanguage(iso3.language, iso3.country, "")
-        Log.i(TAG, "[$label] nSetLanguage=$langRes")
-        HostLog.i(
-            HostProtocol.ENGINE_ACAPELA,
-            "[$label] nSetLanguage=$langRes"
-        )
-
-        var voiceRes = srv.nSetCurrentVoice(speaker)
-        Log.i(TAG, "[$label] nSetCurrentVoice($speaker)=$voiceRes")
-        HostLog.i(
-            HostProtocol.ENGINE_ACAPELA,
-            "[$label] nSetCurrentVoice($speaker)=$voiceRes"
-        )
-        if (voiceRes != 0 && speaker != voice.dir.name) {
-            val alt = voice.dir.name
-            val altRes = srv.nSetCurrentVoice(alt)
-            Log.i(
-                TAG,
-                "[$label] بديل اسم المجلد: nSetCurrentVoice($alt)=$altRes"
+        val pauseRes = if (initRes == 0) {
+            setExtendedProperty(
+                srv,
+                PUNCTUATION_PAUSE_KEY,
+                PUNCTUATION_PAUSE_VALUE
             )
-            HostLog.i(
-                HostProtocol.ENGINE_ACAPELA,
-                "[$label] بديل اسم المجلد: nSetCurrentVoice($alt)=$altRes"
-            )
-            if (altRes == 0) voiceRes = altRes
-        }
+        } else null
 
-        setExtendedProperty(
-            srv,
-            PUNCTUATION_PAUSE_KEY,
-            PUNCTUATION_PAUSE_VALUE
-        )
-
-        // تشغيل جملة اختبار واحدة وتسجيل كود nSpeak
-        val speakRes = runCatching {
-            srv.nSpeak(REGISTRATION_PROBE_TEXT, null)
-        }.getOrElse { t ->
-            Log.w(TAG, "[$label] استثناء أثناء nSpeak", t)
-            -2
-        }
-        Log.i(TAG, "[$label] جملة اختبار nSpeak=$speakRes")
-        HostLog.i(
-            HostProtocol.ENGINE_ACAPELA,
-            "[$label] جملة اختبار nSpeak=$speakRes"
-        )
+        val speakRes = if (initRes == 0) {
+            runCatching {
+                srv.nSpeak(REGISTRATION_PROBE_TEXT, null)
+            }.getOrElse { t ->
+                Log.w(TAG, "[$label] استثناء أثناء nSpeak", t)
+                -2
+            }
+        } else -1
 
         if (speakRes == 0) {
             val started = SystemClock.uptimeMillis()
@@ -1473,27 +1682,51 @@ internal class AcapelaHostSession(
         }
 
         val totalSamples = audioHandler.samples.get()
-        Log.i(TAG, "[$label] ناتج التجربة: samples=$totalSamples")
-        HostLog.i(
-            HostProtocol.ENGINE_ACAPELA,
-            "[$label] ناتج التجربة: samples=$totalSamples"
+
+        val sb = StringBuilder()
+        sb.appendLine("[$label - وسائط النداءات وأكواد الإرجاع الحرفية]")
+        sb.appendLine("  - nInit(path = \"$stagePath\") => كود: $initRes")
+        sb.appendLine(
+            "  - nSetVoiceMode(mode = \"$VOICE_MODE_HD\") => كود: $modeRes"
+        )
+        if (utf8Res != null) {
+            sb.appendLine(
+                "  - nUtf8Mode(lang = \"${iso3.language}\", " +
+                    "country = \"${iso3.country}\") => كود: $utf8Res"
+            )
+        }
+        sb.appendLine(
+            "  - nSetLanguage(lang = \"${iso3.language}\", " +
+                "country = \"${iso3.country}\", " +
+                "variant = \"\") => كود: $langRes"
+        )
+        sb.appendLine(
+            "  - nSetCurrentVoice(speaker = \"$speaker\") => كود: $voiceRes"
+        )
+        if (altVoiceRes != null) {
+            sb.appendLine(
+                "  - nSetCurrentVoice(بديل = \"$triedAltVoice\") => " +
+                    "كود: $altVoiceRes"
+            )
+        }
+        if (pauseRes != null) {
+            sb.appendLine(
+                "  - nSetProperty(name = \"$PUNCTUATION_PAUSE_KEY\", " +
+                    "value = \"$PUNCTUATION_PAUSE_VALUE\") => كود: $pauseRes"
+            )
+        }
+        sb.appendLine(
+            "  - ترخيص الخدمة (idfunction): \"$maskedReg\" " +
+                "(طول=${idFuncVal.length})"
+        )
+        sb.appendLine(
+            "  - nSpeak(text = \"$REGISTRATION_PROBE_TEXT\", " +
+                "callback = null) => كود: $speakRes, عينات PCM: $totalSamples"
         )
 
-        val logFile = File(stageDir, AcapelaVoiceDiagnostics.LOG_FILE_NAME)
-            .takeIf { it.exists() && it.length() > 0L }
-            ?: File(voice.dir, AcapelaVoiceDiagnostics.LOG_FILE_NAME)
-                .takeIf { it.exists() && it.length() > 0L }
-        if (logFile != null) {
-            val tail = AcapelaVoiceDiagnostics.tailLines(logFile, 10)
-            if (tail.isNotEmpty()) {
-                val formatted = tail.joinToString("\n")
-                Log.w(TAG, "[$label logfile.txt]:\n$formatted")
-                HostLog.w(
-                    HostProtocol.ENGINE_ACAPELA,
-                    "[$label logfile.txt]:\n$formatted"
-                )
-            }
-        }
+        val logOutput = sb.toString().trimEnd()
+        Log.i(TAG, logOutput)
+        HostLog.i(HostProtocol.ENGINE_ACAPELA, logOutput)
 
         return VoiceLoadTrialResult(
             method = label,
@@ -1509,7 +1742,7 @@ internal class AcapelaHostSession(
         )
     }
 
-    private suspend fun configureExtendedDual(
+    private suspend fun configureExtendedTriple(
         voice: AcapelaVoiceManifest.VoiceInfo,
         iso3: Iso3,
         registration: String,
@@ -1518,8 +1751,15 @@ internal class AcapelaHostSession(
     ): HostResult? {
         val regLen = registration.length
 
+        // الخطوة 1: تقرير الجرد المتداخل وموقع ملف Salma الكبير
+        logDiagnosticTrees(voice)
+
         // الخطوة 3: فحص سلامة ملفات الصوت
         checkAudioFilesIntegrity(voice.dir)
+
+        // تجهيز المجلدات في الكاش مسبقاً
+        stageVoiceDirect(voice)
+        stageVoiceParent(voice)
 
         // الخطوة 2: مقارنة اسم الصوت وتمرير اسم config.yaml إن اختلف
         val yamlVoiceName = extractVoiceNameFromConfigYaml(voice.dir)
@@ -1548,90 +1788,113 @@ internal class AcapelaHostSession(
             passedVoiceName
         }
 
-        // الخطوة 4: تجربة الطريقتين (مسار المجلد ومسار المجلد الأب)
-        val stageDirDirect = stageVoiceDirect(voice)
+        // الخطوة 4: تجربة تحميل الصوت 3 مرات بمسارات مختلفة:
+        // 1- مجلد الصوت الذي فيه ملف bvcu الكبير
+        // 2- ثم مجلده الأب
+        // 3- ثم files/Acapela
+        val bvcuFile = findBvcuFile(voice)
+        val filesAcapela = File(context.filesDir, "Acapela").takeIf {
+            it.exists()
+        } ?: dataDirectory ?: File(context.filesDir, "Acapela")
+
+        val dir1 = bvcuFile?.parentFile ?: voice.dir
+        val dir2 = dir1.parentFile ?: dir1
+        val dir3 = filesAcapela
+
         val trial1 = executeVoiceLoadTrial(
-            label = "مسار المجلد المباشر",
-            stageDir = stageDirDirect,
+            label = "1- مجلد bvcu (${dir1.name})",
+            trialDir = dir1,
             speaker = effectiveSpeaker,
             iso3 = iso3,
             registration = registration,
             voice = voice
         )
 
-        val stageDirParent = stageVoiceParent(voice)
         val trial2 = executeVoiceLoadTrial(
-            label = "مسار المجلد الأب",
-            stageDir = stageDirParent,
+            label = "2- المجلد الأب (${dir2.name})",
+            trialDir = dir2,
             speaker = effectiveSpeaker,
             iso3 = iso3,
             registration = registration,
             voice = voice
         )
+
+        val trial3 = executeVoiceLoadTrial(
+            label = "3- files/Acapela (${dir3.name})",
+            trialDir = dir3,
+            speaker = effectiveSpeaker,
+            iso3 = iso3,
+            registration = registration,
+            voice = voice
+        )
+
+        // الخطوة 3 في الطلب: طباعة آخر 30 سطر من سجل المكتبة الأصلية
+        val nativeLines = AcapelaVoiceDiagnostics.readNativeLogcatLines(30)
+        val sbNative = StringBuilder()
+        sbNative.appendLine(
+            "=== آخر 30 سطر من سجل المكتبة الأصلية " +
+                "acattsandroid-extended-native ==="
+        )
+        nativeLines.forEach { sbNative.appendLine("  $it") }
+        val nativeText = sbNative.toString().trimEnd()
+        Log.i(TAG, nativeText)
+        HostLog.i(HostProtocol.ENGINE_ACAPELA, nativeText)
 
         // الخطوة 6: طباعة اسم الطريقة ونتيجة كل محاولة في أول سطر
-        val topSummary = "[تشخيص تحميل Acapela] الطرق المجربة: " +
+        val topSummary = "[تشخيص تحميل Acapela - 3 محاولات] " +
             "1- ${trial1.method} (init=${trial1.initCode}, " +
             "voice=${trial1.voiceCode}, speak=${trial1.speakCode}, " +
             "samples=${trial1.samples}) | " +
             "2- ${trial2.method} (init=${trial2.initCode}, " +
             "voice=${trial2.voiceCode}, speak=${trial2.speakCode}, " +
             "samples=${trial2.samples}) | " +
+            "3- ${trial3.method} (init=${trial3.initCode}, " +
+            "voice=${trial3.voiceCode}, speak=${trial3.speakCode}, " +
+            "samples=${trial3.samples}) | " +
             "النتيجة: " + when {
-                trial2.isSuccess -> "نجاح مسار المجلد الأب"
-                trial1.isSuccess -> "نجاح مسار المجلد المباشر"
-                trial2.speakCode == 0 -> "نجاح جزئي مسار المجلد الأب"
-                trial1.speakCode == 0 -> "نجاح جزئي مسار المجلد المباشر"
-                else -> "فشل المحاولتين (كود1=${trial1.speakCode}, " +
-                    "كود2=${trial2.speakCode})"
+                trial1.isSuccess -> "نجاح المحاولة 1 (${trial1.method})"
+                trial2.isSuccess -> "نجاح المحاولة 2 (${trial2.method})"
+                trial3.isSuccess -> "نجاح المحاولة 3 (${trial3.method})"
+                trial1.speakCode == 0 -> "نجاح جزئي المحاولة 1"
+                trial2.speakCode == 0 -> "نجاح جزئي المحاولة 2"
+                trial3.speakCode == 0 -> "نجاح جزئي المحاولة 3"
+                else -> "فشل المحاولات الثلاث (كود1=${trial1.speakCode}, " +
+                    "كود2=${trial2.speakCode}, كود3=${trial3.speakCode})"
             }
         Log.i(TAG, topSummary)
         HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
 
-        // الخطوة 5: تثبيت المسار الناجح كالمسار الافتراضي
-        val (chosenTrial, otherTrial) = if (trial2.isSuccess ||
-            (trial2.speakCode == 0 && trial1.speakCode != 0)
-        ) {
-            trial2 to trial1
-        } else if (trial1.isSuccess ||
-            (trial1.speakCode == 0 && trial2.speakCode != 0)
-        ) {
-            trial1 to trial2
-        } else {
-            trial2 to trial1
+        val allTrials = listOf(trial1, trial2, trial3)
+        val chosenTrial = allTrials.firstOrNull { it.isSuccess }
+            ?: allTrials.firstOrNull { it.speakCode == 0 }
+            ?: trial1
+
+        // إغلاق خدمات المحاولات الأخرى
+        allTrials.filter { it != chosenTrial }.forEach { other ->
+            other.service?.let {
+                runCatching { it.nStop() }
+                runCatching { it.nShutdown() }
+            }
         }
 
-        // إغلاق خدمة المحاولة الأخرى
-        otherTrial.service?.let {
-            runCatching { it.nStop() }
-            runCatching { it.nShutdown() }
-        }
-
-        if (chosenTrial.voiceCode != 0) {
+        if (chosenTrial.voiceCode != 0 || chosenTrial.speakCode != 0) {
             chosenTrial.service?.let {
                 runCatching { it.nStop() }
                 runCatching { it.nShutdown() }
             }
+            logVoiceDiagnostics(
+                voice,
+                "فشل المحاولات الثلاث (كود1=${trial1.speakCode}, " +
+                    "كود2=${trial2.speakCode}, كود3=${trial3.speakCode})"
+            )
             return HostResult.failure(
                 "VOICE_LOAD_FAILED",
-                "فشل nSetCurrentVoice($effectiveSpeaker): " +
-                    "كود1=${trial1.voiceCode}, كود2=${trial2.voiceCode}"
+                "فشل nSetCurrentVoice/nSpeak: " +
+                    "كود1=${trial1.speakCode}, كود2=${trial2.speakCode}, " +
+                    "كود3=${trial3.speakCode}"
             )
         }
 
-        if (chosenTrial.speakCode != 0) {
-            chosenTrial.service?.let {
-                runCatching { it.nStop() }
-                runCatching { it.nShutdown() }
-            }
-            return HostResult.failure(
-                "SPEAK_ERROR",
-                "فشل nSpeak الممتد: " +
-                    "كود1=${trial1.speakCode}, كود2=${trial2.speakCode}"
-            )
-        }
-
-        // تفعيل ضخ الصوت الفعلي للمستخدم في الخدمة المعتمدة
         chosenTrial.audioHandler.probeOnly = false
         val srv = chosenTrial.service ?: return HostResult.failure(
             "NOT_INITIALIZED",
