@@ -971,6 +971,7 @@ internal class AcapelaHostSession(
         val nativeCapMs = SynthesisBudget.inactivityBudgetMs(
             chunks.sumOf { it.length }
         )
+        val regLen = srv.idfunction()?.length ?: 0
         for (chunk in chunks) {
             if (cancelled.get()) {
                 return HostResult.failure("CANCELLED", "أُلغي الطلب")
@@ -981,7 +982,10 @@ internal class AcapelaHostSession(
             } finally {
                 sink.exitNativeCall()
             }
-            Log.i(TAG, "كود عودة nSpeak الممتد: $speakRes")
+            val speakLog = "Acapela Extended: nSpeak=$speakRes, " +
+                "regLength=$regLen, chunkChars=${chunk.length}"
+            Log.i(TAG, speakLog)
+            HostLog.i(HostProtocol.ENGINE_ACAPELA, speakLog)
             if (speakRes != 0) {
                 Log.e(TAG, "فشل nSpeak في Acapela الممتد: $speakRes")
                 forgetRegistration(voice)
@@ -1324,7 +1328,14 @@ internal class AcapelaHostSession(
         codes: ProbeCodes
     ): HostResult? {
         val stageDir = stageVoice(voice)
-        codes.init = srv.nInit(directoryArgument(stageDir))
+        val regLen = srv.idfunction()?.length ?: 0
+        val stagePath = directoryArgument(stageDir)
+
+        codes.init = srv.nInit(stagePath)
+        val initMsg = "Acapela Extended: nInit=${codes.init}, " +
+            "regLength=$regLen, path=$stagePath"
+        Log.i(TAG, initMsg)
+        HostLog.i(HostProtocol.ENGINE_ACAPELA, initMsg)
         if (codes.init != 0) {
             return HostResult.failure(
                 "ENGINE_INIT_FAILED",
@@ -1333,6 +1344,10 @@ internal class AcapelaHostSession(
         }
 
         codes.mode = srv.nSetVoiceMode(VOICE_MODE_HD)
+        val modeMsg = "Acapela Extended: nSetVoiceMode=${codes.mode}, " +
+            "mode=$VOICE_MODE_HD, regLength=$regLen"
+        Log.i(TAG, modeMsg)
+        HostLog.i(HostProtocol.ENGINE_ACAPELA, modeMsg)
         if (codes.mode != 0) {
             return HostResult.failure(
                 "VOICE_MODE_FAILED",
@@ -1345,6 +1360,9 @@ internal class AcapelaHostSession(
         ) {
             val utf8Res = srv.nUtf8Mode(iso3.language, iso3.country)
             codes.utf8 = utf8Res
+            val utf8Msg = "Acapela Extended: nUtf8Mode=$utf8Res"
+            Log.i(TAG, utf8Msg)
+            HostLog.i(HostProtocol.ENGINE_ACAPELA, utf8Msg)
             if (utf8Res < 0) {
                 return HostResult.failure(
                     "UTF8_MODE_FAILED",
@@ -1354,6 +1372,10 @@ internal class AcapelaHostSession(
         }
 
         codes.language = srv.nSetLanguage(iso3.language, iso3.country, "")
+        val langMsg = "Acapela Extended: nSetLanguage=${codes.language}, " +
+            "lang=${iso3.language}, country=${iso3.country}, regLen=$regLen"
+        Log.i(TAG, langMsg)
+        HostLog.i(HostProtocol.ENGINE_ACAPELA, langMsg)
         if (codes.language != 0) {
             return HostResult.failure(
                 "LANGUAGE_FAILED",
@@ -1364,6 +1386,10 @@ internal class AcapelaHostSession(
 
         val speaker = voice.rawSpeaker ?: voice.voiceName
         codes.voice = srv.nSetCurrentVoice(speaker)
+        val voiceMsg = "Acapela Extended: nSetCurrentVoice=${codes.voice}, " +
+            "voice=$speaker, regLength=$regLen"
+        Log.i(TAG, voiceMsg)
+        HostLog.i(HostProtocol.ENGINE_ACAPELA, voiceMsg)
         if (codes.voice != 0) {
             return HostResult.failure(
                 "VOICE_LOAD_FAILED",
