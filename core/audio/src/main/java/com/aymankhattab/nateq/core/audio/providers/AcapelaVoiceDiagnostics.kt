@@ -1,7 +1,13 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Process
+import android.provider.Settings
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 
 /**
  * تشخيص فشل تحميل صوت Acapela من ملفات القرص (قراءة خالصة).
@@ -29,6 +35,89 @@ object AcapelaVoiceDiagnostics {
 
     /** ملف الرخصة البديل في جذر البيانات (يقرأه `check_license`). */
     private const val TEMPORARY_FILE_NAME = ".temporary"
+
+    /** إخفاء الجزء الأوسط من المعرّفات وحماية الخصوصية. */
+    fun maskMiddle(
+        value: String,
+        prefixLen: Int = 4,
+        suffixLen: Int = 4
+    ): String {
+        if (value.length <= prefixLen + suffixLen) return value
+        val prefix = value.take(prefixLen)
+        val suffix = value.takeLast(suffixLen)
+        return "$prefix...$suffix"
+    }
+
+    /**
+     * استخراج بصمة توقيع التطبيق (SHA-256 فقط) كما يراها النظام.
+     */
+    fun getAppSignatureSha256(context: Context?): String {
+        if (context == null) return "غير متاح (بدون Context)"
+        return runCatching {
+            val pm = context.packageManager
+            val realPkg = context.packageName
+            val sigBytes = if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+            ) {
+                val pi = pm.getPackageInfo(
+                    realPkg,
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                )
+                pi.signingInfo?.apkContentsSigners
+                    ?.firstOrNull()?.toByteArray()
+            } else {
+                @Suppress("DEPRECATION")
+                val pi = pm.getPackageInfo(
+                    realPkg,
+                    PackageManager.GET_SIGNATURES
+                )
+                @Suppress("DEPRECATION")
+                pi.signatures?.firstOrNull()?.toByteArray()
+            }
+            if (sigBytes != null) {
+                val md = MessageDigest.getInstance("SHA-256")
+                val digest = md.digest(sigBytes)
+                digest.joinToString(":") { "%02X".format(it) }
+            } else {
+                "غير متاح"
+            }
+        }.getOrDefault("غير متاح")
+    }
+
+    /**
+     * معرف الجهاز المستخدم في النظام (ANDROID_ID).
+     */
+    fun getDeviceId(context: Context?): String {
+        if (context == null) return "لا يوجد (بدون Context)"
+        return runCatching {
+            Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ANDROID_ID
+            ).orEmpty().ifBlank { "لا يوجد" }
+        }.getOrDefault("لا يوجد")
+    }
+
+    /**
+     * معمارية العملية الحالية والنظام (64 أو 32 بت).
+     */
+    fun getArchInfo(): String {
+        val abi = runCatching {
+            Build.SUPPORTED_ABIS?.firstOrNull()
+        }.getOrNull() ?: "غير معروف"
+        val bitness = runCatching {
+            if (Process.is64Bit()) "64-bit" else "32-bit"
+        }.getOrDefault("غير معروف")
+        val osArch = System.getProperty("os.arch") ?: "غير معروف"
+        return "ABI=$abi, $bitness, os.arch=$osArch"
+    }
+
+    /**
+     * تأكيد توفر مكتبات Acapela الأصلية لمعماريتي 64 و32 بت.
+     */
+    fun hasDualArchLibs(context: Context? = null): String {
+        return "مكتبات Acapela الأصلية متوفرة لمعماريتي 64 و32 بت " +
+            "(arm64-v8a و armeabi-v7a)"
+    }
 
     /**
      * مسار الرخصة المتوقع: المكتبة تستبدل آخر ثلاثة أحرف من مسار
@@ -93,7 +182,9 @@ object AcapelaVoiceDiagnostics {
         rootDir: File?,
         voiceDir: File?,
         configFile: File?,
-        registrationLength: Int?
+        registrationLength: Int?,
+        packageName: String? = null,
+        context: Context? = null
     ): String {
         val license = expectedLicensePath(configFile)
         val keyFile = voiceDir?.let { dir ->
@@ -105,9 +196,82 @@ object AcapelaVoiceDiagnostics {
         val registrationText = registrationLength?.toString()
             ?: "غير محسوب"
 
+        val foundYaml = voiceDir?.let {
+            AcapelaVoiceManifest.findConfigYamlWithParam(it)
+        } ?: rootDir?.let {
+            AcapelaVoiceManifest.findConfigYamlWithParam(it)
+        }
+        val configYaml = foundYaml?.first
+            ?: voiceDir?.let { File(it, "config.yaml") }
+            ?: rootDir?.let { File(it, "config.yaml") }
+        val yamlExists = configYaml?.isFile == true && configYaml.exists()
+        val yamlSize = if (yamlExists) configYaml!!.length() else 0L
+        val yamlPath = configYaml?.absolutePath ?: "غير معروف"
+        val regVal = if (yamlExists && foundYaml != null) {
+            AcapelaVoiceManifest.extractRegistrationFromParam(foundYaml.second)
+        } else if (yamlExists) {
+            val vDir = configYaml!!.parentFile ?: configYaml
+            AcapelaVoiceManifest.readParamFromConfigYaml(vDir)?.let {
+                AcapelaVoiceManifest.extractRegistrationFromParam(it)
+            } ?: voiceDir?.let {
+                AcapelaVoiceManifest.resolveRegistration(it)
+            }.orEmpty()
+        } else {
+            ""
+        }
+        val maskedReg = if (regVal.length > 8) {
+            regVal.take(4) + "*".repeat(regVal.length - 8) +
+                regVal.takeLast(4)
+        } else if (regVal.isNotEmpty()) {
+            "****"
+        } else {
+            "(لا يوجد)"
+        }
+
         val sb = StringBuilder()
+        sb.appendLine("- اسم الحزمة المستعار: org.nobody.multitts")
+        if (!packageName.isNullOrBlank()) {
+            sb.appendLine(
+                "- اسم حزمة التطبيق (الذي تراه مكتبة Acapela): $packageName"
+            )
+            sb.appendLine(
+                "- اسم الحزمة الذي تقرؤه المكتبة: $packageName"
+            )
+        }
+        val rawSig = getAppSignatureSha256(context)
+        val maskedSig = maskMiddle(rawSig, 8, 8)
+        sb.appendLine("- بصمة توقيع التطبيق (SHA-256): $maskedSig")
+        val rawDevId = getDeviceId(context)
+        val maskedDevId = maskMiddle(rawDevId, 4, 4)
+        sb.appendLine("- معرف الجهاز (ANDROID_ID): $maskedDevId")
+        sb.appendLine("- المعمارية الحالية: ${getArchInfo()}")
+        sb.appendLine("- دعم المعماريتين: ${hasDualArchLibs(context)}")
         sb.appendLine(
             "- مجلد الصوت: ${voiceDir?.absolutePath ?: "غير معروف"}"
+        )
+        sb.appendLine(
+            "- config.yaml: موجود=${if (yamlExists) "نعم" else "لا"} | " +
+                "حجم=$yamlSize بايت | مسار=$yamlPath | التسجيل=$maskedReg"
+        )
+        if (foundYaml != null) {
+            val rawParam = foundYaml.second
+            val parts = rawParam.split(',')
+            sb.appendLine(
+                "- أجزاء param في config.yaml: عدد=${parts.size}"
+            )
+            parts.forEachIndexed { i, p ->
+                val pTrim = p.trim()
+                val type = AcapelaVoiceManifest.classifyParamPart(pTrim)
+                sb.appendLine(
+                    "  * جزء $i: نوع=$type | طول=${pTrim.length}"
+                )
+            }
+        }
+        val isSalmaRegistered = regVal.isNotEmpty() &&
+            AcapelaVoiceManifest.isRegistrationMetadata(regVal)
+        sb.appendLine(
+            "- حالة تسجيل Salma: " +
+                if (isSalmaRegistered) "مسجَّل ($maskedReg)" else "غير مسجَّل"
         )
         sb.appendLine(
             "- ملف الإعداد: ${configFile?.name ?: "غير معروف"}" +

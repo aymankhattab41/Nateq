@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.providers
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -296,8 +297,11 @@ class AcapelaVoiceManifestTest {
 
         val lines = File(voiceFolder, "salma.ini").readLines()
         assertTrue(lines.isNotEmpty())
-        // الصيغة تمرّ من بوّابة `%s "%[^"]"` ومن مُدخلات `[ %[^] ] ]`.
-        val shape = Regex("^[A-Z]+ \"[^\"]+\" \\[ [A-Z_]+ ]$")
+        // الصيغة تمرّ من بوّابة `#%s %s "%[^"]" [ %[^] ] ]`
+        // أو `MODE = "%[^"]"`.
+        val shape = Regex(
+            "^(?:MODE = \"[^\"]+\"|#[0-9]+ [A-Z]+ \"[^\"]+\" \\[ [A-Z_]+ ])$"
+        )
         for (line in lines) {
             assertTrue("سطر تهيئة غير مطابق: $line", shape.matches(line))
         }
@@ -330,8 +334,8 @@ class AcapelaVoiceManifestTest {
         File(voiceFolder, "salma.inf").writeText(
             "[Voice]\nspeaker = \"Salma\"\n"
         )
-        val original = "PATH RAM \".\"\n" +
-            "FILEMAP \"salma.bvcu\" [ RAM ]\n"
+        val original = "MODE = \"MODE=prep_hd\"\n" +
+            "#1 FILEMAP \"salma.bvcu\" [ RAM ]\n"
         val ini = File(voiceFolder, "salma.ini")
         ini.writeText(original)
 
@@ -540,6 +544,69 @@ class AcapelaVoiceManifestTest {
     }
 
     @Test
+    fun resolveRegistration_readsParamFromConfigYaml() {
+        val baseDir = tempFolder.newFolder("yaml_param")
+        File(baseDir, "config.yaml").writeText(
+            "speaker:\n  param: \"salma22k_hq," +
+                "test@example.com,0123456789abcdef\"\n"
+        )
+        val reg = AcapelaVoiceManifest.resolveRegistration(baseDir)
+        assertEquals("test@example.com0123456789abcdef", reg)
+    }
+
+    @Test
+    fun resolveRegistration_prefersConfigYamlOverHexFile() {
+        val baseDir = tempFolder.newFolder("yaml_over_hex")
+        File(baseDir, "config.yaml").writeText(
+            "param: \"salma22k_hq,user@domain.com,fedcba9876543210\"\n"
+        )
+        File(baseDir, "0x00169729").writeText(
+            "reg: \"hex_token_123456789_meta\"\n"
+        )
+        val reg = AcapelaVoiceManifest.resolveRegistration(baseDir)
+        assertEquals("user@domain.comfedcba9876543210", reg)
+    }
+
+    @Test
+    fun findConfigYamlWithParam_findsFileInSubdirectory() {
+        val root = tempFolder.newFolder("Acapela_sub_test")
+        val voiceDir = File(root, "acapela_ara-SAU-Salma").apply { mkdirs() }
+        File(voiceDir, "config.yaml").writeText(
+            "speaker:\n  param: aljl0123456789d1b7\n"
+        )
+        val queryDir = File(root, "Salma").apply { mkdirs() }
+        val found = AcapelaVoiceManifest.findConfigYamlWithParam(queryDir)
+        assertNotNull(found)
+        assertEquals("acapela_ara-SAU-Salma", found?.first?.parentFile?.name)
+        assertEquals("aljl0123456789d1b7", found?.second)
+    }
+
+    @Test
+    fun extractRegistrationFromParam_detectsAljlD1b7() {
+        val standalone = AcapelaVoiceManifest.extractRegistrationFromParam(
+            "\"aljl1122334455d1b7\""
+        )
+        assertEquals("aljl1122334455d1b7", standalone)
+
+        val csv = AcapelaVoiceManifest.extractRegistrationFromParam(
+            "salma22k_hq, user@test.com, aljl9988776655d1b7"
+        )
+        assertEquals("user@test.comaljl9988776655d1b7", csv)
+    }
+
+    @Test
+    fun resolveRegistration_resolvesAljlD1b7FromSubdirectory() {
+        val root = tempFolder.newFolder("Acapela_reg_sub")
+        val voiceDir = File(root, "acapela_ara-SAU-Salma").apply { mkdirs() }
+        File(voiceDir, "config.yaml").writeText(
+            "speaker:\n  param: aljl_target_code_d1b7\n"
+        )
+        val queryDir = File(root, "Salma").apply { mkdirs() }
+        val reg = AcapelaVoiceManifest.resolveRegistration(queryDir)
+        assertEquals("aljl_target_code_d1b7", reg)
+    }
+
+    @Test
     fun parseVoice_keepsCountryFromIsoCode() {
         val voiceDir = tempFolder.newFolder("iso3_country")
         File(voiceDir, "mehdi.inf").writeText(
@@ -700,5 +767,59 @@ class AcapelaVoiceManifestTest {
         val bumped = AcapelaVoiceManifest.readVoicesSnapshot(baseDir) { clock }
         assertFalse(bumped.fresh)
         assertEquals(1, bumped.voices.size)
+    }
+
+    @Test
+    fun classifyParamPart_correctlyClassifiesParts() {
+        assertEquals(
+            "بريد",
+            AcapelaVoiceManifest.classifyParamPart("user@example.com")
+        )
+        assertEquals(
+            "كود 16 خانة",
+            AcapelaVoiceManifest.classifyParamPart("0123456789abcdef")
+        )
+        assertEquals(
+            "كود صوت",
+            AcapelaVoiceManifest.classifyParamPart("salma22k_hq")
+        )
+    }
+
+    @Test
+    fun ensureIniFor_generatesModeAndNumberedDirectives() {
+        val dir = tempFolder.newFolder("ini_test")
+        val inf = File(dir, "voice.inf").apply {
+            writeText("speaker = \"Salma\"\nISOCode = \"ara-SAU\"\n")
+        }
+        File(dir, "voice.bvcu").writeBytes(ByteArray(10_000))
+        AcapelaVoiceManifest.ensureIniFor(inf)
+        val ini = File(dir, "voice.ini")
+        assertTrue(ini.exists())
+        val text = ini.readText()
+        assertTrue(text.contains("MODE = \"MODE=prep_hd\""))
+        assertTrue(text.contains("#1 FILEMAP \"voice.bvcu\" [ RAM ]"))
+    }
+
+    @Test
+    fun ensureIniFor_regeneratesWhenOldIniMissingNumberOrMode() {
+        val dir = tempFolder.newFolder("ini_regen_test")
+        val inf = File(dir, "voice.inf").apply {
+            writeText("speaker = \"Salma\"\nISOCode = \"ara-SAU\"\n")
+        }
+        File(dir, "voice.bvcu").writeBytes(ByteArray(10_000))
+        val ini = File(dir, "voice.ini").apply {
+            writeText("FILEMAP \"voice.bvcu\" [ RAM ]\n")
+        }
+        AcapelaVoiceManifest.ensureIniFor(inf)
+        val text = ini.readText()
+        assertTrue(text.contains("#1 FILEMAP \"voice.bvcu\" [ RAM ]"))
+        assertTrue(text.contains("MODE = \"MODE=prep_hd\""))
+    }
+
+    @Test
+    fun extractRegistrationFromParam_concatenatesEmailAndHexCode() {
+        val param = "salma22k_hq,test@example.com,0123456789abcdef"
+        val reg = AcapelaVoiceManifest.extractRegistrationFromParam(param)
+        assertEquals("test@example.com0123456789abcdef", reg)
     }
 }

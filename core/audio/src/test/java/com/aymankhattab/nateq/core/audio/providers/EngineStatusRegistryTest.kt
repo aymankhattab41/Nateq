@@ -244,13 +244,13 @@ class EngineStatusRegistryTest {
 
         EngineStatusRegistry.noteSpeakFailure(
             engine,
-            "HD_REGISTRATION_MISSING",
+            "CONFIG_YAML_MISSING",
             "بيانات مفقودة"
         )
         val afterFail = EngineStatusRegistry.statusOf(engine)
         assertNotNull(afterFail?.lastSpeakFailure)
         assertEquals(
-            "HD_REGISTRATION_MISSING",
+            "CONFIG_YAML_MISSING",
             afterFail?.lastSpeakFailure?.code
         )
 
@@ -260,7 +260,7 @@ class EngineStatusRegistryTest {
         assertEquals(EngineStatusRegistry.State.READY, afterReady?.state)
         assertNotNull(afterReady?.lastSpeakFailure)
         assertEquals(
-            "HD_REGISTRATION_MISSING",
+            "CONFIG_YAML_MISSING",
             afterReady?.lastSpeakFailure?.code
         )
 

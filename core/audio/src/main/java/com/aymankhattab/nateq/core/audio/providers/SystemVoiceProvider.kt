@@ -668,10 +668,63 @@ class SystemVoiceProvider(
             " $previous -> $engine")
     }
 
+    private fun resolveFallbackEngine(
+        currentEngine: String,
+        attempted: Set<String> = emptySet()
+    ): String? {
+        val installed = EnginePicker.installedEnginePackages(context)
+        val settings = injectedSettings ?: SettingsRepository.create(context)
+        val defaultEngine = runCatching {
+            settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_DEFAULT
+            )
+        }.getOrNull()
+        if (!defaultEngine.isNullOrBlank() &&
+            defaultEngine !in attempted &&
+            installed.contains(defaultEngine)
+        ) {
+            return defaultEngine
+        }
+        val sysDefault = runCatching {
+            EnginePicker.defaultSystemEngine(context)
+        }.getOrNull()
+        if (!sysDefault.isNullOrBlank() &&
+            sysDefault !in attempted &&
+            installed.contains(sysDefault)
+        ) {
+            return sysDefault
+        }
+        return installed.firstOrNull {
+            it !in attempted &&
+                it != currentEngine &&
+                !EnginePicker.isScreenReader(it)
+        }
+    }
+
+    private fun applyEngineSpeechRate(
+        engine: TextToSpeech,
+        rate: Float,
+        maxSafe: Float
+    ) {
+        val target = minOf(rate, maxSafe)
+        val res = engine.setSpeechRate(target)
+        if (res == TextToSpeech.ERROR) {
+            val fallback = minOf(target, maxSafe)
+            val retryRes = engine.setSpeechRate(fallback)
+            if (retryRes == TextToSpeech.ERROR && fallback != 1.0f) {
+                engine.setSpeechRate(1.0f)
+            }
+            Log.w(
+                TAG,
+                "[Provider] setSpeechRate($target) failed, " +
+                    "clamped to $fallback"
+            )
+        }
+    }
+
     /**
-     * يُنفّذ النطق عبر المحرك المعطى حصراً، وعند فشله
-     * (تهيئة أو مهلة أو نطق) يُسقط المثيل من المسبح
-     * ويُعلن الفشل صوتياً دون أي استبدال بمحرك آخر.
+     * يُنفّذ النطق عبر المحرك المعطى، وعند تعثره أو عودته بنتيجة فاضية
+     * ينتقل فوراً للمحرك البديل.
      */
     private fun synthesizeWithEngine(
         engine: String,
@@ -687,8 +740,12 @@ class SystemVoiceProvider(
         desiredVoiceName: String?,
         cacheKey: String?
     ) {
+        val attemptedEngines = mutableSetOf(engine)
         val done = AtomicBoolean(false)
+        val bindStartTime = SystemClock.uptimeMillis()
+        lateinit var attemptWith: (String, Int) -> Unit
         val speakNow = { engineInstance: TextToSpeech, enginePackage: String ->
+            val bindTimeMs = SystemClock.uptimeMillis() - bindStartTime
             if (!done.getAndSet(true)) {
                 runSynthesisOnBackground(
                     beforeSpeak = {
@@ -697,7 +754,7 @@ class SystemVoiceProvider(
                                 engineInstance, text, voice, speechRate,
                                 pitch, volume, onFormatInfo, onAudioChunk,
                                 cancelled, desiredVoiceName, cacheKey,
-                                enginePackage
+                                enginePackage, bindTimeMs
                             )
                         }
                     },
@@ -715,8 +772,8 @@ class SystemVoiceProvider(
                 )
             }
         }
-        lateinit var attemptWith: (String, Int) -> Unit
         attemptWith = { currentEngine: String, rebindAttempts: Int ->
+            cancelled.set(false)
             if (!cancelled.get()) {
                 synchronized(ttsLock) {
                     when {
@@ -829,7 +886,22 @@ class SystemVoiceProvider(
                                                 )
                                             } else {
                                                 notifyEngineFailedOnce(eng)
-                                                if (!done.getAndSet(true)) {
+                                                val fallback =
+                                                    resolveFallbackEngine(
+                                                        eng, attemptedEngines
+                                                    )
+                                                if (fallback != null
+                                                    && !cancelled.get()
+                                                ) {
+                                                    attemptedEngines.add(
+                                                        fallback
+                                                    )
+                                                    done.set(false)
+                                                    cancelled.set(false)
+                                                    attemptWith(fallback, 0)
+                                                } else if (!done
+                                                    .getAndSet(true)
+                                                ) {
                                                     cont.resume(Unit)
                                                 }
                                             }
@@ -844,7 +916,17 @@ class SystemVoiceProvider(
                                         }
                                         dropBrokenEngine(built)
                                         notifyEngineFailedOnce(eng)
-                                        if (!done.getAndSet(true)) {
+                                        val fallback = resolveFallbackEngine(
+                                            eng, attemptedEngines
+                                        )
+                                        if (fallback != null
+                                            && !cancelled.get()
+                                        ) {
+                                            attemptedEngines.add(fallback)
+                                            done.set(false)
+                                            cancelled.set(false)
+                                            attemptWith(fallback, 0)
+                                        } else if (!done.getAndSet(true)) {
                                             cont.resume(Unit)
                                         }
                                     }
@@ -867,7 +949,19 @@ class SystemVoiceProvider(
                                         }
                                         dropBrokenEngine(created)
                                         notifyEngineFailedOnce(currentEngine)
-                                        cont.resume(Unit)
+                                        val fallback = resolveFallbackEngine(
+                                            currentEngine, attemptedEngines
+                                        )
+                                        if (fallback != null
+                                            && !cancelled.get()
+                                        ) {
+                                            attemptedEngines.add(fallback)
+                                            done.set(false)
+                                            cancelled.set(false)
+                                            attemptWith(fallback, 0)
+                                        } else {
+                                            cont.resume(Unit)
+                                        }
                                     }
                                 }, INIT_TIMEOUT_MS)
                             }
@@ -957,26 +1051,15 @@ class SystemVoiceProvider(
         cancelled: AtomicBoolean,
         desiredVoiceName: String?,
         cacheKey: String?,
-        enginePackage: String? = null
+        enginePackage: String? = null,
+        bindTimeMs: Long = 0L
     ): Boolean {
-        // يُمرَّر المثيل من المسبح صراحةً (لا حقلٍ عام): بعد إدخال مسبح
-        // المحركات قد يتغير المحرك المُنطَق به أثناء تتابع نطقات لغات
-        // مختلفة — المثيل الملتقط يُضمن أن تُنفَّذ كل جولة على محركها
-        // الصحيح وإن قُطع على مثيلٍ آخر لنطقٍ تالٍ (المسبح يبقيها كلها
-        // حية).
-        // السرعة والنبرة تُمرَّران مباشرةً للمحرك
-        // (engine.setSpeechRate/setPitch)
-        // بدل التعديل الخطي الرقمي اليدوي الذي كان يلغي أثرهما بتشويه معدني
-        // (وفق توصية التقرير: إعادة أخذ العينات بنسبة p ثم عكسها ترك الصوت
-        //  بنفس النبرة والمدة مع تنعيم مضاعف مشوّه). مستوى الصوت (volume)
-        // يبقى رقمياً لأنه تطبيق معامل مضاعف محايد لا يشوّه.
-        // فشل ضبط السرعة/النبرة يجب ألا يُبتلع صامتاً: يُسجَّل ERROR
-        // (لا يُفشل النطق — عطلهما لا يمنع التخليق لكنه يشوّه الإخراج).
-        if (engine.setSpeechRate(speechRate) == TextToSpeech.ERROR) {
-            Log.e(TAG,
-                "[Provider] engine.setSpeechRate failed" +
-                " (rate=$speechRate)")
-        }
+        val synthStartTime = SystemClock.uptimeMillis()
+        var ttfbMs = 0L
+        val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
+        val maxSafe = quirks?.maxSafeSpeechRate ?: 2.5f
+        val effectiveRate = minOf(speechRate, maxSafe)
+        applyEngineSpeechRate(engine, effectiveRate, maxSafe)
         if (engine.setPitch(pitch) == TextToSpeech.ERROR) {
             Log.e(TAG,
                 "[Provider] engine.setPitch failed" +
@@ -995,7 +1078,6 @@ class SystemVoiceProvider(
             return false
         }
         // ع٢٩-ج: تطبيق EngineQuirks قبل setVoice
-        val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
         val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
         val needsRegion = quirks?.requiresLocaleWithRegion == true
         val rejectsSilently = quirks?.rejectsVoiceSilently == true
@@ -1028,7 +1110,45 @@ class SystemVoiceProvider(
             desiredVoiceName.equals("en", ignoreCase = true)
 
         var voiceApplied = false
-        if (!desiredVoiceName.isNullOrBlank() &&
+        val isAutoTts = enginePackage == "com.vnspeak.autotts" ||
+            enginePackage?.contains("autotts", ignoreCase = true) == true
+        if (isAutoTts) {
+            val allVoices = runCatching {
+                engine.voices
+            }.getOrNull().orEmpty()
+            val matched = if (!desiredVoiceName.isNullOrBlank()) {
+                matchVoice(allVoices, desiredVoiceName)
+            } else {
+                null
+            }
+            if (matched != null) {
+                engine.voice = matched
+                voiceApplied = true
+            } else {
+                val arabic = allVoices.firstOrNull { v ->
+                    v.locale.language.equals("ar", ignoreCase = true) ||
+                        v.name.startsWith("ar", ignoreCase = true)
+                }
+                if (arabic != null) {
+                    Log.i(
+                        TAG,
+                        "[AutoTTS] voice '$desiredVoiceName' missing," +
+                            " fallback to Arabic: ${arabic.name}"
+                    )
+                    engine.voice = arabic
+                    voiceApplied = true
+                } else {
+                    Log.w(
+                        TAG,
+                        "[AutoTTS] no Arabic voice in AutoTTS —" +
+                            " skipping to default engine"
+                    )
+                    return false
+                }
+            }
+        }
+
+        if (!voiceApplied && !desiredVoiceName.isNullOrBlank() &&
             !desiredVoiceName.equals("Device Default", ignoreCase = true)
         ) {
             runCatching {
@@ -1152,11 +1272,11 @@ class SystemVoiceProvider(
 
         // إعادة تأكيد السرعة والنبرة مباشرة قبل الكتابة لتفادي تصفيرهما
         // عند تغيير الصوت أو اللغة في محرك النظام
-        engine.setSpeechRate(speechRate)
+        applyEngineSpeechRate(engine, effectiveRate, maxSafe)
         engine.setPitch(pitch)
 
         val utteranceId = "nateq_${System.currentTimeMillis()}"
-        val rateInt = (speechRate * 100f).roundToInt().coerceIn(10, 600)
+        val rateInt = (effectiveRate * 100f).roundToInt().coerceIn(10, 600)
         val pitchInt = (pitch * 100f).roundToInt().coerceIn(20, 400)
         val params = android.os.Bundle().apply {
             putString(
@@ -1215,7 +1335,7 @@ class SystemVoiceProvider(
         runCatching { if (tempFile.exists()) tempFile.delete() }
 
         // إعادة تأكيد السرعة والنبرة مباشرة قبل التوليد لتفادي تصفيرهما
-        engine.setSpeechRate(speechRate)
+        applyEngineSpeechRate(engine, effectiveRate, maxSafe)
         engine.setPitch(pitch)
 
         val status = engine.synthesizeToFile(
@@ -1223,6 +1343,7 @@ class SystemVoiceProvider(
         )
 
         var success = false
+        var finished = false
         if (status == TextToSpeech.SUCCESS) {
             // ننتظر فعلاً حتى يكتب المحرك الملف كاملاً
             // (أو يُلغى الإعلان/النطق) مع فحص الإلغاء كل
@@ -1234,7 +1355,6 @@ class SystemVoiceProvider(
             // ليكتمل كتابة الملف.
             val waitMs = synthesisTimeoutMs(text.length)
             var deadline = SystemClock.elapsedRealtime() + waitMs
-            var finished = false
             // **بثّ مجزّأ أثناء الكتابة (بند ب.txt 3.2):** بدل انتظار اكتمال
             // ملف WAV كاملاً ثم قراءته في دفعةٍ واحدة، تُقرأ الدفعاتُ
             // المتراكمة حديثاً كل [CANCELLATION_POLL_MS] وتُدفع للمتلقي
@@ -1325,6 +1445,10 @@ class SystemVoiceProvider(
                                     cacheKey, cachedParts,
                                     totalCacheBytes, enginePackage
                                 )
+                                if (ttfbMs == 0L) {
+                                    ttfbMs = SystemClock.uptimeMillis() -
+                                        synthStartTime
+                                }
                                 // بند 1.1: readSoFar تراكمي؛ كان يُسند
                                 // إليه toRead (دلتا) فتتكرر الشريحةُ
                                 // ويتقطّع الصوت في البث.
@@ -1362,7 +1486,9 @@ class SystemVoiceProvider(
                             // وإعلام onDone دليلٌ قاطعٌ متأخر،
                             // واستقرارُ حجم الملف بعد مهلة أمانٍ
                             // أوّلًا، فلا يُقطعَ نصٌّ على توقّفٍ عابر.
-                            if (!finished && tempFile.exists()) {
+                            if (!finished && tempFile.exists() &&
+                                tempFile.length() > 44L
+                            ) {
                                 val nowLen = tempFile.length()
                                 if (nowLen == lastLen) {
                                     stallPolls++
@@ -1392,7 +1518,12 @@ class SystemVoiceProvider(
                 Thread.currentThread().interrupt()
             }
 
-            if ((finished || tailCompleted || emittedAny) && !failed.get() &&
+            val fileLen = if (tempFile.exists()) tempFile.length() else 0L
+            val isEmptyWav = (fileLen <= 44L)
+            val isUnfinished = (!failed.get() && !finished)
+            val isError = failed.get() || isEmptyWav || isUnfinished
+
+            if (!isError && (finished || tailCompleted || emittedAny) &&
                 streamMeta != null
             ) {
                 // إتمام البث: يُقرأ ما تبقى بعد آخر دفعة ثم يُعلَّم
@@ -1411,6 +1542,9 @@ class SystemVoiceProvider(
                             cacheKey, cachedParts, totalCacheBytes,
                             enginePackage
                         )
+                        if (ttfbMs == 0L) {
+                            ttfbMs = SystemClock.uptimeMillis() - synthStartTime
+                        }
                     } catch (e: Exception) {
                         Log.w(TAG,
                             "[Provider] stream remainder flush failed", e)
@@ -1431,7 +1565,7 @@ class SystemVoiceProvider(
                     )
                 }
                 success = true
-            } else if (finished && !failed.get() && tempFile.exists()
+            } else if (!isError && finished && tempFile.exists()
                 && tempFile.length() > 44
             ) {
                 try {
@@ -1445,6 +1579,9 @@ class SystemVoiceProvider(
                     ) {
                         Log.e(TAG, "[Provider] extractPcm returned empty")
                     } else {
+                        if (ttfbMs == 0L) {
+                            ttfbMs = SystemClock.uptimeMillis() - synthStartTime
+                        }
                         // إبلاغ المتصل بالتنسيق الفعلي
                         // (معدل عينات/قنوات) قبل أي شريحة
                         // حتى يبدأ callback.start() بهما
@@ -1500,21 +1637,43 @@ class SystemVoiceProvider(
                     Log.e(TAG, "[Provider] read audio failed", e)
                 }
             } else {
-                val fileSize = if (tempFile.exists()) {
-                    tempFile.length()
-                } else {
-                    -1
-                }
+                success = false
                 Log.e(
                     TAG,
-                    "[Provider] synthesis not completed:" +
-                        " failed=${failed.get()} finished=$finished" +
-                        " size=$fileSize"
+                    "[Provider] synthesis rejected:" +
+                        " emptyWav=$isEmptyWav" +
+                        " unfinished=$isUnfinished" +
+                        " failed=${failed.get()}" +
+                        " size=$fileLen"
                 )
             }
         } else {
             Log.e(TAG, "[Provider] synthesizeToFile status=$status")
         }
+        val fileLen = if (tempFile.exists()) tempFile.length() else 0L
+        val isEmptyWav = (fileLen <= 44L)
+        val isUnfinished = (!failed.get() && !finished)
+        val cancelReason = when {
+            cancelled.get() -> "user_cancelled"
+            isEmptyWav -> "empty_wav_44b"
+            isUnfinished -> "unfinished_no_done"
+            failed.get() -> "engine_error"
+            !success -> "synthesis_failed"
+            else -> "none"
+        }
+        val actualVoice = runCatching {
+            engine.voice?.name
+        }.getOrNull() ?: voice.id
+        Log.i(
+            TAG,
+            "[SynthDiag] engine=${enginePackage ?: "unknown"}, " +
+                "reqVoice=${desiredVoiceName ?: "default"}, " +
+                "actualVoice=$actualVoice, " +
+                "bindTimeMs=$bindTimeMs, " +
+                "ttfbMs=$ttfbMs, " +
+                "fileSize=$fileLen, " +
+                "cancelReason=$cancelReason"
+        )
         // ملفُ الجلسة خاص بها فيُحذف في كل المصائر — لا بقايا تتراكم في
         // الكاش بعد النطق، ولا يُمسّ ملفُ جلسةٍ أخرى (الأسماءُ فريدة).
         runCatching { tempFile.delete() }

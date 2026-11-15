@@ -715,13 +715,9 @@ class NateqTtsService : TextToSpeechService() {
     }
 
     override fun onStop() {
-        // إيقاف صريح: نلغي جيل الطلب السابق فقط لمنع سباق الطلب الأحدث
-        val prevGen = requestGeneration.get()
-        requestGeneration.incrementAndGet()
+        // لا نلغي التركيب الجاري (stop gen) إلا عند وصول نص جديد يستبدله
+        // لمنع إسقاط المقاطع أثناء إعادة الربط أو تغيير الصوت العابر
         interruptedBySensor = false
-        if (activeJobGeneration == prevGen) {
-            activeJob?.cancel()
-        }
     }
 
     /** رصد الهز/التقارب أثناء رحلة التخليق: يُسجَّل أثناء النطق النشط فقط
@@ -769,6 +765,15 @@ class NateqTtsService : TextToSpeechService() {
         callback: SynthesisCallback?
     ) {
         if (request == null || callback == null) return
+        val incomingText = request.charSequenceText?.toString()
+            ?: request.text
+        // إلغاء التركيب السابق فقط عند وصول نص جديد يستبدله
+        if (!incomingText.isNullOrBlank()) {
+            val prevGen = requestGeneration.get()
+            if (activeJobGeneration == prevGen) {
+                activeJob?.cancel()
+            }
+        }
         val myGen = requestGeneration.incrementAndGet()
         // طلبُ تخليقٍ حقيقيّ وصل — ألغِ التدفئة الخلفية الجارية (اكتشاف
         // اللغات/كاش كلمات التنقل) حتى تتفرغ منافذُها وأعمدتُها لهذا
@@ -1501,6 +1506,13 @@ class NateqTtsService : TextToSpeechService() {
         }
         val speechText = prepareArabicForEngine(
             processedText, languageTag, finalEngine
+        )
+        Log.i(
+            TAG,
+            "[SpeechRouting] نطق مفرد: النص='$speechText', " +
+                "اللغة='$languageTag', " +
+                "المحرك='${finalEngine ?: "default"}', " +
+                "الصوت='${finalVoiceName ?: voice.id}'"
         )
         if (runCatching {
             settings.isLanguageDiagnosticsEnabled()
@@ -2490,19 +2502,9 @@ class NateqTtsService : TextToSpeechService() {
             resolvedVoiceId = v
         }
 
+        // أقصى محاولة واحدة لنفس المحرك والصوت: منع إعادة المحاولة التلقائية
         if (audio == null) {
             attempts = 2
-            delay(120L)
-            audio = doSynthesizeSegment(
-                segment, readerRate, effectCategory, appVoice, reqVoiceName
-            ) { eng, v ->
-                resolvedEngine = eng
-                resolvedVoiceId = v
-            }
-        }
-
-        if (audio == null) {
-            attempts = 3
             val fallbackSegment = segment.copy(role = SpeechRole.TEXT)
             audio = doSynthesizeSegment(
                 fallbackSegment, readerRate, "", null, null
@@ -2665,6 +2667,14 @@ class NateqTtsService : TextToSpeechService() {
                 )
                 continue
             }
+            Log.i(
+                TAG,
+                "[SpeechRouting] تبديل المحرك/اللغة: " +
+                    "النص='${segment.text}', " +
+                    "اللغة='${segment.languageTag}', " +
+                    "المحرك='${params.engine ?: "default"}', " +
+                    "الصوت='${params.voiceName ?: params.voice.id}'"
+            )
             var nativeRate = 0
             var nativeChannels = 1
             val phase = LongArray(2)
@@ -2859,20 +2869,14 @@ class NateqTtsService : TextToSpeechService() {
         onFirstByteEmitted: (() -> Unit)? = null,
         onSegmentMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
     ) {
-        val totalChars = segments.sumOf { it.text.length }
-        if (segments.size > 1 && totalChars <= PARALLEL_MAX_CHARS) {
-            synthesizeParallel(
-                segments, readerRate, callback, effectCategory,
-                appVoice, reqVoiceName, onFirstByteEmitted,
-                onSegmentMetric
-            )
-        } else {
-            synthesizeMixedSequential(
-                segments, readerRate, callback, effectCategory,
-                appVoice, reqVoiceName, onFirstByteEmitted,
-                onSegmentMetric
-            )
-        }
+        // نطق متسلسل مجزأ: يبدأ تشغيل الصوت فور جاهزية أول شريحة من أول مقطع
+        // دون انتظار تركيب كامل القائمة أو العبارة (يختصر زمن قوائم المحركات
+        // والأسماء من ~3.6s إلى البدء الفوري بعد أول اسم محرك).
+        synthesizeMixedSequential(
+            segments, readerRate, callback, effectCategory,
+            appVoice, reqVoiceName, onFirstByteEmitted,
+            onSegmentMetric
+        )
     }
 
     private val commonNumberWords = listOf(

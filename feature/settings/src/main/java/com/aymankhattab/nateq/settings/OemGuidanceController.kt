@@ -9,6 +9,7 @@ import android.provider.Settings
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
+import com.aymankhattab.nateq.core.audio.accessibility.XiaomiHyperOsGuidance
 import com.aymankhattab.nateq.core.audio.announcement.CallerScreeningService
 import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.feature.settings.R
@@ -64,10 +65,22 @@ internal class OemGuidanceController(
             }
         )
         btnBattery.setOnClickListener {
-            openBatterySettings(fragment.requireContext())
+            if (vendor == OemVendor.XIAOMI) {
+                XiaomiHyperOsGuidance.openXiaomiPowerSaving(
+                    fragment.requireContext()
+                )
+            } else {
+                openBatterySettings(fragment.requireContext())
+            }
         }
         btnAutostart.setOnClickListener {
-            openAutostartSettings(fragment.requireContext(), vendor)
+            if (vendor == OemVendor.XIAOMI) {
+                XiaomiHyperOsGuidance.openXiaomiAutostart(
+                    fragment.requireContext()
+                )
+            } else {
+                openAutostartSettings(fragment.requireContext(), vendor)
+            }
         }
 
         // فحص توافق التطبيقات المصرفية (إنستاباي): مكانه هنا لأنّه دليلُ
@@ -228,6 +241,11 @@ internal class OemGuidanceController(
             context: Context,
             vendor: OemVendor = OemVendor.detect(Build.MANUFACTURER)
         ) {
+            if (vendor == OemVendor.XIAOMI) {
+                if (XiaomiHyperOsGuidance.openXiaomiAutostart(context)) {
+                    return
+                }
+            }
             for (intent in autostartIntents(context, vendor)) {
                 val opened = runCatching {
                     context.startActivity(intent)

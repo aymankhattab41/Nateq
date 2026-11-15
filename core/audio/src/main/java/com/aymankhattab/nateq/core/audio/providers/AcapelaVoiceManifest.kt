@@ -61,7 +61,7 @@ object AcapelaVoiceManifest {
      */
     private val INI_DIRECTIVE_KEYS = setOf(
         "FILE", "FILEMAP", "BNF", "PHM", "IVX", "MBR", "SLV", "SLL",
-        "ALF", "ERF", "LPC", "ANN", "POM", "HPA", "STL"
+        "ALF", "ERF", "LPC", "ANN", "POM", "HPA", "STL", "BVCU"
     )
 
     /**
@@ -250,7 +250,7 @@ object AcapelaVoiceManifest {
 
     /** عقد MultiTTS لبيانات تسجيل الحزمة الممتدة. */
     private val REGISTRATION_METADATA_REGEX = Regex(
-        "[A-Za-z0-9@._+-]{1,288}"
+        "[A-Za-z0-9@._+,-]{1,288}"
     )
 
     /**
@@ -510,10 +510,33 @@ object AcapelaVoiceManifest {
      * `.inf` بنفسها، والتوليد هنا محصورٌ في `.ini` المشتقّ من محتوى
      * `.inf` ومن ملفات البيانات الموجودة فعلاً.
      */
+    /**
+     * تسطيح الملفات المتداخلة في المجلدات الفرعية (مثل salma_lf)
+     * إلى جذر مجلد الصوت مباشرة، لضمان عثور المكتبة الأصلية على
+     * ملف المفتاح 0x... وملفات .bvcu و .inf و .ini دون حواجز مجلدات.
+     */
+    fun flattenNestedVoiceFiles(dir: File) {
+        if (!dir.exists() || !dir.isDirectory) return
+        val subDirs = dir.listFiles { f -> f.isDirectory } ?: return
+        for (sub in subDirs) {
+            if (sub.name.equals("userdicos", ignoreCase = true)) continue
+            val subFiles = sub.listFiles { f -> f.isFile } ?: continue
+            for (f in subFiles) {
+                val target = File(dir, f.name)
+                if (!target.exists()) {
+                    runCatching {
+                        f.copyTo(target, overwrite = false)
+                    }
+                }
+            }
+        }
+    }
+
     fun ensureVoiceConfigs(baseDir: File) {
         if (!baseDir.exists() || !baseDir.isDirectory) return
         for (dir in completeVoiceDirs(baseDir)) {
             runCatching {
+                flattenNestedVoiceFiles(dir)
                 normalizeExtensionsCase(dir)
                 File(dir, "userdicos").mkdirs()
                 copyRegistrationKeyInto(dir)
@@ -555,31 +578,56 @@ object AcapelaVoiceManifest {
      * الغائبة من ملفات البيانات الموجودة فعلاً على القرص. ولا تُكتب
      * قيمةٌ بلا ملفٍ يقابلها، ولا يُكتب ملف إن لم يبق توجيه صالح.
      */
-    private fun ensureIniFor(inf: File) {
+    internal fun ensureIniFor(inf: File) {
         val dir = inf.parentFile ?: return
-        val ini = File(dir, "${inf.nameWithoutExtension}.ini")
-        if (ini.exists()) return
+        val iniName = if (inf.name.endsWith(".inf", true)) {
+            inf.name.dropLast(1) + "i"
+        } else {
+            "${inf.nameWithoutExtension}.ini"
+        }
+        val targets = mutableListOf<File>()
+        targets.add(File(dir, iniName))
+        val altName = "${inf.nameWithoutExtension}.ini"
+        if (altName != iniName) {
+            targets.add(File(dir, altName))
+        }
+        if (inf.name.contains(".bvcu.", ignoreCase = true)) {
+            val shortIni = inf.name.replace(".bvcu.", ".", true)
+                .dropLast(1) + "i"
+            targets.add(File(dir, shortIni))
+        }
+
+        val allValid = targets.all { f ->
+            f.exists() && runCatching {
+                val txt = f.readText(StandardCharsets.ISO_8859_1)
+                txt.contains("#") && txt.contains("MODE")
+            }.getOrDefault(false)
+        }
+        if (allValid) return
+
         val fromInf = directivesFromInf(inf, dir)
         val covered = fromInf.map { it.key }.toSet()
         val entries = fromInf + entriesFromDataFiles(dir)
             .filter { it.key !in covered }
         if (entries.isEmpty()) return
         val content = buildString {
-            for (entry in entries) {
-                append(entry.key).append(" \"").append(entry.value)
-                    .append("\" [ ").append(entry.section).append(" ]\n")
+            append("MODE = \"MODE=prep_hd\"\n")
+            for ((idx, entry) in entries.withIndex()) {
+                val num = idx + 1
+                append("#$num ").append(entry.key).append(" \"")
+                    .append(entry.value).append("\" [ ")
+                    .append(entry.section).append(" ]\n")
             }
         }
-        val written = runCatching {
-            ini.writeText(content, StandardCharsets.ISO_8859_1)
-            ini.isFile
-        }.getOrDefault(false)
-        if (written) {
-            diagLog(
-                "توليد ${ini.name} (${entries.size} توجيهاً): " +
-                    entries.joinToString(",") { it.key }
-            )
+        for (target in targets) {
+            runCatching {
+                target.writeText(content, StandardCharsets.ISO_8859_1)
+            }
         }
+        diagLog(
+            "توليد $iniName (${entries.size} توجيهاً): " +
+                entries.joinToString(",") { it.key }
+        )
     }
 
     /** التوجيهات المقروءة من `.inf` والموجودة ملفاتها فعلاً. */
@@ -864,29 +912,33 @@ object AcapelaVoiceManifest {
      */
     fun logVoiceFilesDiagnostics(voiceDir: File) {
         diagLog("[تشخيص ملفات الصوت] المجلد: ${voiceDir.name}")
+        diagLog("- اسم الحزمة المستعار: org.nobody.multitts")
 
         // config.yaml
-        val configYaml = File(voiceDir, "config.yaml")
-        val configExists = configYaml.isFile
+        val foundYaml = findConfigYamlWithParam(voiceDir)
+        val configYaml = foundYaml?.first ?: File(voiceDir, "config.yaml")
+        val configExists = configYaml.isFile && configYaml.exists()
         diagLog(
             "[config.yaml] موجود=${if (configExists) "نعم" else "لا"}" +
-                (if (configExists) " | حجم=${configYaml.length()} بايت"
-                else "")
+                (if (configExists) {
+                    " | مسار=${configYaml.absolutePath} | " +
+                        "حجم=${configYaml.length()} بايت"
+                } else {
+                    ""
+                })
         )
-        if (configExists) {
-            val rawParam = readParamFromConfigYaml(voiceDir)
-            if (rawParam != null) {
-                val parts = rawParam.split(',')
-                val lengths = parts.mapIndexed { i, p ->
-                    "جزء$i:${p.trim().length}"
-                }.joinToString(", ")
-                diagLog(
-                    "[config.yaml/param] عدد الأجزاء=${parts.size}" +
-                        " | الأطوال=[$lengths]"
-                )
-            } else {
-                diagLog("[config.yaml/param] سطر param غير موجود")
-            }
+        if (foundYaml != null) {
+            val rawParam = foundYaml.second
+            val parts = rawParam.split(',')
+            val lengths = parts.mapIndexed { i, p ->
+                "جزء$i:${p.trim().length}"
+            }.joinToString(", ")
+            diagLog(
+                "[config.yaml/param] عدد الأجزاء=${parts.size}" +
+                    " | الأطوال=[$lengths]"
+            )
+        } else {
+            diagLog("[config.yaml/param] سطر param غير موجود")
         }
 
         // salma_lf.txt أو أي *_lf.txt
@@ -1091,6 +1143,44 @@ object AcapelaVoiceManifest {
                 (pickedHex?.absolutePath ?: "لا يوجد")
         )
 
+        // 1. قراءة param من config.yaml أولاً واعتماده لتسجيل HD
+        val yamlParam = readParamFromConfigYaml(dir)
+        if (!yamlParam.isNullOrBlank()) {
+            val regFromParam = extractRegistrationFromParam(yamlParam)
+            if (isRegistrationMetadata(regFromParam)) {
+                diagLog(
+                    "[نتيجة التسجيل] تم اعتماد التسجيل من param في " +
+                        "config.yaml (طول=${regFromParam.length})"
+                )
+                return regFromParam
+            }
+            val parsed = splitConfigYamlParam(yamlParam)
+            if (parsed != null) {
+                val (_, email, hexCode) = parsed
+                val combined = "$email$hexCode"
+                if (isRegistrationMetadata(combined)) {
+                    diagLog(
+                        "[نتيجة التسجيل] تم اعتماد التسجيل من param في " +
+                            "config.yaml (طول=${combined.length})"
+                    )
+                    return combined
+                }
+            }
+            if (isRegistrationMetadata(yamlParam)) {
+                diagLog(
+                    "[نتيجة التسجيل] تم اعتماد التسجيل من param كاملاً " +
+                        "في config.yaml"
+                )
+                return yamlParam
+            }
+        }
+
+        // 2. فحص registration الصريح في ملفات YAML
+        findRegistrationInYaml(dir)?.let {
+            diagLog("[نتيجة التسجيل] تم اعتماد التسجيل من ملف YAML")
+            return it
+        }
+
         rawReg?.let { value ->
             val trimmed = value.trim()
             val valid = isRegistrationMetadata(trimmed)
@@ -1103,16 +1193,6 @@ object AcapelaVoiceManifest {
 
         findRegistrationInJson(dir)?.let {
             diagLog("[نتيجة التسجيل] تم اعتماد التسجيل من ملف JSON")
-            return it
-        }
-
-        findRegistrationInHexFile(dir)?.let {
-            diagLog("[نتيجة التسجيل] تم اعتماد التسجيل من محتوى ملف المفتاح")
-            return it
-        }
-
-        findRegistrationInYaml(dir)?.let {
-            diagLog("[نتيجة التسجيل] تم اعتماد التسجيل من ملف YAML")
             return it
         }
 
@@ -1161,6 +1241,17 @@ object AcapelaVoiceManifest {
             }
         }
 
+        // 3. ملف المفتاح 0x... (احتياطي ثانوي أخير فقط — بنمط صالح)
+        findRegistrationInHexFile(dir)?.let { hexVal ->
+            if (isRegistrationMetadata(hexVal)) {
+                diagLog(
+                    "[نتيجة التسجيل] تم اعتماد التسجيل من محتوى " +
+                        "ملف المفتاح (احتياطي)"
+                )
+                return hexVal
+            }
+        }
+
         diagLog("[نتيجة التسجيل] لم يُعثر على بيانات تسجيل صالحة (empty)")
         return ""
     }
@@ -1176,16 +1267,20 @@ object AcapelaVoiceManifest {
      * القيمة الصحيحة من MultiTTS تحتوي دائماً على `@` (إيميل)
      * أو فاصلة (email,code) أو `-` بمعنى ملحوظ.
      */
-    internal fun isRegistrationMetadata(value: String): Boolean {
+    fun isRegistrationMetadata(value: String): Boolean {
         if (value.isBlank()) return false
         if (value.matches(HEX_REGISTRATION_REGEX)) return false
+        if (value.startsWith("aljl", ignoreCase = true) &&
+            value.endsWith("d1b7", ignoreCase = true)
+        ) return true
         if (!value.matches(REGISTRATION_METADATA_REGEX)) return false
         if (value.length < 8) return false
         val hasStructure = value.contains('@') ||
             value.contains(',') ||
-            (value.contains('.') && value.length > 12) ||
-            (value.contains('-') && value.length > 12) ||
-            (value.contains('_') && value.length > 12)
+            (value.contains('.') && value.length >= 12) ||
+            (value.contains('-') && value.length >= 12) ||
+            (value.contains('_') && value.length >= 12) ||
+            value.length >= 16
         return hasStructure
     }
 
@@ -1457,7 +1552,7 @@ object AcapelaVoiceManifest {
         )
 
         val chosen = selectBestKeyCandidate(candidates)
-        if (chosen != null) {
+        if (chosen != null && isRegistrationMetadata(chosen.token)) {
             diagLog(
                 "[تحليل المفتاح] السطر المختار=${chosen.lineIndex + 1}, " +
                     "الرمز المختار=${chosen.tokenIndex + 1}, " +
@@ -1465,7 +1560,9 @@ object AcapelaVoiceManifest {
                     "معاينة=${maskContent(chosen.token)}, " +
                     "المفتاح=${chosen.lineKey.ifEmpty { "(bare)" }}"
             )
-            diagLog("[فحص المفتاح] تم قبول محتوى المفتاح بنجاح كبيانات تسجيل!")
+            diagLog(
+                "[فحص المفتاح] تم قبول محتوى المفتاح بنجاح كبيانات تسجيل!"
+            )
             return chosen.token
         } else {
             diagLog(
@@ -1536,38 +1633,125 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * قراءة سطر `param` من `config.yaml` في مجلد الصوت أو مجلده الأب،
-     * وإرجاعه خاماً بلا فك تشفير. البحث يبحث عن سطر:
-     *   `param: VALUE` أو `param = VALUE` أو `"param": "VALUE"`.
-     *
-     * يُستخدم من [AcapelaHostSession.registrationCandidates] لبناء
-     * مرشحات التسجيل المشتقة من حزمة MultiTTS (voiceId,email,hexCode).
+     * العثور على مجلد Acapela الأساسي صعوداً أو هبوطاً من [dir].
      */
-    fun readParamFromConfigYaml(voiceDir: File): String? {
-        val dirs = listOfNotNull(voiceDir, voiceDir.parentFile)
+    fun findAcapelaRootDir(dir: File): File {
+        var cur: File? = dir
+        while (cur != null) {
+            if (cur.name.equals("Acapela", ignoreCase = true)) {
+                return cur
+            }
+            cur = cur.parentFile
+        }
+        val sub = File(dir, "Acapela")
+        if (sub.isDirectory) return sub
+        return dir.parentFile ?: dir
+    }
+
+    /**
+     * بحث متكرر عن ملف config.yaml داخل كل المجلدات والمجلدات الفرعية
+     * تحت مجلد Acapela، واستخدام أول ملف يحتوي على سطر param.
+     * يُعيد الزوج (الملف، قيمة param الخام).
+     */
+    fun findConfigYamlWithParam(dir: File): Pair<File, String>? {
+        val root = findAcapelaRootDir(dir)
         val paramRegex = Regex(
             """(?:^|\n)\s*"?param"?\s*[:=]\s*"?([^"\r\n#]+)"?""",
             setOf(RegexOption.MULTILINE)
         )
-        for (d in dirs) {
-            val f = File(d, "config.yaml")
-            if (!f.isFile) continue
-            val content = runCatching {
-                f.readText(StandardCharsets.UTF_8)
-            }.getOrNull() ?: continue
-            val match = paramRegex.find(content) ?: continue
-            val raw = match.groupValues.getOrNull(1)?.trim()
-                .orEmpty()
-            if (raw.isNotBlank()) {
-                diagLog(
-                    "[config.yaml] عُثر على param في ${d.name}/" +
-                        "config.yaml (طول=${raw.length})"
-                )
-                return raw
+
+        val candidates = LinkedHashSet<File>()
+        listOfNotNull(dir, dir.parentFile, root).forEach { d ->
+            val direct = File(d, "config.yaml")
+            if (direct.isFile && direct.exists()) candidates.add(direct)
+        }
+
+        if (root.exists() && root.isDirectory) {
+            runCatching {
+                root.walkTopDown().maxDepth(6).forEach { f ->
+                    if (f.isFile &&
+                        f.name.equals("config.yaml", ignoreCase = true)
+                    ) {
+                        candidates.add(f)
+                    }
+                }
             }
         }
-        diagLog("[config.yaml] لم يُعثر على param في config.yaml")
+
+        if (dir.exists() && dir.isDirectory && dir != root) {
+            runCatching {
+                dir.walkTopDown().maxDepth(6).forEach { f ->
+                    if (f.isFile &&
+                        f.name.equals("config.yaml", ignoreCase = true)
+                    ) {
+                        candidates.add(f)
+                    }
+                }
+            }
+        }
+
+        for (file in candidates) {
+            if (!file.isFile || !file.exists()) continue
+            val content = runCatching {
+                file.readText(StandardCharsets.UTF_8)
+            }.getOrNull() ?: continue
+            val match = paramRegex.find(content) ?: continue
+            val raw = match.groupValues.getOrNull(1)?.trim().orEmpty()
+            if (raw.isNotBlank()) {
+                diagLog(
+                    "[config.yaml] عُثر على param في ${file.absolutePath} " +
+                        "(حجم=${file.length()} بايت، طول=${raw.length})"
+                )
+                return file to raw
+            }
+        }
+        diagLog("[config.yaml] لم يُعثر على param في أي ملف config.yaml")
         return null
+    }
+
+    /**
+     * بحث متكرر عن ملف config.yaml عبر مجموعة من مسارات البحث.
+     */
+    fun findConfigYamlWithParam(
+        dirs: Collection<File>
+    ): Pair<File, String>? {
+        for (d in dirs) {
+            val found = findConfigYamlWithParam(d)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    /**
+     * قراءة سطر `param` من `config.yaml` عبر البحث المتكرر في شجرة Acapela،
+     * وإرجاعه خاماً بلا فك تشفير.
+     */
+    fun readParamFromConfigYaml(voiceDir: File): String? =
+        findConfigYamlWithParam(voiceDir)?.second
+
+    /**
+     * استخراج قيمة التسجيل من سطر param (مطابق تماماً لعقد MultiTTS):
+     * voiceCode,email,hexCode -> email + hexCode (دمج مباشر بدون فاصلة)
+     */
+    fun extractRegistrationFromParam(rawParam: String): String {
+        val clean = rawParam.trim()
+            .removeSurrounding("\"").removeSurrounding("'").trim()
+        val parsed = splitConfigYamlParam(clean)
+        if (parsed != null) {
+            val (_, email, hexCode) = parsed
+            val cleanHex = hexCode.trim()
+                .removePrefix("0x").removePrefix("0X")
+            return "$email$cleanHex"
+        }
+        val parts = clean.split(',').map {
+            it.trim().removeSurrounding("\"").removeSurrounding("'")
+        }
+        if (parts.size == 3) {
+            val email = parts[1]
+            val hexCode = parts[2].removePrefix("0x").removePrefix("0X")
+            return "$email$hexCode"
+        }
+        return clean
     }
 
     /**
@@ -1576,23 +1760,48 @@ object AcapelaVoiceManifest {
      * إن لم يتطابق الشكل.
      *
      * الصيغة المتوقعة:
-     *   جزء[0] = كود الصوت (مثل salma22k_hq)
-     *   جزء[1] = الإيميل
-     *   جزء[2] = كود 16 حرف hex
+     *   جزء = كود الصوت (مثل salma22k_hq)
+     *   جزء = الإيميل
+     *   جزء = كود 16 حرف hex
      */
     fun splitConfigYamlParam(
         raw: String
     ): Triple<String, String, String>? {
-        val parts = raw.split(',')
+        val clean = raw.trim()
+            .removeSurrounding("\"").removeSurrounding("'")
+        val parts = clean.split(',').map {
+            it.trim().removeSurrounding("\"").removeSurrounding("'")
+        }
         if (parts.size < 3) return null
-        val voiceCode = parts[0].trim()
-        val email = parts[1].trim()
-        val hexCode = parts[2].trim()
-        if (voiceCode.isBlank() ||
-            email.isBlank() ||
-            hexCode.isBlank()
+        val email = parts.firstOrNull { it.contains('@') }
+        val hexCode = parts.firstOrNull {
+            it.matches(Regex("^[0-9A-Fa-f]{16}$"))
+        } ?: parts.lastOrNull { it != email }
+        val voiceCode = parts.firstOrNull {
+            it != email && it != hexCode
+        } ?: parts[0]
+        if (voiceCode.isNullOrBlank() ||
+            email.isNullOrBlank() ||
+            hexCode.isNullOrBlank()
         ) return null
         return Triple(voiceCode, email, hexCode)
+    }
+
+    /**
+     * تصنيف نوع جزء من أجزاء سطر param:
+     * بريد، كود صوت، كود 16 خانة، أو نوع آخر.
+     */
+    fun classifyParamPart(part: String): String {
+        val trimmed = part.trim()
+            .removeSurrounding("\"").removeSurrounding("'")
+        return when {
+            trimmed.contains('@') -> "بريد"
+            trimmed.matches(Regex("^[0-9A-Fa-f]{16}$")) -> "كود 16 خانة"
+            trimmed.contains("salma", ignoreCase = true) ||
+                (trimmed.matches(Regex("^[A-Za-z0-9_]{3,30}$")) &&
+                    !trimmed.contains('@')) -> "كود صوت"
+            else -> "سلسلة محارف"
+        }
     }
 
     /**

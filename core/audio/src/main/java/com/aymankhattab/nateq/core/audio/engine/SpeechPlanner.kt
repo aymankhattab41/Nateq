@@ -374,6 +374,13 @@ object SpeechPlanner {
                     val cleanText = seg.text
                         .replace(EngineMarkers.NUMBER_MARK_START, "")
                         .replace(EngineMarkers.NUMBER_MARK_END, "")
+                    Log.i(
+                        TAG,
+                        "[SpeechRouting] تخطيط المقطع: النص='$cleanText', " +
+                            "اللغة='${seg.languageTag}', " +
+                            "المحرك='${resolved.engine ?: "default"}', " +
+                            "الصوت='${resolved.voiceId ?: "default"}'"
+                    )
                     items.add(
                         SpeechPlanItem(
                             text = cleanText,

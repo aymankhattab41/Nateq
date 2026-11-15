@@ -126,9 +126,26 @@ class AcapelaVoiceDiagnosticsTest {
             assertTrue(report.contains("- الرخصة المتوقعة: "))
             assertTrue(report.contains("غير موجود"))
             assertTrue(report.contains("0x00169729"))
+            assertTrue(report.contains("- config.yaml: "))
+            assertTrue(
+                report.contains("- اسم الحزمة المستعار: org.nobody.multitts")
+            )
+            assertTrue(
+                report.contains("- بصمة توقيع التطبيق (SHA-256): ")
+            )
+            assertTrue(report.contains("- معرف الجهاز (ANDROID_ID): "))
+            assertTrue(report.contains("- المعمارية الحالية: "))
+            assertTrue(report.contains("- دعم المعماريتين: "))
             assertTrue(report.contains("طول التسجيل: 40"))
             assertTrue(report.contains("error - eb 1"))
             assertTrue(!report.contains("secret"))
+
+            assertEquals(
+                "1234...7890",
+                AcapelaVoiceDiagnostics.maskMiddle("1234567890", 4, 4)
+            )
+            assertTrue(AcapelaVoiceDiagnostics.getArchInfo().isNotEmpty())
+            assertTrue(AcapelaVoiceDiagnostics.hasDualArchLibs().isNotEmpty())
         } finally {
             root.deleteRecursively()
         }

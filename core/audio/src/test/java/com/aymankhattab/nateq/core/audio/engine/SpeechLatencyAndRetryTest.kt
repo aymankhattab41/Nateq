@@ -179,9 +179,9 @@ class SpeechLatencyAndRetryTest {
             onMetric = { metric = it }
         )
 
-        // ينجح في المحاولة الثالثة (صوت اللغة العادي)
+        // ينجح في المحاولة الثانية (صوت اللغة العادي بعد محاولة واحدة للفئة)
         assertNotNull("Should recover using default language voice", audio)
-        assertEquals(3, metric?.attempts)
+        assertEquals(2, metric?.attempts)
         assertTrue(metric?.success == true)
         assertEquals(0, SpeechLatencyTracker.getDroppedSegmentsCount())
 

@@ -59,7 +59,9 @@ import android.util.Log
 import com.aymankhattab.nateq.core.audio.engine.DiscoveryResult
 import com.aymankhattab.nateq.core.audio.engine.UnavailableEngine
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceDiagnostics
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceImporter
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.VocalizerDownloader
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
@@ -2934,8 +2936,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val stateLabel = status?.state?.let {
                     EngineStatusRegistry.labelAr(it)
                 } ?: "غير معروف"
-                val lastError = status?.lastError ?: "لا يوجد"
-                val code = status?.code ?: "—"
+                var lastError = status?.lastError ?: "لا يوجد"
+                var code = status?.code ?: "—"
 
                 val searchDirs =
                     com.aymankhattab.nateq.core.audio.providers
@@ -2948,12 +2950,151 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val totalSize = searchDirs.sumOf { dirSize(it) }
                 val sizeText = formatSize(totalSize)
 
+                var configYamlLine: String? = null
+                var salmaRegistrationLine: String? = null
+                if (diag.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID) {
+                    val foundYaml = AcapelaVoiceManifest
+                        .findConfigYamlWithParam(searchDirs)
+                    val configYamlFile = foundYaml?.first
+                        ?: searchDirs.asSequence()
+                            .flatMap { dir ->
+                                sequenceOf(
+                                    File(dir, "config.yaml"),
+                                    File(dir, "Salma/config.yaml"),
+                                    File(dir, "salma/config.yaml")
+                                ) + (dir.listFiles { f -> f.isDirectory }
+                                    ?.asSequence()
+                                    ?.map { File(it, "config.yaml") }
+                                    ?: emptySequence())
+                            }
+                            .firstOrNull { it.isFile && it.exists() }
+                            ?: searchDirs.firstOrNull()?.let {
+                                File(it, "Salma/config.yaml")
+                            }
+
+                    val exists = configYamlFile?.isFile == true &&
+                        configYamlFile.exists()
+                    if (code == "HD_REGISTRATION_MISSING") {
+                        code = "CONFIG_YAML_MISSING"
+                    }
+                    if (lastError.contains("HD_REGISTRATION_MISSING")) {
+                        lastError = lastError.replace(
+                            "HD_REGISTRATION_MISSING",
+                            "CONFIG_YAML_MISSING"
+                        )
+                    }
+                    if (!exists && (code == "—" ||
+                            code == "REGISTRATION_MISSING" ||
+                            status?.state !=
+                            EngineStatusRegistry.State.READY)
+                    ) {
+                        code = "CONFIG_YAML_MISSING"
+                        if (lastError == "لا يوجد") {
+                            lastError =
+                                "ملف config.yaml مفقود في مجلد الصوت"
+                        }
+                    } else if (exists && code == "CONFIG_YAML_MISSING") {
+                        code = "READY"
+                        if (lastError ==
+                            "ملف config.yaml مفقود في مجلد الصوت"
+                        ) {
+                            lastError = "لا يوجد"
+                        }
+                    }
+                    val size = if (exists) configYamlFile!!.length() else 0L
+                    val path = configYamlFile?.absolutePath ?: "غير محدد"
+                    val regVal = if (exists && foundYaml != null) {
+                        AcapelaVoiceManifest
+                            .extractRegistrationFromParam(foundYaml.second)
+                    } else if (exists) {
+                        val vDir = configYamlFile!!.parentFile
+                            ?: configYamlFile
+                        AcapelaVoiceManifest.readParamFromConfigYaml(
+                            vDir
+                        )?.let {
+                            AcapelaVoiceManifest
+                                .extractRegistrationFromParam(it)
+                        } ?: AcapelaVoiceManifest.resolveRegistration(vDir)
+                    } else {
+                        ""
+                    }
+                    val masked = maskRegistration(regVal)
+                    configYamlLine = "  config.yaml: موجود=" +
+                        (if (exists) "نعم" else "لا") +
+                        " | حجم=$size بايت | مسار=$path | التسجيل=$masked"
+
+                    val isSalmaRegValid = regVal.isNotBlank() &&
+                        AcapelaVoiceManifest.isRegistrationMetadata(regVal)
+                    salmaRegistrationLine = if (isSalmaRegValid) {
+                        "  حالة تسجيل Salma: مسجَّل بنجاح ($masked)"
+                    } else if (regVal.isNotBlank()) {
+                        "  حالة تسجيل Salma: مسجَّل بقيمة غير قياسية ($masked)"
+                    } else {
+                        "  حالة تسجيل Salma: غير مسجَّل (لم يُعثر على param)"
+                    }
+                }
+
                 sb.appendLine("محرك: ${diag.name} (${diag.id})")
                 sb.appendLine("  الحالة: $stateLabel")
                 sb.appendLine("  الرمز: $code")
                 sb.appendLine("  آخر خطأ: $lastError")
                 sb.appendLine("  المسارات:\n    $paths")
                 sb.appendLine("  الحجم الكلي: $sizeText")
+                if (diag.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID) {
+                    val rawSig = AcapelaVoiceDiagnostics
+                        .getAppSignatureSha256(context)
+                    val maskedSig = AcapelaVoiceDiagnostics
+                        .maskMiddle(rawSig, 8, 8)
+                    val rawDevId = AcapelaVoiceDiagnostics
+                        .getDeviceId(context)
+                    val maskedDevId = AcapelaVoiceDiagnostics
+                        .maskMiddle(rawDevId, 4, 4)
+                    val archInfo = AcapelaVoiceDiagnostics.getArchInfo()
+
+                    sb.appendLine("  اسم حزمة التطبيق: ${context.packageName}")
+                    sb.appendLine("  اسم الحزمة المستعار: org.nobody.multitts")
+                    sb.appendLine(
+                        "  اسم الحزمة الذي تقرؤه المكتبة: org.nobody.multitts"
+                    )
+                    sb.appendLine(
+                        "  بصمة توقيع التطبيق (SHA-256): $maskedSig"
+                    )
+                    sb.appendLine("  معرف الجهاز: $maskedDevId")
+                    sb.appendLine("  المعمارية الحالية: $archInfo")
+                    sb.appendLine(
+                        "  مكتبات Acapela الأصلية (64/32 بت): " +
+                            "متوفرة للمعماريتين"
+                    )
+                    val stageDir = File(context.cacheDir, "acapela_stage")
+                    if (stageDir.exists() && stageDir.isDirectory) {
+                        val stageCount = stageDir.listFiles()?.size ?: 0
+                        sb.appendLine(
+                            "  مجلد تجهيز الأصوات: " +
+                                "${stageDir.absolutePath} ($stageCount ملف)"
+                        )
+                        val logFile = File(
+                            stageDir,
+                            AcapelaVoiceDiagnostics.LOG_FILE_NAME
+                        )
+                        if (logFile.exists() && logFile.length() > 0L) {
+                            val tail = AcapelaVoiceDiagnostics.tailLines(
+                                logFile, 5
+                            )
+                            if (tail.isNotEmpty()) {
+                                sb.appendLine(
+                                    "  سجل المحرك الأصلي (آخر الأسطر):"
+                                )
+                                tail.forEach { sb.appendLine("    $it") }
+                            }
+                        }
+                    }
+                }
+                if (configYamlLine != null) {
+                    sb.appendLine(configYamlLine)
+                }
+                if (salmaRegistrationLine != null) {
+                    sb.appendLine(salmaRegistrationLine)
+                }
                 sb.appendLine("")
             }
 
@@ -4219,5 +4360,18 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         if (mb < 1024) return "${mb} MB"
         val gb = mb / 1024
         return "${gb} GB"
+    }
+
+    private fun maskRegistration(reg: String?): String {
+        if (reg.isNullOrBlank()) return "(لا يوجد)"
+        val trimmed = reg.trim()
+        return if (trimmed.length > 8) {
+            val first4 = trimmed.take(4)
+            val last4 = trimmed.takeLast(4)
+            val maskedMiddle = "*".repeat(trimmed.length - 8)
+            "$first4$maskedMiddle$last4"
+        } else {
+            "****"
+        }
     }
 }

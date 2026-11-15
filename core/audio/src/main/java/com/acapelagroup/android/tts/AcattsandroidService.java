@@ -1,5 +1,6 @@
 package com.acapelagroup.android.tts;
 
+import android.content.Context;
 import android.speech.tts.SynthesisCallback;
 import androidx.annotation.Keep;
 
@@ -10,7 +11,8 @@ import androidx.annotation.Keep;
 @Keep
 public final class AcattsandroidService {
     private final Audio audio;
-    private final String registration;
+    private volatile String registration;
+    private final Context context;
 
     public interface Audio {
         void samples(byte[] bArr, int i);
@@ -34,12 +36,36 @@ public final class AcattsandroidService {
     public native int nUtf8Mode(String str, String str2);
 
     public AcattsandroidService(Audio audio, String str) {
+        this(audio, str, null);
+    }
+
+    public AcattsandroidService(
+        Audio audio,
+        String str,
+        Context context
+    ) {
         this.audio = audio;
+        this.registration = str;
+        this.context = context;
+    }
+
+    public void setRegistration(String str) {
         this.registration = str;
     }
 
     public String idfunction() {
         return this.registration;
+    }
+
+    public Context getContext() {
+        return this.context;
+    }
+
+    public String getPackageName() {
+        if (this.context != null) {
+            return this.context.getPackageName();
+        }
+        return "org.nobody.multitts";
     }
 
     @Keep

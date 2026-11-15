@@ -125,6 +125,17 @@ data class EngineQuirks(
                 tashkeelPolicy = TashkeelPolicy.UNKNOWN,
                 problematicLanguages = emptySet(),
                 problematicVoiceNames = emptySet()
+            ),
+            "com.vnspeak.autotts" to EngineQuirks(
+                packageName = "com.vnspeak.autotts",
+                needsWarmupPolling = false,
+                requiresLocaleWithRegion = false,
+                rejectsVoiceSilently = true,
+                needsSetLanguageBeforeSetVoice = true,
+                maxSafeSpeechRate = 2.0f,
+                tashkeelPolicy = TashkeelPolicy.UNKNOWN,
+                problematicLanguages = emptySet(),
+                problematicVoiceNames = emptySet()
             )
         )
 

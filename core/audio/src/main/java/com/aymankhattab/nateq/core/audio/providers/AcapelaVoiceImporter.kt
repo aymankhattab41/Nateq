@@ -157,14 +157,14 @@ object AcapelaVoiceImporter {
 
             // البحث عن config.yaml في شجرة الملفات المستخرجة:
             // قد يكون في مجلد مُشفَّر بـbase64 أو في جذر الحزمة
-            val configYamlSource = tempUnpack.walkTopDown()
-                .maxDepth(6)
-                .firstOrNull { f ->
+            val allConfigYamls = tempUnpack.walkTopDown()
+                .filter { f ->
                     f.isFile && f.name.equals(
                         "config.yaml",
                         ignoreCase = true
                     )
-                }
+                }.toList()
+            val configYamlSource = allConfigYamls.firstOrNull()
 
             // البحث عن مجلدات الأصوات الصالحة داخل المجلد المؤقت
             var voiceDirs = AcapelaVoiceManifest.completeVoiceDirs(tempUnpack)
@@ -238,6 +238,7 @@ object AcapelaVoiceImporter {
                         mkdirs()
                     }
                 vd.copyRecursively(targetDir, overwrite = true)
+                AcapelaVoiceManifest.flattenNestedVoiceFiles(targetDir)
                 val targetUserdicos = File(targetDir, "userdicos").apply {
                     mkdirs()
                 }
@@ -260,9 +261,15 @@ object AcapelaVoiceImporter {
                     }
                 }
                 // نسخ config.yaml إلى مجلد الصوت — ضروري لفحص التسجيل
-                if (configYamlSource != null) {
+                val yamlToCopy = File(vd, "config.yaml").takeIf { it.isFile }
+                    ?: allConfigYamls.firstOrNull { it.parentFile == vd }
+                    ?: allConfigYamls.firstOrNull {
+                        it.parentFile == vd.parentFile
+                    }
+                    ?: configYamlSource
+                if (yamlToCopy != null && yamlToCopy.isFile) {
                     runCatching {
-                        configYamlSource.copyTo(
+                        yamlToCopy.copyTo(
                             File(targetDir, "config.yaml"),
                             overwrite = true
                         )
@@ -287,6 +294,15 @@ object AcapelaVoiceImporter {
                 runCatching {
                     hexFile.copyTo(
                         File(baseDir, hexFile.name),
+                        overwrite = true
+                    )
+                }
+            }
+
+            if (configYamlSource != null) {
+                runCatching {
+                    configYamlSource.copyTo(
+                        File(baseDir, "config.yaml"),
                         overwrite = true
                     )
                 }
@@ -396,12 +412,21 @@ object AcapelaVoiceImporter {
             }
 
             val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(baseDir)
+            val baseYaml = File(baseDir, "config.yaml").takeIf { it.isFile }
             for (vd in AcapelaVoiceManifest.completeVoiceDirs(baseDir)) {
                 File(vd, "userdicos").mkdirs()
                 if (hexFile != null && hexFile.parentFile != vd) {
                     runCatching {
                         hexFile.copyTo(
                             File(vd, hexFile.name),
+                            overwrite = true
+                        )
+                    }
+                }
+                if (baseYaml != null && !File(vd, "config.yaml").isFile) {
+                    runCatching {
+                        baseYaml.copyTo(
+                            File(vd, "config.yaml"),
                             overwrite = true
                         )
                     }
@@ -639,6 +664,15 @@ object AcapelaVoiceImporter {
                 .findHexRegistrationFile(sourceDir)
                 ?: AcapelaVoiceManifest.findHexRegistrationFile(baseDir)
 
+            val allDirYamls = sourceDir.walkTopDown()
+                .filter { f ->
+                    f.isFile && f.name.equals(
+                        "config.yaml",
+                        ignoreCase = true
+                    )
+                }.toList()
+            val dirYamlSource = allDirYamls.firstOrNull()
+
             for (vd in voiceDirs) {
                 val target = File(baseDir, vd.name).apply { mkdirs() }
                 vd.copyRecursively(target, overwrite = true)
@@ -651,12 +685,35 @@ object AcapelaVoiceImporter {
                         )
                     }
                 }
+                val yamlToCopy = File(vd, "config.yaml").takeIf { it.isFile }
+                    ?: allDirYamls.firstOrNull { it.parentFile == vd }
+                    ?: allDirYamls.firstOrNull {
+                        it.parentFile == vd.parentFile
+                    }
+                    ?: dirYamlSource
+                if (yamlToCopy != null && yamlToCopy.isFile) {
+                    runCatching {
+                        yamlToCopy.copyTo(
+                            File(target, "config.yaml"),
+                            overwrite = true
+                        )
+                    }
+                }
             }
 
             if (hexFile != null) {
                 runCatching {
                     hexFile.copyTo(
                         File(baseDir, hexFile.name),
+                        overwrite = true
+                    )
+                }
+            }
+
+            if (dirYamlSource != null) {
+                runCatching {
+                    dirYamlSource.copyTo(
+                        File(baseDir, "config.yaml"),
                         overwrite = true
                     )
                 }

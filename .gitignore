@@ -40,3 +40,5 @@ relay-worker/.wrangler/
 __pycache__/
 temp_backup_untracked/
 *.zip
+*.rar
+/multitts_export/

@@ -149,6 +149,14 @@ class AcapelaSpeechTagTest {
         // التحقق من قيم المرشحات المشتقة
         val byLetter = candidates.associateBy { it.letter }
         assertEquals(
+            "test@example.comabcdef1234567890",
+            byLetter['x']?.value
+        )
+        assertEquals(
+            "test@example.com0xabcdef1234567890",
+            byLetter['y']?.value
+        )
+        assertEquals(
             "test@example.com,abcdef1234567890",
             byLetter['f']?.value
         )
@@ -186,5 +194,28 @@ class AcapelaSpeechTagTest {
         assertEquals(null, manifest.splitConfigYamlParam("only,two"))
         assertEquals(null, manifest.splitConfigYamlParam("single"))
         assertEquals(null, manifest.splitConfigYamlParam(""))
+    }
+
+    @Test
+    fun registrationCandidates_sixFormulasOrder() {
+        val root = tempFolder.newFolder("Acapela_six")
+        val voiceDir = File(root, "acapela_ara-SAU-Salma").apply { mkdirs() }
+        File(voiceDir, "config.yaml").writeText(
+            "speaker:\n  param: salma22k_hq," +
+                "test@example.com,0123456789abcdef\n",
+            Charsets.UTF_8
+        )
+        val queryDir = File(root, "Salma").apply { mkdirs() }
+        val candidates = AcapelaHostSession.registrationCandidates(
+            queryDir,
+            "cur"
+        )
+        val labels = candidates.map { it.label }
+        assertTrue(labels.contains("email_code"))
+        assertTrue(labels.contains("code_email"))
+        assertTrue(labels.contains("code_only"))
+        assertTrue(labels.contains("email_only"))
+        assertTrue(labels.contains("full_param"))
+        assertTrue(labels.contains("voice_code"))
     }
 }
