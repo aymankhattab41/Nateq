@@ -466,4 +466,59 @@ class AcapelaVoiceDiagnosticsTest {
             root.deleteRecursively()
         }
     }
+
+    @Test
+    fun babileErrorName_mapsErrorCodesCorrectly() {
+        assertEquals(
+            "NO ERROR",
+            AcapelaVoiceDiagnostics.babileErrorName(0)
+        )
+        assertEquals(
+            "E_BABILE_NULLARG",
+            AcapelaVoiceDiagnostics.babileErrorName(-25)
+        )
+        assertEquals(
+            "E_BABILE_NLPINITERROR",
+            AcapelaVoiceDiagnostics.babileErrorName(-27)
+        )
+        assertEquals(
+            "E_BABILE_LICENSE",
+            AcapelaVoiceDiagnostics.babileErrorName(-34)
+        )
+    }
+
+    @Test
+    fun resolveAcapelaParam_plainParamResolvesCorrectly() {
+        val raw = "salma,user@example.com,0123456789abcdef"
+        val res = AcapelaMetadataCodec.resolveAcapelaParam(raw)
+        assertEquals(false, res.isEncrypted)
+        assertEquals(3, res.partsCount)
+        assertEquals("user@example.com".length, res.emailLength)
+        assertEquals("0123456789abcdef".length, res.hexCodeLength)
+        assertEquals("user@example.com0123456789abcdef", res.registration)
+        assertEquals(4, res.sha1First4Hex.length)
+    }
+
+    @Test
+    fun isParamEncrypted_detectsCommaPresence() {
+        assertEquals(
+            true,
+            AcapelaMetadataCodec.isParamEncrypted("encodedPayloadWithoutComma")
+        )
+        assertEquals(
+            false,
+            AcapelaMetadataCodec.isParamEncrypted("salma,a@b.c,1234")
+        )
+    }
+
+    @Test
+    fun explanations_containExpectedIdentifiers() {
+        val exp25 = AcapelaVoiceDiagnostics.getBabileError25Explanation()
+        assertTrue(exp25.contains("E_BABILE_NULLARG"))
+        assertTrue(exp25.contains("-25"))
+
+        val shaAnalysis = AcapelaVoiceDiagnostics.getSha1Mismatch7e88Analysis()
+        assertTrue(shaAnalysis.contains("7e88"))
+        assertTrue(shaAnalysis.contains("-34"))
+    }
 }

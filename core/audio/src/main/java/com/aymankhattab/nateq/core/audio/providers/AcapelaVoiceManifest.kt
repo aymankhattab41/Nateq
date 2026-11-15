@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import android.content.Context
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.enginehost.HostLog
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
@@ -1729,23 +1730,24 @@ object AcapelaVoiceManifest {
     /**
      * استخراج قيمة التسجيل من سطر param (مطابق تماماً لعقد MultiTTS):
      * voiceCode,email,hexCode -> email + hexCode (دمج مباشر بدون فاصلة)
+     * مع فك التشفير أولاً إن كان مشفراً عبر AcapelaMetadataCodec.
      */
-    fun extractRegistrationFromParam(rawParam: String): String {
-        val clean = rawParam.trim()
-            .removeSurrounding("\"").removeSurrounding("'").trim()
-        val parsed = splitConfigYamlParam(clean)
-        if (parsed != null) {
-            val (_, email, hexCode) = parsed
-            val cleanHex = hexCode.trim()
-                .removePrefix("0x").removePrefix("0X")
-            return "$email$cleanHex"
+    fun extractRegistrationFromParam(
+        rawParam: String,
+        context: Context? = null
+    ): String {
+        val decoded = AcapelaMetadataCodec.resolveAcapelaParam(
+            rawParam = rawParam,
+            context = context
+        )
+        if (decoded.registration.isNotBlank()) {
+            return decoded.registration
         }
-        val parts = clean.split(',').map {
-            it.trim().removeSurrounding("\"").removeSurrounding("'")
-        }
+        val clean = AcapelaMetadataCodec.trim(rawParam)
+        val parts = clean.split(',').map { AcapelaMetadataCodec.trim(it) }
         if (parts.size == 3) {
             val email = parts[1]
-            val hexCode = parts[2].removePrefix("0x").removePrefix("0X")
+            val hexCode = parts[2]
             return "$email$hexCode"
         }
         return clean

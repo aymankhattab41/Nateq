@@ -9,6 +9,7 @@ import com.acapelagroup.android.tts.AcattsandroidService
 import com.acapelagroup.android.tts.acattsandroid
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.providers.AcapelaLicense
+import com.aymankhattab.nateq.core.audio.providers.AcapelaMetadataCodec
 import com.aymankhattab.nateq.core.audio.providers.AcapelaParameters
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceDiagnostics
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
@@ -1100,7 +1101,10 @@ internal class AcapelaHostSession(
         val rawParam =
             AcapelaVoiceManifest.readParamFromConfigYaml(voice.dir)
         val registration = if (!rawParam.isNullOrBlank()) {
-            AcapelaVoiceManifest.extractRegistrationFromParam(rawParam)
+            AcapelaVoiceManifest.extractRegistrationFromParam(
+                rawParam,
+                context
+            )
         } else {
             voice.registration
         }
@@ -2132,15 +2136,29 @@ internal class AcapelaHostSession(
             "  - سطر tts_function_load_voice: " +
                 loadVoiceLine.ifBlank { "(لم يظهر في السجل)" }
         )
+        val ebName = ebCode?.let {
+            AcapelaVoiceDiagnostics.babileErrorName(it)
+        }.orEmpty()
+        val nlpName = nlpCode?.let {
+            AcapelaVoiceDiagnostics.babileErrorName(it)
+        }.orEmpty()
+
         sb.appendLine(
             "  - كود tts_function_load_voice (eb): " +
-                "${ebCode ?: "(لم يظهر في السجل)"}"
+                "${ebCode ?: "(لم يظهر في السجل)"}" +
+                if (ebName.isNotEmpty()) " ($ebName)" else ""
         )
         sb.appendLine(
-            "  - قيمة nlpInitError: ${nlpCode ?: "(لم تظهر في السجل)"}"
+            "  - قيمة nlpInitError: " +
+                "${nlpCode ?: "(لم تظهر في السجل)"}" +
+                if (nlpName.isNotEmpty()) " ($nlpName)" else ""
         )
 
-        // فلترة أسطر الترخيص (البند 3 من إصدار 10715)
+        // فلترة أسطر babParam.uid.userId و babParam.license
+        val babParamUidLines = nativeTail.filter {
+            it.contains("babParam.uid.userId", ignoreCase = true) ||
+                it.contains("babParam.uid.passwd", ignoreCase = true)
+        }
         val babParamLicLines = nativeTail.filter {
             it.contains("babParam.license", ignoreCase = true)
         }
@@ -2153,6 +2171,15 @@ internal class AcapelaHostSession(
                 "len=${licenseStr.length}): " +
                 "كود=${setLicenseRetCode ?: "لم يُستدعَ"}"
         )
+        sb.appendLine(
+            "  - أسطر babParam.uid.userId / passwd " +
+                "(${babParamUidLines.size} سطر):"
+        )
+        if (babParamUidLines.isEmpty()) {
+            sb.appendLine("    (لم يظهر أي سطر يطابق babParam.uid.userId)")
+        } else {
+            babParamUidLines.forEach { sb.appendLine("    $it") }
+        }
         sb.appendLine(
             "  - أسطر babParam.license (${babParamLicLines.size} سطر):"
         )
@@ -2282,10 +2309,18 @@ internal class AcapelaHostSession(
 
             val effectiveRawParam = rawParam ?: AcapelaVoiceManifest
                 .readParamFromConfigYaml(voice.dir).orEmpty()
-            val parsedParam = AcapelaVoiceManifest
-                .splitConfigYamlParam(effectiveRawParam)
-            val emailLen = parsedParam?.second?.length ?: 0
-            val hexCodeLen = parsedParam?.third?.length ?: 0
+            val decodedReg = AcapelaMetadataCodec.resolveAcapelaParam(
+                rawParam = effectiveRawParam,
+                context = context
+            )
+            val emailLen = decodedReg.emailLength
+            val hexCodeLen = decodedReg.hexCodeLength
+            val regToUse = if (decodedReg.registration.isNotEmpty()) {
+                decodedReg.registration
+            } else {
+                registration
+            }
+            val effectiveRegLen = regToUse.length
 
             val hexFileInV2 = File(v2Dir, "0x00169729")
             val hexExists = hexFileInV2.exists()
@@ -2297,10 +2332,25 @@ internal class AcapelaHostSession(
                 }.getOrDefault(false)
             } else false
 
-            val keyDiskStatus = "[فحص ملف الترخيص 10716] 0x00169729: " +
+            val sha1ComparisonMsg = if (decodedReg.sha1Matches7e88) {
+                "مطابق تماماً للقيمة المسجلة 7e88"
+            } else {
+                "مختلف عن 7e88 (المحسوب=${decodedReg.sha1First4Hex}، " +
+                    "المسجل=7e88) — فهذا هو الخطأ"
+            }
+
+            val keyDiskStatus = "[فحص ملف الترخيص 10717] 0x00169729: " +
                 "موجود=$hexExists, حجم=$hexSize بايت, " +
-                "يحوي COMMERCIAL=$hexHasComm | أطوال: " +
-                "email=$emailLen, hexCode=$hexCodeLen, reg=$regLen"
+                "يحوي COMMERCIAL=$hexHasComm\n" +
+                "[فك وتحليل param - البند 2 من 10717]:\n" +
+                "- هل param كان مشفراً: " +
+                "${if (decodedReg.isEncrypted) "نعم" else "لا"}\n" +
+                "- عدد الأجزاء بعد التقسيم: ${decodedReg.partsCount}\n" +
+                "- طول email: $emailLen\n" +
+                "- طول hexCode: $hexCodeLen\n" +
+                "- طول registration: $effectiveRegLen\n" +
+                "- أول 4 خانات hex من SHA1: ${decodedReg.sha1First4Hex} " +
+                "($sha1ComparisonMsg)"
             Log.i(TAG, keyDiskStatus)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, keyDiskStatus)
 
@@ -2311,7 +2361,7 @@ internal class AcapelaHostSession(
                 trialDir = v2Dir,
                 speaker = effectiveSpeaker,
                 iso3 = iso3,
-                registration = registration,
+                registration = regToUse,
                 voice = voice,
                 voiceMode = "MODE=prep_hd",
                 probeText = REGISTRATION_PROBE_TEXT,
@@ -2331,7 +2381,7 @@ internal class AcapelaHostSession(
                 trialDir = v2Dir,
                 speaker = effectiveSpeaker,
                 iso3 = iso3,
-                registration = registration,
+                registration = regToUse,
                 voice = voice,
                 voiceMode = "MODE=prep_hd",
                 probeText = REGISTRATION_PROBE_TEXT,
@@ -2371,7 +2421,7 @@ internal class AcapelaHostSession(
                 trialDir = voice.dir,
                 speaker = effectiveSpeaker,
                 iso3 = iso3,
-                registration = registration,
+                registration = regToUse,
                 voice = voice,
                 voiceMode = "MODE=prep_hd",
                 probeText = REGISTRATION_PROBE_TEXT,
@@ -2396,6 +2446,11 @@ internal class AcapelaHostSession(
                         "acapela_marhaba_trial.wav"
                     )
                     AcapelaVoiceDiagnostics.savePcmAsWav(wavFile, pcmData)
+                    val wav10717 = File(
+                        context.cacheDir,
+                        "acapela_marhaba_10717.wav"
+                    )
+                    AcapelaVoiceDiagnostics.savePcmAsWav(wav10717, pcmData)
                     val wav10716 = File(
                         context.cacheDir,
                         "acapela_marhaba_10716.wav"
@@ -2434,10 +2489,14 @@ internal class AcapelaHostSession(
                 ?: trial1
 
             val literalResults = buildString {
-                appendLine("=== [نتائج محاولات نطق Acapela 10716] ===")
+                appendLine("=== [نتائج محاولات نطق Acapela 10717] ===")
                 trialsList.forEach { t ->
-                    val ebStr = t.ebErrorCode?.toString() ?: "0"
-                    val nlpStr = t.nlpErrorCode?.toString() ?: "0"
+                    val ebStr = t.ebErrorCode?.let {
+                        "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
+                    } ?: "0"
+                    val nlpStr = t.nlpErrorCode?.let {
+                        "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
+                    } ?: "0"
                     appendLine(
                         "${t.method} => eb: $ebStr | nlpErr: $nlpStr | " +
                             "nSpeak: ${t.speakCode} | عينات: ${t.samples}"
@@ -2458,7 +2517,7 @@ internal class AcapelaHostSession(
             } else {
                 "فشل كافة محاولات نطق Acapela"
             }
-            val topSummary = "[تشخيص محاولات Acapela 10716] " +
+            val topSummary = "[تشخيص محاولات Acapela 10717] " +
                 "$trialSummary | النتيجة: $outcome"
             Log.i(TAG, topSummary)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
@@ -2474,6 +2533,16 @@ internal class AcapelaHostSession(
                     appendLine(literalResults)
                     appendLine("")
                     appendLine(keyDiskStatus)
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getBabileError25Explanation()
+                    )
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getSha1Mismatch7e88Analysis()
+                    )
                     appendLine("")
                     appendLine(
                         AcapelaVoiceDiagnostics
@@ -2512,6 +2581,8 @@ internal class AcapelaHostSession(
                     }
                 }.trimEnd()
                 reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10717.txt")
+                    .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10716.txt")
                     .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10715.txt")

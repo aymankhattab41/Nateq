@@ -8,10 +8,27 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
+import java.security.MessageDigest
 import java.util.Arrays
 import java.util.Base64
+import java.util.Locale
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
+
+/**
+ * نتيجة فك وتحليل سطر param لحزم Acapela وفق خوارزمية MultiTTS.
+ */
+internal data class AcapelaDecodedRegistration(
+    val isEncrypted: Boolean,
+    val partsCount: Int,
+    val emailLength: Int,
+    val hexCodeLength: Int,
+    val sha1First4Hex: String,
+    val registration: String,
+    val voiceCode: String,
+    val decodedText: String,
+    val sha1Matches7e88: Boolean
+)
 
 /**
  * فك تشفير بيانات تسجيل حزم Acapela
@@ -37,7 +54,116 @@ internal class AcapelaMetadataCodec(
                     ?: throw IOException("package-codec.dat not found")
             }
 
-        fun trim(s: String?): String = s?.trim().orEmpty()
+        /**
+         * تشذيب السلسلة وإزالة الفراغات والاقتباسات كما في MultiTTS:
+         * AcapelaMetadataCodec.trim(s).
+         */
+        fun trim(s: String?): String {
+            if (s == null) return ""
+            return s.trim()
+                .removePrefix("\"").removeSuffix("\"")
+                .removePrefix("'").removeSuffix("'")
+                .trim()
+        }
+
+        /**
+         * التحقق هل سطر param مشفر وفق شرط MultiTTS:
+         * إن لم يحتوِ على فاصلة "," فهو مشفر ويتطلب الفك بـ decode.
+         */
+        fun isParamEncrypted(param: String?): Boolean {
+            if (param.isNullOrBlank() || param.trim() == "null") return false
+            val clean = trim(param)
+            return !clean.contains(",")
+        }
+
+        /**
+         * حساب أول 4 خانات Hex من SHA1 للسلسلة النصية:
+         * يطابق تماماً أول 32 بت H0 المحسوب في check_license بـ
+         * libttsacattsandroidextended.so والمخزن في mUserid
+         * (babParam.uid.userId).
+         */
+        fun computeSha1First4Hex(text: String): String {
+            val md = MessageDigest.getInstance("SHA-1")
+            val digest = md.digest(text.toByteArray(StandardCharsets.UTF_8))
+            if (digest.size < 2) return ""
+            return String.format(Locale.US, "%02x%02x", digest[0], digest[1])
+        }
+
+        /**
+         * خوارزمية MultiTTS الكاملة لتحليل وفك سطر param:
+         * 1) فحص وجود الفاصلة: إن غابت فالسطر مشفر بـ AES/ECB/PKCS5Padding.
+         * 2) فك التشفير إن كان مشفراً واستخراج النص الأصلي.
+         * 3) تقسيم النص بالفاصلة إلى أجزاء (voiceCode, email, hexCode).
+         * 4) دمج email + hexCode مباشرة بدون فاصلة (كما في buildRegistration).
+         * 5) حساب SHA-1 ومقارنة أول 4 خانات مع القيمة المسجلة 7e88.
+         */
+        fun resolveAcapelaParam(
+            rawParam: String?,
+            context: Context? = null,
+            customCodec: AcapelaMetadataCodec? = null
+        ): AcapelaDecodedRegistration {
+            if (rawParam.isNullOrBlank() || rawParam.trim() == "null") {
+                return AcapelaDecodedRegistration(
+                    isEncrypted = false,
+                    partsCount = 0,
+                    emailLength = 0,
+                    hexCodeLength = 0,
+                    sha1First4Hex = "",
+                    registration = "",
+                    voiceCode = "",
+                    decodedText = "",
+                    sha1Matches7e88 = false
+                )
+            }
+
+            val trimmedParam = trim(rawParam)
+            val isEncrypted = !trimmedParam.contains(",")
+            val decodedText = if (isEncrypted) {
+                val codec = customCodec ?: runCatching {
+                    fromAssets(context)
+                }.getOrNull()
+                if (codec != null) {
+                    runCatching {
+                        codec.decode(trimmedParam)
+                    }.getOrDefault(trimmedParam)
+                } else {
+                    trimmedParam
+                }
+            } else {
+                trimmedParam
+            }
+
+            val parts = decodedText.split(",")
+                .map { trim(it) }
+            val partsCount = parts.size
+            val voiceCode = parts.getOrNull(0).orEmpty()
+            val email = parts.getOrNull(1).orEmpty()
+            val hexCode = parts.getOrNull(2).orEmpty()
+
+            val reg = if (partsCount == 3) {
+                email + hexCode
+            } else {
+                decodedText
+            }
+
+            val sha1Hex4 = if (reg.isNotEmpty()) {
+                computeSha1First4Hex(reg)
+            } else ""
+
+            val matches7e88 = sha1Hex4.equals("7e88", ignoreCase = true)
+
+            return AcapelaDecodedRegistration(
+                isEncrypted = isEncrypted,
+                partsCount = partsCount,
+                emailLength = email.length,
+                hexCodeLength = hexCode.length,
+                sha1First4Hex = sha1Hex4,
+                registration = reg,
+                voiceCode = voiceCode,
+                decodedText = decodedText,
+                sha1Matches7e88 = matches7e88
+            )
+        }
     }
 
     private fun key(): ByteArray {
@@ -71,7 +197,7 @@ internal class AcapelaMetadataCodec(
     }
 
     fun decode(encoded: String): String {
-        val trimmed = encoded.trim()
+        val trimmed = trim(encoded)
         if (trimmed.length > MAX_ENCODED_LEN ||
             !trimmed.matches(Regex("[A-Za-z0-9+/]+={0,2}")) ||
             trimmed.length % 4 != 0
@@ -98,4 +224,6 @@ internal class AcapelaMetadataCodec(
             Arrays.fill(decrypted, 0.toByte())
         }
     }
+
+    fun folder(speaker: String): String = speaker.lowercase(Locale.ROOT)
 }

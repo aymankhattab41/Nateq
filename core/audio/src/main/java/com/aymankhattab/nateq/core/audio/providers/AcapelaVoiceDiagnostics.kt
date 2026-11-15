@@ -1414,8 +1414,44 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10716) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10717) ===")
         sb.appendLine("==================================================")
+        sb.appendLine("")
+
+        // ── [البندان 1 و 2 من 10717] فك وتحليل param و MultiTTS Codec ────
+        val yamlWithParam = AcapelaVoiceManifest.findConfigYamlWithParam(
+            File(context.filesDir, "Acapela")
+        ) ?: AcapelaVoiceManifest.findConfigYamlWithParam(context.filesDir)
+        val decoded = AcapelaMetadataCodec.resolveAcapelaParam(
+            rawParam = yamlWithParam?.second,
+            context = context
+        )
+        val sha1ComparisonMsg = if (decoded.sha1Matches7e88) {
+            "مطابق تماماً للقيمة المسجلة 7e88"
+        } else {
+            "مختلف عن 7e88 (المحسوب=${decoded.sha1First4Hex}، " +
+                "المسجل=7e88) — فهذا هو الخطأ"
+        }
+        sb.appendLine("=== [البندان 1 و 2 من 10717] فك وتحليل param ===")
+        sb.appendLine(
+            "- هل param كان مشفراً: " +
+                if (decoded.isEncrypted) "نعم" else "لا"
+        )
+        sb.appendLine("- عدد الأجزاء بعد التقسيم: ${decoded.partsCount}")
+        sb.appendLine("- طول email: ${decoded.emailLength}")
+        sb.appendLine("- طول hexCode: ${decoded.hexCodeLength}")
+        sb.appendLine(
+            "- أول 4 خانات hex من SHA1: ${decoded.sha1First4Hex} " +
+                "($sha1ComparisonMsg)"
+        )
+        sb.appendLine("")
+
+        // ── [البند 4 من 10717] تفسير كود الخطأ -25 (E_BABILE_NULLARG) ────
+        sb.appendLine(getBabileError25Explanation())
+        sb.appendLine("")
+
+        // ── [البند 5 من 10717] مطابقة SHA1 مع 7e88 ───────────────────────
+        sb.appendLine(getSha1Mismatch7e88Analysis())
         sb.appendLine("")
 
         // ── [البند 1] تتبع مسار email و hexCode في كود MultiTTS ──────────
@@ -1595,6 +1631,8 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10717.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10716.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10715.txt")
@@ -2185,6 +2223,117 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine("- $title (${file?.name ?: "-"}):")
         tailLines(file).forEach { sb.appendLine("  $it") }
     }
+
+    fun babileErrorName(code: Int): String = when (code) {
+        0 -> "NO ERROR"
+        -1 -> "E_BABILE_NOMEM"
+        -2 -> "E_BABILE_MEMFREE"
+        -3 -> "E_BABILE_ISPLAYING"
+        -4 -> "E_BABILE_SPEAKERROR"
+        -5 -> "E_BABILE_WAVEOUTWRITE"
+        -6 -> "E_BABILE_WAVEOUTNOTFREE"
+        -7 -> "E_BABILE_PROCESSERROR"
+        -8 -> "E_BABILE_REGISTRYERROR"
+        -9 -> "E_BABILE_NOREGISTRY"
+        -10 -> "E_BABILE_NOTVALIDPARAMETER"
+        -11 -> "E_BABILE_THREADERROR"
+        -12 -> "E_BABILE_NONLP"
+        -13 -> "E_BABILE_INVALIDTAG"
+        -14 -> "E_BABILE_FILEWRITE"
+        -15 -> "E_BABILE_FILEOPEN"
+        -16 -> "E_BABILE_BADPHO"
+        -17 -> "E_BABILE_DICT_OPEN"
+        -18 -> "E_BABILE_DICT_WRITE"
+        -19 -> "E_BABILE_DICT_READ"
+        -20 -> "E_BABILE_DICT_NOENTRY"
+        -21 -> "E_BABILE_NOTIMPLEMENTED"
+        -22 -> "E_BABILE_NODBA"
+        -23 -> "E_BABILE_NODICT"
+        -24 -> "E_BABILE_VALUEOUTOFBOUNDS"
+        -25 -> "E_BABILE_NULLARG"
+        -26 -> "E_BABILE_MBRINITERROR"
+        -27 -> "E_BABILE_NLPINITERROR"
+        -28 -> "E_BABILE_MBRERROR"
+        -29 -> "E_BABILE_PHOSTRPROGRESSERROR"
+        -30 -> "E_BABILE_DICT_EXIST"
+        -31 -> "E_BABILE_SELINITERROR"
+        -32 -> "E_BABILE_SELERROR"
+        -33 -> "E_BABILE_NOSEL"
+        -34 -> "E_BABILE_LICENSE"
+        -41 -> "E_BABILE_SYNTHESIZESF"
+        -42 -> "E_BABILE_PHONBUFERROR"
+        -43 -> "E_BABILE_NOMBR"
+        -44 -> "E_BABILE_NLPERROR"
+        -45 -> "E_BABILE_COLERROR"
+        -46 -> "E_BABILE_NOCOLIBRI"
+        -47 -> "E_BABILE_COLINITERROR"
+        -48 -> "E_BABILE_NOVALIDSYNTH"
+        -49 -> "E_BABILE_ANNINITERROR"
+        -50 -> "E_BABILE_ANNERROR"
+        else -> "UNKNOWN"
+    }
+
+    fun getBabileError25Explanation(): String = buildString {
+        appendLine("=== [البند 4 من 10717] تفسير كود الخطأ -25 ===")
+        appendLine("1. الرمز الحرفي في BABILE_errorStrings:")
+        appendLine("   - الكود -25 يطابق حرفياً: \"E_BABILE_NULLARG\"")
+        appendLine(
+            "   - المصدر: مصفوفة BABILE_errorStrings (OBJECT عند 0x368d68"
+        )
+        appendLine("     في libttsacattsandroidextended.so، المدخل 25)")
+        appendLine(
+            "   - إعادة التوجيه R_AARCH64_RELATIVE تشير إلى 0x6244d:"
+        )
+        appendLine("     \"E_BABILE_NULLARG\"")
+        appendLine("2. سبب ظهور eb=-25 عند تمرير param كاملاً:")
+        appendLine(
+            "   - عند تمرير param كاملاً (الذي يحوي فواصل مثل \"Salma,...\")"
+        )
+        appendLine("     بدلاً من email+hexCode، تتلقى دوال فحص وتحميل المكون")
+        appendLine(
+            "     اللغوي بنية غير متوقعة، فتعثرت إحدى وسائط التحميل " +
+                "ووجدت معاملاً NULL"
+        )
+        appendLine(
+            "     أو فارغاً، فأرجعت E_BABILE_NULLARG (-25) وتوقف التحميل " +
+                "قبل فحص"
+        )
+        appendLine("     الترخيص (ولذا ظهر nlpInitError=0).")
+    }.trimEnd()
+
+    fun getSha1Mismatch7e88Analysis(): String = buildString {
+        appendLine(
+            "=== [البند 5 من 10717] مطابقة أول 4 خانات Hex من SHA1 ==="
+        )
+        appendLine("1. القيمة المسجلة في الترخيص:")
+        appendLine("   - سطر الترخيص في ملف 0x00169729 وسجل المكتبة:")
+        appendLine("     babParam.license \"2662 0 7e88 #COMMERCIAL#\"")
+        appendLine("   - الحقل الثالث \"7e88\" يمثل المعرف المتوقع userId.")
+        appendLine(
+            "   - كلمة المرور: babParam.uid.passwd = 1480489 (0x00169729)."
+        )
+        appendLine("2. آلية المكتبة في idfunction():")
+        appendLine(
+            "   - تستدعي idfunction() لجلب سلسلة التسجيل registration."
+        )
+        appendLine(
+            "   - تحسب SHA1 للسلسلة وتأخذ أول 4 خانات Hex من H0 وتخزنها"
+        )
+        appendLine("     في mUserid (babParam.uid.userId).")
+        appendLine(
+            "   - إن اختلفت أول 4 خانات عن 7e88، تفشل دالة BBNLP_init بـ"
+        )
+        appendLine(
+            "     nlpInitError = -34 (E_BABILE_LICENSE)، وتفشل " +
+                "load_voice بـ"
+        )
+        appendLine(
+            "     eb = -27 (E_BABILE_NLPINITERROR)، ويرجع nSpeak الرمز -2."
+        )
+        appendLine(
+            "   - لذا فإن أي اختلاف بين الناتج المحسوب و7e88 هو الخطأ يقيناً."
+        )
+    }.trimEnd()
 
     /**
      * مسح سريع لجذر البيانات بلا نطق: أول [maxVoices] ملفات `.ini`
