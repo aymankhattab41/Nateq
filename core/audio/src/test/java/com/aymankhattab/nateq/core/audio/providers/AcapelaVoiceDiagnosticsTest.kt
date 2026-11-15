@@ -1,12 +1,27 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 import java.nio.file.Files
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class AcapelaVoiceDiagnosticsTest {
+
+    private lateinit var context: Context
+
+    @Before
+    fun setUp() {
+        context = ApplicationProvider.getApplicationContext()
+    }
 
     private fun tempDir(): File =
         Files.createTempDirectory("acapela_diag").toFile()
@@ -147,6 +162,45 @@ class AcapelaVoiceDiagnosticsTest {
             )
             assertTrue(AcapelaVoiceDiagnostics.getArchInfo().isNotEmpty())
             assertTrue(AcapelaVoiceDiagnostics.hasDualArchLibs().isNotEmpty())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun stageVoiceFlat_createsFlatStructureAndUserdicos() {
+        val root = tempDir()
+        val voice = File(root, "Salma").apply { mkdirs() }
+        val nlp = File(voice, "NLP").apply { mkdirs() }
+        try {
+            File(voice, "salma_22k_lf.bvcu").writeText("bvcu_data")
+            File(voice, "bvcu.inf").writeText("Speaker=Salma\n[voice]\n")
+            File(voice, "config.yaml")
+                .writeText("param: 1,test@test.com,0x12345678\n")
+            File(voice, "salma_lf.txt").writeText("txt_data")
+            File(voice, "0x00169729").writeText("hex_data")
+            File(voice, "user.userdico").writeText("user_dico_data")
+            File(nlp, "ar_sa.dca").writeText("dca_data")
+            File(nlp, "ar_sa_unplugged.dca").writeText("unp_data")
+            File(nlp, "ar_sa_hde_arq.dca").writeText("hde_data")
+
+            val stageFlat = AcapelaVoiceDiagnostics.stageVoiceFlat(
+                context,
+                voice
+            )
+
+            assertTrue(File(stageFlat, "salma_22k_lf.bvcu").exists())
+            assertTrue(File(stageFlat, "ar_sa.dca").exists())
+            assertTrue(File(stageFlat, "ar_sa_unplugged.dca").exists())
+            assertTrue(File(stageFlat, "ar_sa_hde_arq.dca").exists())
+            assertTrue(File(stageFlat, "bvcu.inf").exists())
+            assertTrue(File(stageFlat, "bvcu.ini").exists())
+            assertTrue(File(stageFlat, "config.yaml").exists())
+            assertTrue(File(stageFlat, "salma_lf.txt").exists())
+            assertTrue(File(stageFlat, "0x00169729").exists())
+            assertTrue(File(stageFlat, "user.userdico").exists())
+            assertTrue(File(stageFlat, "userdicos/user.userdico").exists())
+            assertTrue(File(stageFlat, "userdicos/ara-sau.userdico").exists())
         } finally {
             root.deleteRecursively()
         }
