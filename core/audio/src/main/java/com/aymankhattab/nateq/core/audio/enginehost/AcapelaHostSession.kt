@@ -55,25 +55,8 @@ internal class AcapelaHostSession(
     private val context: Context
 ) : HostEngineSession, acattsandroid.AudioListener {
 
-    private val acapelaContext: Context =
-        AcapelaPackageContextWrapper(context)
-
-    /**
-     * غلاف Context يُعيد اسم الحزمة المستعار لمكتبة Acapela فقط
-     * داخل مسار التهيئة والتسجيل، دون تغيير اسم الحزمة الحقيقي.
-     */
-    private class AcapelaPackageContextWrapper(
-        base: Context,
-        private val spoofedPackageName: String = SPOOFED_PACKAGE_NAME
-    ) : ContextWrapper(base) {
-        override fun getPackageName(): String = spoofedPackageName
-        override fun getOpPackageName(): String = spoofedPackageName
-        override fun getApplicationContext(): Context = this
-    }
-
     companion object {
         private const val TAG = "AcapelaHostSession"
-        private const val SPOOFED_PACKAGE_NAME = "org.nobody.multitts"
         private const val DEFAULT_SAMPLE_RATE = 22050
 
         /** نمط الصوت الممتد الذي يفرضه MultiTTS قبل تحميل الحزمة. */
@@ -191,9 +174,11 @@ internal class AcapelaHostSession(
                             )
                         }
                 } else {
+                    val direct = AcapelaVoiceManifest
+                        .extractRegistrationFromParam(rawParam)
                     result.add(
                         RegistrationCandidate(
-                            'j', "full_param", rawParam.trim()
+                            'x', "email_code_nocomma", direct
                         )
                     )
                 }
@@ -384,28 +369,59 @@ internal class AcapelaHostSession(
             )
         }
 
-        try {
-            System.loadLibrary("ttsacattsandroidextended")
-        } catch (t: Throwable) {
-            Log.w(
-                TAG,
-                "libttsacattsandroidextended.so غير متوفرة: ${t.message}"
+        // فحص أصوات القرص أولاً قبل تحميل أي مكتبة ثنائية
+        val extraDirs = EmbeddedStorage.allSearchDirs(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        val voices = manifestVoices(dir, extraDirs)
+        if (voices.isEmpty()) {
+            return HostResult.failure(
+                "NO_VOICES",
+                "لا يوجد صوت Acapela صالح في ${dir.absolutePath}"
             )
         }
 
+        val hasRegistered = voices.any { it.registration.isNotEmpty() }
+        releaseEngine()
+
+        if (hasRegistered) {
+            // تحميل حصري للمحرك الممتد فقط (ttsacattsandroidextended)
+            // ولا يتم إطلاقاً تحميل acattsandroid لمنع تضارب الرموز الأصلية.
+            try {
+                System.loadLibrary("ttsacattsandroidextended")
+            } catch (t: Throwable) {
+                Log.e(
+                    TAG,
+                    "فشل تحميل libttsacattsandroidextended.so: ${t.message}"
+                )
+                return HostResult.failure(
+                    "NATIVE_LOAD_ERROR",
+                    "تعذر تحميل مكتبة Acapela الممتدة: ${t.message}"
+                )
+            }
+            acatts = null
+            currentVoiceId = null
+            currentVoiceKey = null
+            cachedVoices = EmbeddedStorage.lastBumpTime to voices
+            Log.i(
+                TAG,
+                "تهيئة Acapela الممتد (أصوات مسجلة): أصوات القرص=${voices.size}"
+            )
+            return HostResult(ok = true)
+        }
+
+        // في حال كانت كافة الأصوات كلاسيكية غير مسجلة:
+        // تحميل حصري لمكتبة acattsandroid فقط
         try {
             System.loadLibrary("acattsandroid")
         } catch (e: Throwable) {
             Log.e(TAG, "فشل تحميل libacattsandroid.so: ${e.message}")
             return HostResult.failure(
                 "NATIVE_LOAD_ERROR",
-                "تعذر تحميل مكتبة Acapela الأصلية: ${e.message}"
+                "تعذر تحميل مكتبة Acapela الكلاسيكية: ${e.message}"
             )
         }
-
-        // إعادة التهيئة بلا إغلاق السابقة تُبقي محركاً أصلياً حياً
-        // وصوتاً محمّلاً من مسار قديم، فيُغلق السابق أولاً.
-        releaseEngine()
 
         var pending: acattsandroid? = null
         val result = try {
@@ -416,51 +432,34 @@ internal class AcapelaHostSession(
             if (callbacksRes != 0) {
                 Log.w(TAG, "nInitCallbacks returned $callbacksRes")
             }
-            // سجلات المكتبة الأصلية مفيدة للتشخيص فقط؛ تُترك معطّلة
-            // افتراضياً كي لا تُغرق Logcat في النطق العادي.
             inst.nSetLog(diagnosticsEnabled())
             val licRes = loadRuntimeLicense(inst)
             if (licRes != 0) {
                 Log.w(TAG, "nSetLicense returned $licRes")
             }
 
-            // تسجيل الأصوات قبل أي تحميل: `nGetVoiceList` هو ما يبني
-            // فهرس المكتبة، وقيمته المرجعة 0 دائماً في هذا الإصدار
-            // فلا تُستخدم دليل عدد.
-            val extraDirs = EmbeddedStorage.allSearchDirs(
-                context,
-                EmbeddedStorage.Engine.ACAPELA
-            )
             val rawPaths = collectVoiceSearchPaths(dir, extraDirs)
             val paths = rawPaths.flatMap { p ->
                 val slashed = withTrailingSlash(p)
                 if (slashed == p) listOf(p) else listOf(p, slashed)
             }.distinct().toTypedArray()
             val listed = inst.nGetVoiceList(paths)
-            val voices = manifestVoices(dir, extraDirs)
+            acatts = inst
+            pending = null
+            currentVoiceId = null
+            currentVoiceKey = null
+            cachedVoices = EmbeddedStorage.lastBumpTime to voices
             Log.i(
                 TAG,
-                "تهيئة Acapela: nGetVoiceList=$listed, " +
-                    "أصوات القرص=${voices.size}, مسارات=${paths.size}"
+                "تهيئة Acapela الكلاسيكي: nGetVoiceList=$listed, " +
+                    "أصوات القرص=${voices.size}"
             )
-            if (voices.isEmpty()) {
-                HostResult.failure(
-                    "NO_VOICES",
-                    "لا يوجد صوت Acapela صالح في ${dir.absolutePath}"
-                )
-            } else {
-                acatts = inst
-                pending = null
-                currentVoiceId = null
-                currentVoiceKey = null
-                cachedVoices = EmbeddedStorage.lastBumpTime to voices
-                HostResult(ok = true)
-            }
+            HostResult(ok = true)
         } catch (t: Throwable) {
-            Log.e(TAG, "خطأ أثناء تهيئة محرك Acapela", t)
+            Log.e(TAG, "خطأ أثناء تهيئة محرك Acapela الكلاسيكي", t)
             HostResult.failure(
                 "INIT_EXCEPTION",
-                t.message ?: "خطأ أثناء تهيئة Acapela"
+                t.message ?: "خطأ أثناء تهيئة Acapela الكلاسيكي"
             )
         }
         pending?.let { shutdownQuietly(it) }
@@ -624,31 +623,10 @@ internal class AcapelaHostSession(
                     sink = sink,
                     cancelled = cancelled
                 )
-                if (extended.ok) return extended
-                if (audioReceived.get()) return extended
-                // فشل المسار الممتد دون أي صوت مسموع: يُجرَّب
-                // المسار الكلاسيكي فوراً قبل إعلان العطل.
-                Log.w(
-                    TAG,
-                    "فشل المسار الممتد (${extended.code}): " +
-                        "${extended.message} — محاولة الكلاسيكي"
-                )
-                headerWritten.set(false)
-                audioReceived.set(false)
-                totalAudioSamples.set(0L)
-                totalAudioBytes.set(0L)
-                val native = speakNative(
-                    voice = voice,
-                    chunks = chunks,
-                    rate = req.rate,
-                    pitch = req.pitch,
-                    sink = sink,
-                    cancelled = cancelled
-                )
-                if (!native.ok) {
-                    logVoiceDiagnostics(voice, native.code ?: "UNKNOWN")
+                if (!extended.ok) {
+                    logVoiceDiagnostics(voice, extended.code ?: "UNKNOWN")
                 }
-                return if (native.ok) native else extended
+                return extended
             }
 
             if (isHdPackageWithoutRegistration(voice)) {
@@ -1084,6 +1062,20 @@ internal class AcapelaHostSession(
         sink: PcmSink,
         cancelled: AtomicBoolean
     ): HostResult? {
+        val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(voice.dir)
+        if (hexFile == null || hexFile.length() <= 0L) {
+            return HostResult.failure(
+                "REGISTRATION_FILE_MISSING",
+                "ملف الترخيص 0x... مفقود أو فارغ في ${voice.dir.name}"
+            )
+        }
+        if (voice.sampleRate != 22050) {
+            return HostResult.failure(
+                "INVALID_SAMPLE_RATE",
+                "محرك Acapela الممتد يتطلب معدل عينات 22050 هرتز"
+            )
+        }
+
         val voiceKey = registrationKey(voice)
         val candidates = registrationCandidates(
             voice.dir,
@@ -1119,15 +1111,15 @@ internal class AcapelaHostSession(
         // تشخيص ملفات الصوت مرة واحدة عند بداية الفحص
         AcapelaVoiceManifest.logVoiceFilesDiagnostics(voice.dir)
 
-        val pkgName = acapelaContext.packageName
+        val pkgName = context.packageName
         Log.i(
             TAG,
-            "[AcapelaPackage] اسم الحزمة المستعار لمكتبة Acapela: " +
+            "[AcapelaPackage] اسم حزمة التطبيق: " +
                 pkgName
         )
         HostLog.i(
             HostProtocol.ENGINE_ACAPELA,
-            "[AcapelaPackage] اسم الحزمة المستعار لمكتبة Acapela: " +
+            "[AcapelaPackage] اسم حزمة التطبيق: " +
                 pkgName
         )
         val rawSig = AcapelaVoiceDiagnostics.getAppSignatureSha256(context)
@@ -1220,26 +1212,10 @@ internal class AcapelaHostSession(
         storeRegistrationLetter(voice, accepted.letter)
         val srv = AcattsandroidService(
             { bytes, len -> handleRawAudioBytes(bytes, len) },
-            accepted.value,
-            acapelaContext
+            accepted.value
         )
         val codes = ProbeCodes()
         val failure = configureExtended(srv, voice, iso3, codes)
-        runCatching {
-            srv.nSetProperty("package_name", SPOOFED_PACKAGE_NAME)
-        }
-        runCatching {
-            srv.nSetProperty("packageName", SPOOFED_PACKAGE_NAME)
-        }
-        runCatching {
-            srv.nSetProperty("package", SPOOFED_PACKAGE_NAME)
-        }
-        srv.setRegistration(accepted.value)
-        codes.propName = "registration"
-        codes.propValLen = accepted.value.length
-        codes.propCode = runCatching {
-            srv.nSetProperty("registration", accepted.value)
-        }.getOrDefault(-1)
         codes.pause = setExtendedProperty(
             srv,
             PUNCTUATION_PAUSE_KEY,
@@ -1417,61 +1393,17 @@ internal class AcapelaHostSession(
             { _, len ->
                 if (len > 0) samples.addAndGet((len / 2).toLong())
             },
-            candidate.value,
-            acapelaContext
+            candidate.value
         )
-        val libPkg = srv.packageName
-        val libPkgLog = "[AcapelaPackage] اسم الحزمة الذي تقرؤه " +
-            "المكتبة فعلياً وقت التسجيل: $libPkg"
-        Log.i(TAG, libPkgLog)
-        HostLog.i(HostProtocol.ENGINE_ACAPELA, libPkgLog)
         var windowOpen = false
         try {
             val failure = configureExtended(srv, voice, iso3, codes)
             if (failure == null) {
-                runCatching {
-                    srv.nSetProperty("package_name", SPOOFED_PACKAGE_NAME)
-                }
-                runCatching {
-                    srv.nSetProperty("packageName", SPOOFED_PACKAGE_NAME)
-                }
-                runCatching {
-                    srv.nSetProperty("package", SPOOFED_PACKAGE_NAME)
-                }
-                runCatching {
-                    srv.nSetProperty("applicationId", SPOOFED_PACKAGE_NAME)
-                }
-                runCatching {
-                    srv.nSetProperty("app_id", SPOOFED_PACKAGE_NAME)
-                }
-                runCatching {
-                    srv.nSetProperty("pkg", SPOOFED_PACKAGE_NAME)
-                }
-
-                // تمرير التسجيل بعد تهيئة المحرك وتحميل الصوت وليس قبلهما
-                srv.setRegistration(candidate.value)
-                codes.propName = "registration"
-                codes.propValLen = candidate.value.length
-                val propRes = runCatching {
-                    srv.nSetProperty("registration", candidate.value)
-                }.getOrDefault(-1)
-                codes.propCode = propRes
-
                 codes.pause = setExtendedProperty(
                     srv,
                     PUNCTUATION_PAUSE_KEY,
                     PUNCTUATION_PAUSE_VALUE
                 )
-
-                val newOrderLog = "نتيجة الترتيب الجديد: " +
-                    "تمرير التسجيل بعد nInit وnSetCurrentVoice: " +
-                    "مرشح=${candidate.label}, " +
-                    "خاصية=registration, " +
-                    "طول=${candidate.value.length}, " +
-                    "setProperty(registration)=$propRes, " +
-                    "nSetProperty(punctuation_pause)=${codes.pause}"
-                Log.i(TAG, newOrderLog)
-                HostLog.i(HostProtocol.ENGINE_ACAPELA, newOrderLog)
 
                 sink.enterNativeCall(waitMs)
                 windowOpen = true
@@ -1485,9 +1417,8 @@ internal class AcapelaHostSession(
 
                 val rawCodesLog = "رمز الخطأ الأصلي من المكتبة: " +
                     "مرشح=${candidate.label}, " +
-                    "خاصية=registration, " +
                     "طول=${candidate.value.length}, " +
-                    "setProperty=$propRes, speak=$speakRes"
+                    "speak=$speakRes"
                 Log.i(TAG, rawCodesLog)
                 HostLog.i(HostProtocol.ENGINE_ACAPELA, rawCodesLog)
                 if (speakRes == 0) {
@@ -1559,7 +1490,7 @@ internal class AcapelaHostSession(
         val propLen = codes.propValLen ?: candidate.value.length
         val propCode = codes.propCode ?: -1
         val speakCode = codes.speak ?: -2
-        val pkgName = acapelaContext.packageName
+        val pkgName = context.packageName
         val rawSig = AcapelaVoiceDiagnostics.getAppSignatureSha256(context)
         val maskedSig = AcapelaVoiceDiagnostics.maskMiddle(rawSig, 8, 8)
         val rawDevId = AcapelaVoiceDiagnostics.getDeviceId(context)
@@ -1678,7 +1609,7 @@ internal class AcapelaHostSession(
                 voiceDir = voice.dir,
                 configFile = voice.configFile,
                 registrationLength = voice.registration.length,
-                packageName = acapelaContext.packageName,
+                packageName = context.packageName,
                 context = context
             )
         }.getOrElse { t ->

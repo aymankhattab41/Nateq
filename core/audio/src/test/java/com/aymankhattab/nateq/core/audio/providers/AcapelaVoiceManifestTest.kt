@@ -822,4 +822,35 @@ class AcapelaVoiceManifestTest {
         val reg = AcapelaVoiceManifest.extractRegistrationFromParam(param)
         assertEquals("test@example.com0123456789abcdef", reg)
     }
+
+    @Test
+    fun parseConfigFile_requires22050AndNonZeroHexFile() {
+        val dir = tempFolder.newFolder("voice_req_test")
+        File(dir, "config.yaml").writeText(
+            "param: salma22k_hq,test@example.com,0123456789abcdef\n"
+        )
+        val hex = File(dir, "0x00169729").apply {
+            writeBytes(byteArrayOf(1, 2, 3))
+        }
+        val inf22k = File(dir, "salma22k.inf").apply {
+            writeText("speaker = \"salma\"\nfreq = \"22050\"\n")
+        }
+        val info22k = AcapelaVoiceManifest.parseConfigFile(inf22k)
+        assertEquals(
+            "test@example.com0123456789abcdef",
+            info22k.registration
+        )
+
+        // معدل عينات غير 22050 يُرفض تسجيله
+        val inf16k = File(dir, "salma16k.inf").apply {
+            writeText("speaker = \"salma\"\nfreq = \"16000\"\n")
+        }
+        val info16k = AcapelaVoiceManifest.parseConfigFile(inf16k)
+        assertEquals("", info16k.registration)
+
+        // ملف 0x... بحجم 0 يُرفض تسجيله
+        hex.writeBytes(ByteArray(0))
+        val infoZeroHex = AcapelaVoiceManifest.parseConfigFile(inf22k)
+        assertEquals("", infoZeroHex.registration)
+    }
 }

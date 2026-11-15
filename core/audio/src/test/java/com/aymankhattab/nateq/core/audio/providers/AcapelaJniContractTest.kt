@@ -78,4 +78,53 @@ class AcapelaJniContractTest {
         )
         assertNotNull(eventsCb)
     }
+
+    @Test
+    fun acattsandroidService_idfunctionReturnsRegistration() {
+        val regStr = "test@domain.com1234567890abcdef"
+        val srv = com.acapelagroup.android.tts.AcattsandroidService(
+            null,
+            regStr
+        )
+        assertEquals(regStr, srv.idfunction())
+    }
+
+    @Test
+    fun acattsandroidService_nativeMethodsMatchSignatures() {
+        val cls = com.acapelagroup.android.tts.AcattsandroidService::class.java
+        val nInit = cls.getDeclaredMethod("nInit", String::class.java)
+        assertTrue(Modifier.isNative(nInit.modifiers))
+        assertEquals(Int::class.javaPrimitiveType, nInit.returnType)
+
+        val nSetVoiceMode = cls.getDeclaredMethod(
+            "nSetVoiceMode",
+            String::class.java
+        )
+        assertTrue(Modifier.isNative(nSetVoiceMode.modifiers))
+        assertEquals(Int::class.javaPrimitiveType, nSetVoiceMode.returnType)
+
+        val nSetLanguage = cls.getDeclaredMethod(
+            "nSetLanguage",
+            String::class.java,
+            String::class.java,
+            String::class.java
+        )
+        assertTrue(Modifier.isNative(nSetLanguage.modifiers))
+        assertEquals(Int::class.javaPrimitiveType, nSetLanguage.returnType)
+
+        val nSetCurrentVoice = cls.getDeclaredMethod(
+            "nSetCurrentVoice",
+            String::class.java
+        )
+        assertTrue(Modifier.isNative(nSetCurrentVoice.modifiers))
+        assertEquals(Int::class.javaPrimitiveType, nSetCurrentVoice.returnType)
+
+        val nSetProperty = cls.getDeclaredMethod(
+            "nSetProperty",
+            String::class.java,
+            String::class.java
+        )
+        assertTrue(Modifier.isNative(nSetProperty.modifiers))
+        assertEquals(Int::class.javaPrimitiveType, nSetProperty.returnType)
+    }
 }

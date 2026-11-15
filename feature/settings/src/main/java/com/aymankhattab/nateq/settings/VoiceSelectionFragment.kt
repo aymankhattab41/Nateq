@@ -3052,10 +3052,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     val archInfo = AcapelaVoiceDiagnostics.getArchInfo()
 
                     sb.appendLine("  اسم حزمة التطبيق: ${context.packageName}")
-                    sb.appendLine("  اسم الحزمة المستعار: org.nobody.multitts")
-                    sb.appendLine(
-                        "  اسم الحزمة الذي تقرؤه المكتبة: org.nobody.multitts"
-                    )
                     sb.appendLine(
                         "  بصمة توقيع التطبيق (SHA-256): $maskedSig"
                     )

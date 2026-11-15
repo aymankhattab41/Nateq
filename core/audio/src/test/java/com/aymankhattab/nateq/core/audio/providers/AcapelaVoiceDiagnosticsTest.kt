@@ -120,7 +120,8 @@ class AcapelaVoiceDiagnosticsTest {
                 rootDir = root,
                 voiceDir = voice,
                 configFile = config,
-                registrationLength = 40
+                registrationLength = 40,
+                packageName = "com.aymankhattab.nateq"
             )
 
             assertTrue(report.contains("- الرخصة المتوقعة: "))
@@ -128,7 +129,7 @@ class AcapelaVoiceDiagnosticsTest {
             assertTrue(report.contains("0x00169729"))
             assertTrue(report.contains("- config.yaml: "))
             assertTrue(
-                report.contains("- اسم الحزمة المستعار: org.nobody.multitts")
+                report.contains("- اسم حزمة التطبيق: com.aymankhattab.nateq")
             )
             assertTrue(
                 report.contains("- بصمة توقيع التطبيق (SHA-256): ")

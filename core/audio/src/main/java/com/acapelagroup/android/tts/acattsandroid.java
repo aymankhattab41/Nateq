@@ -94,8 +94,4 @@ public class acattsandroid {
     public int setLicense(String license) {
         return nSetLicense(0x46515867L, 0x0030ab63L, license);
     }
-
-    public String getPackageName() {
-        return "org.nobody.multitts";
-    }
 }

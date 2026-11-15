@@ -211,6 +211,7 @@ class AcapelaSpeechTagTest {
             "cur"
         )
         val labels = candidates.map { it.label }
+        assertEquals("email_code_nocomma", labels.first())
         assertTrue(labels.contains("email_code"))
         assertTrue(labels.contains("code_email"))
         assertTrue(labels.contains("code_only"))

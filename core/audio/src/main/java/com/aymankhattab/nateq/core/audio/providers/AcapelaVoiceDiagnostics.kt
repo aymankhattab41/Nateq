@@ -229,14 +229,8 @@ object AcapelaVoiceDiagnostics {
         }
 
         val sb = StringBuilder()
-        sb.appendLine("- اسم الحزمة المستعار: org.nobody.multitts")
         if (!packageName.isNullOrBlank()) {
-            sb.appendLine(
-                "- اسم حزمة التطبيق (الذي تراه مكتبة Acapela): $packageName"
-            )
-            sb.appendLine(
-                "- اسم الحزمة الذي تقرؤه المكتبة: $packageName"
-            )
+            sb.appendLine("- اسم حزمة التطبيق: $packageName")
         }
         val rawSig = getAppSignatureSha256(context)
         val maskedSig = maskMiddle(rawSig, 8, 8)

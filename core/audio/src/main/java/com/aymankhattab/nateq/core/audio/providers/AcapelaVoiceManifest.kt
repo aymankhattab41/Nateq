@@ -260,40 +260,19 @@ object AcapelaVoiceManifest {
     fun findHexRegistrationFile(dir: File): File? {
         if (!dir.exists()) return null
         val direct = dir.listFiles { f ->
-            f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)
+            f.isFile && f.name.matches(HEX_REGISTRATION_REGEX) &&
+                f.length() > 0L
         }?.firstOrNull()
         if (direct != null) return direct
-
-        val regTxt = File(dir, "registration.txt")
-        if (regTxt.exists()) {
-            val text = runCatching {
-                regTxt.readText(StandardCharsets.ISO_8859_1).trim()
-            }.getOrNull()
-            if (text != null && text.matches(HEX_REGISTRATION_REGEX)) {
-                val f = File(dir, text)
-                if (!f.exists()) runCatching { f.createNewFile() }
-                return f
-            }
-        }
 
         var cur = dir.parentFile
         var depth = 0
         while (cur != null && depth < 4) {
             val parentFile = cur.listFiles { f ->
-                f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)
+                f.isFile && f.name.matches(HEX_REGISTRATION_REGEX) &&
+                    f.length() > 0L
             }?.firstOrNull()
             if (parentFile != null) return parentFile
-            val parentReg = File(cur, "registration.txt")
-            if (parentReg.exists()) {
-                val text = runCatching {
-                    parentReg.readText(StandardCharsets.ISO_8859_1).trim()
-                }.getOrNull()
-                if (text != null && text.matches(HEX_REGISTRATION_REGEX)) {
-                    val f = File(cur, text)
-                    if (!f.exists()) runCatching { f.createNewFile() }
-                    return f
-                }
-            }
             cur = cur.parentFile
             depth++
         }
@@ -301,7 +280,8 @@ object AcapelaVoiceManifest {
         val subFiles = dir.listFiles { f -> f.isDirectory } ?: emptyArray()
         for (sub in subFiles) {
             val subHex = sub.listFiles { f ->
-                f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)
+                f.isFile && f.name.matches(HEX_REGISTRATION_REGEX) &&
+                    f.length() > 0L
             }?.firstOrNull()
             if (subHex != null) return subHex
         }
@@ -847,7 +827,14 @@ object AcapelaVoiceManifest {
         val rawReg = firstValue(pairs, "registration")
         val rawParam = firstValue(pairs, "param")
         val parentDir = cf.parentFile ?: cf
-        val reg = resolveRegistration(parentDir, rawReg, rawParam)
+        val hexFile = findHexRegistrationFile(parentDir)
+        val isValidRegistered = (sampleRate == 22050) &&
+            (hexFile != null && hexFile.length() > 0L)
+        val reg = if (isValidRegistered) {
+            resolveRegistration(parentDir, rawReg, rawParam)
+        } else {
+            ""
+        }
 
         return VoiceInfo(
             id = finalName,
@@ -885,7 +872,12 @@ object AcapelaVoiceManifest {
             ?: dir.name
         val voiceName = cleanAcapelaSpeaker(rawName)
         val locale = resolveLocale(null, voiceName, rawName)
-        val reg = resolveRegistration(dir, null, null)
+        val hexFile = findHexRegistrationFile(dir)
+        val reg = if (hexFile != null && hexFile.length() > 0L) {
+            resolveRegistration(dir, null, null)
+        } else {
+            ""
+        }
 
         return VoiceInfo(
             id = voiceName,
@@ -1080,7 +1072,9 @@ object AcapelaVoiceManifest {
         val found = LinkedHashSet<File>()
         runCatching {
             dir.walkTopDown().maxDepth(3).forEach { f ->
-                if (f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)) {
+                if (f.isFile && f.name.matches(HEX_REGISTRATION_REGEX) &&
+                    f.length() > 0L
+                ) {
                     found.add(f)
                 }
             }
@@ -1091,12 +1085,15 @@ object AcapelaVoiceManifest {
             val p = cur
             runCatching {
                 p.listFiles()?.forEach { f ->
-                    if (f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)) {
+                    if (f.isFile && f.name.matches(HEX_REGISTRATION_REGEX) &&
+                        f.length() > 0L
+                    ) {
                         found.add(f)
                     } else if (f.isDirectory) {
                         f.listFiles { sub ->
                             sub.isFile &&
-                                sub.name.matches(HEX_REGISTRATION_REGEX)
+                                sub.name.matches(HEX_REGISTRATION_REGEX) &&
+                                sub.length() > 0L
                         }?.forEach { found.add(it) }
                     }
                 }
