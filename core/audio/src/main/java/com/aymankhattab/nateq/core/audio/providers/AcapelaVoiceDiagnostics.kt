@@ -1404,12 +1404,16 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10714) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10715) ===")
         sb.appendLine("==================================================")
         sb.appendLine("")
 
+        // ── [البند 1] فحص كود MultiTTS لنداءات nSetLicense ───────────────
+        sb.appendLine(getMultiTtsLicenseAnalysis())
+        sb.appendLine("")
+
         // ── [البند 1] فحص الملف الأصلي 61 بايت (نص و Hex) ───────────────
-        sb.appendLine("--- [البند 1] فحص الملف الأصلي 61 بايت (نص و Hex) ---")
+        sb.appendLine("--- فحص الملف الأصلي 61 بايت (نص و Hex) ---")
         sb.appendLine(getOriginalIniDump(context))
         sb.appendLine("")
 
@@ -1523,10 +1527,10 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine(getLicenseStringsAndError27Catalog())
         sb.appendLine("")
 
-        // ── [البنود 1 و 2 و 4] نتائج التوليفات ودوال تحميل الصوت ──────────
+        // ── [البنود 2 و 3 و 4] نتائج تجارب nSetLicense وسجل النداءات ──────
         sb.appendLine(
-            "--- [البنود 1 و 2 و 4] نتائج تجارب ملف الصوت و FILEMAP " +
-                "وسجل النداءات (إصدار 10714) ---"
+            "--- [البنود 2 و 3 و 4] نتائج تجارب nSetLicense و nSetLog " +
+                "وسجل النداءات (إصدار 10715) ---"
         )
         val diagReport = File(cacheDir, "acapela_diagnostic_report.txt")
         if (diagReport.exists() && diagReport.length() > 0L) {
@@ -1542,7 +1546,7 @@ object AcapelaVoiceDiagnostics {
             val status = EngineStatusRegistry.statusOf(
                 AcapelaEmbeddedVoiceProvider.PROVIDER_ID
             )
-            sb.appendLine("=== [نتائج محاولات نطق Acapela 10714] ===")
+            sb.appendLine("=== [نتائج محاولات نطق Acapela 10715] ===")
             sb.appendLine("  (لم يُسجّل ملف التوليفات بعد)")
             sb.appendLine("  حالة المحرك: ${status?.state ?: "غير معروف"}")
             sb.appendLine("  كود الحالة: ${status?.code ?: "—"}")
@@ -1573,6 +1577,8 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10715.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10714.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10713.txt")
@@ -1797,6 +1803,110 @@ object AcapelaVoiceDiagnostics {
         appendLine("  دون التحقق من نجاح tts_function_load_voice، فيبقى")
         appendLine("  المقبض صفراً إن تعثرت تهيئة محرك الصوت،")
         appendLine("  فيكشف استدعاء nSpeak غياب المقبض ويعيد -2.")
+    }.trimEnd()
+
+    /**
+     * استخراج قيمة الترخيص من ملفات .inf إن وُجد فيها سطر ترخيص.
+     */
+    fun extractLicenseFromInf(stageDir: File): String? {
+        val infFiles = stageDir.listFiles { f ->
+            f.isFile && f.extension.equals("inf", ignoreCase = true)
+        }.orEmpty()
+        for (inf in infFiles) {
+            val content = runCatching {
+                inf.readText(StandardCharsets.ISO_8859_1)
+            }.getOrNull() ?: continue
+            val match = Regex(
+                "(?im)^\\s*(?:license|lic|key)\\s*(?:=|\\s)\\s*" +
+                    "\"?([^\"\\r\\n]+)\"?"
+            ).find(content)
+            if (match != null) {
+                val found = match.groupValues[1].trim()
+                if (found.isNotBlank()) return found
+            }
+        }
+        return null
+    }
+
+    /**
+     * نتائج فحص كود وتفكيك MultiTTS لنداءات nSetLicense / setLicense
+     * (البند 1 من إصدار 10715).
+     */
+    fun getMultiTtsLicenseAnalysis(): String = buildString {
+        appendLine(
+            "=== [البند 1] فحص كود MultiTTS لنداءات " +
+                "nSetLicense / setLicense ==="
+        )
+        appendLine("")
+        appendLine("1) نداءات nSetLicense في بايت كود وتفكيك MultiTTS:")
+        appendLine(
+            "  - عُثر على نداء وحيد حصرياً في فئة NativeEngine " +
+                "(المحرك الكلاسيكي):"
+        )
+        appendLine(
+            "    Lorg/volodymyr/multivoice/AcapelaSpeech\$NativeEngine;-><init>"
+        )
+        appendLine("  - سطر الاستدعاء بالبايت كود حرفياً:")
+        appendLine(
+            "    invoke-virtual/range {v2 .. v7}, " +
+                "Lcom/acapelagroup/android/tts/acattsandroid;->nSetLicense" +
+                "(J J Ljava/lang/String;)I"
+        )
+        appendLine("")
+        appendLine("2) القيمتان الرقميتان user و pass وترتيبهما الحرفي:")
+        appendLine(
+            "  - المعامل الأول (user): 1179736167L " +
+                "(hex: 0x46515867L، كود ASCII: 'gXQF')"
+        )
+        appendLine(
+            "  - المعامل الثاني (pass): 3189603L " +
+                "(hex: 0x0030ab63L)"
+        )
+        appendLine(
+            "  - الترتيب في التوقيع: " +
+                "nSetLicense(user: Long, pass: Long, lic: String): Int"
+        )
+        appendLine("")
+        appendLine("3) مصدر السلسلة lic في MultiTTS:")
+        appendLine(
+            "  - تُقرأ مباشرة من مسار الأصول: " +
+                "'acapela/runtime.dat' داخل أصول التطبيق."
+        )
+        appendLine("  - بنية ملف runtime.dat (200 بايت بالضبط):")
+        appendLine(
+            "    * 8 بايت: readLong() = 1179736167L (user)"
+        )
+        appendLine(
+            "    * 8 بايت: readLong() = 3189603L (pass)"
+        )
+        appendLine(
+            "    * 4 بايت: readInt() = 180 (طول السلسلة)"
+        )
+        appendLine(
+            "    * 180 بايت: سلسلة UTF-8 تبدأ بـ:"
+        )
+        appendLine(
+            "      \"2948 0 gXQF #COMMERCIAL#VOICE DREAM Norway\""
+        )
+        appendLine("")
+        appendLine("4) التوقيت بالنسبة لـ nInit:")
+        appendLine(
+            "  - في NativeEngine (الكلاسيكي): يُنادى nSetLicense فوراً " +
+                "بعد nInitCallbacks وقبل أي تحميل للصوت (المحرك الكلاسيكي " +
+                "ليس فيه nInit)."
+        )
+        appendLine(
+            "  - في ExtendedEngine (الممتد AcattsandroidService): لا يستدعي " +
+                "MultiTTS دالة nSetLicense إطلاقاً!"
+        )
+        appendLine(
+            "    بل يمرر كود التسجيل (email + hexCode) إلى مُنشئ " +
+                "AcattsandroidService،"
+        )
+        appendLine(
+            "    وتقوم المكتبة الأصلية داخل nInit باستدعاء idfunction() " +
+                "وفحص ملف 0x... على القرص."
+        )
     }.trimEnd()
 
     /**

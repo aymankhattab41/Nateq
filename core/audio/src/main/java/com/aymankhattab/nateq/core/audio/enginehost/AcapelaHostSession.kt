@@ -1295,7 +1295,10 @@ internal class AcapelaHostSession(
         val hasNlpError: Boolean = false,
         val nlpErrorCode: Int? = null,
         val ebErrorCode: Int? = null,
-        val nativeLines: List<String> = emptyList()
+        val nativeLines: List<String> = emptyList(),
+        val setLicenseCode: Int? = null,
+        val babParamLicenseLines: List<String> = emptyList(),
+        val licenseLogLines: List<String> = emptyList()
     ) {
         val isSuccess: Boolean
             get() = voiceCode == 0 && speakCode == 0 && samples > 0L
@@ -1726,7 +1729,12 @@ internal class AcapelaHostSession(
         probeText: String = REGISTRATION_PROBE_TEXT,
         trailingSlash: Boolean = true,
         order: AcapelaSequenceOrder = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-        useRealCallback: Boolean = true
+        useRealCallback: Boolean = true,
+        callSetLicense: Boolean = true,
+        licenseStr: String = "",
+        licenseUser: Long = AcapelaLicense.USER_ID,
+        licensePass: Long = AcapelaLicense.PASSWORD,
+        enableSetLog: Boolean = true
     ): VoiceLoadTrialResult {
         prepareTrialDirectory(trialDir, voice)
         val rawPath = trialDir.absolutePath
@@ -1765,6 +1773,38 @@ internal class AcapelaHostSession(
         val startMarker = "=== START_TRIAL_$cleanLabel ==="
         val endMarker = "=== END_TRIAL_$cleanLabel ==="
         Log.i("acattsandroid-extended-native", startMarker)
+
+        // تفعيل nSetLog و nSetLicense قبل nInit (البند 2 و 3 لبناء 10715)
+        var setLicenseRetCode: Int? = null
+        if (enableSetLog) {
+            runCatching {
+                System.loadLibrary("acattsandroid")
+                val classic = acattsandroid()
+                classic.nSetLog(true)
+                recordAcapelaBreadcrumb("[$label] nSetLog(true)")
+            }.onFailure { err ->
+                Log.w(TAG, "[$label] nSetLog(true) فشل: ${err.message}")
+            }
+        }
+        if (callSetLicense) {
+            runCatching {
+                System.loadLibrary("acattsandroid")
+                val classic = acattsandroid()
+                val ret = classic.nSetLicense(
+                    licenseUser,
+                    licensePass,
+                    licenseStr
+                )
+                setLicenseRetCode = ret
+                recordAcapelaBreadcrumb(
+                    "[$label] nSetLicense($licenseUser, $licensePass, " +
+                        "len=${licenseStr.length}) => $ret"
+                )
+            }.onFailure { err ->
+                Log.w(TAG, "[$label] nSetLicense فشل: ${err.message}")
+                setLicenseRetCode = -999
+            }
+        }
 
         recordAcapelaBreadcrumb("[$label] nInit($stagePath)")
         val initRes = srv.nInit(stagePath)
@@ -2099,6 +2139,37 @@ internal class AcapelaHostSession(
         sb.appendLine(
             "  - قيمة nlpInitError: ${nlpCode ?: "(لم تظهر في السجل)"}"
         )
+
+        // فلترة أسطر الترخيص (البند 3 من إصدار 10715)
+        val babParamLicLines = nativeTail.filter {
+            it.contains("babParam.license", ignoreCase = true)
+        }
+        val generalLicLines = nativeTail.filter {
+            it.contains("error license", ignoreCase = true) ||
+                it.contains("license", ignoreCase = true)
+        }
+        sb.appendLine(
+            "  - استدعاء nSetLicense(user=$licenseUser, pass=$licensePass, " +
+                "len=${licenseStr.length}): " +
+                "كود=${setLicenseRetCode ?: "لم يُستدعَ"}"
+        )
+        sb.appendLine(
+            "  - أسطر babParam.license (${babParamLicLines.size} سطر):"
+        )
+        if (babParamLicLines.isEmpty()) {
+            sb.appendLine("    (لم يظهر أي سطر يطابق babParam.license)")
+        } else {
+            babParamLicLines.forEach { sb.appendLine("    $it") }
+        }
+        sb.appendLine(
+            "  - أسطر license / error license (${generalLicLines.size} سطر):"
+        )
+        if (generalLicLines.isEmpty()) {
+            sb.appendLine("    (لم يظهر أي سطر يطابق license)")
+        } else {
+            generalLicLines.forEach { sb.appendLine("    $it") }
+        }
+
         sb.appendLine(
             "  - سجل المكتبة الأصلية لهذه التوليفة (${nativeTail.size} سطر):"
         )
@@ -2124,7 +2195,10 @@ internal class AcapelaHostSession(
             hasNlpError = hasNlpErr,
             nlpErrorCode = nlpCode,
             ebErrorCode = ebCode,
-            nativeLines = nativeTail
+            nativeLines = nativeTail,
+            setLicenseCode = setLicenseRetCode,
+            babParamLicenseLines = babParamLicLines,
+            licenseLogLines = generalLicLines
         )
     }
 
@@ -2192,9 +2266,7 @@ internal class AcapelaHostSession(
                 passedVoiceName
             }
 
-            // ── المسار المعتمد: تجربة 1 على acapela_stage_v2 (البند 1) ──
-            // تم إنشاء نسخة حقيقية باسم ar_sa_hd_salma_22k_lf.bvcu
-            // مع إبقاء الأصل
+            // ── مسار تجهيز Acapela v2 المسطح ──
             AcapelaVoiceDiagnostics.clearNativeLogcat()
             AcapelaVoiceDiagnostics.writeStageV2Ini(
                 stageDir = v2Dir,
@@ -2203,21 +2275,21 @@ internal class AcapelaHostSession(
                     "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]"
             )
 
-            val cp1256ProbeText = runCatching {
-                val b = REGISTRATION_PROBE_TEXT.toByteArray(
-                    Charset.forName("windows-1256")
-                )
-                String(b, StandardCharsets.ISO_8859_1)
-            }.getOrDefault("\u00e3\u00d1\u00cd\u00c8\u00c7")
-
             runCatching {
                 File(context.cacheDir, "last_acapela_call.txt").delete()
                 File(context.cacheDir, "acapela_trials_progress.txt").delete()
             }
 
+            val rawParam = AcapelaVoiceManifest
+                .readParamFromConfigYaml(voice.dir).orEmpty()
+            val infLic = AcapelaVoiceDiagnostics
+                .extractLicenseFromInf(v2Dir).orEmpty()
+            val commercialLic = AcapelaLicense.LICENSE
+
+            // ── تجربة 1: nSetLicense مع lic = param من config.yaml ──
+            AcapelaVoiceDiagnostics.clearNativeLogcat()
             val trial1 = executeVoiceLoadTrial(
-                label = "1) نسخة ar_sa_hd_salma_22k_lf.bvcu مع " +
-                    "FILEMAP=salma_22k_lf.bvcu (البند 1)",
+                label = "1) nSetLicense مع lic = param من config.yaml",
                 trialDir = v2Dir,
                 speaker = effectiveSpeaker,
                 iso3 = iso3,
@@ -2227,127 +2299,81 @@ internal class AcapelaHostSession(
                 probeText = REGISTRATION_PROBE_TEXT,
                 order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
                 useRealCallback = true,
-                trailingSlash = true
+                trailingSlash = true,
+                callSetLicense = true,
+                licenseStr = rawParam,
+                enableSetLog = true
             )
             val trialsList = mutableListOf(trial1)
             recordTrialProgress(trial1)
 
-            // ── تجربة 2 على acapela_stage_v2 (البند 2): إن بقي eb=-27 ──
-            if (trial1.ebErrorCode == -27 || trial1.speakCode == -2) {
-                AcapelaVoiceDiagnostics.clearNativeLogcat()
-                AcapelaVoiceDiagnostics.writeStageV2Ini(
-                    stageDir = v2Dir,
-                    mode = "MODE=prep_hd",
-                    filemapDirective =
-                        "#1 FILEMAP \"ar_sa_hd_salma_22k_lf.bvcu\" [ RAM ]"
-                )
-                val trial2 = executeVoiceLoadTrial(
-                    label = "2) نسخة ar_sa_hd_salma_22k_lf.bvcu مع " +
-                        "FILEMAP=ar_sa_hd_salma_22k_lf.bvcu (البند 2)",
-                    trialDir = v2Dir,
-                    speaker = effectiveSpeaker,
-                    iso3 = iso3,
-                    registration = registration,
-                    voice = voice,
-                    voiceMode = "MODE=prep_hd",
-                    probeText = REGISTRATION_PROBE_TEXT,
-                    order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                    useRealCallback = true,
-                    trailingSlash = true
-                )
-                trialsList.add(trial2)
-                recordTrialProgress(trial2)
+            // ── تجربة 2: nSetLicense مع lic فارغة "" ──
+            AcapelaVoiceDiagnostics.clearNativeLogcat()
+            val trial2 = executeVoiceLoadTrial(
+                label = "2) nSetLicense مع lic فارغة \"\"",
+                trialDir = v2Dir,
+                speaker = effectiveSpeaker,
+                iso3 = iso3,
+                registration = registration,
+                voice = voice,
+                voiceMode = "MODE=prep_hd",
+                probeText = REGISTRATION_PROBE_TEXT,
+                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                useRealCallback = true,
+                trailingSlash = true,
+                callSetLicense = true,
+                licenseStr = "",
+                enableSetLog = true
+            )
+            trialsList.add(trial2)
+            recordTrialProgress(trial2)
 
-                AcapelaVoiceDiagnostics.clearNativeLogcat()
-                val trial3 = executeVoiceLoadTrial(
-                    label = "3) CP1256 + callback حقيقي " +
-                        "(FILEMAP=ar_sa_hd_salma_22k_lf.bvcu)",
-                    trialDir = v2Dir,
-                    speaker = effectiveSpeaker,
-                    iso3 = iso3,
-                    registration = registration,
-                    voice = voice,
-                    voiceMode = "MODE=prep_hd",
-                    probeText = cp1256ProbeText,
-                    order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                    useRealCallback = true,
-                    trailingSlash = true
-                )
-                trialsList.add(trial3)
-                recordTrialProgress(trial3)
-
-                AcapelaVoiceDiagnostics.clearNativeLogcat()
-                val trial4 = executeVoiceLoadTrial(
-                    label = "4) UTF-8 + callback حقيقي " +
-                        "(ترتيب lang->voice->utf8)",
-                    trialDir = v2Dir,
-                    speaker = effectiveSpeaker,
-                    iso3 = iso3,
-                    registration = registration,
-                    voice = voice,
-                    voiceMode = "MODE=prep_hd",
-                    probeText = REGISTRATION_PROBE_TEXT,
-                    order = AcapelaSequenceOrder.LANG_VOICE_UTF8,
-                    useRealCallback = true,
-                    trailingSlash = true
-                )
-                trialsList.add(trial4)
-                recordTrialProgress(trial4)
-
-                AcapelaVoiceDiagnostics.clearNativeLogcat()
-                val trial5 = executeVoiceLoadTrial(
-                    label = "5) CP1256 + callback حقيقي " +
-                        "(ترتيب lang->voice->utf8)",
-                    trialDir = v2Dir,
-                    speaker = effectiveSpeaker,
-                    iso3 = iso3,
-                    registration = registration,
-                    voice = voice,
-                    voiceMode = "MODE=prep_hd",
-                    probeText = cp1256ProbeText,
-                    order = AcapelaSequenceOrder.LANG_VOICE_UTF8,
-                    useRealCallback = true,
-                    trailingSlash = true
-                )
-                trialsList.add(trial5)
-                recordTrialProgress(trial5)
-
-                AcapelaVoiceDiagnostics.clearNativeLogcat()
-                val trial6 = executeVoiceLoadTrial(
-                    label = "6) UTF-8 + callback حقيقي " +
-                        "(ترتيب lang->utf8->voice)",
-                    trialDir = v2Dir,
-                    speaker = effectiveSpeaker,
-                    iso3 = iso3,
-                    registration = registration,
-                    voice = voice,
-                    voiceMode = "MODE=prep_hd",
-                    probeText = REGISTRATION_PROBE_TEXT,
-                    order = AcapelaSequenceOrder.LANG_UTF8_VOICE,
-                    useRealCallback = true,
-                    trailingSlash = true
-                )
-                trialsList.add(trial6)
-                recordTrialProgress(trial6)
-
-                AcapelaVoiceDiagnostics.clearNativeLogcat()
-                val trial7 = executeVoiceLoadTrial(
-                    label = "7) UTF-8 + callback حقيقي " +
-                        "(بدون nUtf8Mode: lang->voice)",
-                    trialDir = v2Dir,
-                    speaker = effectiveSpeaker,
-                    iso3 = iso3,
-                    registration = registration,
-                    voice = voice,
-                    voiceMode = "MODE=prep_hd",
-                    probeText = REGISTRATION_PROBE_TEXT,
-                    order = AcapelaSequenceOrder.NO_UTF8,
-                    useRealCallback = true,
-                    trailingSlash = true
-                )
-                trialsList.add(trial7)
-                recordTrialProgress(trial7)
+            // ── تجربة 3: nSetLicense مع lic من ملف .inf ──
+            AcapelaVoiceDiagnostics.clearNativeLogcat()
+            val trial3Label = if (infLic.isNotBlank()) {
+                "3) nSetLicense مع lic من ملف .inf"
+            } else {
+                "3) nSetLicense مع lic من .inf (فارغة لعدم وجودها بالملف)"
             }
+            val trial3 = executeVoiceLoadTrial(
+                label = trial3Label,
+                trialDir = v2Dir,
+                speaker = effectiveSpeaker,
+                iso3 = iso3,
+                registration = registration,
+                voice = voice,
+                voiceMode = "MODE=prep_hd",
+                probeText = REGISTRATION_PROBE_TEXT,
+                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                useRealCallback = true,
+                trailingSlash = true,
+                callSetLicense = true,
+                licenseStr = infLic,
+                enableSetLog = true
+            )
+            trialsList.add(trial3)
+            recordTrialProgress(trial3)
+
+            // ── تجربة 4: nSetLicense مع lic تجارية (AcapelaLicense) ──
+            AcapelaVoiceDiagnostics.clearNativeLogcat()
+            val trial4 = executeVoiceLoadTrial(
+                label = "4) nSetLicense مع lic تجارية (AcapelaLicense)",
+                trialDir = v2Dir,
+                speaker = effectiveSpeaker,
+                iso3 = iso3,
+                registration = registration,
+                voice = voice,
+                voiceMode = "MODE=prep_hd",
+                probeText = REGISTRATION_PROBE_TEXT,
+                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                useRealCallback = true,
+                trailingSlash = true,
+                callSetLicense = true,
+                licenseStr = commercialLic,
+                enableSetLog = true
+            )
+            trialsList.add(trial4)
+            recordTrialProgress(trial4)
 
             // فحص النجاح وحفظ ملف WAV للنطق التجريبي "مرحبا"
             val winningTrial = trialsList.firstOrNull { it.isSuccess }
@@ -2361,6 +2387,11 @@ internal class AcapelaHostSession(
                         "acapela_marhaba_trial.wav"
                     )
                     AcapelaVoiceDiagnostics.savePcmAsWav(wavFile, pcmData)
+                    val wav10715 = File(
+                        context.cacheDir,
+                        "acapela_marhaba_10715.wav"
+                    )
+                    AcapelaVoiceDiagnostics.savePcmAsWav(wav10715, pcmData)
                     val wav10714 = File(
                         context.cacheDir,
                         "acapela_marhaba_10714.wav"
@@ -2389,11 +2420,15 @@ internal class AcapelaHostSession(
                 ?: trial1
 
             val literalResults = buildString {
-                appendLine("=== [نتائج محاولات نطق Acapela 10714] ===")
+                appendLine("=== [نتائج محاولات نطق Acapela 10715] ===")
                 trialsList.forEach { t ->
+                    val ebStr = t.ebErrorCode?.toString() ?: "0"
+                    val nlpStr = t.nlpErrorCode?.toString() ?: "0"
+                    val licRetStr = t.setLicenseCode?.toString() ?: "لم يُستدعَ"
                     appendLine(
-                        "${t.method} => كود nSpeak: ${t.speakCode} " +
-                            "| عينات PCM: ${t.samples}"
+                        "${t.method} => كود nSetLicense: $licRetStr | " +
+                            "eb: $ebStr | nlpErr: $nlpStr | " +
+                            "nSpeak: ${t.speakCode} | عينات: ${t.samples}"
                     )
                 }
             }.trimEnd()
@@ -2403,7 +2438,8 @@ internal class AcapelaHostSession(
             val trialSummary = trialsList.joinToString(" | ") { t ->
                 val ebStr = t.ebErrorCode?.toString() ?: "0"
                 val nlpStr = t.nlpErrorCode?.toString() ?: "0"
-                "${t.method} (eb=$ebStr, nlpErr=$nlpStr, " +
+                val licRetStr = t.setLicenseCode?.toString() ?: "—"
+                "${t.method} (nSetLic=$licRetStr, eb=$ebStr, nlpErr=$nlpStr, " +
                     "pcm=${t.samples}, speak=${t.speakCode})"
             }
             val outcome = if (winningTrial != null) {
@@ -2411,7 +2447,7 @@ internal class AcapelaHostSession(
             } else {
                 "فشل كافة محاولات نطق Acapela"
             }
-            val topSummary = "[تشخيص محاولات Acapela 10714] " +
+            val topSummary = "[تشخيص محاولات Acapela 10715] " +
                 "$trialSummary | النتيجة: $outcome"
             Log.i(TAG, topSummary)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
@@ -2425,6 +2461,11 @@ internal class AcapelaHostSession(
                     appendLine(topSummary)
                     appendLine("")
                     appendLine(literalResults)
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getMultiTtsLicenseAnalysis()
+                    )
                     appendLine("")
                     appendLine(
                         AcapelaVoiceDiagnostics
@@ -2448,6 +2489,8 @@ internal class AcapelaHostSession(
                     }
                 }.trimEnd()
                 reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10715.txt")
+                    .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10714.txt")
                     .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10713.txt")
@@ -2487,7 +2530,7 @@ internal class AcapelaHostSession(
             val sw = java.io.StringWriter()
             t.printStackTrace(java.io.PrintWriter(sw))
             val errText =
-                "=== [استثناء يمنع تشغيل اختبار التوليفات 10714] ===\n" +
+                "=== [استثناء يمنع تشغيل اختبار التوليفات 10715] ===\n" +
                     "نوع الخطأ: ${t.javaClass.name}\n" +
                     "الرسالة: ${t.message ?: "بدون رسالة"}\n" +
                     "تتبع المكدس:\n$sw"
@@ -2495,6 +2538,8 @@ internal class AcapelaHostSession(
             HostLog.e(HostProtocol.ENGINE_ACAPELA, errText)
             runCatching {
                 File(context.cacheDir, "acapela_diagnostic_report.txt")
+                    .writeText(errText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10715.txt")
                     .writeText(errText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10714.txt")
                     .writeText(errText, StandardCharsets.UTF_8)
