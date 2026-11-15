@@ -427,4 +427,43 @@ class AcapelaVoiceDiagnosticsTest {
         assertTrue(expl.contains("0x1bd5dc"))
         assertTrue(expl.contains("0x200"))
     }
+
+    @Test
+    fun getLicenseStringsAndError27Catalog_containsAnalysis() {
+        val cat = AcapelaVoiceDiagnostics
+            .getLicenseStringsAndError27Catalog()
+        assertTrue(cat.contains("E_BABILE_LICENSE"))
+        assertTrue(cat.contains("Default voice - license"))
+        assertTrue(cat.contains("E_BABILE_NLPINITERROR"))
+        assertTrue(cat.contains("-27"))
+        assertTrue(cat.contains("BBNLP_init"))
+        assertTrue(cat.contains("tts_function_load_voice"))
+    }
+
+    @Test
+    fun stageVoiceV2_copiesSalmaBvcuToArSaHdBvcu() {
+        val root = tempDir()
+        try {
+            val salma = File(root, "Acapela/Salma/salma_lf")
+            salma.mkdirs()
+            val bvcu = File(salma, "salma_22k_lf.bvcu")
+            bvcu.writeText("BVCU_DATA_TEST_1234567890")
+            val inf = File(salma, "ar_sa_hd_salma_22k_lf.bvcu.inf")
+            inf.writeText("[voice]\nname = ar_sa_hd_salma_22k_lf.bvcu\n")
+
+            val staged = AcapelaVoiceDiagnostics.stageVoiceV2(
+                context,
+                salma
+            )
+            val destNamed = File(staged, "salma_22k_lf.bvcu")
+            val destArSa = File(staged, "ar_sa_hd_salma_22k_lf.bvcu")
+
+            assertTrue(destNamed.exists())
+            assertTrue(destArSa.exists())
+            assertEquals(bvcu.length(), destNamed.length())
+            assertEquals(bvcu.length(), destArSa.length())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }

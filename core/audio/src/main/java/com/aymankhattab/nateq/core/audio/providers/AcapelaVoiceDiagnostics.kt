@@ -445,6 +445,12 @@ object AcapelaVoiceDiagnostics {
                     runCatching { bvcu.copyTo(destNamed, overwrite = true) }
                 }
             }
+            // ع١٠٧١٤-١: نسخة حقيقية وليست رابطاً باسم
+            // ar_sa_hd_salma_22k_lf.bvcu
+            val destArSa = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu")
+            if (!destArSa.exists() || destArSa.length() != bvcu.length()) {
+                runCatching { bvcu.copyTo(destArSa, overwrite = true) }
+            }
             val destOrig = File(stageDir, bvcu.name)
             if (!destOrig.exists() || destOrig.length() != bvcu.length()) {
                 runCatching {
@@ -781,6 +787,12 @@ object AcapelaVoiceDiagnostics {
                 }.onFailure {
                     runCatching { bvcu.copyTo(destNamed, overwrite = true) }
                 }
+            }
+            // ع١٠٧١٤-١: نسخة حقيقية وليست رابطاً باسم
+            // ar_sa_hd_salma_22k_lf.bvcu
+            val destArSa = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu")
+            if (!destArSa.exists() || destArSa.length() != bvcu.length()) {
+                runCatching { bvcu.copyTo(destArSa, overwrite = true) }
             }
         }
 
@@ -1392,7 +1404,7 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10712) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10714) ===")
         sb.appendLine("==================================================")
         sb.appendLine("")
 
@@ -1507,10 +1519,14 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine(getSpeakErrorCodeExplanation())
         sb.appendLine("")
 
-        // ── [البند 4 و 5] نتائج التوليفات وسجل المكتبة الأصلي ─────────────
+        // ── [البند 3] نتائج البحث عن license والرمز -27 ──────────────────
+        sb.appendLine(getLicenseStringsAndError27Catalog())
+        sb.appendLine("")
+
+        // ── [البنود 1 و 2 و 4] نتائج التوليفات ودوال تحميل الصوت ──────────
         sb.appendLine(
-            "--- [البندان 1 و 3] نتائج التوليفات ودوال تحميل الصوت " +
-                "وسجل النداءات (إصدار 10713) ---"
+            "--- [البنود 1 و 2 و 4] نتائج تجارب ملف الصوت و FILEMAP " +
+                "وسجل النداءات (إصدار 10714) ---"
         )
         val diagReport = File(cacheDir, "acapela_diagnostic_report.txt")
         if (diagReport.exists() && diagReport.length() > 0L) {
@@ -1526,7 +1542,7 @@ object AcapelaVoiceDiagnostics {
             val status = EngineStatusRegistry.statusOf(
                 AcapelaEmbeddedVoiceProvider.PROVIDER_ID
             )
-            sb.appendLine("=== [نتائج محاولات نطق Acapela 10713] ===")
+            sb.appendLine("=== [نتائج محاولات نطق Acapela 10714] ===")
             sb.appendLine("  (لم يُسجّل ملف التوليفات بعد)")
             sb.appendLine("  حالة المحرك: ${status?.state ?: "غير معروف"}")
             sb.appendLine("  كود الحالة: ${status?.code ?: "—"}")
@@ -1557,6 +1573,8 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10714.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10713.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10712.txt")
@@ -1779,6 +1797,76 @@ object AcapelaVoiceDiagnostics {
         appendLine("  دون التحقق من نجاح tts_function_load_voice، فيبقى")
         appendLine("  المقبض صفراً إن تعثرت تهيئة محرك الصوت،")
         appendLine("  فيكشف استدعاء nSpeak غياب المقبض ويعيد -2.")
+    }.trimEnd()
+
+    /**
+     * نتائج البحث عن كلمة license والنص المرتبط بـ -27 في
+     * libttsacattsandroidextended.so (البند 3 من إصدار 10714).
+     */
+    fun getLicenseStringsAndError27Catalog(): String = buildString {
+        appendLine(
+            "=== [نتائج البحث عن كلمة license والنص المرتبط بـ -27 " +
+                "في المكتبة الأصلية (البند 3)] ==="
+        )
+        appendLine("")
+        appendLine(
+            "1) السلاسل النصية الحاوية على كلمة license في " +
+                "libttsacattsandroidextended.so:"
+        )
+        appendLine("  [0x1eca3] '_Z24BABILE_checkVoiceLicensePcPjS0_S_'")
+        appendLine("  [0x1eda6] '_Z13check_licensev'")
+        appendLine("  [0x1ee13] 'mLicense'")
+        appendLine("  [0x2928c] 'ALF_Model_getLicense'")
+        appendLine("  [0x2969f] 'Colibri_getVoiceLicense'")
+        appendLine("  [0x5db66] 'license value error'")
+        appendLine(
+            "  [0x5e235] 'license with expiration date is not allowed " +
+                "(must be set in the voice)'"
+        )
+        appendLine("  [0x5e706] '- use voice specific License'")
+        appendLine("  [0x5f043] 'license empty'")
+        appendLine("  [0x5ff9e] 'E_BABILE_LICENSE'")
+        appendLine("  [0x60078] 'check license done'")
+        appendLine("  [0x604d8] 'Default voice - license'")
+        appendLine("  [0x60d0e] 'error license'")
+        appendLine("  [0x62a2d] '\\tbabParam.license %s\\n'")
+        appendLine("")
+        appendLine("2) السلسلة النصية المرتبطة بالرمز -27 حرفياً:")
+        appendLine("  - في مصفوفة BABILE_errorStrings (العنوان 0x368d68):")
+        appendLine(
+            "    الكود -27 (الإزاحة 0x5b46d): 'E_BABILE_NLPINITERROR'"
+        )
+        appendLine(
+            "  - في صيغة سجل الخطأ لـ tts_function_load_voicei " +
+                "(العنوان 0x604f0):"
+        )
+        appendLine(
+            "    'tts_function_load_voice : %s - error - eb %d " +
+                "- em %d - en %d'"
+        )
+        appendLine("")
+        appendLine(
+            "3) الإثبات الثنائي لمنشأ -27 في دالة تهيئة NLP " +
+                "(العنوان 0x1dda50..0x1ddadc):"
+        )
+        appendLine("  - الدالة تستدعي BBNLP_init (العنوان 0x1ddab8).")
+        appendLine("  - إن عادت BBNLP_init بصفر (NULL):")
+        appendLine(
+            "    تستخرج كود فشل NLP الداخلي " +
+                "(وهو -34 = E_BABILE_LICENSE)."
+        )
+        appendLine(
+            "    وتخزنه في babParam.nlpInitError " +
+                "(ldr x8, [sp, #8]; str x8, [x19, #0x38])."
+        )
+        appendLine("    ثم تعيد الدالة مباشرة: mov x0, #-0x1b (أي -27)!")
+        appendLine(
+            "  - هذا يثبت أن eb=-27 هو كود E_BABILE_NLPINITERROR " +
+                "الصادر عن فشل BBNLP_init،"
+        )
+        appendLine(
+            "    وسبب فشل BBNLP_init نفسه هو -34 (E_BABILE_LICENSE)!"
+        )
     }.trimEnd()
 
     private fun appendTail(
