@@ -1971,6 +1971,11 @@ internal class AcapelaHostSession(
                     "acapela_marhaba_trial.wav"
                 )
                 AcapelaVoiceDiagnostics.savePcmAsWav(wavFile, pcmData)
+                val wav10709 = File(
+                    context.cacheDir,
+                    "acapela_marhaba_10709.wav"
+                )
+                AcapelaVoiceDiagnostics.savePcmAsWav(wav10709, pcmData)
                 val wav10708 = File(
                     context.cacheDir,
                     "acapela_marhaba_10708.wav"
