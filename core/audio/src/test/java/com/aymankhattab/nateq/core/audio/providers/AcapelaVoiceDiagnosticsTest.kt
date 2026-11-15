@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.providers
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -378,6 +379,29 @@ class AcapelaVoiceDiagnosticsTest {
             assertEquals(144L, wavFile.length())
             val header = wavFile.readBytes().take(4).toByteArray()
             assertEquals("RIFF", String(header))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun compareNlpFiles_detectsPresentAndMissingFiles() {
+        val root = tempDir()
+        try {
+            val salma = File(root, "Acapela/Salma")
+            val nlp = File(salma, "NLP")
+            nlp.mkdirs()
+            File(nlp, "ar_sa.dca").writeText("DICA content")
+            File(salma, "ar_sa_hd_salma_22k_lf.bvcu.inf").writeText(
+                "FILEMAP \"ar_sa.dca\" [ RAM ]\n" +
+                    "FILEMAP \"missing_file.dca\" [ RAM ]\n"
+            )
+
+            val context = ApplicationProvider
+                .getApplicationContext<Context>()
+            val report = AcapelaVoiceDiagnostics.compareNlpFiles(context)
+            assertNotNull(report)
+            assertTrue(report.contains("NLP") || report.contains("ar_sa"))
         } finally {
             root.deleteRecursively()
         }

@@ -1522,7 +1522,9 @@ internal class AcapelaHostSession(
         trialDir: File,
         voice: AcapelaVoiceManifest.VoiceInfo
     ) {
-        if (trialDir.name == "acapela_stage_v2") {
+        if (trialDir.name == "acapela_stage_v2" ||
+            !trialDir.path.contains("cache")
+        ) {
             return
         }
         if (!trialDir.exists()) {
@@ -1839,6 +1841,11 @@ internal class AcapelaHostSession(
             "[البند 1] فحص الملف الأصلي:\n$origIniDump"
         )
 
+        // [البند 3] مقارنة ملفات NLP مع ملفات التهيئة وكشف المفقود
+        val compareNlp = AcapelaVoiceDiagnostics.compareNlpFiles(context)
+        Log.i(TAG, compareNlp)
+        HostLog.i(HostProtocol.ENGINE_ACAPELA, compareNlp)
+
         // مقارنة اسم الصوت وتمرير اسم config.yaml إن اختلف
         val yamlVoiceName = extractVoiceNameFromConfigYaml(voice.dir)
         val passedVoiceName = voice.rawSpeaker ?: voice.voiceName
@@ -1924,7 +1931,35 @@ internal class AcapelaHostSession(
             trailingSlash = true
         )
 
-        val allTrials = listOf(trialA, trialB, trialC)
+        // (د) تجربة على مسار المجلد الأصلي files/Acapela/Salma (البند 4)
+        val origSalmaDir = AcapelaVoiceDiagnostics.findOriginalSalmaDir(context)
+            ?: voice.dir.parentFile?.takeIf {
+                it.name.equals("Salma", ignoreCase = true)
+            }
+            ?: voice.dir
+
+        AcapelaVoiceDiagnostics.clearNativeLogcat()
+        val trialOrig = executeVoiceLoadTrial(
+            label = "د) الأصل: files/Acapela/Salma",
+            trialDir = origSalmaDir,
+            speaker = effectiveSpeaker,
+            iso3 = iso3,
+            registration = registration,
+            voice = voice,
+            voiceMode = "MODE=prep_hd",
+            probeText = "مرحبا",
+            trailingSlash = true
+        )
+
+        val origEb = trialOrig.ebErrorCode?.toString() ?: "0"
+        val origNlp = trialOrig.nlpErrorCode?.toString() ?: "0"
+        val origLog = "[البند 4] الأصل files/Acapela/Salma: " +
+            "eb=$origEb, nlpInitError=$origNlp, " +
+            "speakCode=${trialOrig.speakCode}"
+        Log.i(TAG, origLog)
+        HostLog.i(HostProtocol.ENGINE_ACAPELA, origLog)
+
+        val allTrials = listOf(trialA, trialB, trialC, trialOrig)
 
         // فحص النجاح وحفظ ملف WAV للنطق التجريبي "مرحبا"
         val winningTrial = allTrials.firstOrNull { it.isSuccess }

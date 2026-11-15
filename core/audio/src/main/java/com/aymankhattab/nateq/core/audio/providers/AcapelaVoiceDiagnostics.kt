@@ -899,6 +899,136 @@ object AcapelaVoiceDiagnostics {
         }.trimEnd()
     }
 
+    fun findOriginalSalmaDir(context: Context): File? {
+        val filesDir = context.filesDir ?: return null
+        val candidates = listOf(
+            File(filesDir, "Acapela/Salma"),
+            File(filesDir, "acapela/Salma"),
+            File(filesDir, "Acapela/salma"),
+            File(filesDir, "acapela/salma")
+        )
+        for (c in candidates) {
+            if (c.exists() && c.isDirectory) return c
+        }
+        val acapela = File(filesDir, "Acapela").takeIf { it.exists() }
+            ?: File(filesDir, "acapela").takeIf { it.exists() }
+            ?: filesDir
+        return acapela.walkTopDown().maxDepth(4).firstOrNull { d ->
+            d.isDirectory && d.name.equals("Salma", ignoreCase = true)
+        }
+    }
+
+    /**
+     * [البند 3] طباعة أسماء كافة ملفات NLP الموجودة على القرص وأحجامها،
+     * ومقارنتها بأي أسماء يذكرها ملف التهيئة .inf أو .ini،
+     * وكشف أي ملف مذكور وغير موجود.
+     */
+    fun compareNlpFiles(context: Context): String {
+        val sb = StringBuilder()
+        sb.appendLine("=== [البند 3] مقارنة ملفات NLP مع ملفات التهيئة ===")
+        val cacheDir = context.cacheDir
+        val salmaDir = findOriginalSalmaDir(context)
+        val v2Dir = File(cacheDir, "acapela_stage_v2")
+
+        val searchRoots = listOfNotNull(
+            salmaDir?.let { File(it, "NLP") },
+            salmaDir,
+            salmaDir?.let { File(it, "salma_lf") },
+            v2Dir,
+            File(cacheDir, "acapela_stage_flat")
+        ).filter { it.exists() && it.isDirectory }
+
+        val foundNlpFiles = mutableMapOf<String, Long>()
+        for (root in searchRoots) {
+            root.listFiles()?.forEach { f ->
+                if (f.isFile && (f.name.startsWith("ar_sa", true) ||
+                        root.name.equals("NLP", true))) {
+                    val key = f.name.lowercase(java.util.Locale.ROOT)
+                    if (!foundNlpFiles.containsKey(key)) {
+                        foundNlpFiles[key] = f.length()
+                    }
+                }
+            }
+        }
+
+        sb.appendLine(
+            "1) ملفات NLP الموجودة على القرص (${foundNlpFiles.size} ملفاً):"
+        )
+        foundNlpFiles.toSortedMap().forEach { (name, size) ->
+            sb.appendLine("   - $name: $size بايت")
+        }
+
+        val infFiles = listOfNotNull(
+            salmaDir?.let { File(it, "ar_sa_hd_salma_22k_lf.bvcu.inf") },
+            salmaDir?.let {
+                File(it, "salma_lf/ar_sa_hd_salma_22k_lf.bvcu.inf")
+            },
+            File(v2Dir, "ar_sa_hd_salma_22k_lf.bvcu.inf"),
+            findFileRecursively(context, "ar_sa_hd_salma_22k_lf.bvcu.inf"),
+            findFileRecursively(context, "bvcu.inf")
+        ).filter { it.exists() && it.isFile }.distinctBy { it.absolutePath }
+
+        val iniFiles = listOfNotNull(
+            salmaDir?.let { File(it, "salma_lf/ar_sa_hd_salma_22k_lf.ini") },
+            salmaDir?.let { File(it, "ar_sa_hd_salma_22k_lf.ini") },
+            File(v2Dir, "ar_sa_hd_salma_22k_lf.ini"),
+            findFileRecursively(context, "ar_sa_hd_salma_22k_lf.ini")
+        ).filter { it.exists() && it.isFile }.distinctBy { it.absolutePath }
+
+        val referencedFiles = mutableSetOf<String>()
+        val fileRegex = Regex(
+            "\\\"([^\\\"]+\\.(?:dca|bnx|cma|trz|bvcu|dat|bin|ldi|gra|" +
+                "oso|ini|inf|txt|userdico))\\\"",
+            RegexOption.IGNORE_CASE
+        )
+
+        for (cf in (infFiles + iniFiles)) {
+            val txt = runCatching {
+                cf.readText(StandardCharsets.ISO_8859_1)
+            }.getOrNull() ?: continue
+            fileRegex.findAll(txt).forEach { m ->
+                val rawName = m.groupValues[1]
+                    .substringAfterLast('/')
+                    .substringAfterLast('\\')
+                referencedFiles.add(rawName)
+            }
+        }
+
+        sb.appendLine("")
+        sb.appendLine(
+            "2) الملفات المذكورة في .inf و .ini " +
+                "(${referencedFiles.size} ملفاً):"
+        )
+        referencedFiles.sorted().forEach { ref ->
+            val refKey = ref.lowercase(java.util.Locale.ROOT)
+            val exists = foundNlpFiles.containsKey(refKey) ||
+                findFileRecursively(context, ref) != null
+            val status = if (exists) "موجود" else "مفقود وغير موجود"
+            sb.appendLine("   - $ref: $status")
+        }
+
+        val missingFiles = referencedFiles.filterNot { ref ->
+            foundNlpFiles.containsKey(ref.lowercase(java.util.Locale.ROOT)) ||
+                findFileRecursively(context, ref) != null
+        }
+
+        sb.appendLine("")
+        if (missingFiles.isEmpty()) {
+            sb.appendLine(
+                "3) النتيجة: لا توجد ملفات مفقودة من المذكورة في .inf أو .ini."
+            )
+        } else {
+            sb.appendLine(
+                "3) الملفات المذكورة وغير الموجودة " +
+                    "(${missingFiles.size} ملفاً):"
+            )
+            missingFiles.forEach { m ->
+                sb.appendLine("   ! مفقود: $m")
+            }
+        }
+        return sb.toString().trimEnd()
+    }
+
     /**
      * حفظ عينات PCM كملف صوتي WAV صالح بترويسة 44 بايت قياسية.
      */
@@ -1191,6 +1321,11 @@ object AcapelaVoiceDiagnostics {
         // ── [البند 1] فحص الملف الأصلي 61 بايت (نص و Hex) ───────────────
         sb.appendLine("--- [البند 1] فحص الملف الأصلي 61 بايت (نص و Hex) ---")
         sb.appendLine(getOriginalIniDump(context))
+        sb.appendLine("")
+
+        // ── [البند 3] مقارنة ملفات NLP مع ملفات التهيئة ──────────────────
+        sb.appendLine("--- [البند 3] مقارنة ملفات NLP مع ملفات التهيئة ---")
+        sb.appendLine(compareNlpFiles(context))
         sb.appendLine("")
 
         val filesDir = context.filesDir
