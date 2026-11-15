@@ -126,5 +126,35 @@ class AcapelaJniContractTest {
         )
         assertTrue(Modifier.isNative(nSetProperty.modifiers))
         assertEquals(Int::class.javaPrimitiveType, nSetProperty.returnType)
+
+        val nSetPreferedVoice = cls.getDeclaredMethod(
+            "nSetPreferedVoice",
+            String::class.java,
+            String::class.java,
+            String::class.java
+        )
+        assertTrue(Modifier.isNative(nSetPreferedVoice.modifiers))
+        assertEquals(
+            Int::class.javaPrimitiveType,
+            nSetPreferedVoice.returnType
+        )
+
+        val nRefrehEnumeration = cls.getDeclaredMethod(
+            "nRefrehEnumeration"
+        )
+        assertTrue(Modifier.isNative(nRefrehEnumeration.modifiers))
+        assertEquals(
+            Int::class.javaPrimitiveType,
+            nRefrehEnumeration.returnType
+        )
+
+        val nloadLanguage = cls.getDeclaredMethod(
+            "nloadLanguage",
+            String::class.java,
+            String::class.java,
+            String::class.java
+        )
+        assertTrue(Modifier.isNative(nloadLanguage.modifiers))
+        assertEquals(Int::class.javaPrimitiveType, nloadLanguage.returnType)
     }
 }

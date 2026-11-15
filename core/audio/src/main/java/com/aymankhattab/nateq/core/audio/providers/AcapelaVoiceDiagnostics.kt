@@ -1499,10 +1499,18 @@ object AcapelaVoiceDiagnostics {
         }
         sb.appendLine("")
 
+        // ── [البند 2] سرد دوال JNI في مكتبات Acapela الأصلية ─────────────
+        sb.appendLine(getJniFunctionsCatalog())
+        sb.appendLine("")
+
+        // ── [البند 4] معنى الرمز -2 الراجع من nSpeak وثوابته ──────────────
+        sb.appendLine(getSpeakErrorCodeExplanation())
+        sb.appendLine("")
+
         // ── [البند 4 و 5] نتائج التوليفات وسجل المكتبة الأصلي ─────────────
         sb.appendLine(
-            "--- [البندان 4 و 5] نتائج التوليفات وسجل النداءات " +
-                "(إصدار 10712) ---"
+            "--- [البندان 1 و 3] نتائج التوليفات ودوال تحميل الصوت " +
+                "وسجل النداءات (إصدار 10713) ---"
         )
         val diagReport = File(cacheDir, "acapela_diagnostic_report.txt")
         if (diagReport.exists() && diagReport.length() > 0L) {
@@ -1518,7 +1526,7 @@ object AcapelaVoiceDiagnostics {
             val status = EngineStatusRegistry.statusOf(
                 AcapelaEmbeddedVoiceProvider.PROVIDER_ID
             )
-            sb.appendLine("=== [نتائج محاولات نطق Acapela 10712] ===")
+            sb.appendLine("=== [نتائج محاولات نطق Acapela 10713] ===")
             sb.appendLine("  (لم يُسجّل ملف التوليفات بعد)")
             sb.appendLine("  حالة المحرك: ${status?.state ?: "غير معروف"}")
             sb.appendLine("  كود الحالة: ${status?.code ?: "—"}")
@@ -1549,6 +1557,8 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10713.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10712.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10711.txt")
@@ -1620,6 +1630,156 @@ object AcapelaVoiceDiagnostics {
             listOf("(تعذر قراءة logcat للمكتبة الأصلية: ${t.message})")
         }
     }
+
+    /**
+     * قراءة أسطر Logcat الخاصة بالمكتبة الأصلية بين علامتي البداية والنهاية،
+     * مع تضمين أي سطر يحمل كلمة error أو fail.
+     */
+    fun readLogcatBetweenMarkers(
+        startMarker: String,
+        endMarker: String,
+        maxLines: Int = 1000
+    ): List<String> {
+        return runCatching {
+            val fetchCount = maxLines.coerceAtLeast(1000).toString()
+            val proc = Runtime.getRuntime().exec(
+                arrayOf("logcat", "-d", "-v", "time", "-t", fetchCount)
+            )
+            val lines = proc.inputStream
+                .bufferedReader(StandardCharsets.UTF_8).readLines()
+            proc.waitFor()
+            var recording = false
+            val captured = mutableListOf<String>()
+            for (line in lines) {
+                if (line.contains(startMarker)) {
+                    recording = true
+                    captured.add(line)
+                    continue
+                }
+                if (line.contains(endMarker)) {
+                    captured.add(line)
+                    recording = false
+                    break
+                }
+                if (recording) {
+                    if (line.contains("acattsandroid", ignoreCase = true) ||
+                        line.contains("error", ignoreCase = true) ||
+                        line.contains("fail", ignoreCase = true) ||
+                        line.contains("tts_function", ignoreCase = true) ||
+                        line.contains("BABILE", ignoreCase = true) ||
+                        line.contains("eb=", ignoreCase = true) ||
+                        line.contains("nlp", ignoreCase = true)
+                    ) {
+                        captured.add(line)
+                    }
+                }
+            }
+            if (captured.isNotEmpty()) {
+                captured
+            } else {
+                lines.filter { line ->
+                    line.contains("acattsandroid", ignoreCase = true) ||
+                        line.contains("error", ignoreCase = true) ||
+                        line.contains("fail", ignoreCase = true)
+                }.takeLast(maxLines)
+            }
+        }.getOrElse { t ->
+            listOf("(تعذر قراءة logcat للمحاولة: ${t.message})")
+        }
+    }
+
+    /**
+     * سرد دوال JNI في مكتبات Acapela (البند 2).
+     */
+    fun getJniFunctionsCatalog(): String = buildString {
+        appendLine("=== [دوال JNI في مكتبات Acapela الأصلية (البند 2)] ===")
+        appendLine("")
+        appendLine("1) دوال JNI في libttsacattsandroidextended.so:")
+        appendLine("  - nInit(path: String): int")
+        appendLine("  - nSetCurrentVoice(speaker: String): int")
+        appendLine("    [ضبط الصوت واستدعاء tts_function_load_voice]")
+        appendLine("  - nSetLanguage(lang, country, variant: String): int")
+        appendLine("  - nSetPreferedVoice(lang, country, voice: String): int")
+        appendLine("    [تسجيل الصوت المفضل للغة]")
+        appendLine("  - nRefrehEnumeration(): int")
+        appendLine("    [حصر الأصوات وتحميلها: tts_function_load_voice]")
+        appendLine("  - nloadLanguage(lang, country, variant: String): int")
+        appendLine("    [تحميل إعدادات اللغة: cSetLanguage]")
+        appendLine("  - nGetClosestVoice(lang, country, var: String): String")
+        appendLine("    [حالة/مطابقة أقرب صوت للغة]")
+        appendLine("  - nIsLanguageAvailable(lang, cntry, var: String): int")
+        appendLine("    [حالة توفر اللغة: 0=متاحة]")
+        appendLine("  - nGetLanguage(): String  [حالة اللغة الحالية]")
+        appendLine("  - nSetProperty(key, value: String): int")
+        appendLine("  - nSetVoiceMode(mode: String): int")
+        appendLine("  - nSpeak(text: String, cb: SynthesisCallback): int")
+        appendLine("  - nStop(): int")
+        appendLine("  - nStopSync(): int")
+        appendLine("  - nShutdown(): int")
+        appendLine("  - nUtf8Mode(lang, country: String): int")
+        appendLine("  - nGetPhonetic(text: String): String")
+        appendLine("  - NativeInterface.nSetInfo(...)")
+        appendLine("  - NativeInterface.nGetPhonetic(...)")
+        appendLine("  * لا توجد دالة nGetLastError أو nLoadVoice في الممتدة.")
+        appendLine("  * تحميل الصوت يتم داخلياً عبر nSetCurrentVoice و")
+        appendLine("    nRefrehEnumeration و nSetPreferedVoice.")
+        appendLine("")
+        appendLine("2) دوال JNI في المكتبة الكلاسيكية (libacattsandroid.so):")
+        appendLine("  - nLoadVoice(voicePathOrName: String): int")
+        appendLine("    [دالة صريحة لتحميل الصوت]")
+        appendLine("  - nGetLastError(): int  [دالة صريحة لآخر خطأ]")
+        appendLine("  - nIsSpeaking(): int  [حالة: هل يتحدث]")
+        appendLine("  - nIsPaused(): int  [حالة: هل متوقف مؤقتاً]")
+        appendLine("  - nGetVoiceList(paths: Array<String>): int")
+        appendLine("    [حصر الأصوات المتاحة]")
+        appendLine("  - nGetVoiceInfo(path, key: String): String  [بيانات صوت]")
+        appendLine("  - nGetLanguage(): String  [حالة اللغة]")
+        appendLine("  - nGetAudioBufferSize(): int")
+        appendLine("  - nGetTextIndex(): int")
+        appendLine("  - nGetVersion(): String")
+        appendLine("  - nInitCallbacks(): int")
+        appendLine("  - nSetLicense(user, pass: Long, lic: String): int")
+        appendLine("  - nSetLog(enable: Boolean): void")
+        appendLine("  - nSetShape(shape: Float): int")
+        appendLine("  - nGetShape(): int")
+        appendLine("  - nSetSpeechRate(rate: Float): int")
+        appendLine("  - nGetSpeechRate(): int")
+        appendLine("  - nSetTTSSetting(setting: String, val: Int): int")
+        appendLine("  - nSpeak(text: String): int")
+        appendLine("  - nSpeakToFile(text, path: String): int")
+        appendLine("  - nStop(): int")
+        appendLine("  - nPause(): int")
+        appendLine("  - nResume(): int")
+        appendLine("  - nShutdown(): int")
+        appendLine("  - nQueueText(text: String): int")
+    }.trimEnd()
+
+    /**
+     * شرح معنى الرمز -2 الراجع من nSpeak وثوابته في كود المكتبة (البند 4).
+     */
+    fun getSpeakErrorCodeExplanation(): String = buildString {
+        appendLine("=== [معنى الرمز -2 الراجع من nSpeak (البند 4)] ===")
+        appendLine("- التفكيك الثنائي لـ libttsacattsandroidextended.so:")
+        appendLine("  في دالة tts_function_analyse_and_speak")
+        appendLine("  (العنوان 0x1bd5dc): يُفحص مقبض الصوت المحمل")
+        appendLine("  عند الإزاحة 0x200 ([voice + 0x200]).")
+        appendLine("  إن كان المقبض صفراً (NULL)، تقفز التعليمات إلى 0x1bd988:")
+        appendLine("    1bd988: mov w0, #-0x2")
+        appendLine("    1bd98c: b   0x1bdc7c")
+        appendLine("  وتعيد الدالة الرمز -2 فوراً دون توليد أي عينة PCM!")
+        appendLine("- التفكيك الثنائي لـ libacattsandroid.so (الكلاسيكية):")
+        appendLine("  في دالة nSpeak (العنوان 0x60188):")
+        appendLine("  إن كان مقبض الصوت صفراً، تقفز الدالة إلى 0x60274:")
+        appendLine("  تطبع السجل الحرفي: \"nSpeak done - no voice loaded\"")
+        appendLine("  وتسجل آخر خطأ بـ -2 (str w19, [x21, #0x364]) وتعيد -2!")
+        appendLine("- النتيجة القاطعة:")
+        appendLine("  الرمز -2 يعني حصراً وقطعياً: \"No voice loaded\"")
+        appendLine("  (لم يُحمّل صوت / مقبض محرك الصوت NULL).")
+        appendLine("  وسببه أن nSetCurrentVoice تعيد 0 بمجرد تطابق اسم الصوت،")
+        appendLine("  دون التحقق من نجاح tts_function_load_voice، فيبقى")
+        appendLine("  المقبض صفراً إن تعثرت تهيئة محرك الصوت،")
+        appendLine("  فيكشف استدعاء nSpeak غياب المقبض ويعيد -2.")
+    }.trimEnd()
 
     private fun appendTail(
         sb: StringBuilder,

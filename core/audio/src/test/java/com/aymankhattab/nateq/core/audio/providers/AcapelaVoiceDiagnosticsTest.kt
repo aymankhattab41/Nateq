@@ -406,4 +406,25 @@ class AcapelaVoiceDiagnosticsTest {
             root.deleteRecursively()
         }
     }
+
+    @Test
+    fun getJniFunctionsCatalog_containsExpectedNativeMethods() {
+        val catalog = AcapelaVoiceDiagnostics.getJniFunctionsCatalog()
+        assertTrue(catalog.contains("nInit"))
+        assertTrue(catalog.contains("nSetCurrentVoice"))
+        assertTrue(catalog.contains("nSetPreferedVoice"))
+        assertTrue(catalog.contains("nRefrehEnumeration"))
+        assertTrue(catalog.contains("nloadLanguage"))
+        assertTrue(catalog.contains("nLoadVoice"))
+        assertTrue(catalog.contains("nGetLastError"))
+    }
+
+    @Test
+    fun getSpeakErrorCodeExplanation_explainsMinusTwo() {
+        val expl = AcapelaVoiceDiagnostics.getSpeakErrorCodeExplanation()
+        assertTrue(expl.contains("-2"))
+        assertTrue(expl.contains("No voice loaded"))
+        assertTrue(expl.contains("0x1bd5dc"))
+        assertTrue(expl.contains("0x200"))
+    }
 }

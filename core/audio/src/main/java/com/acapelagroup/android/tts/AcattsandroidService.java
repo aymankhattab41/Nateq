@@ -32,7 +32,31 @@ public final class AcattsandroidService {
         SynthesisCallback synthesisCallback
     );
     public native int nStop();
+    public native int nStopSync();
     public native int nUtf8Mode(String str, String str2);
+    public native int nSetPreferedVoice(
+        String str,
+        String str2,
+        String str3
+    );
+    public native int nRefrehEnumeration();
+    public native String nGetClosestVoice(
+        String str,
+        String str2,
+        String str3
+    );
+    public native int nloadLanguage(
+        String str,
+        String str2,
+        String str3
+    );
+    public native int nIsLanguageAvailable(
+        String str,
+        String str2,
+        String str3
+    );
+    public native String nGetLanguage();
+    public native String nGetPhonetic(String str);
 
     public AcattsandroidService(Audio audio, String str) {
         this.audio = audio;
