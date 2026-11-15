@@ -310,6 +310,8 @@ object AcapelaVoiceDiagnostics {
             cache?.let { File(it, "acapela_stage_parent") },
             cache?.let { File(it, "acapela_stage_direct") },
             cache?.let { File(it, "acapela_stage_flat") },
+            cache?.let { File(it, "acapela_stage_min") },
+            cache?.let { File(it, "acapela_stage_nounplugged") },
             files?.let { File(it, "Acapela") },
             files?.let { File(it, "acapela") }
         ).forEach { dir ->
@@ -566,6 +568,210 @@ object AcapelaVoiceDiagnostics {
         return stageDir
     }
 
+    /**
+     * تجهيز نسخة مصغرة [cache/acapela_stage_min] تحتوي فقط على الملفات
+     * الأساسية لصوت Salma وملفات ar_sa المحددة.
+     */
+    fun prepareStageMin(context: Context, flatDir: File): File {
+        val minDir = File(context.cacheDir, "acapela_stage_min")
+        if (minDir.exists()) {
+            runCatching { minDir.deleteRecursively() }
+        }
+        minDir.mkdirs()
+
+        val allowedExact = setOf(
+            "salma_22k_lf.bvcu",
+            "bvcu.inf",
+            "bvcu.ini",
+            "config.yaml",
+            "ar_sa.dca",
+            "ar_sa.bnx",
+            "ar_sa.ldi",
+            "ar_sa.trz",
+            "ar_sa_iv.trz.gra",
+            "ar_sa_oov.trz.gra",
+            "ar_sa_utf8.cma",
+            "ar_sa_utf8.dca",
+            "ar_sa_cp.cma",
+            "ar_sa.oso"
+        )
+
+        flatDir.listFiles { f -> f.isFile }?.forEach { f ->
+            val n = f.name
+            val matchPrefix = n.startsWith("ar_sa_hd_salma_22k_lf.", true)
+            if (n in allowedExact || matchPrefix) {
+                val dst = File(minDir, n)
+                runCatching { f.copyTo(dst, overwrite = true) }
+            }
+        }
+
+        val userdicosSrc = File(flatDir, "userdicos")
+        if (userdicosSrc.isDirectory) {
+            val userdicosDst = File(minDir, "userdicos")
+            userdicosDst.mkdirs()
+            userdicosSrc.listFiles()?.forEach { f ->
+                runCatching { f.copyTo(File(userdicosDst, f.name), true) }
+            }
+        }
+        return minDir
+    }
+
+    /**
+     * تجهيز نسخة [cache/acapela_stage_nounplugged] مع حذف كافة ملفات
+     * unplugged و e_arq و hde_arq.
+     */
+    fun prepareStageNoUnplugged(context: Context, flatDir: File): File {
+        val nounpDir = File(context.cacheDir, "acapela_stage_nounplugged")
+        if (nounpDir.exists()) {
+            runCatching { nounpDir.deleteRecursively() }
+        }
+        nounpDir.mkdirs()
+
+        flatDir.listFiles()?.forEach { f ->
+            if (f.isFile) {
+                val n = f.name.lowercase(java.util.Locale.ROOT)
+                val isBlocked = n.contains("unplugged") ||
+                    n.contains("e_arq") ||
+                    n.contains("hde_arq")
+                if (!isBlocked) {
+                    runCatching { f.copyTo(File(nounpDir, f.name), true) }
+                }
+            } else if (f.isDirectory) {
+                val dstSub = File(nounpDir, f.name)
+                dstSub.mkdirs()
+                f.listFiles()?.forEach { subF ->
+                    runCatching {
+                        subF.copyTo(File(dstSub, subF.name), true)
+                    }
+                }
+            }
+        }
+        return nounpDir
+    }
+
+    /**
+     * قراءة محتوى الملف كاملاً كنص UTF-8 أو Hex dump إن كان ملفاً ثنائياً.
+     */
+    fun dumpFileContent(file: File?): String {
+        if (file == null) return "(الملف غير محدد)"
+        if (!file.exists()) return "(غير موجود: ${file.name})"
+        if (!file.isFile) return "(ليس ملفاً: ${file.name})"
+        val bytes = runCatching { file.readBytes() }.getOrElse {
+            return "(تعذر القراءة: ${it.message})"
+        }
+        if (bytes.isEmpty()) return "(الملف فارغ: ${file.name})"
+        val isBinary = bytes.take(512).any { it == 0.toByte() }
+        return if (!isBinary) {
+            val text = String(bytes, StandardCharsets.UTF_8)
+            if (file.name.equals("config.yaml", ignoreCase = true)) {
+                text.lines().joinToString("\n") { line ->
+                    if (line.trim().startsWith("param:", ignoreCase = true)) {
+                        val p = line.substringAfter("param:").trim()
+                        val m = AcapelaVoiceManifest
+                            .extractRegistrationFromParam(p)
+                            .let { maskMiddle(it, 4, 4) }
+                        "param: $m"
+                    } else line
+                }
+            } else {
+                text
+            }
+        } else {
+            val limit = bytes.size.coerceAtMost(256)
+            val hex = bytes.take(limit).chunked(16).joinToString("\n") { c ->
+                c.joinToString(" ") { "%02X".format(it) }
+            }
+            val rest = if (bytes.size > limit) {
+                "\n... [المتبقي ${bytes.size - limit} بايت]"
+            } else ""
+            "[ملف ثنائي: ${file.name}، ${bytes.size} بايت]:\n$hex$rest"
+        }
+    }
+
+    /**
+     * حساب بصمة MD5 للملف واستخراج أول [count] بايت بصيغة Hex.
+     */
+    fun getFileHexHeaderAndMd5(file: File?, count: Int = 64): String {
+        if (file == null) return "(الملف غير محدد)"
+        if (!file.exists()) return "(غير موجود: ${file.name})"
+        val len = file.length()
+        val bytes = runCatching { file.readBytes() }.getOrElse {
+            return "(تعذر القراءة: ${it.message})"
+        }
+        val md5 = runCatching {
+            val md = MessageDigest.getInstance("MD5")
+            md.digest(bytes).joinToString("") { "%02x".format(it) }
+        }.getOrDefault("غير متاح")
+        val hex = bytes.take(count).chunked(16).joinToString("\n") { c ->
+            c.joinToString(" ") { "%02X".format(it) }
+        }
+        return "اسم: ${file.name} | حجم: $len بايت | MD5: $md5\n" +
+            "أول $count بايت hex:\n$hex"
+    }
+
+    /**
+     * استخراج تفاصيل المكتبة الأصلية المحمّلة ومعمارية المعالج من الذاكرة.
+     */
+    fun getNativeLibraryDetails(context: Context?): String {
+        val sb = StringBuilder()
+        sb.appendLine("- معمارية العملية: ${getArchInfo()}")
+        sb.appendLine("- دعم المعماريتين: ${hasDualArchLibs(context)}")
+        val maps = runCatching {
+            val f = File("/proc/self/maps")
+            if (f.exists()) f.readLines() else emptyList()
+        }.getOrDefault(emptyList())
+        val acaMaps = maps.filter { it.contains("libttsacattsandroid") }
+        if (acaMaps.isNotEmpty()) {
+            sb.appendLine("- مسارات المكتبات في الذاكرة (/proc/self/maps):")
+            acaMaps.distinctBy { it.substringAfterLast('/') }.forEach {
+                sb.appendLine("  $it")
+            }
+        } else {
+            sb.appendLine("- المكتبات في الذاكرة: لم يُعثر على مسارات في maps")
+        }
+        val nativeVerLines = readNativeLogcatLines(1000).filter {
+            it.contains("version", ignoreCase = true) ||
+                it.contains("build", ignoreCase = true) ||
+                it.contains("release", ignoreCase = true) ||
+                it.contains("babile", ignoreCase = true)
+        }
+        if (nativeVerLines.isNotEmpty()) {
+            sb.appendLine("- سطور الإصدار من سجل المكتبة:")
+            nativeVerLines.takeLast(10).forEach { sb.appendLine("  $it") }
+        }
+        return sb.toString().trimEnd()
+    }
+
+    /**
+     * البحث عن ملف بأي موضع تحت مجلدات التطبيق.
+     */
+    fun findFileRecursively(
+        context: Context,
+        fileName: String,
+        relativeHint: String? = null
+    ): File? {
+        val roots = listOfNotNull(
+            context.filesDir?.let { File(it, "Acapela") },
+            context.filesDir?.let { File(it, "acapela") },
+            context.filesDir,
+            context.cacheDir
+        ).filter { it.exists() && it.isDirectory }
+
+        if (!relativeHint.isNullOrBlank()) {
+            for (r in roots) {
+                val candidate = File(r, relativeHint)
+                if (candidate.exists() && candidate.isFile) return candidate
+            }
+        }
+        for (r in roots) {
+            val found = r.walkTopDown().maxDepth(5).firstOrNull { f ->
+                f.isFile && f.name.equals(fileName, ignoreCase = true)
+            }
+            if (found != null) return found
+        }
+        return null
+    }
+
     /** شجرة مجلد متداخلة تعرض كافة المجلدات والملفات بأحجامها بالبايت. */
     fun buildNestedDirectoryTree(
         root: File?,
@@ -653,155 +859,107 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * بناء تقرير Acapela الشامل الذي يضم كافة الأقسام المطلوبة.
+     * بناء تقرير Acapela الشامل الذي يضم كافة الأقسام المطلوبة (1..6).
      */
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
-        sb.appendLine(
-            "الأقسام المضافة: (1) شجرة ملفات ومجلدات Acapela المتداخلة " +
-                "بالأحجام، (2) وسائط nInit وnSetCurrentVoice وnSpeak " +
-                "الحرفية وأكواد الإرجاع، (3) آخر 40 سطراً من سجل " +
-                "المكتبة الأصلية مع إبراز nlpInitError، (4) فحص مسار " +
-                "وحجم salma_22k_lf.bvcu، (5) فحص المجلد المسطح " +
-                "acapela_stage_flat وتأكيد ملفات NLP والصوت."
-        )
+        sb.appendLine("==================================================")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10707) ===")
+        sb.appendLine("==================================================")
         sb.appendLine("")
+
         val filesDir = context.filesDir
         val cacheDir = context.cacheDir
         val filesAcapela = File(filesDir, "Acapela")
         val altAcapela = File(filesDir, "acapela")
-        val cacheStage = File(cacheDir, "acapela_stage")
-        val cacheParent = File(cacheDir, "acapela_stage_parent")
-        val cacheDirect = File(cacheDir, "acapela_stage_direct")
         val cacheFlat = File(cacheDir, "acapela_stage_flat")
+        val cacheMin = File(cacheDir, "acapela_stage_min")
+        val cacheNoUnp = File(cacheDir, "acapela_stage_nounplugged")
 
-        // 1) فحص وجود ملف salma_22k_lf.bvcu في المسار الممرر للمحرك
-        val targetStage = if (cacheFlat.exists()) cacheFlat
-        else if (cacheParent.exists()) cacheParent
-        else if (cacheDirect.exists()) cacheDirect
-        else if (cacheStage.exists()) cacheStage
-        else filesAcapela
-
-        val foundBvcu = findSalmaBvcuFile(context)
-        sb.appendLine("--- [القسم 4] فحص ملف salma_22k_lf.bvcu ---")
-        if (foundBvcu != null) {
-            val destInTarget = File(targetStage, foundBvcu.name)
-            if (!destInTarget.exists() ||
-                destInTarget.length() != foundBvcu.length()
-            ) {
-                runCatching {
-                    Files.createLink(destInTarget.toPath(), foundBvcu.toPath())
-                }.onFailure {
-                    runCatching {
-                        foundBvcu.copyTo(destInTarget, overwrite = true)
-                    }
-                }
-            }
-            val namedDest = File(targetStage, "salma_22k_lf.bvcu")
-            if (!namedDest.exists() ||
-                namedDest.length() != foundBvcu.length()
-            ) {
-                runCatching {
-                    Files.createLink(namedDest.toPath(), foundBvcu.toPath())
-                }.onFailure {
-                    runCatching {
-                        foundBvcu.copyTo(namedDest, overwrite = true)
-                    }
-                }
-            }
-            sb.appendLine(
-                "  * ملف الصوت الأصلي المكتشف: ${foundBvcu.absolutePath}"
-            )
-            sb.appendLine("  * حجم الملف الأصلي: ${foundBvcu.length()} بايت")
-            sb.appendLine(
-                "  * المسار الممرر للمحرك: ${namedDest.absolutePath}"
-            )
-            sb.appendLine(
-                "  * حجم الملف في مسار المحرك: ${namedDest.length()} بايت"
-            )
-            val ready = namedDest.exists() && namedDest.length() > 0L
-            sb.appendLine(
-                "  * حالة توفر الملف في مسار المحرك: " +
-                    if (ready) "متوفر بنجاح" else "غير متوفر"
-            )
-        } else {
-            sb.appendLine(
-                "  * تنبيه: لم يُعثر على ملف salma_22k_lf.bvcu في " +
-                    "files أو cache!"
-            )
-        }
+        // ── [البند 3] معمارية النظام والمكتبة الأصلية المحمّلة ─────────────
+        sb.appendLine("--- [البند 3] معمارية النظام والمكتبة المحمّلة ---")
+        sb.appendLine(getNativeLibraryDetails(context))
         sb.appendLine("")
 
-        // 2) شجرة الملفات والمجلدات المتداخلة بالأحجام بالبايت
-        sb.appendLine("--- [القسم 1] شجرة ملفات ومجلدات Acapela المتداخلة ---")
+        // ── [البند 1] محتوى النصوص الكامل وملفات التجهيز المسطح ────────────
+        sb.appendLine("--- [البند 1] محتوى النصوص والملفات المطلوبة ---")
+        val req1FlatFiles = listOf(
+            "ar_sa_hd_salma_22k_lf.ini",
+            "ar_sa_hd_salma_22k_lf.bvcu.ini",
+            "ar_sa_hd_salma_22k_lf.bvcu.inf",
+            "bvcu.ini",
+            "bvcu.inf",
+            "config.yaml",
+            "salma_lf.txt",
+            "3073.INI",
+            "logfile.txt"
+        )
+        for (fName in req1FlatFiles) {
+            val f = File(cacheFlat, fName).takeIf { it.exists() }
+                ?: if (fName.equals("3073.INI", true)) {
+                    File(cacheFlat, "3073.ini").takeIf { it.exists() }
+                        ?: findFileRecursively(context, "3073.ini")
+                        ?: findFileRecursively(context, "3073.INI")
+                } else null
+                ?: findFileRecursively(context, fName)
+            sb.appendLine(">>> ملف: $fName (${f?.absolutePath ?: "غير موجود"})")
+            sb.appendLine(dumpFileContent(f))
+            sb.appendLine("")
+        }
+
+        val extraFiles = listOf(
+            "version.txt" to ("Salma/version.txt"),
+            "logfile.txt (salma_lf)" to ("Salma/salma_lf/logfile.txt"),
+            "engines.yaml" to null,
+            "voicelist" to null
+        )
+        for ((label, hint) in extraFiles) {
+            val fName = label.substringBefore(' ')
+            val f = findFileRecursively(context, fName, hint)
+            sb.appendLine(">>> ملف خارجي: $label (${f?.absolutePath ?: "-"})")
+            sb.appendLine(dumpFileContent(f))
+            sb.appendLine("")
+        }
+
+        // ── [البند 2] أول 64 بايت Hex و MD5 للملفات الأساسية ───────────────
+        sb.appendLine("--- [البند 2] أول 64 بايت Hex و MD5 للملفات ---")
+        val req2Files = listOf(
+            "ar_sa.dca",
+            "ar_sa_unplugged.dca",
+            "ar_sa_hde_arq.dca",
+            "ar_sa.bnx",
+            "ar_sa_utf8.cma",
+            "ar_sa.trz",
+            "salma_22k_lf.bvcu"
+        )
+        for (fName in req2Files) {
+            val f = File(cacheFlat, fName).takeIf { it.exists() }
+                ?: if (fName.endsWith(".bvcu")) findSalmaBvcuFile(context)
+                else findFileRecursively(context, fName)
+            sb.appendLine(getFileHexHeaderAndMd5(f))
+            sb.appendLine("")
+        }
+
+        // ── شجرة المجلدات المتداخلة للأدلة ────────────────────────────────
+        sb.appendLine("--- شجرة المجلدات المتداخلة للأدلة ---")
         sb.append(buildNestedDirectoryTree(filesAcapela, "files/Acapela"))
         if (altAcapela.exists() && altAcapela != filesAcapela) {
             sb.append(buildNestedDirectoryTree(altAcapela, "files/acapela"))
         }
         val cacheList = listOf(
             cacheFlat,
-            cacheStage,
-            cacheParent,
-            cacheDirect
+            cacheMin,
+            cacheNoUnp,
+            File(cacheDir, "acapela_stage_parent")
         ).filter { it.exists() }
-        if (cacheList.isNotEmpty()) {
-            cacheList.forEach { cDir ->
-                sb.append(
-                    buildNestedDirectoryTree(cDir, "cache/${cDir.name}")
-                )
-            }
-        } else {
-            sb.appendLine("  (لا توجد مجلدات مرحلية في cache)")
+        cacheList.forEach { cDir ->
+            sb.append(buildNestedDirectoryTree(cDir, "cache/${cDir.name}"))
         }
         sb.appendLine("")
 
-        // 3) فحص المجلد المسطح cache/acapela_stage_flat وتأكيد ملفات NLP
+        // ── [البند 4 و 5] نتائج التوليفات الست وسجل المكتبة الأصلي ────────
         sb.appendLine(
-            "--- [القسم 5] فحص مجلد التجهيز المسطح acapela_stage_flat ---"
-        )
-        if (cacheFlat.exists() && cacheFlat.isDirectory) {
-            val fDca = File(cacheFlat, "ar_sa.dca")
-            val fUnp = File(cacheFlat, "ar_sa_unplugged.dca")
-            val fHde = File(cacheFlat, "ar_sa_hde_arq.dca")
-            val fBvcu = File(cacheFlat, "salma_22k_lf.bvcu")
-
-            val okDca = fDca.exists() && fDca.length() > 0L
-            val okUnp = fUnp.exists() && fUnp.length() > 0L
-            val okHde = fHde.exists() && fHde.length() > 0L
-            val okBvcu = fBvcu.exists() && fBvcu.length() > 0L
-
-            sb.appendLine(
-                "  * ar_sa.dca: " +
-                    if (okDca) "موجود (${fDca.length()} بايت)" else "غير موجود!"
-            )
-            sb.appendLine(
-                "  * ar_sa_unplugged.dca: " +
-                    if (okUnp) "موجود (${fUnp.length()} بايت)" else "غير موجود!"
-            )
-            sb.appendLine(
-                "  * ar_sa_hde_arq.dca: " +
-                    if (okHde) "موجود (${fHde.length()} بايت)"
-                    else "غير موجود!"
-            )
-            sb.appendLine(
-                "  * salma_22k_lf.bvcu: " +
-                    if (okBvcu) "موجود (${fBvcu.length()} بايت)"
-                    else "غير موجود!"
-            )
-            val okAll = okDca && okUnp && okHde && okBvcu
-            sb.appendLine(
-                "  * حالة اكتمال ملفات NLP والصوت: " +
-                    if (okAll) "مكتملة بنجاح" else "ناقصة"
-            )
-        } else {
-            sb.appendLine("  (مجلد cache/acapela_stage_flat غير موجود بعد)")
-        }
-        sb.appendLine("")
-
-        // 4) قراءة وسائط النداءات وأكواد الإرجاع
-        sb.appendLine(
-            "--- [القسم 2] وسائط nInit وnSetCurrentVoice وnSpeak " +
-                "الحرفية وأكواد الإرجاع ---"
+            "--- [البندان 4 و 5] نتائج التوليفات الست وسجل النداءات ---"
         )
         val diagReport = File(cacheDir, "acapela_diagnostic_report.txt")
         if (diagReport.exists() && diagReport.length() > 0L) {
@@ -814,31 +972,36 @@ object AcapelaVoiceDiagnostics {
                 sb.appendLine("  (ملف acapela_diagnostic_report.txt فارغ)")
             }
         } else {
-            sb.appendLine(
-                "  (بانتظار تنفيذ أول محاولة نطق لتسجيل الوسائط الحرفية)"
-            )
+            sb.appendLine("  (بانتظار تنفيذ التوليفات الست عبر جلسة المحرك)")
         }
         sb.appendLine("")
 
-        // 5) آخر 40 سطراً من سجل المكتبة الأصلية
-        sb.appendLine(
-            "--- [القسم 3] آخر 40 سطراً من سجل المكتبة الأصلية " +
-                "acattsandroid-extended-native (التشغيل الحالي) ---"
-        )
-        val nativeLines = readNativeLogcatLines(40)
-        nativeLines.forEach { sb.appendLine("  $it") }
+        // ── كامل سجل المكتبة الأصلية (البند 4) ─────────────────────────────
+        sb.appendLine("--- [البند 4] كامل سجل المكتبة الأصلية logcat ---")
+        val fullNative = readNativeLogcatLines(1500)
+        fullNative.forEach { sb.appendLine("  $it") }
+        sb.appendLine("")
 
-        return sb.toString().trimEnd()
+        val fullOutput = sb.toString().trimEnd()
+
+        // حفظ التقرير في ملف نصي واحد كما في البند 6
+        runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10707.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
+        }
+
+        return fullOutput
     }
 
     /**
      * استرجاع آخر [maxLines] سطراً من سجل المكتبة الأصلية عبر Logcat.
      */
-    fun readNativeLogcatLines(maxLines: Int = 40): List<String> {
+    fun readNativeLogcatLines(maxLines: Int = 1000): List<String> {
         return runCatching {
             val myPid = Process.myPid().toString()
+            val fetchCount = maxLines.coerceAtLeast(1000).toString()
             val proc = Runtime.getRuntime().exec(
-                arrayOf("logcat", "-d", "-t", "500", "--pid", myPid)
+                arrayOf("logcat", "-d", "-t", fetchCount, "--pid", myPid)
             )
             val lines = proc.inputStream
                 .bufferedReader(StandardCharsets.UTF_8).readLines()
@@ -847,14 +1010,17 @@ object AcapelaVoiceDiagnostics {
                 line.contains("acattsandroid", ignoreCase = true) ||
                     line.contains("tts_function", ignoreCase = true) ||
                     line.contains("BABILE", ignoreCase = true) ||
-                    line.contains("eb=-", ignoreCase = true)
+                    line.contains("eb=-", ignoreCase = true) ||
+                    line.contains("nlp", ignoreCase = true) ||
+                    line.contains("initError", ignoreCase = true) ||
+                    line.contains("salma", ignoreCase = true)
             }
             if (filtered.isNotEmpty()) {
                 filtered.takeLast(maxLines)
             } else {
                 val procTag = Runtime.getRuntime().exec(
                     arrayOf(
-                        "logcat", "-d", "-t", "300",
+                        "logcat", "-d", "-t", fetchCount,
                         "-s", "acattsandroid-extended-native:V"
                     )
                 )

@@ -205,4 +205,81 @@ class AcapelaVoiceDiagnosticsTest {
             root.deleteRecursively()
         }
     }
+
+    @Test
+    fun dumpFileContent_masksConfigYamlParamAndPrintsText() {
+        val root = tempDir()
+        try {
+            val yaml = File(root, "config.yaml")
+            yaml.writeText("param: 1,user@test.com,0xABCDEF12\nname: Salma\n")
+            val dumped = AcapelaVoiceDiagnostics.dumpFileContent(yaml)
+            assertTrue(dumped.contains("Salma"))
+            assertTrue(!dumped.contains("ABCDEF12"))
+            assertTrue(dumped.contains("param: "))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun getFileHexHeaderAndMd5_returnsValidHexAndHash() {
+        val root = tempDir()
+        try {
+            val f = File(root, "test.dca")
+            f.writeBytes(byteArrayOf(0x01, 0x02, 0x03, 0x04))
+            val header = AcapelaVoiceDiagnostics.getFileHexHeaderAndMd5(f)
+            assertTrue(header.contains("MD5:"))
+            assertTrue(header.contains("01 02 03 04"))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun prepareStageMin_filtersNonAllowedFiles() {
+        val root = tempDir()
+        try {
+            File(root, "salma_22k_lf.bvcu").writeText("bvcu")
+            File(root, "bvcu.inf").writeText("inf")
+            File(root, "bvcu.ini").writeText("ini")
+            File(root, "config.yaml").writeText("yaml")
+            File(root, "ar_sa.dca").writeText("dca")
+            File(root, "unwanted_extra.txt").writeText("extra")
+            val userdicos = File(root, "userdicos").apply { mkdirs() }
+            File(userdicos, "user.userdico").writeText("dico")
+
+            val minDir = AcapelaVoiceDiagnostics.prepareStageMin(context, root)
+
+            assertTrue(File(minDir, "salma_22k_lf.bvcu").exists())
+            assertTrue(File(minDir, "bvcu.inf").exists())
+            assertTrue(File(minDir, "ar_sa.dca").exists())
+            assertTrue(!File(minDir, "unwanted_extra.txt").exists())
+            assertTrue(File(minDir, "userdicos/user.userdico").exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun prepareStageNoUnplugged_removesUnpluggedAndHdeArq() {
+        val root = tempDir()
+        try {
+            File(root, "ar_sa.dca").writeText("keep")
+            File(root, "ar_sa_unplugged.dca").writeText("remove")
+            File(root, "ar_sa_hde_arq.dca").writeText("remove")
+            File(root, "salma_22k_lf.bvcu").writeText("keep")
+
+            val nounpDir = AcapelaVoiceDiagnostics.prepareStageNoUnplugged(
+                context,
+                root
+            )
+
+            assertTrue(File(nounpDir, "ar_sa.dca").exists())
+            assertTrue(File(nounpDir, "salma_22k_lf.bvcu").exists())
+            assertTrue(!File(nounpDir, "ar_sa_unplugged.dca").exists())
+            assertTrue(!File(nounpDir, "ar_sa_hde_arq.dca").exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }
