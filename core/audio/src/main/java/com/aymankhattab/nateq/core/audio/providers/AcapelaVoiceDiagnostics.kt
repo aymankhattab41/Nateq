@@ -314,6 +314,8 @@ object AcapelaVoiceDiagnostics {
             cache?.let { File(it, "acapela_stage_nounplugged") },
             cache?.let { File(it, "acapela_stage_v2") },
             cache?.let { File(it, "acapela_marhaba_trial.wav") },
+            cache?.let { File(it, "acapela_marhaba_10710.wav") },
+            cache?.let { File(it, "acapela_marhaba_10709.wav") },
             cache?.let { File(it, "acapela_marhaba_10708.wav") },
             files?.let { File(it, "Acapela") },
             files?.let { File(it, "acapela") }
@@ -1314,7 +1316,7 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10709) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10710) ===")
         sb.appendLine("==================================================")
         sb.appendLine("")
 
@@ -1463,6 +1465,8 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10710.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10709.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10708.txt")
