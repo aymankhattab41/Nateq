@@ -713,6 +713,7 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Aligned embedded Acapela engine with MultiTTS architecture: mutually exclusive extended library loading, direct JNI registration via idfunction, strict initialization sequence with userdicos, and 22050 Hz enforcement.
 • Screen-reader-friendly voice guidance for Xiaomi HyperOS/MIUI devices to directly open and configure autostart, battery saver, and exact alarm permissions with safe fallbacks.
 • Accelerated multi-segment speech with immediate sequential streaming on first segment completion, significantly reducing latency in lists and navigation.
 • Refined synthesis stop and cancellation handling to prevent dropping sentences or utterances during transient stop events.
