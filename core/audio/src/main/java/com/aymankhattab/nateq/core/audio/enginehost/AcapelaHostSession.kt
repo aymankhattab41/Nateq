@@ -1198,7 +1198,8 @@ internal class AcapelaHostSession(
         val speakCode: Int,
         val samples: Long,
         val service: AcattsandroidService?,
-        val audioHandler: TrialAudio
+        val audioHandler: TrialAudio,
+        val details: String = ""
     ) {
         val isSuccess: Boolean
             get() = voiceCode == 0 && speakCode == 0 && samples > 0L
@@ -1738,7 +1739,8 @@ internal class AcapelaHostSession(
             speakCode = speakRes,
             samples = totalSamples,
             service = srv,
-            audioHandler = audioHandler
+            audioHandler = audioHandler,
+            details = logOutput
         )
     }
 
@@ -1865,6 +1867,23 @@ internal class AcapelaHostSession(
         HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
 
         val allTrials = listOf(trial1, trial2, trial3)
+        runCatching {
+            val reportFile = File(
+                context.cacheDir,
+                "acapela_diagnostic_report.txt"
+            )
+            val fullTrialsText = buildString {
+                appendLine(topSummary)
+                appendLine("")
+                allTrials.forEach { t ->
+                    if (t.details.isNotBlank()) {
+                        appendLine(t.details)
+                        appendLine("")
+                    }
+                }
+            }.trimEnd()
+            reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
+        }
         val chosenTrial = allTrials.firstOrNull { it.isSuccess }
             ?: allTrials.firstOrNull { it.speakCode == 0 }
             ?: trial1

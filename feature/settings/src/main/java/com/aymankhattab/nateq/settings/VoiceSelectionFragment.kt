@@ -2845,6 +2845,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 @Suppress("DEPRECATION") info.versionCode.toLong()
             }
 
+            sb.appendLine(
+                "الأقسام الجديدة المضافة: (1) شجرة ملفات ومجلدات Acapela " +
+                    "المتداخلة بالأحجام، (2) وسائط nInit وnSetCurrentVoice " +
+                    "وnSpeak الحرفية وأكواد الإرجاع، (3) آخر 40 سطراً من " +
+                    "سجل المكتبة الأصلية acattsandroid-extended-native، " +
+                    "(4) فحص مسار وحجم ملف salma_22k_lf.bvcu."
+            )
+            sb.appendLine("")
             sb.appendLine("=== Lord TTS — التشخيص ===")
             val buildTimeStr = runCatching {
                 java.text.SimpleDateFormat(
@@ -3072,22 +3080,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                             "  مجلد تجهيز الأصوات: " +
                                 "${stageDir.absolutePath} ($stageCount ملف)"
                         )
-                        val logFile = File(
-                            stageDir,
-                            AcapelaVoiceDiagnostics.LOG_FILE_NAME
-                        )
-                        if (logFile.exists() && logFile.length() > 0L) {
-                            val tail = AcapelaVoiceDiagnostics.tailLines(
-                                logFile, 5
-                            )
-                            if (tail.isNotEmpty()) {
-                                sb.appendLine(
-                                    "  سجل المحرك الأصلي (آخر الأسطر):"
-                                )
-                                tail.forEach { sb.appendLine("    $it") }
-                            }
-                        }
                     }
+                    AcapelaVoiceDiagnostics.runDiagnosticProbe(context)
+                    val fullReport =
+                        AcapelaVoiceDiagnostics.buildAcapelaFullReport(context)
+                    sb.appendLine(fullReport)
                 }
                 if (configYamlLine != null) {
                     sb.appendLine(configYamlLine)
