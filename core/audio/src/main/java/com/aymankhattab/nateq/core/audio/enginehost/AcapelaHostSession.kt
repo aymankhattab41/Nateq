@@ -1308,7 +1308,11 @@ internal class AcapelaHostSession(
         val openFiles: List<String> = emptyList()
     ) {
         val isSuccess: Boolean
-            get() = voiceCode == 0 && speakCode == 0 && samples > 0L
+            get() = AcapelaVoiceDiagnostics.evaluateTrialSuccess10723(
+                speakCode = speakCode,
+                samples = samples,
+                nativeLines = nativeLines
+            )
     }
 
     private fun extractVoiceNameFromConfigYaml(dir: File): String? {
@@ -1619,6 +1623,8 @@ internal class AcapelaHostSession(
     ) {
         if (trialDir.name == "acapela_stage_v2" ||
             trialDir.name == "acapela_stage_10709_exact" ||
+            trialDir.name == "acapela_stage_full" ||
+            trialDir.name == "acapela_stage_full_nlp_subdir" ||
             trialDir.name.equals("Salma", ignoreCase = true) ||
             trialDir.name.equals("salma_lf", ignoreCase = true) ||
             !trialDir.path.contains("cache")
@@ -2403,6 +2409,16 @@ internal class AcapelaHostSession(
                 }
                 ?: voice.dir
 
+            val fullStageDir = AcapelaVoiceDiagnostics.stageFull(
+                context = context,
+                sourceDir = voice.dir,
+                flatNlp = true
+            )
+            val fullSubdirDir = AcapelaVoiceDiagnostics.stageFull(
+                context = context,
+                sourceDir = voice.dir,
+                flatNlp = false
+            )
             val exactDir = AcapelaVoiceDiagnostics.stage10709Exact(
                 context,
                 voice.dir
@@ -2410,10 +2426,76 @@ internal class AcapelaHostSession(
             val reg10709 = AcapelaVoiceDiagnostics
                 .extractRegistration10709(effectiveRawParam)
 
-            // ── المسار الأساسي: Path_Original_Tree (شجرة الأصل Salma/) ──
+            // ── مسار 1: Path_Full_Stage (مجلد نظيف مع ملفات NLP مسطحة) ──
+            AcapelaVoiceDiagnostics.clearNativeLogcat()
+            val trialFullStage = executeVoiceLoadTrial(
+                label = "1) Path_Full_Stage (مجلد نظيف مع ملفات NLP مسطحة)",
+                trialDir = fullStageDir,
+                speaker = effectiveSpeaker,
+                iso3 = iso3,
+                registration = regToUse,
+                voice = voice,
+                voiceMode = "MODE=prep_hd",
+                probeText = "مرحبا",
+                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                useRealCallback = false,
+                trailingSlash = true,
+                callSetLicense = false,
+                enableSetLog = true,
+                forceCallVoice = true,
+                callPreStopShutdown = false
+            )
+            val trialsList = mutableListOf(trialFullStage)
+            recordTrialProgress(trialFullStage)
+
+            // ── مسار 2: Path_Full_Stage_Subdir_NLP (ملفات NLP داخل NLP/) ──
+            AcapelaVoiceDiagnostics.clearNativeLogcat()
+            val trialFullSubdir = executeVoiceLoadTrial(
+                label = "2) Path_Full_Stage_Subdir_NLP (ملفات NLP داخل NLP/)",
+                trialDir = fullSubdirDir,
+                speaker = effectiveSpeaker,
+                iso3 = iso3,
+                registration = regToUse,
+                voice = voice,
+                voiceMode = "MODE=prep_hd",
+                probeText = "مرحبا",
+                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                useRealCallback = false,
+                trailingSlash = true,
+                callSetLicense = false,
+                enableSetLog = true,
+                forceCallVoice = true,
+                callPreStopShutdown = false
+            )
+            trialsList.add(trialFullSubdir)
+            recordTrialProgress(trialFullSubdir)
+
+            // ── مسار 3: Path_10709_Exact (نظيف: 3 ملفات فقط + cb=null) ──
+            AcapelaVoiceDiagnostics.clearNativeLogcat()
+            val trial10709 = executeVoiceLoadTrial(
+                label = "3) Path_10709_Exact (نظيف: 3 ملفات فقط + cb=null)",
+                trialDir = exactDir,
+                speaker = effectiveSpeaker,
+                iso3 = iso3,
+                registration = reg10709,
+                voice = voice,
+                voiceMode = "MODE=prep_hd",
+                probeText = "مرحبا",
+                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                useRealCallback = false,
+                trailingSlash = true,
+                callSetLicense = false,
+                enableSetLog = true,
+                forceCallVoice = true,
+                callPreStopShutdown = false
+            )
+            trialsList.add(trial10709)
+            recordTrialProgress(trial10709)
+
+            // ── مسار 4: Path_Original_Tree (شجرة الصوت الأصلية Salma/) ──
             AcapelaVoiceDiagnostics.clearNativeLogcat()
             val trialOrigTree = executeVoiceLoadTrial(
-                label = "1) Path_Original_Tree (شجرة الصوت الأصلية Salma/)",
+                label = "4) Path_Original_Tree (شجرة الصوت الأصلية Salma/)",
                 trialDir = origSalmaDir,
                 speaker = effectiveSpeaker,
                 iso3 = iso3,
@@ -2429,7 +2511,7 @@ internal class AcapelaHostSession(
                 forceCallVoice = true,
                 callPreStopShutdown = false
             )
-            val trialsList = mutableListOf(trialOrigTree)
+            trialsList.add(trialOrigTree)
             recordTrialProgress(trialOrigTree)
 
             // ── مسار فرعي إذا كان voice.dir مجلداً فرعياً (salma_lf) ──
@@ -2439,7 +2521,7 @@ internal class AcapelaHostSession(
                 AcapelaVoiceDiagnostics.clearNativeLogcat()
                 val subName = voice.dir.name
                 val trialOrigSub = executeVoiceLoadTrial(
-                    label = "1ب) Path_Original_Direct ($subName/)",
+                    label = "4ب) Path_Original_Direct ($subName/)",
                     trialDir = voice.dir,
                     speaker = effectiveSpeaker,
                     iso3 = iso3,
@@ -2459,188 +2541,6 @@ internal class AcapelaHostSession(
                 recordTrialProgress(trialOrigSub)
             }
 
-            // ── تجربة 2: Path_10709_Exact (نظيف: 3 ملفات ومطابق لـ 10709) ──
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val trial1 = executeVoiceLoadTrial(
-                label = "2) Path_10709_Exact (نظيف: 3 ملفات فقط + cb=null)",
-                trialDir = exactDir,
-                speaker = effectiveSpeaker,
-                iso3 = iso3,
-                registration = reg10709,
-                voice = voice,
-                voiceMode = "MODE=prep_hd",
-                probeText = "مرحبا",
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                useRealCallback = false,
-                trailingSlash = true,
-                callSetLicense = false,
-                enableSetLog = true,
-                forceCallVoice = true,
-                callPreStopShutdown = false
-            )
-            trialsList.add(trial1)
-            recordTrialProgress(trial1)
-
-            // ── تجربة 2: إضافة فرق (أ) (تقييد nSetCurrentVoice بشرط) ──
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val trial2 = executeVoiceLoadTrial(
-                label = "2) فرق (أ): تقييد nSetCurrentVoice بشرط isVoiceLoaded",
-                trialDir = exactDir,
-                speaker = effectiveSpeaker,
-                iso3 = iso3,
-                registration = reg10709,
-                voice = voice,
-                voiceMode = "MODE=prep_hd",
-                probeText = "مرحبا",
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                useRealCallback = false,
-                trailingSlash = true,
-                callSetLicense = false,
-                enableSetLog = false,
-                forceCallVoice = false,
-                callPreStopShutdown = false
-            )
-            trialsList.add(trial2)
-            recordTrialProgress(trial2)
-
-            // ── تجربة 3: إضافة فرق (ب) (تمرير SynthesisCallback حقيقي) ──
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val trial3 = executeVoiceLoadTrial(
-                label = "3) فرق (ب): تمرير SynthesisCallback حقيقي (cb!=null)",
-                trialDir = exactDir,
-                speaker = effectiveSpeaker,
-                iso3 = iso3,
-                registration = reg10709,
-                voice = voice,
-                voiceMode = "MODE=prep_hd",
-                probeText = "مرحبا",
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                useRealCallback = true,
-                trailingSlash = true,
-                callSetLicense = false,
-                enableSetLog = false,
-                forceCallVoice = true,
-                callPreStopShutdown = false
-            )
-            trialsList.add(trial3)
-            recordTrialProgress(trial3)
-
-            // ── تجربة 4: إضافة فرق (ج) (تغيير الترتيب إلى LANG_VOICE_UTF8) ──
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val trial4 = executeVoiceLoadTrial(
-                label = "4) فرق (ج): تغيير الترتيب إلى LANG_VOICE_UTF8",
-                trialDir = exactDir,
-                speaker = effectiveSpeaker,
-                iso3 = iso3,
-                registration = reg10709,
-                voice = voice,
-                voiceMode = "MODE=prep_hd",
-                probeText = "مرحبا",
-                order = AcapelaSequenceOrder.LANG_VOICE_UTF8,
-                useRealCallback = false,
-                trailingSlash = true,
-                callSetLicense = false,
-                enableSetLog = false,
-                forceCallVoice = true,
-                callPreStopShutdown = false
-            )
-            trialsList.add(trial4)
-            recordTrialProgress(trial4)
-
-            // ── تجربة 5: إضافة فرق (د) (استدعاء nSetLicense و nSetLog) ──
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val trial5 = executeVoiceLoadTrial(
-                label = "5) فرق (د): استدعاء nSetLicense و nSetLog",
-                trialDir = exactDir,
-                speaker = effectiveSpeaker,
-                iso3 = iso3,
-                registration = reg10709,
-                voice = voice,
-                voiceMode = "MODE=prep_hd",
-                probeText = "مرحبا",
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                useRealCallback = false,
-                trailingSlash = true,
-                callSetLicense = true,
-                enableSetLog = true,
-                forceCallVoice = true,
-                callPreStopShutdown = false
-            )
-            trialsList.add(trial5)
-            recordTrialProgress(trial5)
-
-            // ── تجربة 6: إضافة فرق (هـ) (نسخة ar_sa_hd_...bvcu) ──
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val bvcuOrig = File(exactDir, "salma_22k_lf.bvcu")
-            val copyArSa = File(exactDir, "ar_sa_hd_salma_22k_lf.bvcu")
-            if (bvcuOrig.exists() && !copyArSa.exists()) {
-                runCatching { bvcuOrig.copyTo(copyArSa, overwrite = true) }
-            }
-            val trial6 = executeVoiceLoadTrial(
-                label = "6) فرق (هـ): إضافة نسخة ar_sa_hd_...bvcu في التجهيز",
-                trialDir = exactDir,
-                speaker = effectiveSpeaker,
-                iso3 = iso3,
-                registration = reg10709,
-                voice = voice,
-                voiceMode = "MODE=prep_hd",
-                probeText = "مرحبا",
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                useRealCallback = false,
-                trailingSlash = true,
-                callSetLicense = false,
-                enableSetLog = false,
-                forceCallVoice = true,
-                callPreStopShutdown = false
-            )
-            trialsList.add(trial6)
-            recordTrialProgress(trial6)
-            copyArSa.delete()
-
-            // ── تجربة 7: إضافة فرق (و) (استدعاء nStop و nShutdown) ──
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val trial7 = executeVoiceLoadTrial(
-                label = "7) فرق (و): استدعاء nStop و nShutdown قبل المحاولة",
-                trialDir = exactDir,
-                speaker = effectiveSpeaker,
-                iso3 = iso3,
-                registration = reg10709,
-                voice = voice,
-                voiceMode = "MODE=prep_hd",
-                probeText = "مرحبا",
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                useRealCallback = false,
-                trailingSlash = true,
-                callSetLicense = false,
-                enableSetLog = false,
-                forceCallVoice = true,
-                callPreStopShutdown = true
-            )
-            trialsList.add(trial7)
-            recordTrialProgress(trial7)
-
-            // ── تجربة 8: إضافة فرق (ز) (استخدام AcapelaMetadataCodec) ──
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val trial8 = executeVoiceLoadTrial(
-                label = "8) فرق (ز): استخدام AcapelaMetadataCodec على param",
-                trialDir = exactDir,
-                speaker = effectiveSpeaker,
-                iso3 = iso3,
-                registration = regToUse,
-                voice = voice,
-                voiceMode = "MODE=prep_hd",
-                probeText = "مرحبا",
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                useRealCallback = false,
-                trailingSlash = true,
-                callSetLicense = false,
-                enableSetLog = false,
-                forceCallVoice = true,
-                callPreStopShutdown = false
-            )
-            trialsList.add(trial8)
-            recordTrialProgress(trial8)
-
             // فحص النجاح وحفظ ملف WAV للنطق التجريبي "مرحبا"
             val winningTrial = trialsList.firstOrNull { it.isSuccess }
             lastTrialSucceeded.set(winningTrial != null)
@@ -2653,6 +2553,11 @@ internal class AcapelaHostSession(
                         "acapela_marhaba_trial.wav"
                     )
                     AcapelaVoiceDiagnostics.savePcmAsWav(wavFile, pcmData)
+                    val wav10723 = File(
+                        context.cacheDir,
+                        "acapela_marhaba_10723.wav"
+                    )
+                    AcapelaVoiceDiagnostics.savePcmAsWav(wav10723, pcmData)
                     val wav10722 = File(
                         context.cacheDir,
                         "acapela_marhaba_10722.wav"
@@ -2717,11 +2622,11 @@ internal class AcapelaHostSession(
             }
 
             val chosenTrial = winningTrial
-                ?: trialsList.firstOrNull { it.speakCode == 0 }
-                ?: trialOrigTree
+                ?: trialsList.firstOrNull { it.isSuccess }
+                ?: trialFullStage
 
             val literalResults = buildString {
-                appendLine("=== [نتائج مسارات نطق Acapela (بناء 10722)] ===")
+                appendLine("=== [نتائج مسارات نطق Acapela (بناء 10723)] ===")
                 trialsList.forEach { t ->
                     val ebStr = t.ebErrorCode?.let {
                         "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
@@ -2730,9 +2635,18 @@ internal class AcapelaHostSession(
                         "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
                     } ?: "0"
                     val sNlpStr = t.sNlpCode?.toString() ?: "0"
+                    val trialDirObj = File(t.path.trimEnd('/', '\\'))
+                    val fileInventory = AcapelaVoiceDiagnostics
+                        .getDetailedDirectoryInventory(trialDirObj)
                     appendLine("────────────────────────────────────────")
                     appendLine("المسار: ${t.method}")
                     appendLine("  - المعامل الحرفي لـ nInit: \"${t.path}\"")
+                    appendLine(
+                        "  - قائمة ملفات المجلد (${fileInventory.size} ملف):"
+                    )
+                    fileInventory.forEach { line ->
+                        appendLine("    * $line")
+                    }
                     appendLine("  - رمز إرجاع nInit: ${t.initCode}")
                     appendLine("  - رمز إرجاع nSetVoiceMode: ${t.modeCode}")
                     appendLine(
@@ -2750,14 +2664,19 @@ internal class AcapelaHostSession(
                             "nSpeak=${t.speakCode} | PCM=${t.samples}"
                     )
                     appendLine(
-                        "  - آخر 40 سطراً من سجل " +
-                            "acattsandroid-extended-native:"
+                        "  - هل تحقق معيار النجاح (بناء 10723): " +
+                            if (t.isSuccess) "نعم (ناجح)" else "لا (فاشل)"
                     )
-                    val last40 = t.nativeLines.takeLast(40)
-                    if (last40.isEmpty()) {
+                    appendLine(
+                        "  - كل أسطر سجل المكتبة الأصلية حرفياً " +
+                            "(${t.nativeLines.size} سطر):"
+                    )
+                    if (t.nativeLines.isEmpty()) {
                         appendLine("    (سجل المكتبة فارغ)")
                     } else {
-                        last40.forEach { line -> appendLine("    $line") }
+                        t.nativeLines.forEach { line ->
+                            appendLine("    $line")
+                        }
                     }
                     if (t.ebErrorCode != 0 || t.nlpErrorCode != 0 ||
                         t.speakCode != 0
@@ -2795,9 +2714,9 @@ internal class AcapelaHostSession(
             val outcome = if (winningTrial != null) {
                 "نجاح واعتماد (${winningTrial.method}) - تم حفظ WAV"
             } else {
-                "فشل كافة محاولات نطق Acapela"
+                "فشل كافة مسارات نطق Acapela حسب معيار 10723"
             }
-            val topSummary = "[تشخيص مسارات Acapela 10722] " +
+            val topSummary = "[تشخيص مسارات Acapela 10723] " +
                 "$trialSummary | النتيجة: $outcome"
             Log.i(TAG, topSummary)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
@@ -2915,6 +2834,8 @@ internal class AcapelaHostSession(
                     }
                 }.trimEnd()
                 reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10723.txt")
+                    .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10722.txt")
                     .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10721.txt")

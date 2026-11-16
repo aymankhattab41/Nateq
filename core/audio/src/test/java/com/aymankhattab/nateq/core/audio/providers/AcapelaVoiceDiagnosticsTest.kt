@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.providers
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -734,5 +735,147 @@ class AcapelaVoiceDiagnosticsTest {
         assertTrue(extracted.contains("/data/files/NLP/ar_sa.dca"))
         assertTrue(extracted.contains("0x00169729"))
         assertTrue(extracted.contains("salma_22k_lf.bvcu"))
+    }
+
+    @Test
+    fun evaluateTrialSuccess10723_checksExpectedConditions() {
+        val cleanLogs = listOf(
+            "loading done",
+            "voice ready",
+            "speak started"
+        )
+        val withLangErr = listOf(
+            "after initLanguageDbaNewEx",
+            "Error init language",
+            "check_userdico : load error"
+        )
+        val withVoiceNotLoaded = listOf(
+            "voice Salma (0) not loaded",
+            "tts_function_speak error"
+        )
+
+        // نجاح حقيقي
+        assertTrue(
+            AcapelaVoiceDiagnostics.evaluateTrialSuccess10723(
+                speakCode = 0,
+                samples = 16000L,
+                nativeLines = cleanLogs
+            )
+        )
+
+        // فشل بوجود سطر Error init language
+        assertFalse(
+            AcapelaVoiceDiagnostics.evaluateTrialSuccess10723(
+                speakCode = 0,
+                samples = 16000L,
+                nativeLines = withLangErr
+            )
+        )
+
+        // فشل بوجود سطر not loaded
+        assertFalse(
+            AcapelaVoiceDiagnostics.evaluateTrialSuccess10723(
+                speakCode = 0,
+                samples = 16000L,
+                nativeLines = withVoiceNotLoaded
+            )
+        )
+
+        // فشل بعودة speakCode = -2
+        assertFalse(
+            AcapelaVoiceDiagnostics.evaluateTrialSuccess10723(
+                speakCode = -2,
+                samples = 16000L,
+                nativeLines = cleanLogs
+            )
+        )
+
+        // فشل بعدم إنتاج عينات PCM
+        assertFalse(
+            AcapelaVoiceDiagnostics.evaluateTrialSuccess10723(
+                speakCode = 0,
+                samples = 0L,
+                nativeLines = cleanLogs
+            )
+        )
+    }
+
+    @Test
+    fun stageFull_withFlatNlp_copiesAllFilesFlatAndExcludesForbidden() {
+        val root = tempDir()
+        File(root, "salma_22k_lf.bvcu").writeBytes(ByteArray(100))
+        File(root, "salma_22k_lf.bvcu.nuul216vqfp").writeBytes(ByteArray(50))
+        File(root, "ar_sa_hd_salma_22k_lf.bvcu").writeBytes(ByteArray(80))
+        File(root, "ar_sa_hd_salma_22k_lf.bvcu.inf").writeText("speaker=Salma")
+        File(root, "0x00169729").writeBytes(ByteArray(61))
+        File(root, "config.yaml").writeText("name: Salma")
+        val nlpDir = File(root, "NLP").apply { mkdirs() }
+        File(nlpDir, "ar_sa.bnx").writeBytes(ByteArray(100))
+        File(nlpDir, "ar_sa.dca").writeBytes(ByteArray(200))
+        val dicosDir = File(root, "userdicos").apply { mkdirs() }
+        File(dicosDir, "ara-sau.userdico").writeBytes(ByteArray(30))
+
+        val staged = AcapelaVoiceDiagnostics.stageFull(
+            context = context,
+            sourceDir = root,
+            flatNlp = true
+        )
+
+        assertTrue(File(staged, "salma_22k_lf.bvcu").exists())
+        assertTrue(File(staged, "ar_sa_hd_salma_22k_lf.bvcu.inf").exists())
+        assertTrue(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
+        assertTrue(File(staged, "0x00169729").exists())
+        assertTrue(File(staged, "config.yaml").exists())
+        assertTrue(File(staged, "userdicos/ara-sau.userdico").exists())
+        assertTrue(File(staged, "ar_sa.bnx").exists())
+        assertTrue(File(staged, "ar_sa.dca").exists())
+
+        // التأكد من استبعاد المجلد الفرعي والملفات الممنوعة
+        assertFalse(File(staged, "NLP").exists())
+        assertFalse(File(staged, "salma_22k_lf.bvcu.nuul216vqfp").exists())
+        assertFalse(File(staged, "ar_sa_hd_salma_22k_lf.bvcu").exists())
+
+        val iniText = File(staged, "ar_sa_hd_salma_22k_lf.ini").readText()
+        assertTrue(iniText.contains("MODE=prep_hd"))
+        assertTrue(iniText.contains("#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]"))
+    }
+
+    @Test
+    fun stageFull_withSubdirNlp_placesNlpFilesInSubdirectory() {
+        val root = tempDir()
+        File(root, "salma_22k_lf.bvcu").writeBytes(ByteArray(100))
+        File(root, "ar_sa_hd_salma_22k_lf.bvcu.inf").writeText("speaker=Salma")
+        File(root, "0x00169729").writeBytes(ByteArray(61))
+        File(root, "config.yaml").writeText("name: Salma")
+        val nlpDir = File(root, "NLP").apply { mkdirs() }
+        File(nlpDir, "ar_sa.bnx").writeBytes(ByteArray(100))
+        File(nlpDir, "ar_sa.dca").writeBytes(ByteArray(200))
+        val dicosDir = File(root, "userdicos").apply { mkdirs() }
+        File(dicosDir, "ara-sau.userdico").writeBytes(ByteArray(30))
+
+        val staged = AcapelaVoiceDiagnostics.stageFull(
+            context = context,
+            sourceDir = root,
+            flatNlp = false
+        )
+
+        assertTrue(File(staged, "salma_22k_lf.bvcu").exists())
+        assertTrue(File(staged, "NLP/ar_sa.bnx").exists())
+        assertTrue(File(staged, "NLP/ar_sa.dca").exists())
+        assertFalse(File(staged, "ar_sa.bnx").exists())
+        assertFalse(File(staged, "ar_sa.dca").exists())
+    }
+
+    @Test
+    fun getDetailedDirectoryInventory_returnsExpectedEntries() {
+        val folder = tempDir()
+        File(folder, "test1.txt").writeBytes(ByteArray(15))
+        val sub = File(folder, "sub").apply { mkdirs() }
+        File(sub, "test2.txt").writeBytes(ByteArray(25))
+
+        val inventory = AcapelaVoiceDiagnostics
+            .getDetailedDirectoryInventory(folder)
+        assertTrue(inventory.any { it.contains("test1.txt (15 بايت)") })
+        assertTrue(inventory.any { it.contains("sub/test2.txt (25 بايت)") })
     }
 }
