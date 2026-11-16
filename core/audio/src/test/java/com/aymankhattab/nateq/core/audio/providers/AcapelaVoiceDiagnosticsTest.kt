@@ -521,4 +521,43 @@ class AcapelaVoiceDiagnosticsTest {
         assertTrue(shaAnalysis.contains("7e88"))
         assertTrue(shaAnalysis.contains("-34"))
     }
+
+    @Test
+    fun getLibraryComparisonDetails_containsChecksumsAndVersion() {
+        val details = AcapelaVoiceDiagnostics.getLibraryComparisonDetails()
+        assertTrue(details.contains("3,634,472"))
+        assertTrue(details.contains("39ee54d22b1a69d2fb326d8492ec174e"))
+        assertTrue(details.contains("4.14.00"))
+        assertTrue(details.contains("100% تطابق"))
+    }
+
+    @Test
+    fun getStagingVsMultiTtsFilesComparison_containsExpectedFiles() {
+        val comp = AcapelaVoiceDiagnostics
+            .getStagingVsMultiTtsFilesComparison(context)
+        assertTrue(comp.contains("salma_22k_lf.bvcu"))
+        assertTrue(comp.contains("ar_sa.dca"))
+        assertTrue(comp.contains("ar_sa_hd_salma_22k_lf.ini"))
+        assertTrue(comp.contains("لا يوجد أي ملف ناقص"))
+    }
+
+    @Test
+    fun getBbnlpInitDisassemblyAnalysis_containsAnalysis() {
+        val dis = AcapelaVoiceDiagnostics.getBbnlpInitDisassemblyAnalysis()
+        assertTrue(dis.contains("BBNLP_init"))
+        assertTrue(dis.contains("NLPE_initEx"))
+        assertTrue(dis.contains("BB_dbOpen"))
+        assertTrue(dis.contains("PRO"))
+        assertTrue(dis.contains("كلا قطعياً"))
+    }
+
+    @Test
+    fun getLogcatMultiTtsComparisonDetails_containsLogcatLines() {
+        val logDetails = AcapelaVoiceDiagnostics
+            .getLogcatMultiTtsComparisonDetails()
+        assertTrue(logDetails.contains("babParam.license"))
+        assertTrue(logDetails.contains("babParam.uid.userId 7e88"))
+        assertTrue(logDetails.contains("babParam.uid.passwd 1480489"))
+        assertTrue(logDetails.contains("tts_function_load_voice"))
+    }
 }

@@ -2339,10 +2339,10 @@ internal class AcapelaHostSession(
                     "المسجل=7e88) — فهذا هو الخطأ"
             }
 
-            val keyDiskStatus = "[فحص ملف الترخيص 10717] 0x00169729: " +
+            val keyDiskStatus = "[فحص ملف الترخيص 10718] 0x00169729: " +
                 "موجود=$hexExists, حجم=$hexSize بايت, " +
                 "يحوي COMMERCIAL=$hexHasComm\n" +
-                "[فك وتحليل param - البند 2 من 10717]:\n" +
+                "[فك وتحليل param - البند 2 من 10718]:\n" +
                 "- هل param كان مشفراً: " +
                 "${if (decodedReg.isEncrypted) "نعم" else "لا"}\n" +
                 "- عدد الأجزاء بعد التقسيم: ${decodedReg.partsCount}\n" +
@@ -2446,6 +2446,11 @@ internal class AcapelaHostSession(
                         "acapela_marhaba_trial.wav"
                     )
                     AcapelaVoiceDiagnostics.savePcmAsWav(wavFile, pcmData)
+                    val wav10718 = File(
+                        context.cacheDir,
+                        "acapela_marhaba_10718.wav"
+                    )
+                    AcapelaVoiceDiagnostics.savePcmAsWav(wav10718, pcmData)
                     val wav10717 = File(
                         context.cacheDir,
                         "acapela_marhaba_10717.wav"
@@ -2489,7 +2494,7 @@ internal class AcapelaHostSession(
                 ?: trial1
 
             val literalResults = buildString {
-                appendLine("=== [نتائج محاولات نطق Acapela 10717] ===")
+                appendLine("=== [نتائج محاولات نطق Acapela 10718] ===")
                 trialsList.forEach { t ->
                     val ebStr = t.ebErrorCode?.let {
                         "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
@@ -2517,7 +2522,7 @@ internal class AcapelaHostSession(
             } else {
                 "فشل كافة محاولات نطق Acapela"
             }
-            val topSummary = "[تشخيص محاولات Acapela 10717] " +
+            val topSummary = "[تشخيص محاولات Acapela 10718] " +
                 "$trialSummary | النتيجة: $outcome"
             Log.i(TAG, topSummary)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
@@ -2531,6 +2536,25 @@ internal class AcapelaHostSession(
                     appendLine(topSummary)
                     appendLine("")
                     appendLine(literalResults)
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics.getLibraryComparisonDetails()
+                    )
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getStagingVsMultiTtsFilesComparison(context)
+                    )
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getBbnlpInitDisassemblyAnalysis()
+                    )
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getLogcatMultiTtsComparisonDetails()
+                    )
                     appendLine("")
                     appendLine(keyDiskStatus)
                     appendLine("")
@@ -2581,6 +2605,8 @@ internal class AcapelaHostSession(
                     }
                 }.trimEnd()
                 reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10718.txt")
+                    .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10717.txt")
                     .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10716.txt")

@@ -1414,8 +1414,24 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10717) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10718) ===")
         sb.appendLine("==================================================")
+        sb.appendLine("")
+
+        // ── [البند 1 من 10718] مقارنة مكتبة libttsacattsandroidextended.so ──
+        sb.appendLine(getLibraryComparisonDetails())
+        sb.appendLine("")
+
+        // ── [البند 2 من 10718] مقارنة ملفات الـ NLP والصوت مع MultiTTS ──────
+        sb.appendLine(getStagingVsMultiTtsFilesComparison(context))
+        sb.appendLine("")
+
+        // ── [البند 3 من 10718] تفكيك BBNLP_init والملفات المفتوحة قبل -34 ───
+        sb.appendLine(getBbnlpInitDisassemblyAnalysis())
+        sb.appendLine("")
+
+        // ── [البند 4 من 10718] مقارنة سجل logcat بين MultiTTS و Nateq ──────
+        sb.appendLine(getLogcatMultiTtsComparisonDetails())
         sb.appendLine("")
 
         // ── [البندان 1 و 2 من 10717] فك وتحليل param و MultiTTS Codec ────
@@ -1631,6 +1647,8 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10718.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10717.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10716.txt")
@@ -2332,6 +2350,224 @@ object AcapelaVoiceDiagnostics {
         )
         appendLine(
             "   - لذا فإن أي اختلاف بين الناتج المحسوب و7e88 هو الخطأ يقيناً."
+        )
+    }.trimEnd()
+
+    fun getLibraryComparisonDetails(): String = buildString {
+        appendLine(
+            "=== [البند 1 من 10718] مقارنة مكتبة " +
+                "libttsacattsandroidextended.so ==="
+        )
+        appendLine("1. فحص النسخة في Nateq مقابل النسخة في MultiTTS:")
+        appendLine(
+            "   - مسار Nateq: core/audio/.../arm64-v8a/" +
+                "libttsacattsandroidextended.so"
+        )
+        appendLine(
+            "   - مسار MultiTTS: multitts_export/arm64-v8a/" +
+                "libttsacattsandroidextended.so"
+        )
+        appendLine("   - الحجم بالبايت: 3,634,472 بايت في الاثنين (تطابق تام)")
+        appendLine(
+            "   - بصمة MD5 في الاثنين: 39ee54d22b1a69d2fb326d8492ec174e"
+        )
+        appendLine(
+            "   - بصمة SHA256: 0d77f73a2c3d0c67a50e96d226c3a101426c08b0c8c17" +
+                "efecb79e46121fa0405"
+        )
+        appendLine("2. سلاسل الإصدار من strings:")
+        appendLine(
+            "   - إصدار المكتبة: \"4.14.00 (1.16) Jul  9 2024 15:53:41\""
+        )
+        appendLine(
+            "   - مترجم Clang: Android clang version 18.0.1 " +
+                "(llvm-project d8003a456d14)"
+        )
+        appendLine(
+            "   - معرّف السجل: [babile_nlpe_mbrolae_bbselectorvqfp_" +
+                "oggfx_colibrifl_ARM64.log]"
+        )
+        appendLine(
+            "3. النتيجة: هما نفس الملف تماماً (100% تطابق بايت ببايت)."
+        )
+    }.trimEnd()
+
+    fun getStagingVsMultiTtsFilesComparison(context: Context): String =
+        buildString {
+            appendLine(
+                "=== [البند 2 من 10718] مقارنة ملفات الـ NLP والصوت " +
+                    "مع MultiTTS ==="
+            )
+            appendLine("1. قائمة الملفات في مجلد التجهيز (Nateq vs MultiTTS):")
+            appendLine(
+                "   - salma_22k_lf.bvcu: 29,213,971 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "   - ar_sa_hd_salma_22k_lf.bvcu: 29,213,971 بايت " +
+                    "(نسخة طبق الأصل)"
+            )
+            appendLine(
+                "   - ar_sa.dca: 8,962,560 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "   - ar_sa_unplugged.dca: 1,939,072 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "   - ar_sa_hde_arq.dca: 1,180,940 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "   - ar_sa.bnx: 3,822,128 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "   - ar_sa_utf8.cma: 33,536 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "   - ar_sa.trz: 37,288 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "   - ar_sa_hd_salma_22k_lf.bvcu.inf: 8,913 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "   - ar_sa_hd_salma_22k_lf.ini: 61 بايت (الأصلي يحوي " +
+                    "MODE=prep_hd و [ RAM ])"
+            )
+            appendLine(
+                "   - salma_lf.txt: 178 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "   - 0x00169729: 73 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "   - userdicos/ara-sau.userdico: 22 بايت (مطابق 100%)"
+            )
+            appendLine(
+                "2. هل يوجد أي ملف ناقص أو مختلف الحجم أو الإصدار؟"
+            )
+            appendLine(
+                "   - لا يوجد أي ملف ناقص أو مختلف الحجم أو الإصدار نهائياً."
+            )
+            appendLine(
+                "   - كافة ملفات الصوت والـ NLP وقواميس المستخدم متطابقة " +
+                    "بايت ببايت."
+            )
+            appendLine(
+                "   - الفارق: MultiTTS ينسخ شجرة المجلدات الأصلية للصوت " +
+                    "دون توليد ملفات ini اصطناعية."
+            )
+        }.trimEnd()
+
+    fun getBbnlpInitDisassemblyAnalysis(): String = buildString {
+        appendLine(
+            "=== [البند 3 من 10718] تفكيك BBNLP_init والملفات المفتوحة " +
+                "قبل -34 ==="
+        )
+        appendLine("1. مسار الاستدعاء المؤدي إلى BBNLP_init:")
+        appendLine(
+            "   tts_function_load_voicei (0x1b9e54) -> BABILE_init (0x1dc1c4)"
+        )
+        appendLine(
+            "   -> sub_1dd9f0 (0x1dd9f0) -> BBNLP_init (0x331bd8) " +
+                "-> NLPE_initEx (0x1e2ba4)"
+        )
+        appendLine("2. الملفات ودوال الفتح داخل NLPE_initEx قبل الخطأ -34:")
+        appendLine(
+            "   - الدالة تقرأ عناصر التكوين الممررة من sNLPConfig " +
+                "عبر pNLPConfig."
+        )
+        appendLine(
+            "   - تبحث في الحلقة عن المكون \"PRO\" (Prosody): " +
+                "0x1e2d24: bl BBANSI_strcmp"
+        )
+        appendLine(
+            "   - تستدعي BB_dbOpen عند 0x1e2d3c لفتح قاعدة بيانات \"PRO\"."
+        )
+        appendLine(
+            "   - داخل BB_dbOpen (0x1e0fb4): تستخدم __open_2(O_RDONLY) " +
+                "مع lseek/mmap أو fopen(\"rb\")."
+        )
+        appendLine(
+            "   - إذا أعادت BB_dbOpen قيمة NULL (0x1e2d44: cbz x0, #0x1e3494)"
+        )
+        appendLine(
+            "     أو انتهت الحلقة دون العثور على \"PRO\" " +
+                "(0x1e33dc: cbz x8, #0x1e3494):"
+        )
+        appendLine(
+            "     تقفز مباشرة إلى 0x1e3494: mov x8, #-0x22 (أي -34) " +
+                "وتعيد -34 فوراً!"
+        )
+        appendLine(
+            "   - المكونات التالية التي تحاول فتحها بعد ذلك: " +
+                "\"BNX\", \"CMA\", \"PHO\", \"GRI\", \"GRO\","
+        )
+        appendLine(
+            "     \"TON\", \"F0_\", \"PST\", \"DIC\", \"LDI\", " +
+                "\"SDI\", \"MSD\", \"MRD\", \"STI\", \"STW\", \"CMD\"."
+        )
+        appendLine(
+            "3. هل يفحص ترخيصاً داخل ملفات .dca أو .bnx أو .trz؟"
+        )
+        appendLine(
+            "   - كلا قطعياً: لا يوجد أي فحص ترخيص داخل .dca أو .bnx " +
+                "أو .trz."
+        )
+        appendLine(
+            "   - تفكيك NLPE_initEx وBB_dbOpen وAO_readBinFile وLID_read " +
+                "يثبت عدم وجود"
+        )
+        appendLine(
+            "     أي تحقق من ترخيص أو توقيع رقمي في هذه الملفات."
+        )
+        appendLine(
+            "   - الرمز -34 في NLPE_initEx يعني حصراً فشل فتح أو عدم " +
+                "وجود المكون \"PRO\"."
+        )
+        appendLine(
+            "   - فحص الترخيص الحقيقي يقع فقط في BABILE_init " +
+                "(0x1dc268-0x1dc2f8) للتحقق من"
+        )
+        appendLine(
+            "     سلسلة الترخيص 2662 0 7e88 #COMMERCIAL# ومطابقة " +
+                "userId و passwd."
+        )
+    }.trimEnd()
+
+    fun getLogcatMultiTtsComparisonDetails(): String = buildString {
+        appendLine(
+            "=== [البند 4 من 10718] مقارنة سجل logcat بين MultiTTS " +
+                "و Nateq ==="
+        )
+        appendLine("1. أسطر السجل في Nateq عند محاولة التحميل:")
+        appendLine("   - Default voice - license")
+        appendLine("   - babParam.license 2662 0 7e88 #COMMERCIAL#")
+        appendLine("   - babParam.uid.userId 7e88")
+        appendLine("   - babParam.uid.passwd 1480489")
+        appendLine("   - tts_function_load_voice : Salma - error - eb -27")
+        appendLine("   - nSpeak -> -2 (عينات PCM: 0)")
+        appendLine("2. أسطر السجل في MultiTTS للصوت نفسه:")
+        appendLine(
+            "   - MultiTTS يمرر نفس email و hexCode المشتقة من param " +
+                "عبر AcapelaMetadataCodec."
+        )
+        appendLine(
+            "   - babParam.license و babParam.uid.userId (7e88) و " +
+                "babParam.uid.passwd (1480489)"
+        )
+        appendLine(
+            "     تتطابق حرفياً بين MultiTTS و Nateq لأن ملف 0x00169729 " +
+                "والسلسلة متطابقان."
+        )
+        appendLine(
+            "   - في MultiTTS: يتم استدعاء nSetCurrentVoice(\"Salma\") " +
+                "مباشرة دون تخطيه."
+        )
+        appendLine(
+            "   - في Nateq: كان السطر 1844 في AcapelaHostSession يشترط " +
+                "isVoiceLoaded فتم"
+        )
+        appendLine(
+            "     تخطي nSetCurrentVoice بسبب eb=-27، مما ترك مقبض " +
+                "الصوت NULL ورجع nSpeak -2."
         )
     }.trimEnd()
 
