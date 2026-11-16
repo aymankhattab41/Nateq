@@ -664,13 +664,19 @@ class AcapelaVoiceDiagnosticsTest {
                 sourceDir = salma
             )
             assertTrue(File(staged, "salma_22k_lf.bvcu").exists())
-            assertTrue(File(staged, "0x00169729").exists())
+            assertTrue(
+                File(staged, "ar_sa_hd_salma_22k_lf.bvcu.inf").exists()
+            )
             assertTrue(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
             val ini = File(staged, "ar_sa_hd_salma_22k_lf.ini")
             val iniText = ini.readText()
             assertTrue(iniText.contains("MODE=prep_hd"))
             assertTrue(iniText.contains("[ RAM ]"))
-            // استبعاد النسخة المكررة و nuul
+            // استبعاد الملفات الزائدة وغير المطلوبة
+            assertEquals(
+                false,
+                File(staged, "0x00169729").exists()
+            )
             assertEquals(
                 false,
                 File(staged, "ar_sa_hd_salma_22k_lf.bvcu").exists()
@@ -705,5 +711,28 @@ class AcapelaVoiceDiagnosticsTest {
         assertTrue(diag.contains("139 بايت"))
         assertTrue(diag.contains("73 بايت"))
         assertTrue(diag.contains("لم يقم أي كود في ناطق"))
+    }
+
+    @Test
+    fun getEvidenceReportFor10708And10709_containsRequiredSections() {
+        val rep = AcapelaVoiceDiagnostics.getEvidenceReportFor10708And10709()
+        assertTrue(rep.contains("10722"))
+        assertTrue(rep.contains("10708"))
+        assertTrue(rep.contains("10709"))
+        assertTrue(rep.contains("acapela_stage_v2"))
+        assertTrue(rep.contains("لا يوجد أي دليل مكتوب"))
+    }
+
+    @Test
+    fun extractFilesFromLogLines_extractsKnownExtensions() {
+        val lines = listOf(
+            "opening ar_sa.dca at path /data/files/NLP/ar_sa.dca",
+            "failed opening 0x00169729 error",
+            "reading salma_22k_lf.bvcu into RAM"
+        )
+        val extracted = AcapelaVoiceDiagnostics.extractFilesFromLogLines(lines)
+        assertTrue(extracted.contains("/data/files/NLP/ar_sa.dca"))
+        assertTrue(extracted.contains("0x00169729"))
+        assertTrue(extracted.contains("salma_22k_lf.bvcu"))
     }
 }
