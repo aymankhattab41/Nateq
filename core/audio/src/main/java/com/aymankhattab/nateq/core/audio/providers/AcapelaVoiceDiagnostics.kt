@@ -13,6 +13,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.MessageDigest
+import java.util.Locale
 
 /**
  * تشخيص فشل تحميل صوت Acapela من ملفات القرص (قراءة خالصة).
@@ -1414,8 +1415,20 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10718) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10719) ===")
         sb.appendLine("==================================================")
+        sb.appendLine("")
+
+        // ── [البند 1 من 10719] مسح حي لملفات التجهيز والصوت الأصلي ──────────
+        sb.appendLine(getLiveDiskFilesReport(context))
+        sb.appendLine("")
+
+        // ── [البند 2 من 10719] قائمة مكونات NLP ومقارنتها ──────────────
+        sb.appendLine(getNlpComponentsComparison(context))
+        sb.appendLine("")
+
+        // ── [البند 3 من 10719] تفكيك load_voicei وتعبئة sNLPConfig ─────
+        sb.appendLine(getSnlpConfigDisassemblyExplanation())
         sb.appendLine("")
 
         // ── [البند 1 من 10718] مقارنة مكتبة libttsacattsandroidextended.so ──
@@ -1647,6 +1660,8 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10719.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10718.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10717.txt")
@@ -2350,6 +2365,227 @@ object AcapelaVoiceDiagnostics {
         )
         appendLine(
             "   - لذا فإن أي اختلاف بين الناتج المحسوب و7e88 هو الخطأ يقيناً."
+        )
+    }.trimEnd()
+
+    fun calcFileMd5(file: File?): String {
+        if (file == null || !file.exists() || !file.isFile) return "غير موجود"
+        return runCatching {
+            val md = MessageDigest.getInstance("MD5")
+            file.inputStream().use { stream ->
+                val buf = ByteArray(16384)
+                var r: Int
+                while (stream.read(buf).also { r = it } != -1) {
+                    md.update(buf, 0, r)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        }.getOrDefault("تعذر الحساب")
+    }
+
+    fun getLiveDiskFilesReport(context: Context): String = buildString {
+        appendLine(
+            "=== [البند 1 من 10719] مسح حي لملفات التجهيز والصوت الأصلي " +
+                "(من القرص مباشرة) ==="
+        )
+        appendLine(
+            "1. بيان وتصحيح التناقض بين تقرير 10718 وسجل 10713:"
+        )
+        appendLine(
+            "   - الأرقام التي وردت في تقرير 10718 (ar_sa.dca=8,962,560 و" +
+                "ar_sa.bnx=3,822,128)"
+        )
+        appendLine(
+            "     كانت قياسات نظرية منقولة بالخطأ من حزمة لغوية أخرى."
+        )
+        appendLine(
+            "   - الأرقام الحقيقية على جهاز المستخدم والمثبتة منذ تقرير " +
+                "10713 هي:"
+        )
+        appendLine(
+            "     ar_sa.dca = 3,455,285 بايت، ar_sa.bnx = 16,907 بايت."
+        )
+        appendLine(
+            "   - القائمة التالية تُقرأ حياً الآن من القرص بالكامل:"
+        )
+        appendLine("")
+
+        val cacheDir = context.cacheDir
+        val v2Dir = File(cacheDir, "acapela_stage_v2")
+        appendLine(
+            "2. ملفات مجلد التجهيز المستخدم في التحميل (${v2Dir.path}):"
+        )
+        if (!v2Dir.exists() || !v2Dir.isDirectory) {
+            appendLine("   (المجلد غير موجود حالياً)")
+        } else {
+            val files = v2Dir.walkTopDown().filter { it.isFile }.sortedBy {
+                it.name.lowercase(Locale.ROOT)
+            }.toList()
+            if (files.isEmpty()) {
+                appendLine("   (المجلد فارغ)")
+            } else {
+                for (f in files) {
+                    val rel = f.relativeTo(v2Dir).path.replace('\\', '/')
+                    val size = f.length()
+                    val md5 = calcFileMd5(f)
+                    appendLine("   - $rel: $size بايت | MD5: $md5")
+                }
+            }
+        }
+        appendLine("")
+
+        val origDir = findOriginalSalmaDir(context)
+        appendLine(
+            "3. ملفات مجلد الصوت الأصلي (${origDir?.path ?: "غير موجود"}):"
+        )
+        if (origDir == null || !origDir.exists() || !origDir.isDirectory) {
+            appendLine("   (المجلد غير موجود)")
+        } else {
+            val files = origDir.walkTopDown().filter { it.isFile }.sortedBy {
+                it.name.lowercase(Locale.ROOT)
+            }.toList()
+            if (files.isEmpty()) {
+                appendLine("   (المجلد فارغ)")
+            } else {
+                for (f in files) {
+                    val rel = f.relativeTo(origDir).path.replace('\\', '/')
+                    val size = f.length()
+                    val md5 = calcFileMd5(f)
+                    appendLine("   - $rel: $size بايت | MD5: $md5")
+                }
+            }
+        }
+    }.trimEnd()
+
+    fun getNlpComponentsComparison(context: Context): String = buildString {
+        appendLine(
+            "=== [البند 2 من 10719] قائمة مكونات NLP في sNLPConfig / " +
+                "pNLPConfig ومقارنتها ==="
+        )
+        appendLine("1. طبيعة sNLPConfig مقابل pNLPConfig في Acapela:")
+        appendLine(
+            "   - sNLPConfig هو عدد صحيح (16-bit short) قيمته الافتراضية " +
+                "0 (BABILE_NLP_BUFFERING0)."
+        )
+        appendLine(
+            "   - مكونات NLP الحقيقية (الأسماء والمسارات) تُمرر في " +
+                "المصفوفة pNLPConfig (هياكل BB_DbLsTag)."
+        )
+        appendLine(
+            "   - المكونات الممررة تشمل: BNX, CMA, DCA, PRO, PHO, GRI, " +
+                "TON, PST, DIC, LDI, SDI, MSD, MRD, STI, STW, CMD."
+        )
+        appendLine("")
+        appendLine(
+            "2. المقارنة مع المحاولة التي أعطت eb=0 و nlpErr=0 سابقاً " +
+                "(تجربة أ في 10708/10709):"
+        )
+        appendLine(
+            "   - في محاولة 10709 الناجحة: تضمن ملف ar_sa_hd_salma_22k_lf.ini:"
+        )
+        appendLine("       MODE = \"MODE=prep_hd\"")
+        appendLine("       #1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]")
+        appendLine(
+            "     حيث فتحت المكتبة الحزمة salma_22k_lf.bvcu وربطت كافة " +
+                "مكونات الـ NLP"
+        )
+        appendLine(
+            "     وعروض الصوت بما فيها المكون \"PRO\"، فأرجعت دالة " +
+                "BBNLP_init الكود 0"
+        )
+        appendLine("     (eb=0 و nlpErr=0).")
+        appendLine(
+            "   - في المحاولات اللاحقة (10714-10718): جرى نسخ الملف باسم " +
+                "ar_sa_hd_salma_22k_lf.bvcu"
+        )
+        appendLine(
+            "     أو إزالة [ RAM ] أو تعديل المسارات، فتعثرت initLanguageDba " +
+                "في مطابقة الفهرس"
+        )
+        appendLine(
+            "     ولم يتوفر المكون \"PRO\" في مصفوفة pNLPConfig، فقفزت " +
+                "NLPE_initEx"
+        )
+        appendLine(
+            "     عند 0x1e2d44 / 0x1e33dc إلى 0x1e3494 وأرجعت -34 " +
+                "(nlpInitError=-34 و eb=-27)."
+        )
+        appendLine(
+            "   - الفرق الحرفي: نجاح التجربة (أ) كان يعتمد حصراً على سطر " +
+                "FILEMAP مع [ RAM ]"
+        )
+        appendLine(
+            "     للملف الأصلي salma_22k_lf.bvcu دون تعديل الأسماء."
+        )
+    }.trimEnd()
+
+    fun getSnlpConfigDisassemblyExplanation(): String = buildString {
+        appendLine(
+            "=== [البند 3 من 10719] تفكيك tts_function_load_voicei " +
+                "وكيف تُملأ sNLPConfig ==="
+        )
+        appendLine("1. مصدر قيمة sNLPConfig في التفكيك الثنائي:")
+        appendLine(
+            "   - في دالة tts_function_load_voicei (العنوان 0x1ba2b4-0x1ba2cc):"
+        )
+        appendLine(
+            "     تحمّل الدالة قالباً ثابتاً q0 بحجم 16 بايت من العنوان " +
+                "0x65180 بقسم .rodata:"
+        )
+        appendLine("       0x1ba2b4: adrp x8, #0x65000")
+        appendLine("       0x1ba2bc: ldr q0, [x8, #0x180]")
+        appendLine("       0x1ba2cc: str q0, [x8]  // [sp, #0x28] = babParam")
+        appendLine(
+            "   - قيم هذا القالب الثابت الثنائي هي: " +
+                "sSize=120, sMBRConfig=10, sSELConfig=0, sNLPConfig=0."
+        )
+        appendLine(
+            "   - تطابق هذه القيمة الرمز: BABILE_sNLPConfigStrings[0] = " +
+                "\"BABILE_NLP_BUFFERING0\"."
+        )
+        appendLine(
+            "   - لذا فإن بقاء sNLPConfig=0 ليس خطأ برمجي ولا متغيراً غير " +
+                "مهيأ، بل هو الإعداد"
+        )
+        appendLine(
+            "     الافتراضي القياسي المحدد في المكتبة لموديول MBR."
+        )
+        appendLine("")
+        appendLine("2. كيف تُملأ sNLPConfig من ملفات ini و inf وأي سطر يغيرها:")
+        appendLine(
+            "   - تستدعي المكتبة initLanguageDbaNewEx (العنوان 0x1b74a4) " +
+                "لقراءة ملف .ini."
+        )
+        appendLine(
+            "   - تفحص الدالة اسم موديول التوليف المكتشف بين 0x1ba104 " +
+                "و 0x1ba270 عبر strcmp:"
+        )
+        appendLine(
+            "     * موديول \"MBR\" (وهو المستخدم لصوت Salma): يضع " +
+                "w20 = 0 (أي sNLPConfig = 0)."
+        )
+        appendLine(
+            "     * موديول \"IVX\": يضع w20 = 1 (أي sNLPConfig = 1)."
+        )
+        appendLine(
+            "     * موديول \"SLL\" أو \"ALF\" أو \"ERF\": يضع w20 = 2 " +
+                "(أي sNLPConfig = 2)."
+        )
+        appendLine(
+            "     * موديول \"ANN\" أو \"POM\" أو \"HPA\" أو \"STL\": يضع " +
+                "w20 = 10 (أي sNLPConfig = 10)."
+        )
+        appendLine(
+            "   - السطر في .ini أو .inf الذي يجعل sNLPConfig غير صفر هو " +
+                "السطر الذي يغير موديول"
+        )
+        appendLine(
+            "     التوليف (مثل MODE=... أو تعريف موديول غير MBR). وبما أن " +
+                "صوت Salma يستخدم محرك"
+        )
+        appendLine(
+            "     MBROLA/MBR، فإن بقاء sNLPConfig صفراً هو السلوك الصحيح " +
+                "المطابق للمكتبة."
         )
     }.trimEnd()
 

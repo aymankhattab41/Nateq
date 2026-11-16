@@ -560,4 +560,44 @@ class AcapelaVoiceDiagnosticsTest {
         assertTrue(logDetails.contains("babParam.uid.passwd 1480489"))
         assertTrue(logDetails.contains("tts_function_load_voice"))
     }
+
+    @Test
+    fun calcFileMd5_returnsValidHash() {
+        val f = File(context.cacheDir, "test_md5.txt")
+        try {
+            f.writeText("hello world")
+            val md5 = AcapelaVoiceDiagnostics.calcFileMd5(f)
+            assertEquals("5eb63bbbe01eeed093cb22bb8f5acdc3", md5)
+        } finally {
+            f.delete()
+        }
+    }
+
+    @Test
+    fun getLiveDiskFilesReport_scansDirectory() {
+        val report = AcapelaVoiceDiagnostics.getLiveDiskFilesReport(context)
+        assertTrue(report.contains("10719"))
+        assertTrue(report.contains("acapela_stage_v2"))
+        assertTrue(report.contains("3,455,285"))
+    }
+
+    @Test
+    fun getNlpComponentsComparison_containsComparison() {
+        val comp = AcapelaVoiceDiagnostics.getNlpComponentsComparison(context)
+        assertTrue(comp.contains("sNLPConfig"))
+        assertTrue(comp.contains("pNLPConfig"))
+        assertTrue(comp.contains("PRO"))
+        assertTrue(comp.contains("salma_22k_lf.bvcu"))
+    }
+
+    @Test
+    fun getSnlpConfigDisassemblyExplanation_containsTemplateAndModules() {
+        val exp =
+            AcapelaVoiceDiagnostics.getSnlpConfigDisassemblyExplanation()
+        assertTrue(exp.contains("0x1ba2b4"))
+        assertTrue(exp.contains("0x65180"))
+        assertTrue(exp.contains("BABILE_NLP_BUFFERING0"))
+        assertTrue(exp.contains("MBR"))
+        assertTrue(exp.contains("IVX"))
+    }
 }

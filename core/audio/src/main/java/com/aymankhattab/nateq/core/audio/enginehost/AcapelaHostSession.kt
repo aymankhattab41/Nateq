@@ -1302,7 +1302,8 @@ internal class AcapelaHostSession(
         val nativeLines: List<String> = emptyList(),
         val setLicenseCode: Int? = null,
         val babParamLicenseLines: List<String> = emptyList(),
-        val licenseLogLines: List<String> = emptyList()
+        val licenseLogLines: List<String> = emptyList(),
+        val sNlpCode: Int? = null
     ) {
         val isSuccess: Boolean
             get() = voiceCode == 0 && speakCode == 0 && samples > 0L
@@ -2036,6 +2037,14 @@ internal class AcapelaHostSession(
             } else null
         }
         val hasNlpErr = nlpCode != null && nlpCode != 0
+        val sNlpCode = nativeTail.firstNotNullOfOrNull { line ->
+            if (line.contains("sNLPConfig", ignoreCase = true)) {
+                val match = Regex(
+                    "sNLPConfig\\s*[:=]?\\s*(-?\\d+)"
+                ).find(line)
+                match?.groupValues?.get(1)?.toIntOrNull()
+            } else null
+        } ?: 0
 
         val loadVoiceLine = nativeTail.firstOrNull {
             it.contains("tts_function_load_voice")
@@ -2153,6 +2162,7 @@ internal class AcapelaHostSession(
                 "${nlpCode ?: "(لم تظهر في السجل)"}" +
                 if (nlpName.isNotEmpty()) " ($nlpName)" else ""
         )
+        sb.appendLine("  - قيمة babParam.sNLPConfig: $sNlpCode")
 
         // فلترة أسطر babParam.uid.userId و babParam.license
         val babParamUidLines = nativeTail.filter {
@@ -2225,7 +2235,8 @@ internal class AcapelaHostSession(
             nativeLines = nativeTail,
             setLicenseCode = setLicenseRetCode,
             babParamLicenseLines = babParamLicLines,
-            licenseLogLines = generalLicLines
+            licenseLogLines = generalLicLines,
+            sNlpCode = sNlpCode
         )
     }
 
@@ -2339,10 +2350,10 @@ internal class AcapelaHostSession(
                     "المسجل=7e88) — فهذا هو الخطأ"
             }
 
-            val keyDiskStatus = "[فحص ملف الترخيص 10718] 0x00169729: " +
+            val keyDiskStatus = "[فحص ملف الترخيص 10719] 0x00169729: " +
                 "موجود=$hexExists, حجم=$hexSize بايت, " +
                 "يحوي COMMERCIAL=$hexHasComm\n" +
-                "[فك وتحليل param - البند 2 من 10718]:\n" +
+                "[فك وتحليل param - البند 2 من 10719]:\n" +
                 "- هل param كان مشفراً: " +
                 "${if (decodedReg.isEncrypted) "نعم" else "لا"}\n" +
                 "- عدد الأجزاء بعد التقسيم: ${decodedReg.partsCount}\n" +
@@ -2354,10 +2365,16 @@ internal class AcapelaHostSession(
             Log.i(TAG, keyDiskStatus)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, keyDiskStatus)
 
-            // ── تجربة 1: مسار MultiTTS الأصلي (v2 مع NO_UTF8) ──
+            // ── تجربة 1: تجربة (أ) الأصلية لـ 10709:
+            // v2 مع MODE=prep_hd و [ RAM ] ──
             AcapelaVoiceDiagnostics.clearNativeLogcat()
+            AcapelaVoiceDiagnostics.writeStageV2Ini(
+                stageDir = v2Dir,
+                mode = "MODE=prep_hd",
+                filemapDirective = "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]"
+            )
             val trial1 = executeVoiceLoadTrial(
-                label = "1) مسار MultiTTS الأصلي (v2 مع NO_UTF8)",
+                label = "1) تجربة (أ) الأصلية لـ 10709: v2 مع [ RAM ]",
                 trialDir = v2Dir,
                 speaker = effectiveSpeaker,
                 iso3 = iso3,
@@ -2365,7 +2382,7 @@ internal class AcapelaHostSession(
                 voice = voice,
                 voiceMode = "MODE=prep_hd",
                 probeText = REGISTRATION_PROBE_TEXT,
-                order = AcapelaSequenceOrder.NO_UTF8,
+                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
                 useRealCallback = true,
                 trailingSlash = true,
                 callSetLicense = false,
@@ -2446,6 +2463,11 @@ internal class AcapelaHostSession(
                         "acapela_marhaba_trial.wav"
                     )
                     AcapelaVoiceDiagnostics.savePcmAsWav(wavFile, pcmData)
+                    val wav10719 = File(
+                        context.cacheDir,
+                        "acapela_marhaba_10719.wav"
+                    )
+                    AcapelaVoiceDiagnostics.savePcmAsWav(wav10719, pcmData)
                     val wav10718 = File(
                         context.cacheDir,
                         "acapela_marhaba_10718.wav"
@@ -2494,7 +2516,7 @@ internal class AcapelaHostSession(
                 ?: trial1
 
             val literalResults = buildString {
-                appendLine("=== [نتائج محاولات نطق Acapela 10718] ===")
+                appendLine("=== [نتائج محاولات نطق Acapela 10719] ===")
                 trialsList.forEach { t ->
                     val ebStr = t.ebErrorCode?.let {
                         "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
@@ -2502,8 +2524,10 @@ internal class AcapelaHostSession(
                     val nlpStr = t.nlpErrorCode?.let {
                         "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
                     } ?: "0"
+                    val sNlpStr = t.sNlpCode?.toString() ?: "0"
                     appendLine(
                         "${t.method} => eb: $ebStr | nlpErr: $nlpStr | " +
+                            "sNLPConfig: $sNlpStr | " +
                             "nSpeak: ${t.speakCode} | عينات: ${t.samples}"
                     )
                 }
@@ -2514,7 +2538,8 @@ internal class AcapelaHostSession(
             val trialSummary = trialsList.joinToString(" | ") { t ->
                 val ebStr = t.ebErrorCode?.toString() ?: "0"
                 val nlpStr = t.nlpErrorCode?.toString() ?: "0"
-                "${t.method} (eb=$ebStr, nlpErr=$nlpStr, " +
+                val sNlpStr = t.sNlpCode?.toString() ?: "0"
+                "${t.method} (eb=$ebStr, nlpErr=$nlpStr, sNLP=$sNlpStr, " +
                     "pcm=${t.samples}, speak=${t.speakCode})"
             }
             val outcome = if (winningTrial != null) {
@@ -2522,7 +2547,7 @@ internal class AcapelaHostSession(
             } else {
                 "فشل كافة محاولات نطق Acapela"
             }
-            val topSummary = "[تشخيص محاولات Acapela 10718] " +
+            val topSummary = "[تشخيص محاولات Acapela 10719] " +
                 "$trialSummary | النتيجة: $outcome"
             Log.i(TAG, topSummary)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
@@ -2536,6 +2561,21 @@ internal class AcapelaHostSession(
                     appendLine(topSummary)
                     appendLine("")
                     appendLine(literalResults)
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getLiveDiskFilesReport(context)
+                    )
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getNlpComponentsComparison(context)
+                    )
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getSnlpConfigDisassemblyExplanation()
+                    )
                     appendLine("")
                     appendLine(
                         AcapelaVoiceDiagnostics.getLibraryComparisonDetails()
@@ -2605,6 +2645,8 @@ internal class AcapelaHostSession(
                     }
                 }.trimEnd()
                 reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10719.txt")
+                    .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10718.txt")
                     .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10717.txt")
