@@ -18,8 +18,22 @@ import android.content.SharedPreferences
  */
 internal class SnapshotPrefs(
     @Volatile private var delegate: SharedPreferences,
-    private val onChanged: () -> Unit = {}
+    private val onChanged: () -> Unit = {},
+    private val stampProvider: () -> Pair<Long, Long>
 ) : SharedPreferences {
+
+    /**
+     * كتابةٌ محلية أُطلقت بـ[apply] ولم يُعرف بعد أنها بلغت القرص، مع بصمةٍ
+     * للملف لحظة الكتابة. تكشف [replaceSnapshot] بها أن قراءة القرص أقدم من
+     * ذاكرة العملية فلا تُسقط تعديلاً لم يُفرَّغ بعد.
+     */
+    private data class PendingLocalWrite(
+        val value: Any?,
+        val stamp: Pair<Long, Long>
+    )
+
+    private val pendingLocalWrites =
+        java.util.concurrent.ConcurrentHashMap<String, PendingLocalWrite>()
 
     @Volatile
     private var snapshot: Map<String, Any?> = delegate.all
@@ -36,9 +50,32 @@ internal class SnapshotPrefs(
     }
 
     /** يستبدل اللقطة التي تُقرأ منها القيم دون أي مساس بالقرص — جوهر
-     *  الرحلة النظيفة في [SettingsRepository.reload]. */
+     *  الرحلة النظيفة في [SettingsRepository.reload].
+     *
+     * كتابةُ [apply] المحلية تظهر في ذاكرة العملية فوراً وتُفرَّغ على القرص
+     * لاحقاً؛ فإن جاءت قراءةُ القرص (من إشعار المراقب) قبل التفريغ حملت
+     * حالةً أقدم، وكان استبدالُ اللقطة بها يمحو التعديلَ من القراءة التالية
+     * (سباقٌ ظهر في تسجيل تطبيق محمي ثم محوه فوراً). لذلك تُحفظ الكتابات
+     * المحلية المعلّقة ما دامت بصمة الملف لم تتغيّر عن لحظة كتابتها: فحين
+     * تتغيّر البصمة صار القرص أحدث (تفريغٌ أو كتابةُ عمليةٍ أخرى) فيُؤخذ.
+     */
     fun replaceSnapshot(values: Map<String, Any?>) {
-        snapshot = values
+        if (pendingLocalWrites.isEmpty()) {
+            snapshot = values
+            return
+        }
+        val currentStamp = stampProvider()
+        val merged = HashMap<String, Any?>(values)
+        pendingLocalWrites.forEach { (key, pending) ->
+            when {
+                pending.stamp != currentStamp ->
+                    pendingLocalWrites.remove(key, pending)
+                values[key] == pending.value ->
+                    pendingLocalWrites.remove(key, pending)
+                else -> merged[key] = pending.value
+            }
+        }
+        snapshot = merged
     }
 
     /**
@@ -56,6 +93,7 @@ internal class SnapshotPrefs(
                 preferenceChangeListener
             )
         }
+        pendingLocalWrites.clear()
         snapshot = newDelegate.all
     }
 
@@ -141,6 +179,8 @@ internal class SnapshotPrefs(
         override fun commit(): Boolean {
             val ok = delegate.edit().also { applyOps(it) }.commit()
             if (ok) {
+                // الكتابة بلغت القرص: لم تبق كتابةٌ محلية معلّقة
+                pendingLocalWrites.clear()
                 snapshot = delegate.all
                 onChanged()
             }
@@ -155,7 +195,27 @@ internal class SnapshotPrefs(
             // يخرج من خيط الواجهة. محفوظٌ أيضاً: أي commit لاحق على نفس
             // المخزن يكتب كل الحالة المتضمنة هذه التعديلات فوراً (توثيق
             // SharedPreferences.Editor) فلا تتسرب قراءة قديمة.
+            // البصمة تُؤخذ قبل الكتابة: تفريغُ apply يغيّرها، فيميّز
+            // [replaceSnapshot] بين قرصٍ لحق بالكتابة وقرصٍ لم يلحق بعد.
+            val stampAtWrite = stampProvider()
+            val keysBeforeClear = if (clearFirst) {
+                snapshot.keys.toList()
+            } else {
+                emptyList()
+            }
             delegate.edit().also { applyOps(it) }.apply()
+            keysBeforeClear.forEach { key ->
+                pendingLocalWrites[key] =
+                    PendingLocalWrite(null, stampAtWrite)
+            }
+            removals.forEach { key ->
+                pendingLocalWrites[key] =
+                    PendingLocalWrite(null, stampAtWrite)
+            }
+            puts.forEach { (key, value) ->
+                pendingLocalWrites[key] =
+                    PendingLocalWrite(value, stampAtWrite)
+            }
             snapshot = delegate.all
             onChanged()
         }

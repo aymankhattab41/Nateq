@@ -437,7 +437,8 @@ class SettingsRepository(context: Context) :
      */
     private val prefs: SnapshotPrefs = SnapshotPrefs(
         delegate = rawPrefs,
-        onChanged = ::notifySettingsChanged
+        onChanged = ::notifySettingsChanged,
+        stampProvider = ::prefsFileStamp
     )
 
     /** مراقب التغييرات بين العمليتين: يستيقظ عند إشعار [SettingsChangeProvider]

@@ -708,6 +708,14 @@ private class HostConnection(
             binder: IBinder?
         ) {
             val connected = IEmbeddedEngineHost.Stub.asInterface(binder)
+            if (connected == null) {
+                // ربطٌ بلا واجهة (بيئة اختبار أو خدمة غير مطابقة): لا
+                // نخزّن خدمة غير صالحة ولا نُكمل الإشارة بها.
+                bound = false
+                failSignal()
+                Log.e(TAG, "ربطٌ بلا واجهة للمضيف $engineId")
+                return
+            }
             service = connected
             EngineHostClient.hostConnectedAtUptimeMs =
                 SystemClock.uptimeMillis()
