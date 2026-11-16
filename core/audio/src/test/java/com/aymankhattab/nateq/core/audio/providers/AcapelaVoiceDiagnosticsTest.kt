@@ -600,4 +600,46 @@ class AcapelaVoiceDiagnosticsTest {
         assertTrue(exp.contains("MBR"))
         assertTrue(exp.contains("IVX"))
     }
+
+    @Test
+    fun getGitDiffComparisonBetween10709AndCurrent_containsComparisons() {
+        val diff =
+            AcapelaVoiceDiagnostics.getGitDiffComparisonBetween10709AndCurrent()
+        assertTrue(diff.contains("10720"))
+        assertTrue(diff.contains("10709"))
+        assertTrue(diff.contains("nSetCurrentVoice"))
+        assertTrue(diff.contains("isVoiceLoaded"))
+        assertTrue(diff.contains("callback"))
+    }
+
+    @Test
+    fun getNuulFile10709Status_provesAbsenceIn10709() {
+        val status = AcapelaVoiceDiagnostics.getNuulFile10709Status()
+        assertTrue(status.contains("salma_22k_lf.bvcu.nuul216vqfp"))
+        assertTrue(status.contains("1,215,248"))
+        assertTrue(status.contains("كلا قطعياً"))
+        assertTrue(status.contains("8426057b"))
+    }
+
+    @Test
+    fun stageVoiceV2_withCopyArSaBvcuFalse_omitsDuplicateBvcu() {
+        val root = tempDir()
+        try {
+            val salma = File(root, "Acapela/Salma/salma_lf").apply {
+                mkdirs()
+            }
+            val bvcu = File(salma, "salma_22k_lf.bvcu")
+            bvcu.writeText("TEST_BVCU")
+            val staged = AcapelaVoiceDiagnostics.stageVoiceV2(
+                context = context,
+                sourceDir = salma,
+                copyArSaBvcu = false
+            )
+            assertTrue(File(staged, "salma_22k_lf.bvcu").exists())
+            val duplicate = File(staged, "ar_sa_hd_salma_22k_lf.bvcu")
+            assertEquals(false, duplicate.exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }

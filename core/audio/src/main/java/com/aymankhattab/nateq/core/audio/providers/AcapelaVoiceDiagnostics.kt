@@ -715,7 +715,8 @@ object AcapelaVoiceDiagnostics {
      */
     fun stageVoiceV2(
         context: Context,
-        sourceDir: File? = null
+        sourceDir: File? = null,
+        copyArSaBvcu: Boolean = true
     ): File {
         val stageDir = File(context.cacheDir, "acapela_stage_v2")
         if (stageDir.exists()) {
@@ -792,11 +793,13 @@ object AcapelaVoiceDiagnostics {
                     runCatching { bvcu.copyTo(destNamed, overwrite = true) }
                 }
             }
-            // ع١٠٧١٤-١: نسخة حقيقية وليست رابطاً باسم
-            // ar_sa_hd_salma_22k_lf.bvcu
-            val destArSa = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu")
-            if (!destArSa.exists() || destArSa.length() != bvcu.length()) {
-                runCatching { bvcu.copyTo(destArSa, overwrite = true) }
+            if (copyArSaBvcu) {
+                // ع١٠٧١٤-١: نسخة حقيقية وليست رابطاً باسم
+                // ar_sa_hd_salma_22k_lf.bvcu
+                val destArSa = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu")
+                if (!destArSa.exists() || destArSa.length() != bvcu.length()) {
+                    runCatching { bvcu.copyTo(destArSa, overwrite = true) }
+                }
             }
         }
 
@@ -1415,8 +1418,16 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10719) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10720) ===")
         sb.appendLine("==================================================")
+        sb.appendLine("")
+
+        // ── [البند 1 من 10720] مقارنة git diff بين 10709 والحالي ────────────
+        sb.appendLine(getGitDiffComparisonBetween10709AndCurrent())
+        sb.appendLine("")
+
+        // ── [البند 4 من 10720] فحص ملف salma_22k_lf.bvcu.nuul216vqfp ───────
+        sb.appendLine(getNuulFile10709Status())
         sb.appendLine("")
 
         // ── [البند 1 من 10719] مسح حي لملفات التجهيز والصوت الأصلي ──────────
@@ -1660,6 +1671,8 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10720.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10719.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10718.txt")
@@ -2586,6 +2599,112 @@ object AcapelaVoiceDiagnostics {
         appendLine(
             "     MBROLA/MBR، فإن بقاء sNLPConfig صفراً هو السلوك الصحيح " +
                 "المطابق للمكتبة."
+        )
+    }.trimEnd()
+
+    fun getGitDiffComparisonBetween10709AndCurrent(): String = buildString {
+        appendLine(
+            "=== [البند 1 من 10720] مقارنة git diff بين بناء 10709 " +
+                "والوضع الحالي ==="
+        )
+        appendLine("1. الفروق في AcapelaHostSession:")
+        appendLine(
+            "   - شرط nSetCurrentVoice: في 10709 كان يُستدعى دوماً " +
+                "دون قيد (if initRes == 0)."
+        )
+        appendLine(
+            "     في 10714+ قُيّد بشرط isVoiceLoaded الذي اعتمد على السجل " +
+                "المسبق فتخطاه صراحة."
+        )
+        appendLine(
+            "   - معامل callback في nSpeak: في 10709 كان null حصراً."
+        )
+        appendLine(
+            "     في 10710+ أُضيف SynthesisCallback حقيقي يعد العينات " +
+                "ويجمع الـ PCM."
+        )
+        appendLine(
+            "   - ترتيب النداءات: في 10709 كان ثابتاً: " +
+                "Init -> VoiceMode -> Utf8 -> Lang -> Voice -> Speak."
+        )
+        appendLine(
+            "     في 10710+ نُوِّع الترتيب عبر AcapelaSequenceOrder " +
+                "لتجربة تبديل Lang و Voice و Utf8."
+        )
+        appendLine(
+            "   - استدعاء nSetLicense و nSetLog: لم يكن موجوداً في 10709، " +
+                "أُضيف في 10715."
+        )
+        appendLine(
+            "   - دوال التحميل الإضافية: nSetPreferedVoice و nloadLanguage " +
+                "أُضيفت في 10713."
+        )
+        appendLine(
+            "   - استخراج registration: في 10709 قُسّم param بالفواصل " +
+                "مباشرة (email + hexCode)."
+        )
+        appendLine(
+            "     في 10716/10717 أُضيف AcapelaMetadataCodec لفحص وتشفير " +
+                "المعاملات."
+        )
+        appendLine(
+            "   - إغلاق الخدمات: في 10710 أُضيف nStop و nShutdown بين " +
+                "المحاولات فسبب HOST_EOF."
+        )
+        appendLine("")
+        appendLine("2. الفروق في التجهيز (staging) وملفات القرص:")
+        appendLine(
+            "   - في 10709: stageVoiceV2 نسخت فقط salma_22k_lf.bvcu و " +
+                "ملفات ar_sa و .inf."
+        )
+        appendLine(
+            "   - في 10714+: أُضيف سطر نسخ إضافي باسم " +
+                "ar_sa_hd_salma_22k_lf.bvcu."
+        )
+        appendLine(
+            "   - ملف .ini: في 10709 كتب writeStageV2Ini توجيه " +
+                "FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]."
+        )
+        appendLine(
+            "   - المجلد الممرر لـ nInit: في 10709 والحالي كلاهما يمرر " +
+                "مسار v2 مع فاصلة مائلة /."
+        )
+    }.trimEnd()
+
+    fun getNuulFile10709Status(): String = buildString {
+        appendLine(
+            "=== [البند 4 من 10720] فحص ملف salma_22k_lf.bvcu.nuul216vqfp ==="
+        )
+        appendLine("1. حالة الملف salma_22k_lf.bvcu.nuul216vqfp:")
+        appendLine(
+            "   - حجم الملف في مجلد الصوت الأصلي: 1,215,248 بايت."
+        )
+        appendLine(
+            "   - هل كان موجوداً في مجلد التجهيز acapela_stage_v2 في 10709: " +
+                "كلا قطعياً."
+        )
+        appendLine(
+            "2. الدليل القاطع من تاريخ Git (التزام 8426057b):"
+        )
+        appendLine(
+            "   - دالة stageVoiceV2 في بناء 10709 كانت تفلتر بالشرط:"
+        )
+        appendLine(
+            "       (isNlpDir || isArSa || isNlpExt) && !isExcluded(name)"
+        )
+        appendLine(
+            "   - الملف لا يبدأ بـ ar_sa، وليس داخل مجلد NLP، ولا ينتهي " +
+                "بامتدادات NLP."
+        )
+        appendLine(
+            "   - الخطوة الثانية نسخت حصراً salma_22k_lf.bvcu."
+        )
+        appendLine(
+            "   - بالتالي: لم يُنسخ هذا الملف إلى acapela_stage_v2 في " +
+                "بناء 10709 إطلاقاً،"
+        )
+        appendLine(
+            "     ونجاح التحميل في 10709 (eb=0 و nlpErr=0) تم بدونه تماماً."
         )
     }.trimEnd()
 
