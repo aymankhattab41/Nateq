@@ -159,6 +159,12 @@ class AcapelaEmbeddedVoiceProvider(
         withContext(Dispatchers.IO) {
             if (!ensureInitialized()) {
                 Log.e(TAG, "Cannot synthesize: Acapela host not initialized")
+                com.aymankhattab.nateq.core.audio.engine
+                    .SpeechFallbackTracker.noteAcapelaFailure(
+                        reason = "تعذر تهيئة مضيف Acapela",
+                        substituteVoice = null,
+                        substituteEngine = null
+                    )
                 return@withContext
             }
 
@@ -207,6 +213,13 @@ class AcapelaEmbeddedVoiceProvider(
                     TAG,
                     "نطق Acapela المدمج فشل [${result.code}]: ${result.message}"
                 )
+                com.aymankhattab.nateq.core.audio.engine
+                    .SpeechFallbackTracker.noteAcapelaFailure(
+                        reason = "فشل نطق Acapela [${result.code}]: " +
+                            (result.message ?: ""),
+                        substituteVoice = null,
+                        substituteEngine = null
+                    )
                 EngineStatusRegistry.noteFailure(
                     PROVIDER_ID,
                     result.code,

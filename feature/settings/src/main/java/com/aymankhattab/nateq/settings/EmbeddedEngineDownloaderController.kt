@@ -367,6 +367,11 @@ internal class EmbeddedEngineDownloaderController(
         tvSubtitle.text = "$langName • ${voice.sampleRate} Hz"
 
         badge.visibility = View.VISIBLE
+        val isFallback = com.aymankhattab.nateq.core.audio.engine
+            .SpeechFallbackTracker.isAcapelaFallbackActive()
+        if (isFallback) {
+            badge.text = "تعثّر (صوت بديل)"
+        }
         btnDownload.visibility = View.GONE
         btnTestConn.visibility = View.GONE
         btnPreview.visibility = View.VISIBLE
@@ -1275,6 +1280,12 @@ internal class EmbeddedEngineDownloaderController(
                 status?.state == EngineStatusRegistry.State.NOT_INSTALLED
             ) {
                 ctx.getString(R.string.engine_state_awaiting_voices)
+            } else if (
+                entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID &&
+                com.aymankhattab.nateq.core.audio.engine
+                    .SpeechFallbackTracker.isAcapelaFallbackActive()
+            ) {
+                "تعثّر (صوت بديل)"
             } else {
                 status?.state?.let {
                     EngineStatusRegistry.labelAr(it)

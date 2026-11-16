@@ -1542,6 +1542,12 @@ class NateqTtsService : TextToSpeechService() {
         // فيُسلَّم النصُّ كلُّه طلباً واحداً متّصلاً كما كان قبل
         // v106. و`start` يُمرَّر مرّةً واحدة و`done()` بعد آخر شريحة.
         var started = false
+        var effEngine: String? = null
+        var effVoice: String? = null
+        var effRate = finalRate
+        var effPitch = finalPitch
+        var effVolume = finalVolume
+        var isEmergency = false
         try {
             val targetProvider = if (finalEngine != null) {
                 catalog.findProvider(finalEngine) ?: provider
@@ -1771,13 +1777,7 @@ class NateqTtsService : TextToSpeechService() {
             // `singleCategory` غير قابل للعدم: له احتياطيٌّ في `when` أعلاه.
             val isCatEm =
                 CategoryFailureTracker.isEmergencyActive(singleCategory)
-            val isEmergency = isSafe || isCatEm
-
-            val effEngine: String?
-            val effVoice: String?
-            val effRate: Float
-            val effPitch: Float
-            val effVolume: Float
+            isEmergency = isSafe || isCatEm
 
             if (isEmergency) {
                 val em = EmergencyVoice.load(applicationContext)
@@ -1851,10 +1851,89 @@ class NateqTtsService : TextToSpeechService() {
             )
         }
 
+        // إذا فشل المحرك المختار تماماً ولم يبدأ، نحاول التحويل للمزود
+        // الافتراضي كصوت بديل (Fallback) وتوثيق ذلك في سجل التشخيص (البند 7)
+        if (!started && effEngine != null) {
+            val fallbackVoiceName = if (LanguageCode.isArabic(languageTag)) {
+                "Laila"
+            } else {
+                "Samantha"
+            }
+            SpeechFallbackTracker.noteAcapelaFailure(
+                reason = "فشل تخليق الصوت في $effEngine",
+                substituteVoice = fallbackVoiceName,
+                substituteEngine = provider.providerId
+            )
+            runCatching {
+                provider.synthesize(
+                    speechText, voice, effRate, effPitch, effVolume,
+                    { sampleRateInHz, channelCount ->
+                        if (!started) {
+                            callback.start(
+                                sampleRateInHz, PCM_16BIT, channelCount
+                            )
+                            started = true
+                        }
+                    }, { chunk, validLength ->
+                        if (!started) {
+                            callback.start(22050, PCM_16BIT, 1)
+                            started = true
+                        }
+                        val maxBytes = callback.maxBufferSize
+                        var offset = 0
+                        while (offset < validLength) {
+                            val bytesToWrite = minOf(
+                                maxBytes, validLength - offset
+                            )
+                            callback.audioAvailable(chunk, offset, bytesToWrite)
+                            offset += bytesToWrite
+                        }
+                    }, null, finalLocale, null, singleCategory
+                )
+            }
+            if (started) {
+                SpeechFallbackTracker.record(
+                    text = speechText,
+                    languageTag = languageTag,
+                    requestedEngine = effEngine,
+                    requestedVoice = effVoice ?: finalVoiceName ?: "default",
+                    actualEngine = provider.providerId,
+                    actualVoice = voice.id,
+                    isFallback = true,
+                    fallbackReason = "تعثر نطق $effEngine والانتقال للبديل"
+                )
+            }
+        }
+
         if (started) {
+            if (!SpeechFallbackTracker.isAcapelaFallbackActive()) {
+                SpeechFallbackTracker.record(
+                    text = speechText,
+                    languageTag = languageTag,
+                    requestedEngine = finalEngine ?: "default",
+                    requestedVoice = finalVoiceName ?: voice.id,
+                    actualEngine = effEngine ?: provider.providerId,
+                    actualVoice = effVoice ?: voice.id,
+                    isFallback = (effEngine != finalEngine) || isEmergency,
+                    fallbackReason = if (isEmergency) "طوارئ (EmergencyVoice)"
+                        else if (effEngine != finalEngine) {
+                            "المحرك المطلوب غير متاح"
+                        } else null
+                )
+            }
             singleCategory?.let { CategoryFailureTracker.recordSuccess(it) }
             callback.done()
         } else {
+            SpeechFallbackTracker.record(
+                text = speechText,
+                languageTag = languageTag,
+                requestedEngine = finalEngine ?: effEngine ?: "default",
+                requestedVoice = finalVoiceName ?: effVoice ?: voice.id,
+                actualEngine = "none",
+                actualVoice = "none",
+                isFallback = false,
+                fallbackReason = "فشل التخليق بالكامل (callback.error)"
+            )
             singleCategory?.let { CategoryFailureTracker.recordFailure(it) }
             callback.error()
         }
@@ -2516,6 +2595,18 @@ class NateqTtsService : TextToSpeechService() {
 
         val endUptime = SystemClock.uptimeMillis()
         val success = (audio != null)
+        if (attempts == 2 && success) {
+            SpeechFallbackTracker.record(
+                text = segment.text,
+                languageTag = segment.languageTag,
+                requestedEngine = "segment_role",
+                requestedVoice = "role_voice",
+                actualEngine = resolvedEngine ?: "default",
+                actualVoice = resolvedVoiceId ?: "default",
+                isFallback = true,
+                fallbackReason = "تعثر نطق فئة المقطع والتراجع للصوت النصي"
+            )
+        }
         if (!success && !segment.text.isBlank()) {
             Log.w(TAG, "مقطع محذوف: ${segment.text}")
             SpeechLatencyTracker.recordDroppedSegment(segment.text)

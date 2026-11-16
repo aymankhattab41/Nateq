@@ -1305,10 +1305,19 @@ internal class AcapelaHostSession(
         val babParamLicenseLines: List<String> = emptyList(),
         val licenseLogLines: List<String> = emptyList(),
         val sNlpCode: Int? = null,
-        val openFiles: List<String> = emptyList()
+        val openFiles: List<String> = emptyList(),
+        val logFileContent: String = "",
+        val firstErrorLine: String? = null,
+        val precedingLine: String? = null,
+        val getLanguageResult: String? = null,
+        val closestVoiceResult: String? = null,
+        val isLangAvailResult: Int? = null,
+        val voiceListCount: Int? = null,
+        val classicVersion: String? = null,
+        val classicLastError: Int? = null
     ) {
         val isSuccess: Boolean
-            get() = AcapelaVoiceDiagnostics.evaluateTrialSuccess10723(
+            get() = AcapelaVoiceDiagnostics.evaluateTrialSuccess10724(
                 speakCode = speakCode,
                 samples = samples,
                 nativeLines = nativeLines
@@ -1762,6 +1771,12 @@ internal class AcapelaHostSession(
             rawPath.trimEnd(File.separatorChar, '/')
         }
 
+        // حذف ملف logfile.txt القديم من مجلد التجربة قبل التشغيل (البند 2)
+        val trialLogFile = File(trialDir, "logfile.txt")
+        if (trialLogFile.exists()) {
+            runCatching { trialLogFile.delete() }
+        }
+
         val audioHandler = TrialAudio { bytes, len ->
             handleRawAudioBytes(bytes, len)
         }
@@ -1962,6 +1977,35 @@ internal class AcapelaHostSession(
             }.getOrElse { -99 }
         } else null
 
+        // استدعاءات فحص توفر وحصر الأصوات واللغة (البند 4 لبناء 10724)
+        val getLangRes = if (initRes == 0) {
+            runCatching { srv.nGetLanguage() }.getOrNull()
+        } else null
+        val closestVoiceRes = if (initRes == 0) {
+            runCatching {
+                srv.nGetClosestVoice(iso3.language, iso3.country, "")
+            }.getOrNull()
+        } else null
+        val isLangAvailRes = if (initRes == 0) {
+            runCatching {
+                srv.nIsLanguageAvailable(iso3.language, iso3.country, "")
+            }.getOrNull()
+        } else null
+
+        var classicVoiceListRes: Int? = null
+        var classicVer: String? = null
+        var classicErr: Int? = null
+        if (initRes == 0) {
+            runCatching {
+                System.loadLibrary("acattsandroid")
+                val classic = acattsandroid()
+                val listArr = arrayOf(stagePath)
+                classicVoiceListRes = classic.nGetVoiceList(listArr)
+                classicVer = classic.nGetVersion()
+                classicErr = classic.nGetLastError()
+            }
+        }
+
         val cbToPass = if (useRealCallback) synthCallback else null
         val cbName = if (cbToPass != null) {
             "AcapelaSynthesisCallback"
@@ -2042,6 +2086,17 @@ internal class AcapelaHostSession(
             endMarker,
             1000
         )
+        val logFileContent = if (trialLogFile.exists() &&
+            trialLogFile.length() > 0L
+        ) {
+            runCatching {
+                trialLogFile.readText(StandardCharsets.ISO_8859_1)
+            }.getOrDefault("(تعذر قراءة logfile.txt)")
+        } else {
+            "(لم يُنشأ ملف logfile.txt أو فارغ)"
+        }
+        val firstErr = AcapelaVoiceDiagnostics
+            .findFirstErrorAndPreceding(nativeTail)
         val fdsAfter = AcapelaVoiceDiagnostics.getOpenFileDescriptors()
         val newFds = (fdsAfter - fdsBefore.toSet()).distinct()
         val logFiles = AcapelaVoiceDiagnostics
@@ -2270,7 +2325,16 @@ internal class AcapelaHostSession(
             babParamLicenseLines = babParamLicLines,
             licenseLogLines = generalLicLines,
             sNlpCode = sNlpCode,
-            openFiles = openedFiles
+            openFiles = openedFiles,
+            logFileContent = logFileContent,
+            firstErrorLine = firstErr?.first,
+            precedingLine = firstErr?.second,
+            getLanguageResult = getLangRes,
+            closestVoiceResult = closestVoiceRes,
+            isLangAvailResult = isLangAvailRes,
+            voiceListCount = classicVoiceListRes,
+            classicVersion = classicVer,
+            classicLastError = classicErr
         )
     }
 
@@ -2553,6 +2617,11 @@ internal class AcapelaHostSession(
                         "acapela_marhaba_trial.wav"
                     )
                     AcapelaVoiceDiagnostics.savePcmAsWav(wavFile, pcmData)
+                    val wav10724 = File(
+                        context.cacheDir,
+                        "acapela_marhaba_10724.wav"
+                    )
+                    AcapelaVoiceDiagnostics.savePcmAsWav(wav10724, pcmData)
                     val wav10723 = File(
                         context.cacheDir,
                         "acapela_marhaba_10723.wav"
@@ -2626,7 +2695,7 @@ internal class AcapelaHostSession(
                 ?: trialFullStage
 
             val literalResults = buildString {
-                appendLine("=== [نتائج مسارات نطق Acapela (بناء 10723)] ===")
+                appendLine("=== [نتائج مسارات نطق Acapela (بناء 10724)] ===")
                 trialsList.forEach { t ->
                     val ebStr = t.ebErrorCode?.let {
                         "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
@@ -2641,20 +2710,86 @@ internal class AcapelaHostSession(
                     appendLine("────────────────────────────────────────")
                     appendLine("المسار: ${t.method}")
                     appendLine("  - المعامل الحرفي لـ nInit: \"${t.path}\"")
-                    appendLine(
-                        "  - قائمة ملفات المجلد (${fileInventory.size} ملف):"
-                    )
-                    fileInventory.forEach { line ->
-                        appendLine("    * $line")
+                    appendLine("")
+                    appendLine("=== [البند 2] محتوى logfile.txt كاملاً ===")
+                    if (t.logFileContent.isBlank()) {
+                        appendLine("  (ملف logfile.txt فارغ أو لم يُنشأ)")
+                    } else {
+                        appendLine(t.logFileContent)
                     }
+                    appendLine("")
+                    appendLine(
+                        "=== [البند 2] أسطر logcat لـ " +
+                            "acattsandroid-extended-native من nInit إلى " +
+                            "nSpeak (${t.nativeLines.size} سطر) ==="
+                    )
+                    if (t.nativeLines.isEmpty()) {
+                        appendLine("  (سجل المكتبة فارغ في logcat)")
+                    } else {
+                        t.nativeLines.forEach { line ->
+                            appendLine("  $line")
+                        }
+                    }
+                    appendLine("")
+                    appendLine(
+                        "=== [البند 3] أول سطر خطأ في سجل المكتبة " +
+                            "والسطر الذي قبله ==="
+                    )
+                    if (t.firstErrorLine != null) {
+                        appendLine("  - أول سطر خطأ: \"${t.firstErrorLine}\"")
+                        appendLine(
+                            "  - السطر الذي قبله مباشرة: " +
+                                "\"${t.precedingLine ?: "(لا يوجد)"}\""
+                        )
+                    } else {
+                        appendLine(
+                            "  - أول سطر خطأ: (لم يظهر أي سطر خطأ يحوي " +
+                                "Error أو error أو not loaded أو load error)"
+                        )
+                        appendLine("  - السطر الذي قبله مباشرة: —")
+                    }
+                    appendLine("")
+                    appendLine(
+                        "=== [البند 4] أكواد الرجوع واستدعاءات حصر " +
+                            "الأصوات واللغة ==="
+                    )
                     appendLine("  - رمز إرجاع nInit: ${t.initCode}")
                     appendLine("  - رمز إرجاع nSetVoiceMode: ${t.modeCode}")
                     appendLine(
                         "  - رمز إرجاع nUtf8Mode: ${t.utf8Code ?: "تم تخطيه"}"
                     )
-                    appendLine("  - رمز إرجاع cSetLanguage: ${t.langCode}")
-                    appendLine("  - رمز إرجاع nSetCurrentVoice: ${t.voiceCode}")
+                    appendLine(
+                        "  - رمز إرجاع cSetLanguage / nSetLanguage: " +
+                            "${t.langCode}"
+                    )
+                    appendLine(
+                        "  - رمز إرجاع nSetCurrentVoice: ${t.voiceCode}"
+                    )
                     appendLine("  - رمز إرجاع nSpeak: ${t.speakCode}")
+                    appendLine(
+                        "  - استدعاء nGetLanguage: " +
+                            "\"${t.getLanguageResult ?: "(null)"}\""
+                    )
+                    appendLine(
+                        "  - استدعاء nGetClosestVoice: " +
+                            "\"${t.closestVoiceResult ?: "(null)"}\""
+                    )
+                    appendLine(
+                        "  - استدعاء nIsLanguageAvailable: " +
+                            "${t.isLangAvailResult ?: "لم يُستدعَ"}"
+                    )
+                    appendLine(
+                        "  - استدعاء acattsandroid.nGetVoiceList: " +
+                            "${t.voiceListCount ?: "لم يُستدعَ"}"
+                    )
+                    appendLine(
+                        "  - استدعاء acattsandroid.nGetVersion: " +
+                            "\"${t.classicVersion ?: "لم يُستدعَ"}\""
+                    )
+                    appendLine(
+                        "  - استدعاء acattsandroid.nGetLastError: " +
+                            "${t.classicLastError ?: "لم يُستدعَ"}"
+                    )
                     appendLine(
                         "  - قيمتا eb و nlpErr: eb=$ebStr | nlpErr=$nlpStr | " +
                             "sNLPConfig: $sNlpStr"
@@ -2664,39 +2799,54 @@ internal class AcapelaHostSession(
                             "nSpeak=${t.speakCode} | PCM=${t.samples}"
                     )
                     appendLine(
-                        "  - هل تحقق معيار النجاح (بناء 10723): " +
+                        "  - هل تحقق معيار النجاح (بناء 10724): " +
                             if (t.isSuccess) "نعم (ناجح)" else "لا (فاشل)"
                     )
+                    appendLine("")
                     appendLine(
-                        "  - كل أسطر سجل المكتبة الأصلية حرفياً " +
-                            "(${t.nativeLines.size} سطر):"
+                        "=== [البند 5] قائمة الملفات المفتوحة للمكتبة ==="
                     )
-                    if (t.nativeLines.isEmpty()) {
-                        appendLine("    (سجل المكتبة فارغ)")
+                    if (t.openFiles.isEmpty()) {
+                        appendLine(
+                            "  (لم يُرصد فتح ملفات عبر /proc/self/fd أو السجل)"
+                        )
                     } else {
-                        t.nativeLines.forEach { line ->
-                            appendLine("    $line")
+                        t.openFiles.forEach { f ->
+                            appendLine("  * $f")
                         }
                     }
-                    if (t.ebErrorCode != 0 || t.nlpErrorCode != 0 ||
-                        t.speakCode != 0
-                    ) {
+                    appendLine("")
+                    appendLine(
+                        "=== [البند 2] قائمة ملفات المجلد بالأحجام " +
+                            "الدقيقة بالبايت (${fileInventory.size} ملف) ==="
+                    )
+                    fileInventory.forEach { line ->
+                        appendLine("  * $line")
+                    }
+                    if (t.method.contains("Path_Full_Stage")) {
+                        val hasUserdicoErr = t.nativeLines.any {
+                            it.contains(
+                                "check_userdico : load error",
+                                ignoreCase = true
+                            )
+                        }
+                        appendLine("")
                         appendLine(
-                            "  - قائمة الملفات التي فتحتها المكتبة قبل -34:"
+                            "=== [البند 6] فحص اختفاء خطأ check_userdico " +
+                                "في Path_Full_Stage ==="
                         )
-                        appendLine(
-                            "    * ملاحظة: strace غير متاح لعدم توفر صلاحيات " +
-                                "root/ptrace على الجهاز."
-                        )
-                        if (t.openFiles.isEmpty()) {
+                        if (hasUserdicoErr) {
                             appendLine(
-                                "    (لم يُرصد فتح ملفات عبر /proc/self/fd " +
-                                    "أو السجل)"
+                                "  - هل اختفى سطر " +
+                                    "'check_userdico : load error': " +
+                                    "لا (ما زال موجوداً في السجل)"
                             )
                         } else {
-                            t.openFiles.forEach { f ->
-                                appendLine("    $f")
-                            }
+                            appendLine(
+                                "  - هل اختفى سطر " +
+                                    "'check_userdico : load error': " +
+                                    "نعم (اختفى من السجل بنجاح!)"
+                            )
                         }
                     }
                 }
@@ -2714,9 +2864,9 @@ internal class AcapelaHostSession(
             val outcome = if (winningTrial != null) {
                 "نجاح واعتماد (${winningTrial.method}) - تم حفظ WAV"
             } else {
-                "فشل كافة مسارات نطق Acapela حسب معيار 10723"
+                "فشل كافة مسارات نطق Acapela حسب معيار 10724"
             }
-            val topSummary = "[تشخيص مسارات Acapela 10723] " +
+            val topSummary = "[تشخيص مسارات Acapela 10724] " +
                 "$trialSummary | النتيجة: $outcome"
             Log.i(TAG, topSummary)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
@@ -2834,6 +2984,8 @@ internal class AcapelaHostSession(
                     }
                 }.trimEnd()
                 reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10724.txt")
+                    .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10723.txt")
                     .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10722.txt")

@@ -29,6 +29,11 @@ class TtsDiagnosticsProvider : ContentProvider() {
         const val KEY_A11Y_EVENTS_PER_MIN = "a11y_events_per_min"
         const val KEY_USAGE_STATS_POLLS = "usage_stats_polls"
         const val KEY_TIMELINE_REPORT = "timeline_report"
+        const val KEY_SPEECH_RECORDS = "speech_records"
+        const val KEY_ACAPELA_FALLBACK_ACTIVE = "acapela_fallback_active"
+        const val KEY_ACAPELA_FALLBACK_VOICE = "acapela_fallback_voice"
+        const val KEY_ACAPELA_FALLBACK_ENGINE = "acapela_fallback_engine"
+        const val KEY_ACAPELA_FALLBACK_REASON = "acapela_fallback_reason"
     }
 
     override fun onCreate(): Boolean = true
@@ -70,6 +75,26 @@ class TtsDiagnosticsProvider : ContentProvider() {
                 putInt(KEY_A11Y_EVENTS_PER_MIN, a11yEventsPerMin)
                 putInt(KEY_USAGE_STATS_POLLS, usageStatsPolls)
                 putString(KEY_TIMELINE_REPORT, timelineReport)
+                putStringArrayList(
+                    KEY_SPEECH_RECORDS,
+                    ArrayList(SpeechFallbackTracker.getRecentFormatted())
+                )
+                putBoolean(
+                    KEY_ACAPELA_FALLBACK_ACTIVE,
+                    SpeechFallbackTracker.isAcapelaFallbackActive()
+                )
+                putString(
+                    KEY_ACAPELA_FALLBACK_VOICE,
+                    SpeechFallbackTracker.acapelaFallbackVoice
+                )
+                putString(
+                    KEY_ACAPELA_FALLBACK_ENGINE,
+                    SpeechFallbackTracker.acapelaFallbackEngine
+                )
+                putString(
+                    KEY_ACAPELA_FALLBACK_REASON,
+                    SpeechFallbackTracker.acapelaFallbackReason
+                )
             }
         }
         return null

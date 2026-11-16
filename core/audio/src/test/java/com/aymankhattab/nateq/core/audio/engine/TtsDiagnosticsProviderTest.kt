@@ -31,6 +31,7 @@ class TtsDiagnosticsProviderTest {
         provider = TtsDiagnosticsProvider()
         provider.attachInfo(context, null)
         VoiceResolutionTracker.clear()
+        SpeechFallbackTracker.clear()
     }
 
     @Test
@@ -81,6 +82,44 @@ class TtsDiagnosticsProviderTest {
                 TtsDiagnosticsProvider.KEY_USAGE_STATS_POLLS
             ) ?: 0) >= 1
         )
+    }
+
+    @Test
+    fun testSnapshot_includesSpeechFallbackRecords() {
+        SpeechFallbackTracker.record(
+            text = "فحص سجل التراجع",
+            languageTag = "ar",
+            requestedEngine = "acapela",
+            requestedVoice = "salma",
+            actualEngine = "vocalizer",
+            actualVoice = "layla",
+            isFallback = true,
+            fallbackReason = "تعذر الصوت الأصلي"
+        )
+
+        val bundle = provider.call(
+            TtsDiagnosticsProvider.METHOD_SNAPSHOT,
+            null,
+            null
+        )
+        assertNotNull(bundle)
+        assertTrue(
+            bundle?.getBoolean(
+                TtsDiagnosticsProvider.KEY_ACAPELA_FALLBACK_ACTIVE
+            ) == true
+        )
+        assertEquals(
+            "layla",
+            bundle?.getString(
+                TtsDiagnosticsProvider.KEY_ACAPELA_FALLBACK_VOICE
+            )
+        )
+        val records = bundle?.getStringArrayList(
+            TtsDiagnosticsProvider.KEY_SPEECH_RECORDS
+        )
+        assertNotNull(records)
+        assertTrue(records?.isNotEmpty() == true)
+        assertTrue(records?.get(0)?.contains("salma") == true)
     }
 
     @Test

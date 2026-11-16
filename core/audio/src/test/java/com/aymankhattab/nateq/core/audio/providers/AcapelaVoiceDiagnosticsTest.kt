@@ -827,6 +827,7 @@ class AcapelaVoiceDiagnosticsTest {
         assertTrue(File(staged, "0x00169729").exists())
         assertTrue(File(staged, "config.yaml").exists())
         assertTrue(File(staged, "userdicos/ara-sau.userdico").exists())
+        assertTrue(File(staged, "ara-sau.userdico").exists())
         assertTrue(File(staged, "ar_sa.bnx").exists())
         assertTrue(File(staged, "ar_sa.dca").exists())
 
@@ -877,5 +878,73 @@ class AcapelaVoiceDiagnosticsTest {
             .getDetailedDirectoryInventory(folder)
         assertTrue(inventory.any { it.contains("test1.txt (15 بايت)") })
         assertTrue(inventory.any { it.contains("sub/test2.txt (25 بايت)") })
+    }
+
+    @Test
+    fun evaluateTrialSuccess10724_verifiesSuccessCriteria() {
+        assertFalse(
+            AcapelaVoiceDiagnostics.evaluateTrialSuccess10724(
+                speakCode = -2,
+                samples = 1000L,
+                nativeLines = listOf("clean log")
+            )
+        )
+        assertFalse(
+            AcapelaVoiceDiagnostics.evaluateTrialSuccess10724(
+                speakCode = 0,
+                samples = 0L,
+                nativeLines = listOf("clean log")
+            )
+        )
+        assertFalse(
+            AcapelaVoiceDiagnostics.evaluateTrialSuccess10724(
+                speakCode = 0,
+                samples = 1000L,
+                nativeLines = listOf(
+                    "after initLanguageDbaNewEx",
+                    "Error init language"
+                )
+            )
+        )
+        assertFalse(
+            AcapelaVoiceDiagnostics.evaluateTrialSuccess10724(
+                speakCode = 0,
+                samples = 1000L,
+                nativeLines = listOf("voice Salma (0) not loaded")
+            )
+        )
+        assertTrue(
+            AcapelaVoiceDiagnostics.evaluateTrialSuccess10724(
+                speakCode = 0,
+                samples = 44100L,
+                nativeLines = listOf("Synthesis completed successfully")
+            )
+        )
+    }
+
+    @Test
+    fun findFirstErrorAndPreceding_findsFirstKeywordAndPredecessor() {
+        val lines = listOf(
+            "Starting speech session",
+            "after initLanguageDbaNewEx",
+            "check_userdico : load error",
+            "voice Salma (0) not loaded"
+        )
+        val result = AcapelaVoiceDiagnostics.findFirstErrorAndPreceding(lines)
+        assertNotNull(result)
+        assertEquals("check_userdico : load error", result?.first)
+        assertEquals("after initLanguageDbaNewEx", result?.second)
+
+        val linesAtZero = listOf("Error init language", "next line")
+        val resultZero =
+            AcapelaVoiceDiagnostics.findFirstErrorAndPreceding(linesAtZero)
+        assertNotNull(resultZero)
+        assertEquals("Error init language", resultZero?.first)
+        assertEquals("(لا يوجد سطر سابق)", resultZero?.second)
+
+        val clean = listOf("line 1", "line 2")
+        val cleanResult =
+            AcapelaVoiceDiagnostics.findFirstErrorAndPreceding(clean)
+        assertEquals(null, cleanResult)
     }
 }

@@ -613,12 +613,12 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * معيار النجاح الوحيد لبناء 10723:
+     * معيار النجاح الوحيد لبناء 10724 (وكذلك 10723):
      * nSpeak يعيد قيمة غير -2 و pcm > 0،
      * وغياب سطري "Error init language" و "voice ... not loaded" من سجل المكتبة.
      * ولا يعتبر eb=0 نجاحاً بمفرده.
      */
-    fun evaluateTrialSuccess10723(
+    fun evaluateTrialSuccess10724(
         speakCode: Int,
         samples: Long,
         nativeLines: List<String>
@@ -628,6 +628,29 @@ object AcapelaVoiceDiagnostics {
                 line.contains("not loaded", ignoreCase = true)
         }
         return speakCode != -2 && samples > 0L && !hasLangError
+    }
+
+    fun evaluateTrialSuccess10723(
+        speakCode: Int,
+        samples: Long,
+        nativeLines: List<String>
+    ): Boolean = evaluateTrialSuccess10724(speakCode, samples, nativeLines)
+
+    /**
+     * تحديد أول سطر خطأ في سجل المكتبة الأصلية والسطر الذي قبله (البند 3).
+     */
+    fun findFirstErrorAndPreceding(
+        lines: List<String>
+    ): Pair<String, String>? {
+        val keywords = listOf("Error", "error", "not loaded", "load error")
+        for (i in lines.indices) {
+            val line = lines[i]
+            if (keywords.any { line.contains(it) }) {
+                val prev = if (i > 0) lines[i - 1] else "(لا يوجد سطر سابق)"
+                return Pair(line, prev)
+            }
+        }
+        return null
     }
 
     /**
@@ -820,21 +843,45 @@ object AcapelaVoiceDiagnostics {
             }
         }
 
-        // 7. ملفات userdicos/
-        for (root in candidateRoots) {
-            root.walkTopDown().maxDepth(5).forEach { f ->
-                if (f.isFile && f.name.endsWith(".userdico", true)) {
-                    val dstSub = File(userdicosDir, f.name)
-                    if (!dstSub.exists() || dstSub.length() != f.length()) {
-                        runCatching { f.copyTo(dstSub, overwrite = true) }
-                    }
-                }
+        // 7. ملفات userdicos/ ونسخها في الجذر أيضاً (البند 6 لبناء 10724)
+        val allDicos = candidateRoots.flatMap { root ->
+            root.walkTopDown().maxDepth(6).filter {
+                it.isFile && it.name.endsWith(".userdico", true)
+            }.toList()
+        }
+        val bestAraSau = allDicos
+            .filter { it.name.equals("ara-sau.userdico", true) }
+            .maxByOrNull { it.length() }
+        val bestUser = allDicos
+            .filter { it.name.equals("user.userdico", true) }
+            .maxByOrNull { it.length() }
+
+        // نسخ كافة ملفات userdico إلى مجلد userdicos/
+        for (f in allDicos) {
+            val dstSub = File(userdicosDir, f.name)
+            if (!dstSub.exists() || dstSub.length() != f.length()) {
+                runCatching { f.copyTo(dstSub, overwrite = true) }
             }
         }
-        val araDico = File(userdicosDir, "ara-sau.userdico")
-        val userDico = File(userdicosDir, "user.userdico")
-        if (!araDico.exists() && userDico.exists()) {
-            runCatching { userDico.copyTo(araDico, overwrite = true) }
+        // وضع الملفين في userdicos/ وفي المجلد الرئيسي معاً
+        bestAraSau?.let { src ->
+            val dstSub = File(userdicosDir, "ara-sau.userdico")
+            runCatching { src.copyTo(dstSub, overwrite = true) }
+            val dstRoot = File(stageDir, "ara-sau.userdico")
+            runCatching { src.copyTo(dstRoot, overwrite = true) }
+        }
+        bestUser?.let { src ->
+            val dstSub = File(userdicosDir, "user.userdico")
+            runCatching { src.copyTo(dstSub, overwrite = true) }
+            val dstRoot = File(stageDir, "user.userdico")
+            runCatching { src.copyTo(dstRoot, overwrite = true) }
+        }
+        val araDicoSub = File(userdicosDir, "ara-sau.userdico")
+        val userDicoSub = File(userdicosDir, "user.userdico")
+        if (!araDicoSub.exists() && userDicoSub.exists()) {
+            runCatching { userDicoSub.copyTo(araDicoSub, overwrite = true) }
+            val dstRoot = File(stageDir, "ara-sau.userdico")
+            runCatching { userDicoSub.copyTo(dstRoot, overwrite = true) }
         }
 
         // 8. تنظيف نهائي صارم لضمان خلو المجلد من أي ملف غير مرغوب فيه
@@ -1794,7 +1841,7 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10722) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10724) ===")
         sb.appendLine("==================================================")
         sb.appendLine("")
 
@@ -2051,6 +2098,8 @@ object AcapelaVoiceDiagnostics {
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
         runCatching {
+            File(cacheDir, "acapela_full_diagnostic_10724.txt")
+                .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10723.txt")
                 .writeText(fullOutput, StandardCharsets.UTF_8)
             File(cacheDir, "acapela_full_diagnostic_10722.txt")
@@ -2147,7 +2196,8 @@ object AcapelaVoiceDiagnostics {
 
     /**
      * قراءة أسطر Logcat الخاصة بالمكتبة الأصلية بين علامتي البداية والنهاية،
-     * مع تضمين أي سطر يحمل كلمة error أو fail.
+     * وتضمين كافة أسطر acattsandroid-extended-native كاملة بلا استثناء
+     * (البند 2).
      */
     fun readLogcatBetweenMarkers(
         startMarker: String,
@@ -2167,24 +2217,18 @@ object AcapelaVoiceDiagnostics {
             for (line in lines) {
                 if (line.contains(startMarker)) {
                     recording = true
-                    captured.add(line)
                     continue
                 }
                 if (line.contains(endMarker)) {
-                    captured.add(line)
                     recording = false
                     break
                 }
                 if (recording) {
-                    if (line.contains("acattsandroid", ignoreCase = true) ||
-                        line.contains("error", ignoreCase = true) ||
-                        line.contains("fail", ignoreCase = true) ||
-                        line.contains("tts_function", ignoreCase = true) ||
-                        line.contains("BABILE", ignoreCase = true) ||
-                        line.contains("eb=", ignoreCase = true) ||
-                        line.contains("nlp", ignoreCase = true)
+                    val trimmed = line.trim()
+                    if (trimmed.isNotBlank() &&
+                        !trimmed.startsWith("---------")
                     ) {
-                        captured.add(line)
+                        captured.add(trimmed)
                     }
                 }
             }
@@ -2193,6 +2237,8 @@ object AcapelaVoiceDiagnostics {
             } else {
                 lines.filter { line ->
                     line.contains("acattsandroid", ignoreCase = true) ||
+                        line.contains("initLanguage", ignoreCase = true) ||
+                        line.contains("userdico", ignoreCase = true) ||
                         line.contains("error", ignoreCase = true) ||
                         line.contains("fail", ignoreCase = true)
                 }.takeLast(maxLines)

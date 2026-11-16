@@ -67,6 +67,8 @@ import com.aymankhattab.nateq.core.audio.providers.VocalizerDownloader
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.engine.TtsDiagnosticsProvider
+import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.NetworkMetering
@@ -2846,11 +2848,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
 
             sb.appendLine(
-                "الأقسام الجديدة المضافة: (1) شجرة ملفات ومجلدات Acapela " +
-                    "المتداخلة بالأحجام، (2) وسائط nInit وnSetCurrentVoice " +
-                    "وnSpeak الحرفية وأكواد الإرجاع، (3) آخر 40 سطراً من " +
-                    "سجل المكتبة الأصلية acattsandroid-extended-native، " +
-                    "(4) فحص مسار وحجم ملف salma_22k_lf.bvcu."
+                "الأقسام المضافة: (1) مسارات نطق Acapela المستقلة مع " +
+                    "سجل logcat وlogfile.txt وجرد الملفات، " +
+                    "(2) أكواد JNI واستدعاءات فحص الأصوات، " +
+                    "(3) تتبع صوت النطق والبدائل (Fallback) في Lord TTS."
             )
             sb.appendLine("")
             sb.appendLine("=== Lord TTS — التشخيص ===")
@@ -2885,6 +2886,20 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             )
             sb.appendLine("")
 
+            val ttsUri = android.net.Uri.parse(
+                "content://${context.packageName}.tts_diagnostics"
+            )
+            val ttsSnapshot = kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                runCatching {
+                    context.contentResolver.call(
+                        ttsUri,
+                        TtsDiagnosticsProvider.METHOD_SNAPSHOT,
+                        null,
+                        null
+                    )
+                }.getOrNull()
+            }
+
             val mismatched = checkMismatchedCategoryVoices()
             if (mismatched.isNotEmpty()) {
                 sb.appendLine("=== تناقض محرك وصوت الفئات ===")
@@ -2896,7 +2911,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
             // ── محركات TTS المثبَّتة ──────────────────────────────────
             sb.appendLine("--- محركات TTS المثبَّتة ---")
-            val engines = EnginePicker.installedEngines(context)
+            val engines = EnginePicker.allInstalledEngines(context)
             if (engines.isEmpty()) {
                 sb.appendLine("• لم يُعثر على محركات TTS")
             } else {
@@ -2910,9 +2925,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         rms != null -> "RMS=${"%.3f".format(rms)}"
                         else -> "RMS=غير معايَر"
                     }
+                    val isVis = VisibleEngines.isVisible(engine.packageName)
+                    val visLabel = if (isVis) "مرئي" else "مخفي بتصفية المستخدم"
                     sb.appendLine(
                         "• ${engine.label} " +
-                            "(${engine.packageName})  $rmsText"
+                            "(${engine.packageName})  $rmsText [$visLabel]"
                     )
                 }
             }
@@ -3085,6 +3102,37 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     val fullReport =
                         AcapelaVoiceDiagnostics.buildAcapelaFullReport(context)
                     sb.appendLine(fullReport)
+
+                    val isAcapelaFallback = (ttsSnapshot?.getBoolean(
+                        TtsDiagnosticsProvider.KEY_ACAPELA_FALLBACK_ACTIVE,
+                        false
+                    ) == true) ||
+                        SpeechFallbackTracker.isAcapelaFallbackActive()
+                    if (isAcapelaFallback) {
+                        val fbVoice = ttsSnapshot?.getString(
+                            TtsDiagnosticsProvider.KEY_ACAPELA_FALLBACK_VOICE
+                        ) ?: SpeechFallbackTracker.acapelaFallbackVoice ?:
+                            "Laila"
+                        val fbEngine = ttsSnapshot?.getString(
+                            TtsDiagnosticsProvider.KEY_ACAPELA_FALLBACK_ENGINE
+                        ) ?: SpeechFallbackTracker.acapelaFallbackEngine ?:
+                            "vocalizer_embedded"
+                        val fbReason = ttsSnapshot?.getString(
+                            TtsDiagnosticsProvider.KEY_ACAPELA_FALLBACK_REASON
+                        ) ?: SpeechFallbackTracker.acapelaFallbackReason ?:
+                            "فشل نطق Acapela"
+                        sb.appendLine(
+                            "  حالة الصوت الحالي: بديل (Fallback) بسبب " +
+                                "تعثّر Acapela"
+                        )
+                        sb.appendLine(
+                            "  الصوت البديل النشط: $fbVoice ($fbEngine)"
+                        )
+                        sb.appendLine("  سبب التحويل للبديل: $fbReason")
+                        sb.appendLine(
+                            "  تنبيه: لا يُخفى فشل Acapela بوجود صوت بديل"
+                        )
+                    }
                 }
                 if (configYamlLine != null) {
                     sb.appendLine(configYamlLine)
@@ -3094,6 +3142,25 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }
                 sb.appendLine("")
             }
+
+            // ── سجل نطق محرك Lord TTS وتتبع البديل (Fallback) ─────────────
+            sb.appendLine(
+                "--- سجل نطق محرك Lord TTS وتتبع البديل (Fallback) ---"
+            )
+            val speechRecords = ttsSnapshot?.getStringArrayList(
+                TtsDiagnosticsProvider.KEY_SPEECH_RECORDS
+            )
+            if (speechRecords.isNullOrEmpty()) {
+                val localRecords = SpeechFallbackTracker.getRecentFormatted()
+                if (localRecords.isEmpty()) {
+                    sb.appendLine("لا توجد عمليات نطق مسجلة بعد")
+                } else {
+                    localRecords.forEach { sb.appendLine(it) }
+                }
+            } else {
+                speechRecords.forEach { sb.appendLine(it) }
+            }
+            sb.appendLine("")
 
             // ── المحرك/الصوت المختار لكل فئة ─────────────────────────
             sb.appendLine("--- الاختيار النشط لكل فئة ---")
@@ -3321,21 +3388,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 isConnected -> "متصلة ✓"
                 a11yEnabled && !isConnected -> "منفصلة ✗"
                 else -> "معطّلة في الإعدادات"
-            }
-
-            val ttsUri = android.net.Uri.parse(
-                "content://${context.packageName}.tts_diagnostics"
-            )
-            val ttsSnapshot = kotlinx.coroutines.withTimeoutOrNull(1500L) {
-                runCatching {
-                    context.contentResolver.call(
-                        ttsUri,
-                        com.aymankhattab.nateq.core.audio.engine
-                            .TtsDiagnosticsProvider.METHOD_SNAPSHOT,
-                        null,
-                        null
-                    )
-                }.getOrNull()
             }
 
             sb.appendLine(
