@@ -1052,4 +1052,131 @@ class AcapelaVoiceDiagnosticsTest {
                 .deleteRecursively()
         }
     }
+
+    @Test
+    fun stageOriginalRoot109_keepsRootCopyWhenNameRepeatsInSubdir() {
+        val root = tempDir()
+        try {
+            val salma = File(root, "Salma").apply { mkdirs() }
+            val rootIni = File(salma, "ar_sa_hd_salma_22k_lf.ini")
+            val rootText = "ROOT-109".padEnd(109, ' ')
+            rootIni.writeText(rootText, StandardCharsets.ISO_8859_1)
+
+            val salmaLf = File(salma, "salma_lf").apply { mkdirs() }
+            val subIni = File(salmaLf, "ar_sa_hd_salma_22k_lf.ini")
+            subIni.writeText("SUB-VERSION", StandardCharsets.ISO_8859_1)
+
+            val staged = AcapelaVoiceDiagnostics.stageOriginalRoot109(
+                context = context,
+                sourceDir = salma
+            )
+
+            val stagedRootIni = File(
+                staged,
+                "ar_sa_hd_salma_22k_lf.ini"
+            )
+            val stagedSubIni = File(
+                File(staged, "salma_lf"),
+                "ar_sa_hd_salma_22k_lf.ini"
+            )
+            assertEquals(109L, stagedRootIni.length())
+            assertEquals(
+                rootText,
+                stagedRootIni.readText(StandardCharsets.ISO_8859_1)
+            )
+            assertEquals(
+                "SUB-VERSION",
+                stagedSubIni.readText(StandardCharsets.ISO_8859_1)
+            )
+        } finally {
+            root.deleteRecursively()
+            File(context.cacheDir, "acapela_stage_orig_root_109")
+                .deleteRecursively()
+        }
+    }
+
+    @Test
+    fun stageOriginalRoot109_doesNotPromoteSubdirIniToRoot() {
+        val root = tempDir()
+        try {
+            val salmaLf = File(root, "Salma/salma_lf").apply { mkdirs() }
+            val subIni = File(salmaLf, "ar_sa_hd_salma_22k_lf.ini")
+            subIni.writeText("SUB-ONLY".padEnd(109, ' '))
+
+            val staged = AcapelaVoiceDiagnostics.stageOriginalRoot109(
+                context = context,
+                sourceDir = File(root, "Salma")
+            )
+
+            // لا يُرفع محتوى salma_lf إلى الجذر: يبقى في مكانه فقط
+            assertFalse(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
+            assertTrue(
+                File(staged, "salma_lf/ar_sa_hd_salma_22k_lf.ini").exists()
+            )
+        } finally {
+            root.deleteRecursively()
+            File(context.cacheDir, "acapela_stage_orig_root_109")
+                .deleteRecursively()
+        }
+    }
+
+    @Test
+    fun verifyRoot109IniBeforeInit_passesWith109BytesInRoot() {
+        val dir = tempDir()
+        try {
+            File(dir, "ar_sa_hd_salma_22k_lf.ini")
+                .writeText("OK".padEnd(109, ' '))
+            File(dir, "bvcu.ini").writeText("MODE=\"prep_hd\"")
+
+            val check = AcapelaVoiceDiagnostics
+                .verifyRoot109IniBeforeInit(dir)
+
+            assertTrue(check.passed)
+            assertTrue(check.report.contains("النتيجة: نجاح"))
+            assertTrue(check.report.contains("bvcu.ini"))
+            assertTrue(check.report.contains("MD5="))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun verifyRoot109IniBeforeInit_blocksWhenSizeDiffers() {
+        val dir = tempDir()
+        try {
+            File(dir, "ar_sa_hd_salma_22k_lf.ini")
+                .writeText("SHORT".padEnd(108, ' '))
+
+            val check = AcapelaVoiceDiagnostics
+                .verifyRoot109IniBeforeInit(dir)
+
+            assertFalse(check.passed)
+            assertTrue(check.report.contains("النتيجة: فشل"))
+            assertTrue(
+                check.report.contains("لن يُستدعى nInit بهذا المجلد")
+            )
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun verifyRoot109IniBeforeInit_blocksWhenIniOnlyInSubdir() {
+        val dir = tempDir()
+        try {
+            val sub = File(dir, "salma_lf").apply { mkdirs() }
+            File(sub, "ar_sa_hd_salma_22k_lf.ini")
+                .writeText("SUB".padEnd(109, ' '))
+
+            val check = AcapelaVoiceDiagnostics
+                .verifyRoot109IniBeforeInit(dir)
+
+            assertFalse(check.passed)
+            assertTrue(
+                check.report.contains("غير موجود في جذر المجلد")
+            )
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
 }

@@ -1763,7 +1763,9 @@ internal class AcapelaHostSession(
         forceCallVoice: Boolean = true,
         callPreStopShutdown: Boolean = false,
         skipPrepare: Boolean = false,
-        forceVoiceEvenIfInitFailed: Boolean = false
+        forceVoiceEvenIfInitFailed: Boolean = false,
+        allowRetry: Boolean = true,
+        probeFiles: Boolean = false
     ): VoiceLoadTrialResult {
         if (!skipPrepare) {
             prepareTrialDirectory(trialDir, voice)
@@ -1850,8 +1852,27 @@ internal class AcapelaHostSession(
         }
 
         recordAcapelaBreadcrumb("[$label] nInit($stagePath)")
+        // رصد الملفات التي تفتحها المكتبة فعلاً (بناء 102): نراقب مجلد
+        // nInit وحده ونجمع واصفات /proc/self/fd أثناء nInit تحديداً.
+        val fileProbe = if (probeFiles) {
+            NativeFileProbe.startSession(
+                context = context,
+                engineId = HostProtocol.ENGINE_ACAPELA,
+                extraDir = trialDir,
+                onlyExtraDir = true
+            )
+        } else {
+            null
+        }
         val fdsBefore = AcapelaVoiceDiagnostics.getOpenFileDescriptors()
-        val initRes = srv.nInit(stagePath)
+        var probeReport = ""
+        var initRes = -1
+        try {
+            initRes = srv.nInit(stagePath)
+        } finally {
+            probeReport = runCatching { fileProbe?.stopAndLog() }
+                .getOrNull().orEmpty()
+        }
         val modeRes = if (initRes == 0 && !skipVoiceMode) {
             recordAcapelaBreadcrumb("[$label] nSetVoiceMode($voiceMode)")
             srv.nSetVoiceMode(voiceMode)
@@ -2043,7 +2064,9 @@ internal class AcapelaHostSession(
         var retryVoiceRes: Int? = null
         var retrySpeakRes: Int? = null
         var retrySamples: Long? = null
-        if (initRes == 0 && speakRes == -2 && isVoiceLoaded) {
+        if (allowRetry && initRes == 0 && speakRes == -2 &&
+            isVoiceLoaded
+        ) {
             retryVoiceRes = runCatching {
                 srv.nSetCurrentVoice(speaker)
             }.getOrElse { -99 }
@@ -2307,6 +2330,18 @@ internal class AcapelaHostSession(
             generalLicLines.forEach { sb.appendLine("    $it") }
         }
 
+        sb.appendLine(
+            "  - [رصد الملفات] أحداث فتح/إغلاق مجلد nInit " +
+                "وواصفات /proc/self/fd:"
+        )
+        if (probeReport.isBlank()) {
+            sb.appendLine("    (لم يُفعَّل الرصد في هذه المحاولة)")
+        } else {
+            probeReport.lineSequence().forEach { line ->
+                sb.appendLine("    $line")
+            }
+        }
+
         sb.appendLine("  - قائمة الملفات المفتوحة فعلياً قبل الخطأ:")
         if (openedFiles.isEmpty()) {
             sb.appendLine("    (لم يُرصد فتح ملفات عبر /proc/self/fd أو السجل)")
@@ -2355,6 +2390,48 @@ internal class AcapelaHostSession(
             voiceListCount = classicVoiceListRes,
             classicVersion = classicVer,
             classicLastError = classicErr
+        )
+    }
+
+    /**
+     * نتيجة محاولة لم تُنفَّذ: فشل التحقق قبل `nInit`.
+     *
+     * تُبنى بنفس شكل [VoiceLoadTrialResult] لتدخل تقرير المسارات، لكنها
+     * تُبلِغ صراحةً أن `nInit` لم يُستدعَ (`initCode = -1`،
+     * `speakCode = -1`) فلا يبدو الفشل انقطاعاً صامتاً.
+     */
+    private fun failedTrialBeforeInit(
+        label: String,
+        path: String,
+        report: String
+    ): VoiceLoadTrialResult {
+        val audioHandler = TrialAudio { _, _ -> }
+        audioHandler.probeOnly = true
+        val synthCallback = AcapelaSynthesisCallback { _, _ -> }
+        val text = buildString {
+            appendLine("[$label - لم تُنفَّذ المحاولة]")
+            appendLine("  - المعامل الحرفي لـ nInit: \"$path\"")
+            appendLine("  - nInit: لم يُستدعَ (فشل التحقق من ملفات ini)")
+            appendLine("  - nSpeak: لم يُستدعَ")
+            appendLine("  - عدد عينات PCM: 0")
+            appendLine("")
+            appendLine(report)
+        }.trimEnd()
+        Log.e(TAG, text)
+        HostLog.e(HostProtocol.ENGINE_ACAPELA, text)
+        return VoiceLoadTrialResult(
+            method = label,
+            path = path,
+            initCode = -1,
+            modeCode = -1,
+            langCode = -1,
+            voiceCode = -1,
+            speakCode = -1,
+            samples = 0L,
+            service = null,
+            audioHandler = audioHandler,
+            synthCallback = synthCallback,
+            details = text
         )
     }
 
@@ -2576,37 +2653,44 @@ internal class AcapelaHostSession(
             trialsList.add(trial10709)
             recordTrialProgress(trial10709)
 
-            // ── مسار 4: Path_Original_Tree (شجرة الصوت الأصلية Salma/) ──
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val trialOrigTree = executeVoiceLoadTrial(
-                label = "4) Path_Original_Tree (شجرة الصوت الأصلية Salma/)",
-                trialDir = origSalmaDir,
-                speaker = effectiveSpeaker,
-                iso3 = iso3,
-                registration = regToUse,
-                voice = voice,
-                voiceMode = "MODE=prep_hd",
-                probeText = "مرحبا",
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                useRealCallback = false,
-                trailingSlash = true,
-                callSetLicense = false,
-                enableSetLog = true,
-                forceCallVoice = true,
-                callPreStopShutdown = false
-            )
-            trialsList.add(trialOrigTree)
-            recordTrialProgress(trialOrigTree)
+            // ── مسارا 4 و4ب (تشغيل nInit على جذر الصوت الأصلي مباشرة) ──
+            // أُزيلا في بناء 102: تمرير الجذر الأصلي إلى nInit يجعل المكتبة
+            // تكتب فيه logfile.txt وقد تعدّل تهيئته، وهو ما يهدد سلامة
+            // جذر الصوت. النسخة الحرفية في مسار 5 تغطي الغرض نفسه بأمان.
 
-            // ── مسار فرعي إذا كان voice.dir مجلداً فرعياً (salma_lf) ──
-            if (voice.dir.exists() &&
-                voice.dir.canonicalPath != origSalmaDir.canonicalPath
-            ) {
-                AcapelaVoiceDiagnostics.clearNativeLogcat()
-                val subName = voice.dir.name
-                val trialOrigSub = executeVoiceLoadTrial(
-                    label = "4ب) Path_Original_Direct ($subName/)",
-                    trialDir = voice.dir,
+            // ── مسار 5: Path_Original_Root_109 (نسخة حرفية لجذر Salma/) ──
+            // بناء 102: نسخة حرفية بلا استبدال، ثم حاجز تحقق من ملفات
+            // ini قبل nInit، ثم محاولة واحدة فقط مع رصد الملفات المفتوحة.
+            AcapelaVoiceDiagnostics.clearNativeLogcat()
+            val root109Dir = AcapelaVoiceDiagnostics.stageOriginalRoot109(
+                context = context,
+                sourceDir = origSalmaDir
+            )
+            val preInitCheck = AcapelaVoiceDiagnostics
+                .verifyRoot109IniBeforeInit(root109Dir)
+            Log.i(TAG, preInitCheck.report)
+            HostLog.i(HostProtocol.ENGINE_ACAPELA, preInitCheck.report)
+            runCatching {
+                val checkText = preInitCheck.report
+                File(context.cacheDir, "acapela_stage_verify_10727.txt")
+                    .writeText(checkText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_stage_verify_102.txt")
+                    .writeText(checkText, StandardCharsets.UTF_8)
+            }
+            val trialRoot109 = if (!preInitCheck.passed) {
+                // فشل التجهيز: لا nInit ولا nSpeak، ويُسجَّل السبب صراحةً
+                // كي لا يبدو الفشل انقطاعاً صامتاً.
+                failedTrialBeforeInit(
+                    label = "5) Path_Original_Root_109 " +
+                        "(فشل التحقق قبل nInit)",
+                    path = directoryArgument(root109Dir),
+                    report = preInitCheck.report
+                )
+            } else {
+                executeVoiceLoadTrial(
+                    label = "5) Path_Original_Root_109 " +
+                        "(نسخة حرفية لجذر Salma)",
+                    trialDir = root109Dir,
                     speaker = effectiveSpeaker,
                     iso3 = iso3,
                     registration = regToUse,
@@ -2619,46 +2703,20 @@ internal class AcapelaHostSession(
                     callSetLicense = false,
                     enableSetLog = true,
                     forceCallVoice = true,
-                    callPreStopShutdown = false
+                    callPreStopShutdown = false,
+                    skipPrepare = true,
+                    forceVoiceEvenIfInitFailed = true,
+                    allowRetry = false,
+                    probeFiles = true
                 )
-                trialsList.add(trialOrigSub)
-                recordTrialProgress(trialOrigSub)
             }
-
-            // ── مسار 5: Path_Original_Root_109 (نسخة حرفية لجذر Salma/) ──
-            // الفرضية (10726): الـ ini الأصلي ذو 109 بايت يربط ملف
-            // nuul216vqfp ككيانٍ فيه مكوّن PRO، وكل التجهيزات السابقة
-            // استبعدته. لذا تُنسخ الشجرة حرفياً بلا أي توليد، ويُنادى
-            // nSetCurrentVoice دائماً بعد nInit كما في MultiTTS.
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
-            val root109Dir = AcapelaVoiceDiagnostics.stageOriginalRoot109(
-                context = context,
-                sourceDir = origSalmaDir
-            )
-            val trialRoot109 = executeVoiceLoadTrial(
-                label = "5) Path_Original_Root_109 (نسخة حرفية لجذر Salma)",
-                trialDir = root109Dir,
-                speaker = effectiveSpeaker,
-                iso3 = iso3,
-                registration = regToUse,
-                voice = voice,
-                voiceMode = "MODE=prep_hd",
-                probeText = "مرحبا",
-                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                useRealCallback = false,
-                trailingSlash = true,
-                callSetLicense = false,
-                enableSetLog = true,
-                forceCallVoice = true,
-                callPreStopShutdown = false,
-                skipPrepare = true,
-                forceVoiceEvenIfInitFailed = true
-            )
             trialsList.add(trialRoot109)
             recordTrialProgress(trialRoot109)
 
             // فحص النجاح وحفظ ملف WAV للنطق التجريبي "مرحبا"
-            val winningTrial = trialsList.firstOrNull { it.isSuccess }
+            // يُفضَّل آخر مسار ناجح (مسار 5) كي يكون الدليل من نسخة
+            // الجذر الحرفية لا من تجهيز سابق.
+            val winningTrial = trialsList.lastOrNull { it.isSuccess }
             lastTrialSucceeded.set(winningTrial != null)
             if (winningTrial != null) {
                 val pcmData =
@@ -2747,7 +2805,7 @@ internal class AcapelaHostSession(
                 ?: trialFullStage
 
             val literalResults = buildString {
-                appendLine("=== [نتائج مسارات نطق Acapela (بناء 10726)] ===")
+                appendLine("=== [نتائج مسارات نطق Acapela (بناء 10727)] ===")
                 trialsList.forEach { t ->
                     val ebStr = t.ebErrorCode?.let {
                         "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
@@ -2918,7 +2976,7 @@ internal class AcapelaHostSession(
             } else {
                 "فشل كافة مسارات نطق Acapela حسب معيار 10724"
             }
-            val topSummary = "[تشخيص مسارات Acapela 10726] " +
+            val topSummary = "[تشخيص مسارات Acapela 10727] " +
                 "$trialSummary | النتيجة: $outcome"
             Log.i(TAG, topSummary)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
@@ -3041,6 +3099,8 @@ internal class AcapelaHostSession(
                     }
                 }.trimEnd()
                 reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10727.txt")
+                    .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10726.txt")
                     .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10724.txt")
@@ -3110,6 +3170,8 @@ internal class AcapelaHostSession(
             HostLog.e(HostProtocol.ENGINE_ACAPELA, errText)
             runCatching {
                 File(context.cacheDir, "acapela_diagnostic_report.txt")
+                    .writeText(errText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10727.txt")
                     .writeText(errText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10725.txt")
                     .writeText(errText, StandardCharsets.UTF_8)

@@ -126,7 +126,13 @@ object NativeFileProbe {
                     runCatching { dir.mkdirs() }
                 }
                 if (dir.exists()) {
-                    val obs = object : FileObserver(dir.path, OBSERVED_EVENTS) {
+                    // المُنشئ (File, Int) متاح من API 29 فقط وminSdk=24،
+                    // لذا يُستخدم (String, Int) الملغى عمداً هنا.
+                    @Suppress("DEPRECATION")
+                    val obs = object : FileObserver(
+                        dir.path,
+                        OBSERVED_EVENTS
+                    ) {
                         override fun onEvent(event: Int, path: String?) {
                             val eventName = eventMaskToString(event)
                             val entry = "[inotify] ${dir.name}/" +
@@ -159,7 +165,7 @@ object NativeFileProbe {
             pollingThread = t
         }
 
-        fun stopAndLog() {
+        fun stopAndLog(): String {
             isRunning.set(false)
             try {
                 pollingThread?.interrupt()
@@ -208,7 +214,11 @@ object NativeFileProbe {
                     target.endsWith(".dat") ||
                     target.endsWith(".hdr") ||
                     target.endsWith(".xml") ||
-                    target.endsWith(".xmf")
+                    target.endsWith(".xmf") ||
+                    target.endsWith(".ini") ||
+                    target.endsWith(".inf") ||
+                    target.endsWith(".dca") ||
+                    target.endsWith(".bvcu")
             }
             lines.add("واصفات /proc/self/fd ذات الصلة (${relevantFd.size}):")
             if (relevantFd.isEmpty()) {
@@ -221,18 +231,28 @@ object NativeFileProbe {
 
             val body = lines.joinToString("\n")
             HostLog.i(engineId, "$PROBE_SECTION\n$body")
+            return body
         }
     }
 
     /**
      * بدء جلسة مراقبة لعملية التهيئة.
+     *
+     * @param onlyExtraDir عند `true` يُراقب [extraDir] وحده (المجلد
+     *   المُمرَّر لـ`nInit`) بدل كل مجلدات التطبيق، فلا تُنشأ مجلدات
+     *   جانبية ولا تُرصد أحداث لا تخصّ التجربة.
      */
     fun startSession(
         context: Context,
         engineId: String,
-        extraDir: File? = null
+        extraDir: File? = null,
+        onlyExtraDir: Boolean = false
     ): Session {
-        val dirs = getTargetDirectories(context, extraDir)
+        val dirs = if (onlyExtraDir && extraDir != null) {
+            listOf(extraDir)
+        } else {
+            getTargetDirectories(context, extraDir)
+        }
         val session = Session(engineId, dirs)
         session.start()
         return session

@@ -44,6 +44,15 @@ object AcapelaVoiceDiagnostics {
     /** اسم ملف تهيئة الصوت الأصلي ذي الـ 109 بايت. */
     private const val ORIGINAL_INI_NAME = "ar_sa_hd_salma_22k_lf.ini"
 
+    /** الحجم المتوقع لملف تهيئة جذر الصوت (بايت). */
+    const val ORIGINAL_INI_EXPECTED_SIZE = 109L
+
+    /** نتيجة حاجز التحقق من ملفات ini قبل استدعاء nInit. */
+    data class StagedIniVerification(
+        val passed: Boolean,
+        val report: String
+    )
+
     /** ملف الرخصة البديل في جذر البيانات (يقرأه `check_license`). */
     private const val TEMPORARY_FILE_NAME = ".temporary"
 
@@ -1018,7 +1027,7 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * [بناء 10726] نسخة حرفية كاملة من جذر الصوت الأصلي (Salma/).
+     * [بناء 10727] نسخة حرفية كاملة من جذر الصوت الأصلي (Salma/).
      *
      * الفرضية: ملف التهيئة الأصلي (109 بايت) يربط ملف
      * `salma_22k_lf.bvcu.nuul216vqfp` ككيانٍ فيه مكوّن `PRO`، وأن كل
@@ -1026,6 +1035,11 @@ object AcapelaVoiceDiagnostics {
      * دون أي استبعاد أو توليد: لا يُكتب أي `.ini` بديل، ولا يُلمس
      * الملف الأصلي. تُحذف ملفات `logfile.txt` وحدها (في أي مستوى) ليُكتب
      * سجلٌّ جديد للتجربة.
+     *
+     * قواعد النسخ (بناء 102): تُنسخ ملفات الجذر أولاً ثم المجلدات
+     * الفرعية بنفس هيكلها، ولا يُرفع محتوى `salma_lf` إلى الجذر ولا
+     * العكس، ولا يُستبدل أي هدف موجود — فتبقى نسخة الجذر (109 بايت)
+     * كما هي إن تكرر الاسم.
      */
     fun stageOriginalRoot109(
         context: Context,
@@ -1047,11 +1061,23 @@ object AcapelaVoiceDiagnostics {
             else -> requested
         }
         if (root != null && root.exists() && root.isDirectory) {
-            runCatching {
-                root.copyRecursively(target = stageDir, overwrite = true)
-            }.onFailure { err ->
-                Log.w(TAG, "تعذر النسخ الحرفي لجذر الصوت: ${err.message}")
-            }
+            var keptExisting = 0
+            val copied = copyTreeRootFirst(
+                source = root,
+                target = stageDir,
+                onSkipped = { _, kept ->
+                    keptExisting++
+                    Log.i(
+                        TAG,
+                        "حُفظ الهدف كما هو ولم يُستبدل: ${kept.absolutePath}"
+                    )
+                }
+            )
+            Log.i(
+                TAG,
+                "نسخ الجذر بلا استبدال: $copied ملفاً منسوخاً، " +
+                    "$keptExisting هدفاً محفوظاً كما هو"
+            )
         }
 
         // سجلات التشغيل القديمة فقط تُحذف (في أي مستوى) ليُكتب سجل جديد
@@ -1071,7 +1097,129 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * [بناء 10726] تحقّق من النسخة الحرفية: جرد ملفات `.ini` بأحجامها
+     * نسخ شجرة كما هي مع **منع الاستبدال** (بناء 102):
+     * - ملفات المجلد أولاً ثم مجلداته الفرعية بنفس الهيكل.
+     * - لا يُرفع محتوى مجلد فرعي (مثل `salma_lf`) إلى الجذر ولا العكس.
+     * - أي هدف موجود يُترك كما هو ويُبلَّغ عنه عبر [onSkipped].
+     *
+     * @return عدد الملفات المنسوخة فعلاً.
+     */
+    private fun copyTreeRootFirst(
+        source: File,
+        target: File,
+        onSkipped: (File, File) -> Unit
+    ): Int {
+        if (source.isDirectory) {
+            if (!target.exists()) {
+                target.mkdirs()
+            }
+            val entries = source.listFiles()?.sortedWith(
+                compareBy(
+                    { it.isDirectory },
+                    { it.name.lowercase(Locale.ROOT) }
+                )
+            ).orEmpty()
+            var total = 0
+            for (entry in entries) {
+                total += copyTreeRootFirst(
+                    source = entry,
+                    target = File(target, entry.name),
+                    onSkipped = onSkipped
+                )
+            }
+            return total
+        }
+        if (!source.isFile) return 0
+        if (target.exists()) {
+            onSkipped(source, target)
+            return 0
+        }
+        target.parentFile?.mkdirs()
+        return runCatching {
+            source.copyTo(target, overwrite = false)
+            1
+        }.getOrElse { err ->
+            Log.w(TAG, "تعذر نسخ ${source.name}: ${err.message}")
+            0
+        }
+    }
+
+    /**
+     * [بناء 10727] حاجزُ ما قبل `nInit`: يسرد كل ملفات `.ini`
+     * (ومنها `bvcu.ini`) داخل المجلد الذي سيُمرَّر لـ`nInit` بالمسار
+     * الكامل والحجم وMD5، ويتحقق من وجود `ar_sa_hd_salma_22k_lf.ini`
+     * في **جذر** المجلد نفسه بحجم 109 بايت. أي اختلاف يعني فشل
+     * التجهيز، ولا يجوز بعده استدعاء `nInit` إطلاقاً.
+     *
+     * قرار المدير لبناء 10727: المعيار الحاسم هو الحجم فقط، ويُسجَّل
+     * MD5 للتوثيق لا للحكم.
+     */
+    fun verifyRoot109IniBeforeInit(stageDir: File): StagedIniVerification {
+        val sb = StringBuilder()
+        sb.appendLine("=== [بناء 10727] تحقق ملفات ini قبل nInit ===")
+        sb.appendLine("  - المجلد المُمرَّر لـ nInit: ${stageDir.absolutePath}")
+        if (!stageDir.exists() || !stageDir.isDirectory) {
+            sb.appendLine("  - النتيجة: فشل — المجلد غير موجود")
+            return StagedIniVerification(
+                passed = false,
+                report = sb.toString().trimEnd()
+            )
+        }
+
+        val iniFiles = stageDir.walkTopDown()
+            .filter { it.isFile && it.extension.equals("ini", true) }
+            .sortedBy { it.absolutePath }
+            .toList()
+        sb.appendLine("  - ملفات ini المسجلة (${iniFiles.size}):")
+        if (iniFiles.isEmpty()) {
+            sb.appendLine("    (لا يوجد أي ملف ini)")
+        } else {
+            for (f in iniFiles) {
+                sb.appendLine(
+                    "    * ${f.absolutePath} | ${f.length()} بايت | " +
+                        "MD5=${calcFileMd5(f)}"
+                )
+            }
+        }
+
+        val rootIni = File(stageDir, ORIGINAL_INI_NAME)
+        sb.appendLine("  - المتوقع في جذر المجلد: $ORIGINAL_INI_NAME")
+        val reasons = mutableListOf<String>()
+        if (!rootIni.exists() || !rootIni.isFile) {
+            reasons.add("غير موجود في جذر المجلد")
+        } else {
+            sb.appendLine(
+                "    الحجم الفعلي: ${rootIni.length()} بايت " +
+                    "(المتوقع $ORIGINAL_INI_EXPECTED_SIZE) | " +
+                    "MD5=${calcFileMd5(rootIni)}"
+            )
+            if (rootIni.length() != ORIGINAL_INI_EXPECTED_SIZE) {
+                reasons.add(
+                    "الحجم ${rootIni.length()} لا يساوي " +
+                        ORIGINAL_INI_EXPECTED_SIZE
+                )
+            }
+        }
+
+        if (reasons.isEmpty()) {
+            sb.appendLine(
+                "  - النتيجة: نجاح — الحجم مطابق " +
+                    "($ORIGINAL_INI_EXPECTED_SIZE بايت)"
+            )
+        } else {
+            sb.appendLine(
+                "  - النتيجة: فشل — ${reasons.joinToString("؛ ")}"
+            )
+            sb.appendLine("  - لن يُستدعى nInit بهذا المجلد إطلاقاً.")
+        }
+        return StagedIniVerification(
+            passed = reasons.isEmpty(),
+            report = sb.toString().trimEnd()
+        )
+    }
+
+    /**
+     * [بناء 10727] تحقّق من النسخة الحرفية: جرد ملفات `.ini` بأحجامها
      * وMD5، وطباعة الملف الأصلي نصاً وhex، وفحص كل اسم بين علامات
      * تنصيص في الـ ini، ثم التأكد من الملفات المطلوبة نفسها.
      */
@@ -1079,7 +1227,7 @@ object AcapelaVoiceDiagnostics {
         val stageDir = File(context.cacheDir, "acapela_stage_orig_root_109")
         val sb = StringBuilder()
         sb.appendLine(
-            "=== [بناء 10726] التحقق من مسار Path_Original_Root_109 ==="
+            "=== [بناء 10727] التحقق من مسار Path_Original_Root_109 ==="
         )
         if (!stageDir.exists() || !stageDir.isDirectory) {
             sb.appendLine(
@@ -1168,14 +1316,19 @@ object AcapelaVoiceDiagnostics {
         // 4) الملفات المطلوبة في النسخة الحرفية
         sb.appendLine("  [4] الملفات المطلوبة:")
         val required = listOf(
-            ORIGINAL_INI_NAME to 109L,
+            ORIGINAL_INI_NAME to ORIGINAL_INI_EXPECTED_SIZE,
             "salma_22k_lf.bvcu.nuul216vqfp" to 1_215_248L,
             "0x00169729" to null,
             "salma_22k_lf.bvcu" to null,
             "userdicos" to null
         )
         required.forEach { (name, expectedSize) ->
-            val f = stageDir.walkTopDown().firstOrNull { it.name == name }
+            // ملف التهيئة يُتحقق منه في جذر المجلد فقط، لا في أي عمق
+            val f = if (name == ORIGINAL_INI_NAME) {
+                File(stageDir, name).takeIf { it.exists() }
+            } else {
+                stageDir.walkTopDown().firstOrNull { it.name == name }
+            }
             val exists = f != null
             val state = if (exists) "موجود" else "غير موجود"
             val size = when {
@@ -1201,6 +1354,35 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine("    * ملفات ar_sa* → ${arSaFiles.size} ملفاً")
         arSaFiles.forEach { f ->
             sb.appendLine("        - ${f.name} (${f.length()} بايت)")
+        }
+        sb.appendLine("")
+
+        // 5) مطابقة نسخة الجذر مع الأصل: دليل «نُسخت ولم تُستبدل»
+        sb.appendLine(
+            "  [5] مطابقة نسخة الجذر مع الأصل (بلا استبدال):"
+        )
+        val sourceIni = findOriginalSalmaDir(context)
+            ?.let { File(it, ORIGINAL_INI_NAME) }
+        if (sourceIni == null || !sourceIni.isFile) {
+            sb.appendLine("    (تعذر الوصول إلى ملف الأصل للمقارنة)")
+        } else {
+            val stagedIni = File(stageDir, ORIGINAL_INI_NAME)
+            val sameSize = stagedIni.length() == sourceIni.length()
+            val sameMd5 = calcFileMd5(stagedIni) == calcFileMd5(sourceIni)
+            sb.appendLine(
+                "    * الأصل: ${sourceIni.length()} بايت | " +
+                    "MD5=${calcFileMd5(sourceIni)}"
+            )
+            sb.appendLine(
+                "    * النسخة: ${stagedIni.length()} بايت | " +
+                    "MD5=${calcFileMd5(stagedIni)}"
+            )
+            val verdict = if (sameSize && sameMd5) {
+                "مطابقة حرفياً"
+            } else {
+                "مختلفة (الحجم=$sameSize، MD5=$sameMd5)"
+            }
+            sb.appendLine("    * الحكم: $verdict")
         }
         return sb.toString().trimEnd()
     }
@@ -2050,7 +2232,7 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10726) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10727) ===")
         sb.appendLine("==================================================")
         sb.appendLine("")
 
@@ -2147,9 +2329,9 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine(getOriginalIniDump(context))
         sb.appendLine("")
 
-        // ── [البند 1 من 10726] التحقق من النسخة الحرفية لجذر Salma ──────
+        // ── [البند 1 من 10727] التحقق من النسخة الحرفية لجذر Salma ──────
         sb.appendLine(
-            "--- [البند 1 من 10726] التحقق من Path_Original_Root_109 ---"
+            "--- [البند 1 من 10727] التحقق من Path_Original_Root_109 ---"
         )
         sb.appendLine(getOriginalRoot109Verification(context))
         sb.appendLine("")
