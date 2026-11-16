@@ -41,6 +41,9 @@ object AcapelaVoiceDiagnostics {
     /** اسم سجل المحرك الذي تكتبه المكتبة الأصلية. */
     const val LOG_FILE_NAME = "logfile.txt"
 
+    /** اسم ملف تهيئة الصوت الأصلي ذي الـ 109 بايت. */
+    private const val ORIGINAL_INI_NAME = "ar_sa_hd_salma_22k_lf.ini"
+
     /** ملف الرخصة البديل في جذر البيانات (يقرأه `check_license`). */
     private const val TEMPORARY_FILE_NAME = ".temporary"
 
@@ -1015,6 +1018,194 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
+     * [بناء 10726] نسخة حرفية كاملة من جذر الصوت الأصلي (Salma/).
+     *
+     * الفرضية: ملف التهيئة الأصلي (109 بايت) يربط ملف
+     * `salma_22k_lf.bvcu.nuul216vqfp` ككيانٍ فيه مكوّن `PRO`، وأن كل
+     * مسارات التجهيز السابقة استبعدته ففشلت. لذلك تُنسخ الشجرة كما هي
+     * دون أي استبعاد أو توليد: لا يُكتب أي `.ini` بديل، ولا يُلمس
+     * الملف الأصلي. تُحذف ملفات `logfile.txt` وحدها (في أي مستوى) ليُكتب
+     * سجلٌّ جديد للتجربة.
+     */
+    fun stageOriginalRoot109(
+        context: Context,
+        sourceDir: File? = null
+    ): File {
+        val stageDir = File(context.cacheDir, "acapela_stage_orig_root_109")
+        if (stageDir.exists()) {
+            runCatching { stageDir.deleteRecursively() }
+        }
+        stageDir.mkdirs()
+
+        val requested = sourceDir?.takeIf { it.exists() && it.isDirectory }
+        val root = when {
+            requested == null -> findOriginalSalmaDir(context)
+            requested.name.equals("Salma", ignoreCase = true) -> requested
+            requested.parentFile?.name
+                ?.equals("Salma", ignoreCase = true) == true ->
+                requested.parentFile
+            else -> requested
+        }
+        if (root != null && root.exists() && root.isDirectory) {
+            runCatching {
+                root.copyRecursively(target = stageDir, overwrite = true)
+            }.onFailure { err ->
+                Log.w(TAG, "تعذر النسخ الحرفي لجذر الصوت: ${err.message}")
+            }
+        }
+
+        // سجلات التشغيل القديمة فقط تُحذف (في أي مستوى) ليُكتب سجل جديد
+        // للتجربة؛ ولا تُمس أي بيانات صوت أو تهيئة.
+        if (root != null) {
+            stageDir.walkTopDown()
+                .filter {
+                    it.isFile &&
+                        it.name.equals(LOG_FILE_NAME, ignoreCase = true)
+                }
+                .toList()
+                .forEach { oldLog ->
+                    runCatching { oldLog.delete() }
+                }
+        }
+        return stageDir
+    }
+
+    /**
+     * [بناء 10726] تحقّق من النسخة الحرفية: جرد ملفات `.ini` بأحجامها
+     * وMD5، وطباعة الملف الأصلي نصاً وhex، وفحص كل اسم بين علامات
+     * تنصيص في الـ ini، ثم التأكد من الملفات المطلوبة نفسها.
+     */
+    fun getOriginalRoot109Verification(context: Context): String {
+        val stageDir = File(context.cacheDir, "acapela_stage_orig_root_109")
+        val sb = StringBuilder()
+        sb.appendLine(
+            "=== [بناء 10726] التحقق من مسار Path_Original_Root_109 ==="
+        )
+        if (!stageDir.exists() || !stageDir.isDirectory) {
+            sb.appendLine(
+                "  - مجلد التجهيز غير موجود: ${stageDir.absolutePath}"
+            )
+            return sb.toString().trimEnd()
+        }
+        sb.appendLine("  - المسار: ${stageDir.absolutePath}")
+        sb.appendLine("")
+
+        // 1) جرد كل ملفات .ini بالأحجام وMD5
+        val iniFiles = stageDir.walkTopDown()
+            .filter { it.isFile && it.extension.equals("ini", true) }
+            .sortedBy { it.name }
+            .toList()
+        sb.appendLine("  [1] ملفات .ini في النسخة (${iniFiles.size}):")
+        if (iniFiles.isEmpty()) {
+            sb.appendLine("    (لا يوجد أي ملف .ini)")
+        } else {
+            iniFiles.forEach { f ->
+                val rel = f.absolutePath
+                    .removePrefix(stageDir.absolutePath)
+                    .trimStart(File.separatorChar, '/')
+                sb.appendLine(
+                    "    * $rel | ${f.length()} بايت | " +
+                        "MD5=${calcFileMd5(f)}"
+                )
+            }
+        }
+        sb.appendLine("")
+
+        // 2) محتوى الملف الأصلي نصاً وhex
+        val originalIni = stageDir.walkTopDown().firstOrNull { f ->
+            f.isFile && f.name.equals(ORIGINAL_INI_NAME, ignoreCase = true)
+        }
+        sb.appendLine("  [2] الملف الأصلي $ORIGINAL_INI_NAME:")
+        if (originalIni == null) {
+            sb.appendLine("    (غير موجود في النسخة الحرفية)")
+        } else {
+            sb.appendLine(
+                "    الحجم: ${originalIni.length()} بايت | " +
+                    "MD5=${calcFileMd5(originalIni)}"
+            )
+            sb.appendLine("")
+            sb.appendLine(dumpFileTextAndHex(originalIni))
+        }
+        sb.appendLine("")
+
+        // 3) كل اسم ملف بين علامات تنصيص في الـ ini: موجود أم لا
+        val iniText = originalIni?.let { f ->
+            runCatching {
+                f.readText(StandardCharsets.ISO_8859_1)
+            }.getOrDefault("")
+        }.orEmpty()
+        val quotedNames = Regex("\"([^\"]+)\"")
+            .findAll(iniText)
+            .map { it.groupValues[1].trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .toList()
+        sb.appendLine(
+            "  [3] أسماء الملفات المذكورة بين علامات تنصيص " +
+                "(${quotedNames.size}):"
+        )
+        if (quotedNames.isEmpty()) {
+            sb.appendLine("    (لا يوجد أي اسم بين علامات تنصيص)")
+        } else {
+            // الأسماء في الـ ini نسبية إلى مجلد الملف نفسه لا إلى جذر النسخة
+            val baseDir = originalIni?.parentFile ?: stageDir
+            quotedNames.forEach { name ->
+                val target = File(baseDir, name)
+                if (target.exists()) {
+                    val size = if (target.isDirectory) {
+                        "مجلد"
+                    } else {
+                        "${target.length()} بايت"
+                    }
+                    sb.appendLine("    * \"$name\" → موجود ($size)")
+                } else {
+                    sb.appendLine("    * \"$name\" → غير موجود")
+                }
+            }
+        }
+        sb.appendLine("")
+
+        // 4) الملفات المطلوبة في النسخة الحرفية
+        sb.appendLine("  [4] الملفات المطلوبة:")
+        val required = listOf(
+            ORIGINAL_INI_NAME to 109L,
+            "salma_22k_lf.bvcu.nuul216vqfp" to 1_215_248L,
+            "0x00169729" to null,
+            "salma_22k_lf.bvcu" to null,
+            "userdicos" to null
+        )
+        required.forEach { (name, expectedSize) ->
+            val f = stageDir.walkTopDown().firstOrNull { it.name == name }
+            val exists = f != null
+            val state = if (exists) "موجود" else "غير موجود"
+            val size = when {
+                f == null -> "—"
+                f.isDirectory -> "مجلد"
+                else -> "${f.length()} بايت"
+            }
+            val expectation = expectedSize?.let { " | المتوقع $it بايت" }
+                .orEmpty()
+            val location = f?.absolutePath
+                ?.removePrefix(stageDir.absolutePath)
+                ?.takeIf { it.isNotBlank() }
+                ?: ""
+            sb.appendLine(
+                "    * $name → $state | $size$expectation" +
+                    if (location.isNotEmpty()) " | $location" else ""
+            )
+        }
+        val arSaFiles = stageDir.walkTopDown()
+            .filter { it.isFile && it.name.startsWith("ar_sa", true) }
+            .sortedBy { it.name }
+            .toList()
+        sb.appendLine("    * ملفات ar_sa* → ${arSaFiles.size} ملفاً")
+        arSaFiles.forEach { f ->
+            sb.appendLine("        - ${f.name} (${f.length()} بايت)")
+        }
+        return sb.toString().trimEnd()
+    }
+
+    /**
      * استخراج registration كما كان في 10709 (تقسيم الفواصل فقط).
      */
     fun extractRegistration10709(rawParam: String?): String {
@@ -1336,7 +1527,7 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * استخراج وطباعة المحتوى الكامل للملف الأصلي 61 بايت
+     * استخراج وطباعة المحتوى الكامل للملف الأصلي (109 بايت)
      * [files/Acapela/Salma/salma_lf/ar_sa_hd_salma_22k_lf.ini].
      */
     fun getOriginalIniDump(context: Context): String {
@@ -1358,6 +1549,11 @@ object AcapelaVoiceDiagnostics {
         if (f == null || !f.exists()) {
             return "الملف الأصلي ar_sa_hd_salma_22k_lf.ini غير موجود على القرص"
         }
+        return dumpFileTextAndHex(f)
+    }
+
+    /** طباعة ملف ثنائي نصاً وhex سطراً بسطر (16 بايت لكل سطر). */
+    private fun dumpFileTextAndHex(f: File): String {
         val bytes = runCatching { f.readBytes() }.getOrNull()
             ?: return "تعذر قراءة الملف: ${f.absolutePath}"
         val text = String(bytes, StandardCharsets.ISO_8859_1)
@@ -1854,7 +2050,7 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10724) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10726) ===")
         sb.appendLine("==================================================")
         sb.appendLine("")
 
@@ -1946,9 +2142,16 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine(getMultiTtsLicenseAnalysis())
         sb.appendLine("")
 
-        // ── [البند 1] فحص الملف الأصلي 61 بايت (نص و Hex) ───────────────
-        sb.appendLine("--- فحص الملف الأصلي 61 بايت (نص و Hex) ---")
+        // ── [البند 1] فحص الملف الأصلي 109 بايت (نص و Hex) ───────────────
+        sb.appendLine("--- فحص الملف الأصلي 109 بايت (نص و Hex) ---")
         sb.appendLine(getOriginalIniDump(context))
+        sb.appendLine("")
+
+        // ── [البند 1 من 10726] التحقق من النسخة الحرفية لجذر Salma ──────
+        sb.appendLine(
+            "--- [البند 1 من 10726] التحقق من Path_Original_Root_109 ---"
+        )
+        sb.appendLine(getOriginalRoot109Verification(context))
         sb.appendLine("")
 
         // ── [البند 3] مقارنة ملفات NLP مع ملفات التهيئة ──────────────────

@@ -12,6 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 
 @RunWith(RobolectricTestRunner::class)
@@ -946,5 +947,109 @@ class AcapelaVoiceDiagnosticsTest {
         val cleanResult =
             AcapelaVoiceDiagnostics.findFirstErrorAndPreceding(clean)
         assertEquals(null, cleanResult)
+    }
+
+    @Test
+    fun stageOriginalRoot109_copiesTreeVerbatimAndOnlyDropsLog() {
+        val root = tempDir()
+        try {
+            val salma = File(root, "Salma")
+            val salmaLf = File(salma, "salma_lf").apply { mkdirs() }
+            val iniText = buildString {
+                appendLine("MODE=prep_hd")
+                appendLine("#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]")
+                appendLine(
+                    "#2 FILEMAP \"salma_22k_lf.bvcu.nuul216vqfp\" [ RAM ]"
+                )
+            }.padEnd(109, ' ')
+            File(salmaLf, "ar_sa_hd_salma_22k_lf.ini").writeText(iniText)
+            File(salmaLf, "salma_22k_lf.bvcu.nuul216vqfp")
+                .writeBytes(ByteArray(1_215_248))
+            File(salmaLf, "salma_22k_lf.bvcu").writeBytes(ByteArray(2048))
+            File(salmaLf, "ar_sa_hd_salma_22k_lf.bvcu")
+                .writeBytes(ByteArray(16))
+            File(salmaLf, "0x00169729").writeText("COMMERCIAL")
+            File(salmaLf, "logfile.txt").writeText("old log")
+
+            val staged = AcapelaVoiceDiagnostics.stageOriginalRoot109(
+                context = context,
+                sourceDir = salma
+            )
+
+            val stagedLf = File(staged, "salma_lf")
+            val stagedIni = File(
+                stagedLf,
+                "ar_sa_hd_salma_22k_lf.ini"
+            )
+            assertEquals(109L, stagedIni.length())
+            assertEquals(
+                iniText,
+                stagedIni.readText(StandardCharsets.ISO_8859_1)
+            )
+            assertEquals(
+                1_215_248L,
+                File(stagedLf, "salma_22k_lf.bvcu.nuul216vqfp").length()
+            )
+            assertTrue(File(stagedLf, "salma_22k_lf.bvcu").exists())
+            assertTrue(File(stagedLf, "0x00169729").exists())
+            assertFalse(File(stagedLf, "logfile.txt").exists())
+            // لا يُولَّد أي ini بديل: ملف واحد فقط في الشجرة كلها
+            val iniCount = staged.walkTopDown()
+                .count { it.isFile && it.extension.equals("ini", true) }
+            assertEquals(1, iniCount)
+        } finally {
+            root.deleteRecursively()
+            File(context.cacheDir, "acapela_stage_orig_root_109")
+                .deleteRecursively()
+        }
+    }
+
+    @Test
+    fun getOriginalRoot109Verification_reportsQuotedNamesAndDump() {
+        val root = tempDir()
+        try {
+            val salma = File(root, "Salma")
+            val salmaLf = File(salma, "salma_lf").apply { mkdirs() }
+            val iniText = buildString {
+                appendLine("MODE=prep_hd")
+                appendLine("#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]")
+                appendLine(
+                    "#2 FILEMAP \"salma_22k_lf.bvcu.nuul216vqfp\" [ RAM ]"
+                )
+                appendLine("#3 FILEMAP \"missing_nlp.bnx\" [ RAM ]")
+            }
+            File(salmaLf, "ar_sa_hd_salma_22k_lf.ini").writeText(iniText)
+            File(salmaLf, "salma_22k_lf.bvcu").writeBytes(ByteArray(4))
+            File(salmaLf, "salma_22k_lf.bvcu.nuul216vqfp")
+                .writeBytes(ByteArray(8))
+            File(salmaLf, "ar_sa.dca").writeBytes(ByteArray(2))
+
+            AcapelaVoiceDiagnostics.stageOriginalRoot109(
+                context = context,
+                sourceDir = salma
+            )
+            val report = AcapelaVoiceDiagnostics
+                .getOriginalRoot109Verification(context)
+
+            assertTrue(report.contains("Path_Original_Root_109"))
+            assertTrue(
+                report.contains("\"salma_22k_lf.bvcu\" → موجود")
+            )
+            assertTrue(
+                report.contains(
+                    "\"salma_22k_lf.bvcu.nuul216vqfp\" → موجود"
+                )
+            )
+            assertTrue(
+                report.contains("\"missing_nlp.bnx\" → غير موجود")
+            )
+            assertTrue(report.contains("المحتوى كـ Hex"))
+            assertTrue(report.contains("MODE=prep_hd"))
+            assertTrue(report.contains("المتوقع 109 بايت"))
+        } finally {
+            root.deleteRecursively()
+            File(context.cacheDir, "acapela_stage_orig_root_109")
+                .deleteRecursively()
+        }
     }
 }

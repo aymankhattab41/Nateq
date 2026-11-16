@@ -713,6 +713,7 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Acapela diagnostics 10726: Path_Original_Root_109 copies the original voice root verbatim (including the 109-byte ini and nuul216vqfp) without generating any replacement ini, always calls nSetCurrentVoice after nInit like MultiTTS, logs eb, nlpErr, pcm, nSpeak and logfile.txt per route, and verifies every file name referenced by the config.
 • Advanced Quiet Hours: 24-checkbox schedule per day (silent/speaks) respecting 24/12h mode, midnight leak fix, select/clear/copy actions, Acapela JNI String[] cast fix, comprehensive utterance logging (last 200) and speechFlow diagnostics, and 32-bit architecture warning for Vocalizer.
 • Aligned embedded Acapela engine with MultiTTS architecture: mutually exclusive extended library loading, direct JNI registration via idfunction, strict initialization sequence with userdicos, and 22050 Hz enforcement.
 • Screen-reader-friendly voice guidance for Xiaomi HyperOS/MIUI devices to directly open and configure autostart, battery saver, and exact alarm permissions with safe fallbacks.

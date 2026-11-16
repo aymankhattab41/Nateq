@@ -1761,9 +1761,13 @@ internal class AcapelaHostSession(
         licensePass: Long = AcapelaLicense.PASSWORD,
         enableSetLog: Boolean = true,
         forceCallVoice: Boolean = true,
-        callPreStopShutdown: Boolean = false
+        callPreStopShutdown: Boolean = false,
+        skipPrepare: Boolean = false,
+        forceVoiceEvenIfInitFailed: Boolean = false
     ): VoiceLoadTrialResult {
-        prepareTrialDirectory(trialDir, voice)
+        if (!skipPrepare) {
+            prepareTrialDirectory(trialDir, voice)
+        }
         val rawPath = trialDir.absolutePath
         val stagePath = if (trailingSlash) {
             directoryArgument(trialDir)
@@ -1877,7 +1881,10 @@ internal class AcapelaHostSession(
         var voiceRes = -1
 
         // إذا كان forceCallVoice مفعلاً (10709) أو كان الصوت محملاً
-        if (initRes == 0 && (forceCallVoice || isVoiceLoaded)) {
+        // (10726) أو طُلب نداء الصوت رغم فشل nInit كما في MultiTTS
+        if ((initRes == 0 && (forceCallVoice || isVoiceLoaded)) ||
+            forceVoiceEvenIfInitFailed
+        ) {
             when (order) {
                 AcapelaSequenceOrder.UTF8_LANG_VOICE -> {
                     utf8Res = srv.nUtf8Mode(iso3.language, iso3.country)
@@ -2019,7 +2026,8 @@ internal class AcapelaHostSession(
         recordAcapelaBreadcrumb(
             "[$label] nSpeak(text='$probeText', cb=$cbName)"
         )
-        val speakRes = if (initRes == 0) {
+        val canSpeak = initRes == 0 || forceVoiceEvenIfInitFailed
+        val speakRes = if (canSpeak) {
             runCatching {
                 srv.nSpeak(probeText, cbToPass)
             }.getOrElse { t ->
@@ -2090,11 +2098,19 @@ internal class AcapelaHostSession(
             endMarker,
             1000
         )
-        val logFileContent = if (trialLogFile.exists() &&
-            trialLogFile.length() > 0L
-        ) {
+        // يُفضّل سجل جذر التجربة؛ وإن كتبته المكتبة في مستوى أعمق يُقرأ
+        // أحدث سجل غير فارغ داخل الشجرة (البند 2 من 10724/10726)
+        val effectiveLogFile = trialLogFile.takeIf {
+            it.exists() && it.length() > 0L
+        } ?: trialDir.walkTopDown()
+            .filter {
+                it.isFile && it.length() > 0L &&
+                    it.name.equals(AcapelaVoiceDiagnostics.LOG_FILE_NAME, true)
+            }
+            .maxByOrNull { it.lastModified() }
+        val logFileContent = if (effectiveLogFile != null) {
             runCatching {
-                trialLogFile.readText(StandardCharsets.ISO_8859_1)
+                effectiveLogFile.readText(StandardCharsets.ISO_8859_1)
             }.getOrDefault("(تعذر قراءة logfile.txt)")
         } else {
             "(لم يُنشأ ملف logfile.txt أو فارغ)"
@@ -2159,7 +2175,7 @@ internal class AcapelaHostSession(
                 "country = \"${iso3.country}\", " +
                 "variant = \"\") => كود: $langRes"
         )
-        if (forceCallVoice || isVoiceLoaded) {
+        if (forceCallVoice || isVoiceLoaded || forceVoiceEvenIfInitFailed) {
             sb.appendLine(
                 "  - nSetCurrentVoice(speaker = \"$speaker\") => " +
                     "كود: $voiceRes"
@@ -2358,7 +2374,7 @@ internal class AcapelaHostSession(
             // الخطوة 3: فحص سلامة ملفات الصوت
             checkAudioFilesIntegrity(voice.dir)
 
-            // تجهيز مجلد acapela_stage_v2 وفحص الملف الأصلي 61 بايت
+            // تجهيز مجلد acapela_stage_v2 وفحص الملف الأصلي 109 بايت
             val v2Dir = AcapelaVoiceDiagnostics.stageVoiceV2(
                 context,
                 voice.dir,
@@ -2609,6 +2625,38 @@ internal class AcapelaHostSession(
                 recordTrialProgress(trialOrigSub)
             }
 
+            // ── مسار 5: Path_Original_Root_109 (نسخة حرفية لجذر Salma/) ──
+            // الفرضية (10726): الـ ini الأصلي ذو 109 بايت يربط ملف
+            // nuul216vqfp ككيانٍ فيه مكوّن PRO، وكل التجهيزات السابقة
+            // استبعدته. لذا تُنسخ الشجرة حرفياً بلا أي توليد، ويُنادى
+            // nSetCurrentVoice دائماً بعد nInit كما في MultiTTS.
+            AcapelaVoiceDiagnostics.clearNativeLogcat()
+            val root109Dir = AcapelaVoiceDiagnostics.stageOriginalRoot109(
+                context = context,
+                sourceDir = origSalmaDir
+            )
+            val trialRoot109 = executeVoiceLoadTrial(
+                label = "5) Path_Original_Root_109 (نسخة حرفية لجذر Salma)",
+                trialDir = root109Dir,
+                speaker = effectiveSpeaker,
+                iso3 = iso3,
+                registration = regToUse,
+                voice = voice,
+                voiceMode = "MODE=prep_hd",
+                probeText = "مرحبا",
+                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                useRealCallback = false,
+                trailingSlash = true,
+                callSetLicense = false,
+                enableSetLog = true,
+                forceCallVoice = true,
+                callPreStopShutdown = false,
+                skipPrepare = true,
+                forceVoiceEvenIfInitFailed = true
+            )
+            trialsList.add(trialRoot109)
+            recordTrialProgress(trialRoot109)
+
             // فحص النجاح وحفظ ملف WAV للنطق التجريبي "مرحبا"
             val winningTrial = trialsList.firstOrNull { it.isSuccess }
             lastTrialSucceeded.set(winningTrial != null)
@@ -2699,7 +2747,7 @@ internal class AcapelaHostSession(
                 ?: trialFullStage
 
             val literalResults = buildString {
-                appendLine("=== [نتائج مسارات نطق Acapela (بناء 10724)] ===")
+                appendLine("=== [نتائج مسارات نطق Acapela (بناء 10726)] ===")
                 trialsList.forEach { t ->
                     val ebStr = t.ebErrorCode?.let {
                         "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
@@ -2870,7 +2918,7 @@ internal class AcapelaHostSession(
             } else {
                 "فشل كافة مسارات نطق Acapela حسب معيار 10724"
             }
-            val topSummary = "[تشخيص مسارات Acapela 10724] " +
+            val topSummary = "[تشخيص مسارات Acapela 10726] " +
                 "$trialSummary | النتيجة: $outcome"
             Log.i(TAG, topSummary)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
@@ -2977,8 +3025,13 @@ internal class AcapelaHostSession(
                         AcapelaVoiceDiagnostics.getSpeakErrorCodeExplanation()
                     )
                     appendLine("")
-                    appendLine("=== [البند 1] فحص الملف الأصلي 61 بايت ===")
+                    appendLine("=== [البند 1] فحص الملف الأصلي 109 بايت ===")
                     appendLine(origIniDump)
+                    appendLine("")
+                    appendLine(
+                        AcapelaVoiceDiagnostics
+                            .getOriginalRoot109Verification(context)
+                    )
                     appendLine("")
                     trialsList.forEach { t ->
                         if (t.details.isNotBlank()) {
@@ -2988,6 +3041,8 @@ internal class AcapelaHostSession(
                     }
                 }.trimEnd()
                 reportFile.writeText(fullTrialsText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10726.txt")
+                    .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10724.txt")
                     .writeText(fullTrialsText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10723.txt")
