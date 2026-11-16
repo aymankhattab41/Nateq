@@ -308,6 +308,7 @@ class ProtectedAppRound48Test {
             assertEquals("com.instapay", settings.getSuspendedProtectedApp())
             assertTrue(settings.getSuspendedProtectedAppTimestamp() > 0L)
 
+            AccessibilityBridge.registerService(service)
             ProtectedAppManager.handleAppExit(
                 context,
                 "com.instapay",

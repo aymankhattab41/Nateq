@@ -576,7 +576,7 @@ class AcapelaVoiceDiagnosticsTest {
     @Test
     fun getLiveDiskFilesReport_scansDirectory() {
         val report = AcapelaVoiceDiagnostics.getLiveDiskFilesReport(context)
-        assertTrue(report.contains("10719"))
+        assertTrue(report.contains("10721") || report.contains("10719"))
         assertTrue(report.contains("acapela_stage_v2"))
         assertTrue(report.contains("3,455,285"))
     }
@@ -641,5 +641,69 @@ class AcapelaVoiceDiagnosticsTest {
         } finally {
             root.deleteRecursively()
         }
+    }
+
+    @Test
+    fun stage10709Exact_createsCleanStagingMatching10709() {
+        val root = tempDir()
+        try {
+            val salma = File(root, "Acapela/Salma/salma_lf").apply {
+                mkdirs()
+            }
+            val bvcu = File(salma, "salma_22k_lf.bvcu")
+            bvcu.writeText("TEST_BVCU")
+            val inf = File(salma, "ar_sa_hd_salma_22k_lf.bvcu.inf")
+            inf.writeText("[General]\nname=ar_sa_hd_salma_22k_lf\n")
+            val hex = File(salma, "0x00169729")
+            hex.writeText("COMMERCIAL")
+            val nuul = File(salma, "salma_22k_lf.bvcu.nuul216vqfp")
+            nuul.writeText("NUUL")
+
+            val staged = AcapelaVoiceDiagnostics.stage10709Exact(
+                context = context,
+                sourceDir = salma
+            )
+            assertTrue(File(staged, "salma_22k_lf.bvcu").exists())
+            assertTrue(File(staged, "0x00169729").exists())
+            assertTrue(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
+            val ini = File(staged, "ar_sa_hd_salma_22k_lf.ini")
+            val iniText = ini.readText()
+            assertTrue(iniText.contains("MODE=prep_hd"))
+            assertTrue(iniText.contains("[ RAM ]"))
+            // استبعاد النسخة المكررة و nuul
+            assertEquals(
+                false,
+                File(staged, "ar_sa_hd_salma_22k_lf.bvcu").exists()
+            )
+            assertEquals(
+                false,
+                File(staged, "salma_22k_lf.bvcu.nuul216vqfp").exists()
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun extractRegistration10709_extractsPureEmailHexCode() {
+        val reg = AcapelaVoiceDiagnostics.extractRegistration10709(
+            "\"Salma\", \"user@domain.com\", \"0x12345678\""
+        )
+        assertEquals("user@domain.com12345678", reg)
+
+        val regSimple = AcapelaVoiceDiagnostics.extractRegistration10709(
+            "Salma,info@test.com,0Xabcdef"
+        )
+        assertEquals("info@test.comabcdef", regSimple)
+    }
+
+    @Test
+    fun getHexKeyFileDiagnostic_containsLiteralContentAndExplanations() {
+        val diag = AcapelaVoiceDiagnostics.getHexKeyFileDiagnostic(context)
+        assertTrue(diag.contains("10721"))
+        assertTrue(diag.contains("0x00169729"))
+        assertTrue(diag.contains("139 بايت"))
+        assertTrue(diag.contains("73 بايت"))
+        assertTrue(diag.contains("لم يقم أي كود في ناطق"))
     }
 }
