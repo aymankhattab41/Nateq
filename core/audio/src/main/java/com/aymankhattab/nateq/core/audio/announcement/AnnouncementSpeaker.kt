@@ -41,6 +41,7 @@ import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.engine.TextProcessor
 import android.os.Bundle
+import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
@@ -2262,6 +2263,29 @@ speechCycle.incrementAndGet()
         routeToEarpieceIfCallRoute(currentCategory)
         // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
         applySpeechAudioAttributes(currentCategory)
+
+        val fullAnnouncementText = validUnits.joinToString(" ") { it.text }
+        val sourceLabel = when (currentCategory) {
+            SettingsRepository.VOICE_CATEGORY_TIME -> "إعلان وقت"
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER -> "إعلان متصل"
+            SettingsRepository.VOICE_CATEGORY_BATTERY -> "إعلان بطارية"
+            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
+                "إعلان إشعارات"
+            else -> "إعلان نظام"
+        }
+        val firstUnit = validUnits.firstOrNull()
+        SpeechFallbackTracker.record(
+            text = fullAnnouncementText,
+            languageTag = firstUnit?.locale?.toLanguageTag() ?: "ar",
+            requestedEngine = boundEngine ?: "default",
+            requestedVoice = firstUnit?.voiceId ?: "default",
+            actualEngine = boundEngine ?: "default",
+            actualVoice = firstUnit?.voiceId ?: "default",
+            isFallback = SpeechFallbackTracker.isAcapelaFallbackActive(),
+            fallbackReason = SpeechFallbackTracker.acapelaFallbackReason,
+            source = sourceLabel
+        )
+
         if (HostProtocol.isEmbeddedEngine(boundEngine)) {
             speakEmbeddedUnits(validUnits)
             return

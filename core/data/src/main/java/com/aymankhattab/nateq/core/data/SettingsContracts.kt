@@ -467,6 +467,27 @@ interface AnnouncementPrefs {
     /** يعيّن تفعيل يومٍ بعينه ضمن الأوقات الهادئة. */
     fun setDayQuietEnabled(day: Int, enabled: Boolean)
 
+    /**
+     * قناع بتات ساعات الهدوء لليوم
+     * (24 بت: بت 0 = ساعة 1 .. بت 23 = ساعة 24).
+     */
+    fun getQuietHoursBitmaskForDay(day: Int): Int = 0
+
+    /** تعيين قناع بتات ساعات الهدوء لليوم. */
+    fun setQuietHoursBitmaskForDay(day: Int, mask: Int) {}
+
+    /** هل الساعة المحددة (1..24) صامتة في اليوم المعني؟ */
+    fun isHourBitSet(day: Int, hour1To24: Int): Boolean = false
+
+    /** تعيين صمت/نطق ساعة محددة (1..24) في اليوم المعني. */
+    fun setHourBit(day: Int, hour1To24: Int, isSilent: Boolean) {}
+
+    /**
+     * فحص هل الساعة المحددة صامتة بالكامل
+     * احتراماً لليوم والأمس عند منتصف الليل.
+     */
+    fun isHourQuiet(dayOfWeek: Int, calendarHour: Int): Boolean = false
+
     /** صيغة إعلان الزمن (مثل "h" أو "hm"). */
     fun getTimeAnnouncementFormat(): String
 

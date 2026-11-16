@@ -3143,9 +3143,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 sb.appendLine("")
             }
 
-            // ── سجل نطق محرك Lord TTS وتتبع البديل (Fallback) ─────────────
+            // ── سجل نطق محرك Lord TTS وتتبع البديل (آخر 200 نطق) ────────
             sb.appendLine(
-                "--- سجل نطق محرك Lord TTS وتتبع البديل (Fallback) ---"
+                "--- سجل نطق محرك Lord TTS وتتبع البديل (آخر 200 نطق) ---"
             )
             val speechRecords = ttsSnapshot?.getStringArrayList(
                 TtsDiagnosticsProvider.KEY_SPEECH_RECORDS
@@ -3160,6 +3160,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             } else {
                 speechRecords.forEach { sb.appendLine(it) }
             }
+            sb.appendLine("")
+
+            // ── تشخيص محرك SpeechFlow (in.visionHacks.eloquencePlus) ──────
+            val sfReport = ttsSnapshot?.getString(
+                TtsDiagnosticsProvider.KEY_SPEECHFLOW_REPORT
+            ) ?: com.aymankhattab.nateq.core.audio.engine
+                .SpeechFlowDiagnostics.buildReport()
+            sb.appendLine(sfReport)
             sb.appendLine("")
 
             // ── المحرك/الصوت المختار لكل فئة ─────────────────────────

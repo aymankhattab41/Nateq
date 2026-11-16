@@ -213,6 +213,9 @@ class SettingsRepository(context: Context) :
         )
 
         const val KEY_QUIET_MIGRATED = "_quiet_days_migrated"
+        const val KEY_QUIET_BITMASK_MIGRATED = "_quiet_days_bitmask_migrated"
+        const val QUIET_HOUR_FULL_MASK = 0x00FFFFFF
+        const val QUIET_HOUR_EMPTY_MASK = 0
 
         /** مفتاح خريطة تفضيلات التحويل لكل لغة
          *  (JSON عبر ConvertPreferencesCodec). */
@@ -229,6 +232,7 @@ class SettingsRepository(context: Context) :
         private val MIGRATION_KEYS = listOf(
             KEY_MIGRATED,
             KEY_QUIET_MIGRATED,
+            KEY_QUIET_BITMASK_MIGRATED,
             KEY_CONVERT_SLOTS_MIGRATED,
             KEY_BATTERY_VOICE_MIGRATED
         )
@@ -2092,6 +2096,11 @@ class SettingsRepository(context: Context) :
         return "time_quiet_day${d}_${if (isStart) "start" else "end"}"
     }
 
+    private fun quietMaskKey(day: Int): String {
+        val d = day.coerceIn(1, 7)
+        return "time_quiet_day${d}_mask"
+    }
+
     /** ترحيل فترة الهدوء القديمة الواحدة إلى كل الأيام (مرة واحدة فقط). */
     private fun migrateQuietScheduleIfNeeded() {
         if (prefs.getBoolean(KEY_QUIET_MIGRATED, false)) return
@@ -2117,6 +2126,96 @@ class SettingsRepository(context: Context) :
             .apply()
     }
 
+    /**
+     * ترحيل إعدادات الهدوء القديمة إلى قناع 24 خانة اختيار (بتات 1..24).
+     * يمنع تسرب منتصف الليل (هدوء الجمعة لا يُسكت صباح السبت).
+     */
+    fun migrateQuietHoursToBitmaskIfNeeded() {
+        if (prefs.getBoolean(KEY_QUIET_BITMASK_MIGRATED, false)) return
+        migrateQuietScheduleIfNeeded()
+        val edit = prefs.edit()
+        for (day in 1..7) {
+            val enabled = prefs.getBoolean(
+                "time_quiet_day${day}_enabled",
+                false
+            )
+            if (!enabled) {
+                edit.putInt(quietMaskKey(day), QUIET_HOUR_EMPTY_MASK)
+            } else {
+                val start = prefs.getInt(quietDayKey(day, true), 23)
+                    .coerceIn(0, 23)
+                val end = prefs.getInt(quietDayKey(day, false), 7)
+                    .coerceIn(0, 23)
+                var mask = 0
+                if (start == 0 && end == 0) {
+                    mask = 0
+                } else if (start <= end) {
+                    val s = if (start == 0) 24 else start
+                    val e = if (end == 0) 24 else end
+                    if (s <= e) {
+                        for (h in s..e) {
+                            mask = mask or (1 shl (h - 1))
+                        }
+                    }
+                } else {
+                    val s = if (start == 0) 24 else start
+                    for (h in s..24) {
+                        mask = mask or (1 shl (h - 1))
+                    }
+                    val e = if (end == 0) 24 else end
+                    for (h in 1..e) {
+                        mask = mask or (1 shl (h - 1))
+                    }
+                }
+                edit.putInt(quietMaskKey(day), mask and QUIET_HOUR_FULL_MASK)
+            }
+        }
+        edit.putBoolean(KEY_QUIET_BITMASK_MIGRATED, true).apply()
+    }
+
+    override fun getQuietHoursBitmaskForDay(day: Int): Int {
+        migrateQuietHoursToBitmaskIfNeeded()
+        val d = day.coerceIn(1, 7)
+        return prefs.getInt(quietMaskKey(d), QUIET_HOUR_EMPTY_MASK)
+    }
+
+    override fun setQuietHoursBitmaskForDay(day: Int, mask: Int) {
+        migrateQuietHoursToBitmaskIfNeeded()
+        val d = day.coerceIn(1, 7)
+        val validMask = mask and QUIET_HOUR_FULL_MASK
+        prefs.edit().putInt(quietMaskKey(d), validMask).apply()
+        setDayQuietEnabled(d, validMask != 0)
+    }
+
+    override fun isHourBitSet(day: Int, hour1To24: Int): Boolean {
+        if (hour1To24 !in 1..24) return false
+        val mask = getQuietHoursBitmaskForDay(day)
+        return (mask and (1 shl (hour1To24 - 1))) != 0
+    }
+
+    override fun setHourBit(day: Int, hour1To24: Int, isSilent: Boolean) {
+        if (hour1To24 !in 1..24) return
+        val current = getQuietHoursBitmaskForDay(day)
+        val bit = 1 shl (hour1To24 - 1)
+        val updated = if (isSilent) current or bit else current and bit.inv()
+        setQuietHoursBitmaskForDay(day, updated)
+    }
+
+    override fun isHourQuiet(dayOfWeek: Int, calendarHour: Int): Boolean {
+        val d = dayOfWeek.coerceIn(1, 7)
+        return if (calendarHour == 0) {
+            val yesterday = if (d == 1) 7 else d - 1
+            if (!isDayQuietEnabled(yesterday)) false
+            else isHourBitSet(yesterday, 24)
+        } else if (calendarHour == 24) {
+            if (!isDayQuietEnabled(d)) false
+            else isHourBitSet(d, 24)
+        } else {
+            if (!isDayQuietEnabled(d)) false
+            else isHourBitSet(d, calendarHour)
+        }
+    }
+
     /** بداية فترة الهدوء ليوم محدد (Calendar.DAY_OF_WEEK: 1=الأحد…7=السبت). */
     override fun getQuietStartForDay(day: Int): Int {
         migrateQuietScheduleIfNeeded()
@@ -2129,16 +2228,52 @@ class SettingsRepository(context: Context) :
         return prefs.getInt(quietDayKey(day, false), 7)
     }
 
-    override fun setQuietStartForDay(day: Int, hour: Int) {
+    private fun syncBitmaskFromStartEnd(day: Int) {
+        val d = day.coerceIn(1, 7)
+        val start = prefs.getInt(quietDayKey(d, true), 23).coerceIn(0, 23)
+        val end = prefs.getInt(quietDayKey(d, false), 7).coerceIn(0, 23)
+        var mask = 0
+        if (start == 0 && end == 0) {
+            mask = 0
+        } else if (start <= end) {
+            val s = if (start == 0) 24 else start
+            val e = if (end == 0) 24 else end
+            if (s <= e) {
+                for (h in s..e) {
+                    mask = mask or (1 shl (h - 1))
+                }
+            }
+        } else {
+            val s = if (start == 0) 24 else start
+            for (h in s..24) {
+                mask = mask or (1 shl (h - 1))
+            }
+            val e = if (end == 0) 24 else end
+            for (h in 1..e) {
+                mask = mask or (1 shl (h - 1))
+            }
+        }
+        val validMask = mask and QUIET_HOUR_FULL_MASK
         prefs.edit()
-            .putInt(quietDayKey(day, true), hour.coerceIn(0, 23))
+            .putInt(quietMaskKey(d), validMask)
+            .putBoolean(KEY_QUIET_BITMASK_MIGRATED, true)
             .apply()
     }
 
-    override fun setQuietEndForDay(day: Int, hour: Int) {
+    override fun setQuietStartForDay(day: Int, hour: Int) {
+        val d = day.coerceIn(1, 7)
         prefs.edit()
-            .putInt(quietDayKey(day, false), hour.coerceIn(0, 23))
+            .putInt(quietDayKey(d, true), hour.coerceIn(0, 23))
             .apply()
+        syncBitmaskFromStartEnd(d)
+    }
+
+    override fun setQuietEndForDay(day: Int, hour: Int) {
+        val d = day.coerceIn(1, 7)
+        prefs.edit()
+            .putInt(quietDayKey(d, false), hour.coerceIn(0, 23))
+            .apply()
+        syncBitmaskFromStartEnd(d)
     }
 
     /** هل ساعات الهدوء مفعّلة ليوم محدد؟ الافتراضي مفعّل لكل الأيام
@@ -2153,6 +2288,9 @@ class SettingsRepository(context: Context) :
         prefs.edit()
             .putBoolean("time_quiet_day${d}_enabled", enabled)
             .apply()
+        if (enabled && getQuietHoursBitmaskForDay(d) == 0) {
+            syncBitmaskFromStartEnd(d)
+        }
     }
 
     /** صيغة إعلان الوقت: "arabic_natural" أو "digital" */

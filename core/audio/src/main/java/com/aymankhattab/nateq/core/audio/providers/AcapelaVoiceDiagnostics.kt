@@ -776,13 +776,23 @@ object AcapelaVoiceDiagnostics {
         if (infSrc != null && infSrc.isFile) {
             val destInf = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.inf")
             runCatching { infSrc.copyTo(destInf, overwrite = true) }
+            val destInf2 = File(stageDir, "bvcu.inf")
+            runCatching { infSrc.copyTo(destInf2, overwrite = true) }
         }
 
-        // 3. كتابة ملف ar_sa_hd_salma_22k_lf.ini بمحتوى [ RAM ]
+        // 3. كتابة ملفات .ini بمحتوى [ RAM ] بالاسمين معاً (.bvcu.ini و .ini)
         val iniContent = "MODE = \"MODE=prep_hd\"\n" +
             "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]\n"
         runCatching {
+            File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.ini").writeText(
+                iniContent,
+                StandardCharsets.ISO_8859_1
+            )
             File(stageDir, "ar_sa_hd_salma_22k_lf.ini").writeText(
+                iniContent,
+                StandardCharsets.ISO_8859_1
+            )
+            File(stageDir, "bvcu.ini").writeText(
                 iniContent,
                 StandardCharsets.ISO_8859_1
             )
@@ -984,11 +994,14 @@ object AcapelaVoiceDiagnostics {
             filemapDirective = "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]"
         )
 
-        // 4. حذف أي ملف أو مجلد دخيل للتأكد من بقاء الملفات الثلاثة فقط
+        // 4. حذف أي ملف أو مجلد دخيل للتأكد من بقاء الملفات المطلوبة فقط
         val allowedNames = setOf(
             "salma_22k_lf.bvcu",
             "ar_sa_hd_salma_22k_lf.bvcu.inf",
-            "ar_sa_hd_salma_22k_lf.ini"
+            "ar_sa_hd_salma_22k_lf.bvcu.ini",
+            "ar_sa_hd_salma_22k_lf.ini",
+            "bvcu.ini",
+            "bvcu.inf"
         )
         stageDir.listFiles()?.forEach { f ->
             if (f.name !in allowedNames) {

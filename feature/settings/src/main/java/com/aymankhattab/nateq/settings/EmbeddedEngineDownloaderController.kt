@@ -3,6 +3,8 @@ package com.aymankhattab.nateq.settings
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
+import android.os.Process
 import java.text.SimpleDateFormat
 import java.util.Date
 import android.view.LayoutInflater
@@ -776,10 +778,26 @@ internal class EmbeddedEngineDownloaderController(
         }
     }
 
+    private fun is32BitArchitecture(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            !Process.is64Bit()
+        } else {
+            Build.SUPPORTED_64_BIT_ABIS.isNullOrEmpty()
+        }
+    }
+
     private fun confirmAndStartVocalizerDownload(
         item: VocalizerCatalogItem
     ) {
         val ctx = fragment.requireContext()
+        if (is32BitArchitecture()) {
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.embedded_engine_vocalizer)
+                .setMessage(R.string.vocalizer_32bit_unsupported)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            return
+        }
         val isAr = LanguageCode.isArabic(Locale.getDefault().language)
         val voiceTitle = if (isAr) item.displayNameAr else item.displayNameEn
         val engineLabel = ctx.getString(R.string.embedded_engine_vocalizer)
@@ -1276,6 +1294,11 @@ internal class EmbeddedEngineDownloaderController(
             )
             tvName.text = entry.name
             val stateLabel = if (
+                entry.id == VocalizerEmbeddedVoiceProvider.PROVIDER_ID &&
+                is32BitArchitecture()
+            ) {
+                ctx.getString(R.string.vocalizer_32bit_unsupported)
+            } else if (
                 entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID &&
                 status?.state == EngineStatusRegistry.State.NOT_INSTALLED
             ) {
@@ -1564,6 +1587,11 @@ internal class EmbeddedEngineDownloaderController(
     ) {
         val ctx = dialogView.context
         val stateLabel = if (
+            entry.id == VocalizerEmbeddedVoiceProvider.PROVIDER_ID &&
+            is32BitArchitecture()
+        ) {
+            ctx.getString(R.string.vocalizer_32bit_unsupported)
+        } else if (
             entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID &&
             status?.state == EngineStatusRegistry.State.NOT_INSTALLED
         ) {

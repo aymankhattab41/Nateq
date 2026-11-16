@@ -723,6 +723,7 @@
 <string name="changelog_title">آخر التحديثات</string>
     <string name="changelog_text">
 الإصدار %1$s
+• ساعات الهدوء المتطورة: قناع 24 خانة اختيار لكل يوم (صامت/ينطق) متوافق مع نظام 24/12 ساعة، منع تسرب منتصف الليل، دعم التحديد والمسح والنسخ لكل الأيام، معالجة استثناء String[] في JNI لمحرك Acapela، تسجيل تشخيصي شامل لآخر 200 نطق ومحرك speechFlow، وتنبيه بعدم دعم Vocalizer على أجهزة 32-بت.
 • مطابقة معمارية MultiTTS لمحرك Acapela المدمج: التحميل الحصري للمكتبة الممتدة للأصوات المسجلة، وتمرير التسجيل عبر عقد JNI المباشر (idfunction)، وضبط تسلسل التهيئة مع مجلد userdicos ومعدل 22050 هرتز.
 • إرشادات صوتية متوافقة مع قارئ الشاشة لأجهزة شاومي (HyperOS/MIUI) لفتح وتثبيت إعدادات التشغيل التلقائي وتوفير البطارية والتنبيهات الدقيقة مباشرة مع التراجع التلقائي الآمن.
 • تسريع بدء نطق النصوص المتعددة بالبث المتسلسل الفوري لأول مقطع فور جاهزيته، مع تقليل زمن الاستجابة في القوائم والتنقل.
@@ -1268,4 +1269,56 @@
     <string name="filter_min_engine_selection_error">يجب تحديد محرك واحد على الأقل</string>
     <string name="filter_status_active">مفعّلة</string>
     <string name="filter_status_inactive">معطّلة</string>
+
+    <!-- فحص التوافقية مع التطبيقات البنكية (Banking Compatibility) -->
+    <string name="banking_compat_title">جاهزية الإعادة التلقائية لخدمة إمكانية الوصول</string>
+    <string name="banking_status_ready">جاهز للإعادة التلقائية: المتطلبات الأساسية مكتملة.</string>
+    <string name="banking_status_warning">تنبيه: يجب منح الأذونات الموضحة بالأحمر لضمان الإعادة التلقائية.</string>
+    <string name="banking_perm_usage_stats_title">الوصول إلى بيانات الاستخدام (Usage Stats)</string>
+    <string name="banking_perm_usage_stats_desc">مطلوب لاكتشاف لحظة الخروج من التطبيق المحمي واستعادة خدمة إمكانية الوصول تلقائياً.</string>
+    <string name="banking_perm_usage_stats_btn">فتح إعدادات الوصول للاستخدام</string>
+    <string name="banking_perm_secure_settings_title">إذن WRITE_SECURE_SETTINGS</string>
+    <string name="banking_perm_secure_settings_desc">مطلوب للاسترجاع التلقائي لخدمة الوصول بعد إنستاباي، والتبديل المباشر لمحركات النطق بلا شاشات.</string>
+    <string name="banking_perm_secure_settings_btn">دليل منح الإذن عبر ADB</string>
+    <string name="banking_perm_battery_title">استثناء من تحسين البطارية</string>
+    <string name="banking_perm_battery_desc">يمنع النظام من قتل خدمة الكشف أثناء إيقاف الوصول.</string>
+    <string name="banking_perm_battery_btn">طلب استثناء البطارية</string>
+    <string name="banking_perm_notif_listener_title">خدمة الاستماع للإشعارات (مضيف احتياطي)</string>
+    <string name="banking_perm_notif_listener_desc">تعمل كمضيف احتياطي ثانٍ لكشف الخروج حتى لو قُتلت الخدمة الأمامية.</string>
+    <string name="banking_perm_notif_listener_btn">إعدادات الاستماع للإشعارات</string>
+    <string name="banking_perm_post_notif_title">إذن الإشعارات</string>
+    <string name="banking_perm_post_notif_desc">لإصدار إشعار تنبيهي بديل عند تعذر التفعيل المباشر.</string>
+    <string name="banking_perm_post_notif_btn">إعدادات الإشعارات</string>
+    <string name="banking_perm_oem_title">التشغيل التلقائي OEM</string>
+    <string name="banking_perm_oem_desc">إرشادات حماية التطبيق من الإيقاف بحسب مصنّع الهاتف.</string>
+    <string name="banking_perm_oem_btn">عرض إرشادات الشركة المصنعة</string>
+    <string name="banking_restore_attempts_title">سجل محاولات الاسترجاع (آخر 20 محاولة)</string>
+    <string name="banking_history_restore_header">سجل محاولات الاسترجاع</string>
+    <string name="banking_history_restore_empty">لا توجد محاولات استرجاع مسجلة حتى الآن.</string>
+    <string name="banking_history_restore_copied">تم نسخ سجل الاسترجاع</string>
+    <string name="banking_history_restore_cleared">تم مسح سجل الاسترجاع</string>
+    <string name="banking_timeline_log_header">سجل المخطط الزمني</string>
+    <string name="banking_timeline_log_empty">لا توجد أحداث مسجلة حتى الآن.</string>
+    <string name="banking_timeline_log_copied">تم نسخ المخطط الزمني</string>
+    <string name="banking_timeline_log_cleared">تم مسح المخطط الزمني</string>
+    <string name="banking_voice_trace_empty">لا توجد تسجيلات حتى الآن.</string>
+    <string name="banking_voice_trace_cleared">تم مسح سجل تتبع الأصوات</string>
+    <string name="banking_clear_log_btn">مسح السجل</string>
+    <string name="banking_copy_log_btn">نسخ السجل</string>
+
+    <!-- ساعات الهدوء المحدثة (24 خانة اختيار) -->
+    <string name="time_quiet_select_all">تحديد الكل</string>
+    <string name="time_quiet_clear_all">مسح الكل</string>
+    <string name="time_quiet_copy_to_other_days">نسخ إلى باقي الأيام</string>
+    <string name="time_quiet_copied_ok">تم نسخ ساعات الهدوء إلى جميع الأيام</string>
+    <string name="time_quiet_silent">صامت</string>
+    <string name="time_quiet_speaks">ينطق</string>
+    <string name="time_quiet_midnight">منتصف الليل</string>
+    <string name="time_quiet_noon">الظهر</string>
+    <string name="time_quiet_state_expanded">مفتوح</string>
+    <string name="time_quiet_state_collapsed">مغلق</string>
+    <string name="time_quiet_confirm_copy_title">تطبيق على كل الأيام</string>
+    <string name="time_quiet_confirm_copy_msg">هل تريد استبدال ساعات الهدوء لجميع الأيام بساعات هذا اليوم؟</string>
+    <string name="time_quiet_day_label">اليوم: %1$s</string>
+    <string name="vocalizer_32bit_unsupported">محرك Vocalizer يتطلب معمارية 64-بت وغير مدعوم على أجهزة 32-بت.</string>
 </resources>

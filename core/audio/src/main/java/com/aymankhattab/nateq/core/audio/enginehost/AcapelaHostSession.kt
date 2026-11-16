@@ -1977,9 +1977,13 @@ internal class AcapelaHostSession(
             }.getOrElse { -99 }
         } else null
 
-        // استدعاءات فحص توفر وحصر الأصوات واللغة (البند 4 لبناء 10724)
+        // استدعاءات فحص توفر وحصر الأصوات واللغة (البند 4 لبناء 10724/10725)
         val getLangRes = if (initRes == 0) {
-            runCatching { srv.nGetLanguage() }.getOrNull()
+            runCatching {
+                srv.nGetLanguage()?.joinToString(", ")
+            }.onFailure { t ->
+                Log.w(TAG, "[$label] فشل nGetLanguage", t)
+            }.getOrNull()
         } else null
         val closestVoiceRes = if (initRes == 0) {
             runCatching {
@@ -3043,7 +3047,7 @@ internal class AcapelaHostSession(
             val sw = java.io.StringWriter()
             t.printStackTrace(java.io.PrintWriter(sw))
             val errText =
-                "=== [استثناء يمنع تشغيل اختبار التوليفات 10716] ===\n" +
+                "=== [استثناء يمنع تشغيل اختبار التوليفات 10725] ===\n" +
                     "نوع الخطأ: ${t.javaClass.name}\n" +
                     "الرسالة: ${t.message ?: "بدون رسالة"}\n" +
                     "تتبع المكدس:\n$sw"
@@ -3052,7 +3056,9 @@ internal class AcapelaHostSession(
             runCatching {
                 File(context.cacheDir, "acapela_diagnostic_report.txt")
                     .writeText(errText, StandardCharsets.UTF_8)
-                File(context.cacheDir, "acapela_full_diagnostic_10716.txt")
+                File(context.cacheDir, "acapela_full_diagnostic_10725.txt")
+                    .writeText(errText, StandardCharsets.UTF_8)
+                File(context.cacheDir, "acapela_full_diagnostic_10724.txt")
                     .writeText(errText, StandardCharsets.UTF_8)
                 File(context.cacheDir, "acapela_full_diagnostic_10715.txt")
                     .writeText(errText, StandardCharsets.UTF_8)

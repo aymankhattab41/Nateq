@@ -532,11 +532,9 @@ class TimeAnnouncementManagerTest {
     }
 
     @Test
-    fun isInQuietHours_yesterdaySpanningWindow_intoMorning() {
-        // نافذة «أمس» العابرة لمنتصف الليل (جمعة 23→سبت 07) تظل سارية في
-        // ساعات الصباح الأولى: سبت 05:00 — نافذة السبت نفسه 10→15 لا تشملها
-        // لكن نافذة الجمعة الممتدة تغطيها (كان يُقرع الإعلان فجر السبت رغم
-        // صمت الجمعة الليلي).
+    fun isInQuietHours_yesterdaySpanning_noSaturdayLeak() {
+        // منع تسرب منتصف الليل (إصلاح البند 10): نافذة الجمعة 23→7 لا تُسكت
+        // صباح السبت إن لم تكن ساعات السبت محددة في قناعه (سبت 05:00 ينطق).
         val clock = FakeClock(
             millisFor(2016, Calendar.DECEMBER, 31, 5, 0)
         )
@@ -549,7 +547,7 @@ class TimeAnnouncementManagerTest {
         settings.setQuietEndForDay(friday, 7)
         settings.setDayQuietEnabled(friday, true)
         settings.setDayQuietEnabled(saturday, true)
-        assertTrue(isInQuietHours())
+        assertFalse(isInQuietHours())
     }
 
     @Test

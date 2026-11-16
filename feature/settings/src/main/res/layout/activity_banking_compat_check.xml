@@ -320,7 +320,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:accessibilityHeading="true"
-                android:text="جاهزية الإعادة التلقائية لخدمة إمكانية الوصول"
+                android:text="@string/banking_compat_title"
                 android:textAppearance="?attr/textAppearanceSubtitle1"
                 android:textStyle="bold" />
 
@@ -345,7 +345,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:accessibilityHeading="true"
-                android:text="سجل محاولات الاسترجاع (آخر 20 محاولة)"
+                android:text="@string/banking_restore_attempts_title"
                 android:textAppearance="?attr/textAppearanceSubtitle1"
                 android:textStyle="bold" />
 
@@ -373,7 +373,7 @@
                     android:layout_weight="1"
                     android:layout_marginEnd="4dp"
                     android:minHeight="48dp"
-                    android:text="نسخ السجل" />
+                    android:text="@string/banking_copy_log_btn" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_clear_restore_log"
@@ -383,7 +383,7 @@
                     android:layout_weight="1"
                     android:layout_marginStart="4dp"
                     android:minHeight="48dp"
-                    android:text="مسح السجل" />
+                    android:text="@string/banking_clear_log_btn" />
             </LinearLayout>
 
             <View
@@ -436,7 +436,7 @@
                     android:layout_weight="1"
                     android:layout_marginStart="4dp"
                     android:minHeight="48dp"
-                    android:text="مسح السجل" />
+                    android:text="@string/banking_clear_log_btn" />
             </LinearLayout>
 
         </LinearLayout>

@@ -1,6 +1,7 @@
 *.iml
 .gradle
 /local.properties
+acapela_license.properties
 /.idea/
 .DS_Store
 /build
@@ -12,6 +13,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+acapela_license.properties
 
 # بيانات التوقيع (حسّاسة) — لا تُرفع إلى git إطلاقاً
 /key/

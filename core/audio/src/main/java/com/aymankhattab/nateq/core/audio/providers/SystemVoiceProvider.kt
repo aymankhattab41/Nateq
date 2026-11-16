@@ -1338,9 +1338,22 @@ class SystemVoiceProvider(
         applyEngineSpeechRate(engine, effectiveRate, maxSafe)
         engine.setPitch(pitch)
 
+        val isSpeechFlow = enginePackage != null && (
+            enginePackage.contains("eloquencePlus", ignoreCase = true) ||
+                enginePackage.contains("speechflow", ignoreCase = true)
+        )
+        if (isSpeechFlow) {
+            com.aymankhattab.nateq.core.audio.engine.SpeechFlowDiagnostics
+                .recordCall(text)
+        }
+
         val status = engine.synthesizeToFile(
             text, params, tempFile, utteranceId
         )
+        if (isSpeechFlow) {
+            com.aymankhattab.nateq.core.audio.engine.SpeechFlowDiagnostics
+                .recordResponse(status)
+        }
 
         var success = false
         var finished = false
@@ -1445,6 +1458,11 @@ class SystemVoiceProvider(
                                     cacheKey, cachedParts,
                                     totalCacheBytes, enginePackage
                                 )
+                                if (isSpeechFlow && toRead > 0) {
+                                    com.aymankhattab.nateq.core.audio.engine
+                                        .SpeechFlowDiagnostics
+                                        .recordAudioChunk(toRead.toInt())
+                                }
                                 if (ttfbMs == 0L) {
                                     ttfbMs = SystemClock.uptimeMillis() -
                                         synthStartTime
@@ -1674,6 +1692,12 @@ class SystemVoiceProvider(
                 "fileSize=$fileLen, " +
                 "cancelReason=$cancelReason"
         )
+        if (isSpeechFlow) {
+            com.aymankhattab.nateq.core.audio.engine.SpeechFlowDiagnostics
+                .recordCompletion(
+                    "status=$status, reason=$cancelReason, size=$fileLen"
+                )
+        }
         // ملفُ الجلسة خاص بها فيُحذف في كل المصائر — لا بقايا تتراكم في
         // الكاش بعد النطق، ولا يُمسّ ملفُ جلسةٍ أخرى (الأسماءُ فريدة).
         runCatching { tempFile.delete() }

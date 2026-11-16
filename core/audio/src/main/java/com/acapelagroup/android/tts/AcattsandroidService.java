@@ -55,7 +55,7 @@ public final class AcattsandroidService {
         String str2,
         String str3
     );
-    public native String nGetLanguage();
+    public native String[] nGetLanguage();
     public native String nGetPhonetic(String str);
 
     public AcattsandroidService(Audio audio, String str) {

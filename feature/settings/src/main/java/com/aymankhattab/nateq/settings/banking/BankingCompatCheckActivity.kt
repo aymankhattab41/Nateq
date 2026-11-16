@@ -554,9 +554,14 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         findViewById<MaterialButton?>(R.id.btn_copy_timeline)
             ?.setOnClickListener {
                 val report = ProtectedAppTimelineTracker.getTimelineReport()
-                copyTextToClipboard("سجل المخطط الزمني", report)
+                copyTextToClipboard(
+                    getString(R.string.banking_timeline_log_header),
+                    report
+                )
                 Toast.makeText(
-                    this, "تم نسخ المخطط الزمني", Toast.LENGTH_SHORT
+                    this,
+                    R.string.banking_timeline_log_copied,
+                    Toast.LENGTH_SHORT
                 ).show()
             }
 
@@ -588,7 +593,9 @@ class BankingCompatCheckActivity : AppCompatActivity() {
                 ProtectedAppTimelineTracker.clear()
                 refreshTimeline()
                 Toast.makeText(
-                    this, "تم مسح المخطط الزمني", Toast.LENGTH_SHORT
+                    this,
+                    R.string.banking_timeline_log_cleared,
+                    Toast.LENGTH_SHORT
                 ).show()
             }
 
@@ -597,9 +604,14 @@ class BankingCompatCheckActivity : AppCompatActivity() {
                 val history =
                     RestoreDiagnosticsTracker.getRecentAttempts(this)
                 val text = history.joinToString("\n") { it.formatLine() }
-                copyTextToClipboard("سجل محاولات الاسترجاع", text)
+                copyTextToClipboard(
+                    getString(R.string.banking_history_restore_header),
+                    text
+                )
                 Toast.makeText(
-                    this, "تم نسخ سجل الاسترجاع", Toast.LENGTH_SHORT
+                    this,
+                    R.string.banking_history_restore_copied,
+                    Toast.LENGTH_SHORT
                 ).show()
             }
 
@@ -608,7 +620,9 @@ class BankingCompatCheckActivity : AppCompatActivity() {
                 RestoreDiagnosticsTracker.clear(this)
                 refreshRestoreReadinessAndLog()
                 Toast.makeText(
-                    this, "تم مسح سجل الاسترجاع", Toast.LENGTH_SHORT
+                    this,
+                    R.string.banking_history_restore_cleared,
+                    Toast.LENGTH_SHORT
                 ).show()
             }
 
@@ -634,7 +648,9 @@ class BankingCompatCheckActivity : AppCompatActivity() {
                 EventVoiceTrace.clear()
                 refreshVoiceTrace()
                 Toast.makeText(
-                    this, "تم مسح سجل تتبع الأصوات", Toast.LENGTH_SHORT
+                    this,
+                    R.string.banking_voice_trace_cleared,
+                    Toast.LENGTH_SHORT
                 ).show()
             }
     }
@@ -643,7 +659,7 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         val tvTrace = findViewById<TextView?>(R.id.tv_voice_trace_log)
         val report = EventVoiceTrace.formatReport()
         tvTrace?.text = if (report.isBlank()) {
-            "لا توجد تسجيلات حتى الآن."
+            getString(R.string.banking_voice_trace_empty)
         } else {
             report
         }
@@ -653,7 +669,7 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         val tvTimeline = findViewById<TextView?>(R.id.tv_banking_timeline)
         val report = ProtectedAppTimelineTracker.getTimelineReport()
         tvTimeline?.text = if (report.isBlank()) {
-            "لا توجد أحداث مسجلة حتى الآن."
+            getString(R.string.banking_timeline_log_empty)
         } else {
             report
         }
@@ -664,9 +680,9 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         val tvSummary =
             findViewById<TextView?>(R.id.tv_restore_readiness_summary)
         tvSummary?.text = if (readiness.canEnableFullDisable) {
-            "جاهز للإعادة التلقائية: المتطلبات الأساسية مكتملة."
+            getString(R.string.banking_status_ready)
         } else {
-            "تنبيه: يجب منح الأذونات الموضحة بالأحمر لضمان الإعادة التلقائية."
+            getString(R.string.banking_status_warning)
         }
 
         val itemsContainer =
@@ -675,11 +691,16 @@ class BankingCompatCheckActivity : AppCompatActivity() {
             itemsContainer.removeAllViews()
             itemsContainer.addView(
                 buildReadinessItem(
-                    title = "إذن WRITE_SECURE_SETTINGS",
-                    detail = "مطلوب للاسترجاع التلقائي لخدمة الوصول بعد " +
-                        "إنستاباي، والتبديل المباشر لمحركات النطق بلا شاشات.",
+                    title = getString(
+                        R.string.banking_perm_secure_settings_title
+                    ),
+                    detail = getString(
+                        R.string.banking_perm_secure_settings_desc
+                    ),
                     granted = readiness.hasWriteSecure,
-                    actionTitle = "دليل منح الإذن عبر ADB",
+                    actionTitle = getString(
+                        R.string.banking_perm_secure_settings_btn
+                    ),
                     onAction = {
                         startActivity(
                             Intent(
@@ -692,11 +713,12 @@ class BankingCompatCheckActivity : AppCompatActivity() {
             )
             itemsContainer.addView(
                 buildReadinessItem(
-                    title = "الوصول إلى بيانات الاستخدام (Usage Stats)",
-                    detail = "مطلوب لاكتشاف لحظة الخروج من التطبيق المحمي " +
-                        "واستعادة خدمة إمكانية الوصول تلقائياً.",
+                    title = getString(R.string.banking_perm_usage_stats_title),
+                    detail = getString(R.string.banking_perm_usage_stats_desc),
                     granted = readiness.hasUsageStats,
-                    actionTitle = "فتح إعدادات الوصول للاستخدام",
+                    actionTitle = getString(
+                        R.string.banking_perm_usage_stats_btn
+                    ),
                     onAction = {
                         runCatching {
                             startActivity(
@@ -708,11 +730,10 @@ class BankingCompatCheckActivity : AppCompatActivity() {
             )
             itemsContainer.addView(
                 buildReadinessItem(
-                    title = "استثناء من تحسين البطارية",
-                    detail = "يمنع النظام من قتل خدمة الكشف أثناء " +
-                        "إيقاف الوصول.",
+                    title = getString(R.string.banking_perm_battery_title),
+                    detail = getString(R.string.banking_perm_battery_desc),
                     granted = readiness.isBatteryOptimizationsIgnored,
-                    actionTitle = "طلب استثناء البطارية",
+                    actionTitle = getString(R.string.banking_perm_battery_btn),
                     onAction = {
                         runCatching {
                             val intent = Intent(
@@ -728,11 +749,12 @@ class BankingCompatCheckActivity : AppCompatActivity() {
             )
             itemsContainer.addView(
                 buildReadinessItem(
-                    title = "إذن الإشعارات",
-                    detail = "لإصدار إشعار تنبيهي بديل عند تعذر " +
-                        "التفعيل المباشر.",
+                    title = getString(R.string.banking_perm_post_notif_title),
+                    detail = getString(R.string.banking_perm_post_notif_desc),
                     granted = readiness.hasNotificationPermission,
-                    actionTitle = "إعدادات الإشعارات",
+                    actionTitle = getString(
+                        R.string.banking_perm_post_notif_btn
+                    ),
                     onAction = {
                         runCatching {
                             val intent = Intent(
@@ -749,11 +771,10 @@ class BankingCompatCheckActivity : AppCompatActivity() {
             )
             itemsContainer.addView(
                 buildReadinessItem(
-                    title = "التشغيل التلقائي OEM",
-                    detail = "إرشادات حماية التطبيق من الإيقاف بحسب " +
-                        "مصنّع الهاتف.",
+                    title = getString(R.string.banking_perm_oem_title),
+                    detail = getString(R.string.banking_perm_oem_desc),
                     granted = readiness.isAutostartGuided,
-                    actionTitle = "عرض إرشادات الشركة المصنعة",
+                    actionTitle = getString(R.string.banking_perm_oem_btn),
                     onAction = {
                         OemGuidanceController.openAutostartSettings(this)
                     }
@@ -761,11 +782,16 @@ class BankingCompatCheckActivity : AppCompatActivity() {
             )
             itemsContainer.addView(
                 buildReadinessItem(
-                    title = "خدمة الاستماع للإشعارات (مضيف احتياطي)",
-                    detail = "تعمل كمضيف احتياطي ثانٍ لكشف الخروج حتى لو " +
-                        "قُتلت الخدمة الأمامية.",
+                    title = getString(
+                        R.string.banking_perm_notif_listener_title
+                    ),
+                    detail = getString(
+                        R.string.banking_perm_notif_listener_desc
+                    ),
                     granted = readiness.isNotificationListenerEnabled,
-                    actionTitle = "إعدادات الاستماع للإشعارات",
+                    actionTitle = getString(
+                        R.string.banking_perm_notif_listener_btn
+                    ),
                     onAction = {
                         runCatching {
                             startActivity(
@@ -784,7 +810,7 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         val tvLog = findViewById<TextView?>(R.id.tv_restore_history_log)
         val history = RestoreDiagnosticsTracker.getRecentAttempts(this)
         tvLog?.text = if (history.isEmpty()) {
-            "لا توجد محاولات استرجاع مسجلة حتى الآن."
+            getString(R.string.banking_history_restore_empty)
         } else {
             history.reversed().joinToString("\n") { it.formatLine() }
         }

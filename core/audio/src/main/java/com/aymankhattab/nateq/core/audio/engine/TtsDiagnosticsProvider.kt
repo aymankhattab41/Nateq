@@ -34,6 +34,7 @@ class TtsDiagnosticsProvider : ContentProvider() {
         const val KEY_ACAPELA_FALLBACK_VOICE = "acapela_fallback_voice"
         const val KEY_ACAPELA_FALLBACK_ENGINE = "acapela_fallback_engine"
         const val KEY_ACAPELA_FALLBACK_REASON = "acapela_fallback_reason"
+        const val KEY_SPEECHFLOW_REPORT = "speechflow_report"
     }
 
     override fun onCreate(): Boolean = true
@@ -94,6 +95,10 @@ class TtsDiagnosticsProvider : ContentProvider() {
                 putString(
                     KEY_ACAPELA_FALLBACK_REASON,
                     SpeechFallbackTracker.acapelaFallbackReason
+                )
+                putString(
+                    KEY_SPEECHFLOW_REPORT,
+                    SpeechFlowDiagnostics.buildReport()
                 )
             }
         }
