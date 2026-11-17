@@ -592,7 +592,7 @@ object AcapelaVoiceManifest {
             .filter { it.key !in covered }
         if (entries.isEmpty()) return
         val content = buildString {
-            append("MODE = \"MODE=prep_hd\"\n")
+            append("MODE=prep_hd\n")
             for ((idx, entry) in entries.withIndex()) {
                 val num = idx + 1
                 append("#$num ").append(entry.key).append(" \"")

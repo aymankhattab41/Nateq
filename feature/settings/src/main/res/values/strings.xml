@@ -723,6 +723,7 @@
 <string name="changelog_title">آخر التحديثات</string>
     <string name="changelog_text">
 الإصدار %1$s
+• تشخيص Acapela 10730: قياس فعلي للحجم وMD5 لكل ملفات الصوت وNLP وini في التجهيز مقابل الأصل مع إظهار أي اختلاف بوضوح، وفحص بايت كود يثبت أن AcapelaPack وAcapelaSpeech وNativeEngine تخص org.volodymyr.multivoice لا org.nobody.multitts (النتيجة في package_check.txt)، وإصلاح كتابة ini لتنسخ محتوى سلمى الأصلي 109 بايت بدل 61 بايت المولَّدة التي كانت تكرر MODE= داخل القيمة، وتصحيح تسمية MultiVoice في الملاحظات، وتحقيق sNLPConfig=0 وNLPE_initEx=-34 بمقارنة معاملات nInit/nSetLicense مع المحرك المرجعي، مع إبقاء أقسام Acapela في صدارة التقرير المُقيَّد بـ60 ألف حرف والملف المستقر وزر المشاركة.
 • تشخيص Acapela 10729: ملف واحد مستقر acapela_full_diagnostic.txt يُكتب تدريجياً ويُدفَع بعد كل خطوة كي ينجو من انهيار :engine_host، وإيقاف مسح logcat قبل الاختبار، وإدراج الملف أولاً مع ملفات 10725 إلى 10728 وأسطر :engine_host في التقرير، وسقف 60 ألف حرف للتقرير المنسوخ والمُشارَك، وزر مشاركة ملف التشخيص في حوار محرك Acapela.
 • إصلاح Acapela الجذري (10728): مسار تجربة واحد Path_Original_Root_109 بلا مسارات 1/2/3 ولا stage_v2 ولا نسخ مجلدات، وضبط nSetVoiceMode(MODE=prep_hd) قبل تحميل الصوت حتى لو فشل nInit، وإغلاق كل خدمة تجربة بـ nStop ثم nShutdown، وتقرير واحد acapela_full_diagnostic_10728.txt وملف WAV واحد، ومنع إعادة التجربة بعد فشلها، مع تسجيل معاملات nInit ونتائج eb وnlpErr وsNLP وpcm وnSpeak.
 • نهاية ساعات الهدوء تُحسب من قناع بتات الساعات (isHourQuiet) لا من المفتاحين القديمين للبداية والنهاية، فلا تتعارض النافذة المعروضة مع القناع.

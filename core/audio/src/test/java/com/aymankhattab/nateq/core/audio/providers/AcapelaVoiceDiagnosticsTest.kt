@@ -326,7 +326,7 @@ class AcapelaVoiceDiagnosticsTest {
             assertTrue(ini.exists())
             val iniLines = ini.readLines()
             assertEquals(2, iniLines.size)
-            assertEquals("MODE = \"MODE=prep_hd\"", iniLines[0])
+            assertEquals("MODE=prep_hd", iniLines[0])
             assertTrue(
                 iniLines[1].contains("FILEMAP \"salma_22k_lf.bvcu\"")
             )
@@ -354,7 +354,7 @@ class AcapelaVoiceDiagnosticsTest {
                 assertTrue(f.exists())
                 val iniLines = f.readLines()
                 assertEquals(2, iniLines.size)
-                assertEquals("MODE = \"MODE=prep\"", iniLines[0])
+                assertEquals("MODE=prep", iniLines[0])
                 assertEquals(
                     "#1 FILEMAP \"salma_22k_lf.bvcu\"",
                     iniLines[1]
@@ -534,13 +534,90 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun getStagingVsMultiTtsFilesComparison_containsExpectedFiles() {
-        val comp = AcapelaVoiceDiagnostics
-            .getStagingVsMultiTtsFilesComparison(context)
-        assertTrue(comp.contains("salma_22k_lf.bvcu"))
-        assertTrue(comp.contains("ar_sa.dca"))
-        assertTrue(comp.contains("ar_sa_hd_salma_22k_lf.ini"))
-        assertTrue(comp.contains("لا يوجد أي ملف ناقص"))
+    fun getStagingVsMultiTtsFilesComparison_usesMeasuredSizesAndMd5() {
+        val stage = File(context.cacheDir, "acapela_stage").apply {
+            mkdirs()
+        }
+        val original = File(
+            context.filesDir, "Acapela/Salma/salma_lf"
+        ).apply { mkdirs() }
+        val stagedDca = File(stage, "ar_sa.dca")
+        val originalDca = File(original, "ar_sa.dca")
+        val stagedIni = File(stage, "ar_sa_hd_salma_22k_lf.ini")
+        try {
+            stagedDca.writeBytes("STAGED".toByteArray(StandardCharsets.UTF_8))
+            originalDca.writeBytes(
+                "ORIGINAL".toByteArray(StandardCharsets.UTF_8)
+            )
+            stagedIni.writeText(
+                "MODE=prep_hd\n", StandardCharsets.ISO_8859_1
+            )
+
+            val comp = AcapelaVoiceDiagnostics
+                .getStagingVsMultiTtsFilesComparison(context)
+
+            assertTrue(comp.contains("بالقياس الفعلي"))
+            assertTrue(comp.contains("ar_sa.dca"))
+            assertTrue(comp.contains("salma_22k_lf.bvcu"))
+            assertTrue(comp.contains("ar_sa_hd_salma_22k_lf.ini"))
+            assertTrue(comp.contains("التجهيز: 6 بايت"))
+            assertTrue(comp.contains("الأصلي : 8 بايت"))
+            assertTrue(comp.contains("MD5:"))
+            assertTrue(comp.contains("مختلف الحجم أو البصمة"))
+            assertTrue(comp.contains(AcapelaVoiceDiagnostics.calcFileMd5(
+                stagedDca
+            )))
+        } finally {
+            stagedDca.delete()
+            originalDca.delete()
+            stagedIni.delete()
+        }
+    }
+
+    @Test
+    fun capSharedReport_movesAcapelaSectionToFrontBeforeTrimming() {
+        val start = AcapelaVoiceDiagnostics.ACAPELA_REPORT_START
+        val end = AcapelaVoiceDiagnostics.ACAPELA_REPORT_END
+        val longTail = "أسطر logcat ".repeat(40)
+        val report = "مقدمة عامة\n$start\nأقسام Acapela هنا\n$end\n$longTail"
+
+        val capped = AcapelaVoiceDiagnostics.capSharedReport(
+            report, maxChars = 120
+        )
+
+        assertTrue(capped.startsWith("أقسام Acapela هنا"))
+        assertFalse(capped.contains(start))
+        assertFalse(capped.contains(end))
+        assertTrue(capped.length <= 120)
+        assertTrue(capped.contains("تم الاقتطاع"))
+    }
+
+    @Test
+    fun writeIniTargets_copiesOriginal109BytesVerbatim() {
+        val original = File(
+            context.filesDir,
+            "Acapela/Salma/salma_lf/" +
+                "ar_sa_hd_salma_22k_lf.ini"
+        ).apply { parentFile?.mkdirs() }
+        val bytes = AcapelaVoiceDiagnostics
+            .originalIniFallbackContent()
+            .toByteArray(StandardCharsets.ISO_8859_1)
+        val target = File(tempDir(), "bvcu.ini")
+        try {
+            original.writeBytes(bytes)
+            assertEquals(109L, original.length())
+
+            AcapelaVoiceDiagnostics.writeIniTargets(
+                context, listOf(target)
+            )
+
+            org.junit.Assert.assertArrayEquals(
+                bytes, target.readBytes()
+            )
+        } finally {
+            original.delete()
+            target.parentFile?.deleteRecursively()
+        }
     }
 
     @Test
@@ -1209,7 +1286,7 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun buildAcapelaFullReport_readsStableFileFirstAndUses10729Header() {
+    fun buildAcapelaFullReport_readsStableFileFirstAndUses10730Header() {
         val cache = context.cacheDir
         val stable = File(
             cache,
@@ -1226,7 +1303,7 @@ class AcapelaVoiceDiagnosticsTest {
                 context
             )
 
-            assertTrue(report.contains("(إصدار 10729)"))
+            assertTrue(report.contains("(إصدار 10730)"))
             assertTrue(report.contains(stableMarker))
             assertTrue(report.contains(legacyMarker))
             val stablePos = report.indexOf(stableMarker)

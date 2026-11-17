@@ -298,9 +298,9 @@ class AcapelaVoiceManifestTest {
         val lines = File(voiceFolder, "salma.ini").readLines()
         assertTrue(lines.isNotEmpty())
         // الصيغة تمرّ من بوّابة `#%s %s "%[^"]" [ %[^] ] ]`
-        // أو `MODE = "%[^"]"`.
+        // أو `MODE=prep_hd` (بلا MODE= مكرَّرة داخل القيمة).
         val shape = Regex(
-            "^(?:MODE = \"[^\"]+\"|#[0-9]+ [A-Z]+ \"[^\"]+\" \\[ [A-Z_]+ ])$"
+            "^(?:MODE=[^\\s\"]+|#[0-9]+ [A-Z]+ \"[^\"]+\" \\[ [A-Z_]+ ])$"
         )
         for (line in lines) {
             assertTrue("سطر تهيئة غير مطابق: $line", shape.matches(line))
@@ -334,7 +334,7 @@ class AcapelaVoiceManifestTest {
         File(voiceFolder, "salma.inf").writeText(
             "[Voice]\nspeaker = \"Salma\"\n"
         )
-        val original = "MODE = \"MODE=prep_hd\"\n" +
+        val original = "MODE=prep_hd\n" +
             "#1 FILEMAP \"salma.bvcu\" [ RAM ]\n"
         val ini = File(voiceFolder, "salma.ini")
         ini.writeText(original)
@@ -796,7 +796,7 @@ class AcapelaVoiceManifestTest {
         val ini = File(dir, "voice.ini")
         assertTrue(ini.exists())
         val text = ini.readText()
-        assertTrue(text.contains("MODE = \"MODE=prep_hd\""))
+        assertTrue(text.contains("MODE=prep_hd"))
         assertTrue(text.contains("#1 FILEMAP \"voice.bvcu\" [ RAM ]"))
     }
 
@@ -813,7 +813,7 @@ class AcapelaVoiceManifestTest {
         AcapelaVoiceManifest.ensureIniFor(inf)
         val text = ini.readText()
         assertTrue(text.contains("#1 FILEMAP \"voice.bvcu\" [ RAM ]"))
-        assertTrue(text.contains("MODE = \"MODE=prep_hd\""))
+        assertTrue(text.contains("MODE=prep_hd"))
     }
 
     @Test

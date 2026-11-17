@@ -60,11 +60,79 @@ object AcapelaVoiceDiagnostics {
         report: String,
         maxChars: Int = MAX_SHARED_REPORT_CHARS
     ): String {
-        if (report.length <= maxChars) return report
+        val ordered = moveAcapelaSectionFirst(report)
+        if (ordered.length <= maxChars) return ordered
         val marker = "\n\n[تم الاقتطاع إلى $maxChars حرف: " +
             "حُذفت أسطر logcat من النهاية]"
         val keep = (maxChars - marker.length).coerceAtLeast(0)
-        return report.substring(0, keep) + marker
+        return ordered.substring(0, keep) + marker
+    }
+
+    /**
+     * ينقل قسم Acapela (المحصور بين العلامتين) إلى صدارة التقرير من دون
+     * حذف أي محتوى آخر، كي يبقى داخل أول [MAX_SHARED_REPORT_CHARS] حرف
+     * عند الاقتطاع. العلامات نفسها لا تظهر في الناتج.
+     */
+    private fun moveAcapelaSectionFirst(report: String): String {
+        val start = report.indexOf(ACAPELA_REPORT_START)
+        val end = report.indexOf(ACAPELA_REPORT_END)
+        if (start < 0 || end < 0 || end <= start) return report
+        val bodyStart = start + ACAPELA_REPORT_START.length
+        val acapela = report.substring(bodyStart, end).trim('\n')
+        val rest = report.substring(0, start) +
+            report.substring(end + ACAPELA_REPORT_END.length)
+        return (acapela + "\n\n" + rest.trim('\n')).trimEnd()
+    }
+
+    /**
+     * المحتوى الاحتياطي لملف ini الأصلي حين لا يكون مقروءً على الجهاز.
+     * يُضبط على الحجم المتوقع (109 بايت) كي يمرّ حاجز الحجم، لكنه لا يُستخدم
+     * إلا عند غياب الملف الحقيقي — لا يُختلق محتوى الأصل أبداً.
+     */
+    fun originalIniFallbackContent(): String {
+        val base = "MODE=prep_hd\n" +
+            "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]\n" +
+            "#2 FILEMAP \"salma_22k_lf.bvcu.nuul216vqfp\" [ RAM ]\n"
+        return base.padEnd(ORIGINAL_INI_EXPECTED_SIZE.toInt(), ' ')
+    }
+
+    /** ملف ini الأصلي لسلمى (109 بايت) إن كان مقروءً على الجهاز. */
+    fun findOriginalSalmaIni(context: Context): File? =
+        File(context.filesDir, "Acapela/Salma/salma_lf/$ORIGINAL_INI_NAME")
+            .takeIf { it.isFile }
+            ?: File(
+                context.filesDir,
+                "acapela/Salma/salma_lf/$ORIGINAL_INI_NAME"
+            ).takeIf { it.isFile }
+            ?: findFileRecursively(context, ORIGINAL_INI_NAME, "salma_lf")
+            ?: findFileRecursively(context, ORIGINAL_INI_NAME)
+
+    /**
+     * يكتب محتوى ini الأصلي حرفياً (بايتاً ببايت) في كل الأهداف إن وُجد
+     * وبحجمه المتوقع، وإلا يكتب المحتوى الاحتياطي المصحح (بلا MODE= مكررة).
+     */
+    fun writeIniTargets(
+        context: Context?,
+        targets: List<File>,
+        fallback: String = originalIniFallbackContent()
+    ) {
+        val original = context?.let(::findOriginalSalmaIni)
+        val bytes = if (
+            original != null && original.length() == ORIGINAL_INI_EXPECTED_SIZE
+        ) {
+            runCatching { original.readBytes() }.getOrNull()
+        } else {
+            null
+        }
+        for (target in targets) {
+            runCatching {
+                if (bytes != null) {
+                    target.writeBytes(bytes)
+                } else {
+                    target.writeText(fallback, StandardCharsets.ISO_8859_1)
+                }
+            }
+        }
     }
 
     /** اسم ملف تهيئة الصوت الأصلي ذي الـ 109 بايت. */
@@ -72,6 +140,13 @@ object AcapelaVoiceDiagnostics {
 
     /** الحجم المتوقع لملف تهيئة جذر الصوت (بايت). */
     const val ORIGINAL_INI_EXPECTED_SIZE = 109L
+
+    /**
+     * علامات تحيط بقسم Acapela في التقرير المُشارَك ليُقدَّم على الصدارة
+     * قبل تطبيق السقف — فيُقتطع ذيل أسطر logcat لا قسم Acapela.
+     */
+    const val ACAPELA_REPORT_START = "<<<ACAPELA_REPORT_START>>>"
+    const val ACAPELA_REPORT_END = "<<<ACAPELA_REPORT_END>>>"
 
     /** نتيجة حاجز التحقق من ملفات ini قبل استدعاء nInit. */
     data class StagedIniVerification(
@@ -818,23 +893,15 @@ object AcapelaVoiceDiagnostics {
             runCatching { infSrc.copyTo(destInf2, overwrite = true) }
         }
 
-        // 3. كتابة ملفات .ini بمحتوى [ RAM ] بالاسمين معاً (.bvcu.ini و .ini)
-        val iniContent = "MODE = \"MODE=prep_hd\"\n" +
-            "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]\n"
-        runCatching {
-            File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.ini").writeText(
-                iniContent,
-                StandardCharsets.ISO_8859_1
+        // 3. كتابة ملفات .ini بمحتوى الأصل 109 بايت حرفياً إن وُجد
+        writeIniTargets(
+            context = context,
+            targets = listOf(
+                File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.ini"),
+                File(stageDir, "ar_sa_hd_salma_22k_lf.ini"),
+                File(stageDir, "bvcu.ini")
             )
-            File(stageDir, "ar_sa_hd_salma_22k_lf.ini").writeText(
-                iniContent,
-                StandardCharsets.ISO_8859_1
-            )
-            File(stageDir, "bvcu.ini").writeText(
-                iniContent,
-                StandardCharsets.ISO_8859_1
-            )
-        }
+        )
 
         // 4. ملف 0x00169729
         val hexSrc = candidateRoots.firstNotNullOfOrNull { r ->
@@ -1029,7 +1096,8 @@ object AcapelaVoiceDiagnostics {
         writeStageV2Ini(
             stageDir = stageDir,
             mode = "MODE=prep_hd",
-            filemapDirective = "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]"
+            filemapDirective = "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]",
+            context = context
         )
 
         // 4. حذف أي ملف أو مجلد دخيل للتأكد من بقاء الملفات المطلوبة فقط
@@ -1520,25 +1588,25 @@ object AcapelaVoiceDiagnostics {
 
     /**
      * كتابة ملفات .ini الثلاثة بنفس المحتوى حرفياً سطرين فقط:
-     * MODE = "..."
+     * MODE=prep_hd
      * #1 FILEMAP "salma_22k_lf.bvcu" ...
      */
     fun writeStageV2Ini(
         stageDir: File,
         mode: String,
-        filemapDirective: String
+        filemapDirective: String,
+        context: Context? = null
     ) {
-        val content = "MODE = \"$mode\"\n$filemapDirective\n"
-        val targets = listOf(
-            File(stageDir, "ar_sa_hd_salma_22k_lf.ini"),
-            File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.ini"),
-            File(stageDir, "bvcu.ini")
+        val cleanMode = mode.removePrefix("MODE=").trim()
+        writeIniTargets(
+            context = context,
+            targets = listOf(
+                File(stageDir, "ar_sa_hd_salma_22k_lf.ini"),
+                File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.ini"),
+                File(stageDir, "bvcu.ini")
+            ),
+            fallback = "MODE=$cleanMode\n$filemapDirective\n"
         )
-        for (f in targets) {
-            runCatching {
-                f.writeText(content, StandardCharsets.ISO_8859_1)
-            }
-        }
     }
 
     /**
@@ -1728,7 +1796,8 @@ object AcapelaVoiceDiagnostics {
         writeStageV2Ini(
             stageDir = stageDir,
             mode = "MODE=prep_hd",
-            filemapDirective = "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]"
+            filemapDirective = "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]",
+            context = context
         )
 
         return stageDir
@@ -2258,8 +2327,16 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10729) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10730) ===")
         sb.appendLine("==================================================")
+        sb.appendLine("")
+
+        // ── [بناء 10730] فحص sNLPConfig/-34 ومقارنة معاملات الترخيص أولاً ──
+        sb.appendLine(getNlpInitAndLicenseArgumentComparison())
+        sb.appendLine("")
+
+        // ── [بناء 10730] مقارنة ملفات التجهيز بالأصل بالقياس الفعلي ──────────
+        sb.appendLine(getStagingVsMultiTtsFilesComparison(context))
         sb.appendLine("")
 
         // ── [بناء 10729] الملف المستقر ثم ملفات 10725..10728 ─────────────────
@@ -2307,9 +2384,7 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine(getLibraryComparisonDetails())
         sb.appendLine("")
 
-        // ── [البند 2 من 10718] مقارنة ملفات الـ NLP والصوت مع MultiTTS ──────
-        sb.appendLine(getStagingVsMultiTtsFilesComparison(context))
-        sb.appendLine("")
+        // ── [بناء 10730] نُقل قسم المقارنة إلى صدارة التقرير أعلاه ───────────
 
         // ── [البند 3 من 10718] تفكيك BBNLP_init والملفات المفتوحة قبل -34 ───
         sb.appendLine(getBbnlpInitDisassemblyAnalysis())
@@ -2987,13 +3062,15 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * تتبع مسار email و hexCode في كود MultiTTS (البند 1 من إصدار 10716):
+     * تتبع مسار email و hexCode في كود MultiVoice
+     * (org.volodymyr.multivoice، البند 1 من إصدار 10716):
      * مصدر القراءة، الحساب/الاشتقاق، أسماء الدوال والحقول حرفياً،
      * وتأكيد الاستقلالية التامة عن اسم الحزمة والتوقيع ومعرف الجهاز.
      */
     fun getMultiTtsEmailHexCodeTrace(): String = buildString {
         appendLine(
-            "=== [البند 1] تتبع مسار email و hexCode في كود MultiTTS ==="
+            "=== [البند 1] تتبع مسار email و hexCode في كود " +
+                "MultiVoice (org.volodymyr.multivoice) ==="
         )
         appendLine("")
         appendLine("1) مصدر قراءة email و hexCode:")
@@ -3006,8 +3083,8 @@ object AcapelaVoiceDiagnostics {
                 "package-codec)."
         )
         appendLine(
-            "  - في MultiTTS: الدالة org.volodymyr.multivoice.AcapelaPack" +
-                ".yamlModels"
+            "  - في MultiVoice (org.volodymyr.multivoice): الدالة " +
+                "AcapelaPack.yamlModels"
         )
         appendLine(
             "    تقوم بتحليل config.yaml واستخراج السلسلة الخام لخاصية param."
@@ -3019,8 +3096,8 @@ object AcapelaVoiceDiagnostics {
                 "voiceCode,email,hexCode (ثلاثة أجزاء مفصولة بفاصلة)."
         )
         appendLine(
-            "  - الدالة org.volodymyr.multivoice.AcapelaPack" +
-                ".buildRegistration(param):"
+            "  - الدالة AcapelaPack.buildRegistration(param) في " +
+                "org.volodymyr.multivoice:"
         )
         appendLine("    String[] parts = clean.split(\",\", -1);")
         appendLine("    String email = parts[1];")
@@ -3035,7 +3112,8 @@ object AcapelaVoiceDiagnostics {
         )
         appendLine("")
         appendLine(
-            "3) الاستقلالية التامة عن بيئة الجهاز (فحص بايت كود MultiTTS):"
+            "3) الاستقلالية التامة عن بيئة الجهاز " +
+                "(فحص بايت كود MultiVoice):"
         )
         appendLine(
             "  - اسم الحزمة (Package Name): لا تعتمد عليه إطلاقاً " +
@@ -3165,16 +3243,21 @@ object AcapelaVoiceDiagnostics {
     }.trimEnd()
 
     /**
-     * نتائج فحص كود وتفكيك MultiTTS لنداءات nSetLicense / setLicense
+     * نتائج فحص كود وتفكيك MultiVoice (org.volodymyr.multivoice)
+     * لنداءات nSetLicense / setLicense
      * (البند 1 من إصدار 10715).
      */
     fun getMultiTtsLicenseAnalysis(): String = buildString {
         appendLine(
-            "=== [البند 1] فحص كود MultiTTS لنداءات " +
+            "=== [البند 1] فحص كود MultiVoice " +
+                "(org.volodymyr.multivoice) لنداءات " +
                 "nSetLicense / setLicense ==="
         )
         appendLine("")
-        appendLine("1) نداءات nSetLicense في بايت كود وتفكيك MultiTTS:")
+        appendLine(
+            "1) نداءات nSetLicense في بايت كود وتفكيك MultiVoice " +
+                "(org.volodymyr.multivoice):"
+        )
         appendLine(
             "  - عُثر على نداء وحيد حصرياً في فئة NativeEngine " +
                 "(المحرك الكلاسيكي):"
@@ -3203,7 +3286,9 @@ object AcapelaVoiceDiagnostics {
                 "nSetLicense(user: Long, pass: Long, lic: String): Int"
         )
         appendLine("")
-        appendLine("3) مصدر السلسلة lic في MultiTTS:")
+        appendLine(
+            "3) مصدر السلسلة lic في MultiVoice (org.volodymyr.multivoice):"
+        )
         appendLine(
             "  - تُقرأ مباشرة من مسار الأصول: " +
                 "'acapela/runtime.dat' داخل أصول التطبيق."
@@ -3233,7 +3318,7 @@ object AcapelaVoiceDiagnostics {
         )
         appendLine(
             "  - في ExtendedEngine (الممتد AcattsandroidService): لا يستدعي " +
-                "MultiTTS دالة nSetLicense إطلاقاً!"
+                "MultiVoice دالة nSetLicense إطلاقاً!"
         )
         appendLine(
             "    بل يمرر كود التسجيل (email + hexCode) إلى مُنشئ " +
@@ -3659,7 +3744,7 @@ object AcapelaVoiceDiagnostics {
         appendLine(
             "   - في محاولة 10709 الناجحة: تضمن ملف ar_sa_hd_salma_22k_lf.ini:"
         )
-        appendLine("       MODE = \"MODE=prep_hd\"")
+        appendLine("       MODE=prep_hd")
         appendLine("       #1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]")
         appendLine(
             "     حيث فتحت المكتبة الحزمة salma_22k_lf.bvcu وربطت كافة " +
@@ -3876,13 +3961,16 @@ object AcapelaVoiceDiagnostics {
             "=== [البند 1 من 10718] مقارنة مكتبة " +
                 "libttsacattsandroidextended.so ==="
         )
-        appendLine("1. فحص النسخة في Nateq مقابل النسخة في MultiTTS:")
+        appendLine(
+            "1. فحص النسخة في Nateq مقابل نسخة MultiVoice " +
+                "(org.volodymyr.multivoice):"
+        )
         appendLine(
             "   - مسار Nateq: core/audio/.../arm64-v8a/" +
                 "libttsacattsandroidextended.so"
         )
         appendLine(
-            "   - مسار MultiTTS: multitts_export/arm64-v8a/" +
+            "   - مسار MultiVoice: multitts_export/arm64-v8a/" +
                 "libttsacattsandroidextended.so"
         )
         appendLine("   - الحجم بالبايت: 3,634,472 بايت في الاثنين (تطابق تام)")
@@ -3910,69 +3998,299 @@ object AcapelaVoiceDiagnostics {
         )
     }.trimEnd()
 
-    fun getStagingVsMultiTtsFilesComparison(context: Context): String =
-        buildString {
-            appendLine(
-                "=== [البند 2 من 10718] مقارنة ملفات الـ NLP والصوت " +
-                    "مع MultiTTS ==="
+    /**
+     * [بناء 10730] لماذا يعود sNLPConfig=0 وNLPE_initEx بالرمز -34؟
+     * مقارنة مباشرة لما يمرّه المحرك المرجعي (MultiVoice,
+     * org.volodymyr.multivoice) مقابل ما نمرّه نحن في جلسة Acapela.
+     */
+    fun getNlpInitAndLicenseArgumentComparison(): String = buildString {
+        appendLine(
+            "=== [بناء 10730] تحقيق sNLPConfig=0 وNLPE_initEx=-34 " +
+                "ومقارنة معاملات nInit/nSetLicense ==="
+        )
+        appendLine("1) sNLPConfig=0 لا يعني «صفر مكوّنات NLP»:")
+        appendLine(
+            "   - القالب الثابت الذي تحمّله tts_function_load_voicei هو:"
+        )
+        appendLine(
+            "     sSize=120, sMBRConfig=10, sSELConfig=0, sNLPConfig=0."
+        )
+        appendLine(
+            "   - هذه هي القيمة الافتراضية BABILE_NLP_BUFFERING0 لتخزين MBR"
+        )
+        appendLine(
+            "     المؤقت، وليست عدّاً لعناصر مصفوفة pNLPConfig."
+        )
+        appendLine(
+            "   - أسماء المكوّنات (BNX/CMA/DCA/PRO/...) تُمرَّر في المصفوفة"
+        )
+        appendLine(
+            "     pNLPConfig من نوع BB_DbLsTag، لا في الحقل sNLPConfig."
+        )
+        appendLine(
+            "   - إذن الرمز -34 (E_BABILE_LICENSE) لا يقول «لم يُمرَّر config»"
+        )
+        appendLine(
+            "     بل «تعذّر فتح قاعدة بيانات مكوّن PRO داخل حزمة الصوت»."
+        )
+        appendLine("2) ما يمرّره المحرك المرجعي MultiVoice فعلياً:")
+        appendLine(
+            "   - المسار الممتد: new AcattsandroidService(audio, reg) ثم"
+        )
+        appendLine(
+            "     nInit(stageDir.getCanonicalPath() + File.separator)."
+        )
+        appendLine(
+            "     يتبعه nSetVoiceMode(\"MODE=prep_hd\") ثم nSetLanguage ثم"
+        )
+        appendLine(
+            "     nSetCurrentVoice — ولا نداء nSetLicense في هذا المسار."
+        )
+        appendLine(
+            "   - المسار الكلاسيكي NativeEngine: nInitCallbacks() ثم قراءة"
+        )
+        appendLine(
+            "     runtime.dat (uid:long, pwd:long, len:int, lic UTF-8 بطول"
+        )
+        appendLine(
+            "     180) ثم nSetLicense(uid, pwd, lic) قبل تحميل الصوت."
+        )
+        appendLine("3) ما نمرّره نحن في Nateq:")
+        appendLine(
+            "   - nInit(stagePath) بالفاصل النهائي في تجربة الذيل، وبلا فاصل"
+        )
+        appendLine(
+            "     في التجربة الأخرى — وكلتاهما فشلتا بالرمز -34 ذاته."
+        )
+        appendLine(
+            "   - loadRuntimeLicense يقرأ runtime.dat بالترتيب نفسه"
+        )
+        appendLine(
+            "     ويستدعي nSetLicense(uid, pwd, lic) — مطابق للمسار الكلاسيكي."
+        )
+        appendLine(
+            "   - تسجيل 0x00169729 موجود وبصمة SHA1 تبدأ بـ 7e88،"
+        )
+        appendLine(
+            "     فالترخيص نفسه سليم وشكل المعاملات ليس الفارق الحاسم."
+        )
+        appendLine("4) الخلاصة والتصحيح في 10730:")
+        appendLine(
+            "   - الفارق الحقيقي هو محتوى مجلد الصوت: كان ملف ini المولَّد"
+        )
+        appendLine(
+            "     يحوي MODE= مكرَّرة داخل القيمة (61 بايت) بدل محتوى سلمى"
+        )
+        appendLine(
+            "     الأصلي (109 بايت)، فغاب المكوّن PRO عن pNLPConfig فعاد"
+        )
+        appendLine(
+            "     NLPE_initEx بـ -34 ثم eb=-27 ثم nSpeak=-2 وPCM=0."
+        )
+        appendLine(
+            "   - أُصلح writing الـ ini لينسخ محتوى الأصل 109 بايت حرفياً،"
+        )
+        appendLine(
+            "     وأُضيف قياس الحجم وMD5 لكل ملف مقابل الأصل في القسم التالي."
+        )
+        appendLine(
+            "   - فحص الحزمة (package_check.txt): الأصناف AcapelaPack و"
+        )
+        appendLine(
+            "     AcapelaSpeech وNativeEngine كلها في org.volodymyr.multivoice"
+        )
+        appendLine(
+            "     لا في org.nobody.multitts — صُحِّحت التسمية في الملاحظات."
+        )
+    }.trimEnd()
+
+    fun getStagingVsMultiTtsFilesComparison(context: Context): String {
+        val sb = StringBuilder()
+        sb.appendLine(
+            "=== [بناء 10730] مقارنة ملفات Acapela بالقياس الفعلي: " +
+                "التجهيز مقابل الأصلي ==="
+        )
+        sb.appendLine(
+            "كل حجم وبصمة أدناه مقيسان من الملف على القرص الآن " +
+                "(لا قيم مكتوبة يدوياً)."
+        )
+        sb.appendLine("")
+
+        val stageRoots = listOfNotNull(
+            context.cacheDir?.let { File(it, "acapela_stage") },
+            context.cacheDir?.let { File(it, "acapela_stage_parent") },
+            context.cacheDir?.let { File(it, "acapela_stage_direct") },
+            context.cacheDir?.let { File(it, "acapela_stage_flat") },
+            context.cacheDir?.let { File(it, "acapela_stage_min") },
+            context.cacheDir?.let { File(it, "acapela_stage_nounplugged") },
+            context.cacheDir?.let { File(it, "acapela_stage_v2") },
+            context.cacheDir?.let {
+                File(it, "acapela_stage_10709_exact")
+            },
+            context.cacheDir?.let { File(it, "acapela_stage_full") },
+            context.cacheDir?.let {
+                File(it, "acapela_stage_full_nlp_subdir")
+            },
+            context.cacheDir?.let { File(it, "Path_Original_Root_109") }
+        ).filter { it.exists() && it.isDirectory }
+            .distinctBy { it.absolutePath }
+
+        val originalRoots = listOfNotNull(
+            context.filesDir?.let {
+                File(it, "Acapela/Salma/salma_lf")
+            },
+            context.filesDir?.let {
+                File(it, "acapela/Salma/salma_lf")
+            },
+            context.filesDir?.let { File(it, "Acapela") },
+            context.filesDir,
+            File(
+                "/storage/emulated/0/Android/data/" +
+                    "org.nobody.multitts/files"
+            ),
+            File(
+                "/storage/emulated/0/Android/data/" +
+                    "org.volodymyr.multivoice/files"
             )
-            appendLine("1. قائمة الملفات في مجلد التجهيز (Nateq vs MultiTTS):")
-            appendLine(
-                "   - salma_22k_lf.bvcu: 29,213,971 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "   - ar_sa_hd_salma_22k_lf.bvcu: 29,213,971 بايت " +
-                    "(نسخة طبق الأصل)"
-            )
-            appendLine(
-                "   - ar_sa.dca: 8,962,560 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "   - ar_sa_unplugged.dca: 1,939,072 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "   - ar_sa_hde_arq.dca: 1,180,940 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "   - ar_sa.bnx: 3,822,128 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "   - ar_sa_utf8.cma: 33,536 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "   - ar_sa.trz: 37,288 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "   - ar_sa_hd_salma_22k_lf.bvcu.inf: 8,913 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "   - ar_sa_hd_salma_22k_lf.ini: 61 بايت (الأصلي يحوي " +
-                    "MODE=prep_hd و [ RAM ])"
-            )
-            appendLine(
-                "   - salma_lf.txt: 178 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "   - 0x00169729: 73 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "   - userdicos/ara-sau.userdico: 22 بايت (مطابق 100%)"
-            )
-            appendLine(
-                "2. هل يوجد أي ملف ناقص أو مختلف الحجم أو الإصدار؟"
-            )
-            appendLine(
-                "   - لا يوجد أي ملف ناقص أو مختلف الحجم أو الإصدار نهائياً."
-            )
-            appendLine(
-                "   - كافة ملفات الصوت والـ NLP وقواميس المستخدم متطابقة " +
-                    "بايت ببايت."
-            )
-            appendLine(
-                "   - الفارق: MultiTTS ينسخ شجرة المجلدات الأصلية للصوت " +
-                    "دون توليد ملفات ini اصطناعية."
-            )
-        }.trimEnd()
+        ).distinctBy { it.absolutePath }
+
+        fun findFileIn(roots: List<File>, name: String): File? =
+            roots.firstNotNullOfOrNull { root ->
+                if (!root.exists() || !root.isDirectory) {
+                    null
+                } else {
+                    root.walkTopDown().maxDepth(7).firstOrNull { f ->
+                        f.isFile && f.name.equals(name, true)
+                    }
+                }
+            }
+
+        fun findDirIn(roots: List<File>, name: String): File? =
+            roots.firstNotNullOfOrNull { root ->
+                if (!root.exists() || !root.isDirectory) {
+                    null
+                } else {
+                    root.walkTopDown().maxDepth(7).firstOrNull { d ->
+                        d.isDirectory && d.name.equals(name, true)
+                    }
+                }
+            }
+
+        fun measure(f: File?): String = if (f == null || !f.isFile) {
+            "(غير موجود / غير مقروء)"
+        } else {
+            "${f.length()} بايت | MD5: ${calcFileMd5(f)}"
+        }
+
+        val mismatches = mutableListOf<String>()
+
+        fun compare(name: String) {
+            val staged = findFileIn(stageRoots, name)
+            val original = findFileIn(originalRoots, name)
+            sb.appendLine("   - $name")
+            sb.appendLine("       التجهيز: ${measure(staged)}")
+            sb.appendLine("       الأصلي : ${measure(original)}")
+            if (staged == null || original == null) {
+                mismatches.add(
+                    "$name — غير مقروء في طرف واحد على الأقل"
+                )
+            } else if (
+                staged.length() != original.length() ||
+                calcFileMd5(staged) != calcFileMd5(original)
+            ) {
+                mismatches.add("$name — مختلف الحجم أو البصمة")
+            }
+        }
+
+        sb.appendLine("1. الملفات المطلوبة (الحجم + MD5 مقيسان الآن):")
+        for (name in listOf(
+            "ar_sa.dca", "ar_sa_unplugged.dca", "ar_sa_hde_arq.dca",
+            "ar_sa.bnx", "ar_sa_utf8.cma", "ar_sa.trz",
+            "salma_22k_lf.bvcu", "ar_sa_hd_salma_22k_lf.bvcu.inf",
+            "bvcu.inf", "0x00169729", "salma_lf.txt"
+        )) {
+            compare(name)
+        }
+        sb.appendLine("")
+
+        sb.appendLine("2. ملفات userdicos (بحسب الاسم):")
+        val stagedDico = stageRoots.flatMap { root ->
+            val dir = findDirIn(listOf(root), "userdicos")
+            if (dir != null && dir.isDirectory) {
+                dir.walkTopDown().filter { it.isFile }.toList()
+            } else {
+                emptyList()
+            }
+        }
+        val originalDico = originalRoots.flatMap { root ->
+            val dir = findDirIn(listOf(root), "userdicos")
+            if (dir != null && dir.isDirectory) {
+                dir.walkTopDown().filter { it.isFile }.toList()
+            } else {
+                emptyList()
+            }
+        }
+        val dicoNames = (
+            stagedDico.map { it.name } + originalDico.map { it.name }
+            ).distinct().sorted()
+        if (dicoNames.isEmpty()) {
+            sb.appendLine("   (لا توجد قواميس مقروءة)")
+        } else {
+            for (name in dicoNames) {
+                val s = stagedDico.firstOrNull { it.name == name }
+                val o = originalDico.firstOrNull { it.name == name }
+                sb.appendLine("   - userdicos/$name")
+                sb.appendLine("       التجهيز: ${measure(s)}")
+                sb.appendLine("       الأصلي : ${measure(o)}")
+                if (s == null || o == null ||
+                    s.length() != o.length() ||
+                    calcFileMd5(s) != calcFileMd5(o)
+                ) {
+                    mismatches.add(
+                        "userdicos/$name — مختلف أو غير مقروء"
+                    )
+                }
+            }
+        }
+        sb.appendLine("")
+
+        sb.appendLine("3. كل ملفات .ini في مجلدات التجهيز:")
+        val stagedInis = stageRoots.flatMap { root ->
+            root.walkTopDown().filter {
+                it.isFile && it.extension.equals("ini", true)
+            }.toList()
+        }.distinctBy { it.absolutePath }
+            .sortedBy { it.name.lowercase(Locale.ROOT) }
+        if (stagedInis.isEmpty()) {
+            sb.appendLine("   (لا توجد ملفات ini مقروءة)")
+        } else {
+            for (ini in stagedInis) {
+                val original = findFileIn(originalRoots, ini.name)
+                sb.appendLine("   - ${ini.name}")
+                sb.appendLine("       التجهيز: ${measure(ini)}")
+                sb.appendLine("       الأصلي : ${measure(original)}")
+                if (original == null ||
+                    ini.length() != original.length() ||
+                    calcFileMd5(ini) != calcFileMd5(original)
+                ) {
+                    mismatches.add(
+                        "${ini.name} — مختلف أو غير مقروء"
+                    )
+                }
+            }
+        }
+        sb.appendLine("")
+
+        sb.appendLine("4. أزواج غير مطابقة (⚠):")
+        if (mismatches.isEmpty()) {
+            sb.appendLine("   (لا يوجد — كل ملف مقيس متطابق)")
+        } else {
+            mismatches.distinct().forEach {
+                sb.appendLine("   ⚠ $it")
+            }
+        }
+        return sb.toString().trimEnd()
+    }
 
     fun getBbnlpInitDisassemblyAnalysis(): String = buildString {
         appendLine(

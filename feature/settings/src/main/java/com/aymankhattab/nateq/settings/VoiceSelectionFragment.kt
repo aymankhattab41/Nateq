@@ -3106,7 +3106,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     AcapelaVoiceDiagnostics.runDiagnosticProbe(context)
                     val fullReport =
                         AcapelaVoiceDiagnostics.buildAcapelaFullReport(context)
+                    // [بناء 10730] نُحصر القسم بعلامات كي يُنقل إلى صدارة
+                    // التقرير المُشارَك قبل تطبيق سقف الـ 60 ألف حرف.
+                    sb.appendLine(
+                        AcapelaVoiceDiagnostics.ACAPELA_REPORT_START
+                    )
                     sb.appendLine(fullReport)
+                    sb.appendLine(AcapelaVoiceDiagnostics.ACAPELA_REPORT_END)
 
                     val isAcapelaFallback = (ttsSnapshot?.getBoolean(
                         TtsDiagnosticsProvider.KEY_ACAPELA_FALLBACK_ACTIVE,
