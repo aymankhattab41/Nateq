@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.settings
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Process
 import java.text.SimpleDateFormat
@@ -13,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
@@ -1531,6 +1533,17 @@ internal class EmbeddedEngineDownloaderController(
                 copyDiagnosticsToClipboard(ctx, entry.id, diagText)
             }
         }
+        // [بناء 10729] زر مشاركة ملف التشخيص يظهر في حوار Acapela فقط.
+        val btnShareDiagnostic = dialogView.findViewById<MaterialButton>(
+            R.id.btn_share_acapela_diagnostic
+        )
+        if (entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID) {
+            btnShareDiagnostic.visibility = View.VISIBLE
+            btnShareDiagnostic.setOnClickListener {
+                shareAcapelaDiagnosticFile(ctx)
+            }
+        }
+
         val btnDeleteAll = dialogView.findViewById<MaterialButton>(
             R.id.btn_delete_engine_data
         )
@@ -1979,6 +1992,63 @@ internal class EmbeddedEngineDownloaderController(
         if (mb < 1024) return "${mb} MB"
         val gb = mb / 1024
         return "${gb} GB"
+    }
+
+    /**
+     * [بناء 10729] مشاركة الملف المستقر لتشخيص Acapela عبر ورقة المشاركة
+     * كملف نصي (EXTRA_STREAM) مع منح قراءة مؤقتة عبر FileProvider.
+     */
+    private fun shareAcapelaDiagnosticFile(ctx: Context) {
+        val file = File(
+            ctx.cacheDir,
+            AcapelaVoiceDiagnostics.ACAPELA_FULL_DIAGNOSTIC_FILE
+        )
+        if (!file.exists()) {
+            Toast.makeText(
+                ctx,
+                R.string.acapela_diagnostic_not_ready,
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val uri = runCatching {
+            FileProvider.getUriForFile(
+                ctx,
+                "${ctx.packageName}.fileprovider",
+                file
+            )
+        }.getOrNull()
+        if (uri == null) {
+            Toast.makeText(
+                ctx,
+                R.string.acapela_diagnostic_not_ready,
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(
+                Intent.EXTRA_SUBJECT,
+                ctx.getString(R.string.acapela_diagnostic_share_subject)
+            )
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching {
+            fragment.startActivity(
+                Intent.createChooser(
+                    send,
+                    ctx.getString(R.string.share_acapela_diagnostic)
+                )
+            )
+        }.onFailure {
+            Toast.makeText(
+                ctx,
+                R.string.acapela_diagnostic_share_failed,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     private fun copyDiagnosticsToClipboard(

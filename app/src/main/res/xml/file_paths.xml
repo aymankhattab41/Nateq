@@ -15,4 +15,8 @@
     <cache-path
         name="exports"
         path="exports/" />
+    <!-- [بناء 10729] ملف تشخيص Acapela المستقر في جذر cache للمشاركة. -->
+    <cache-path
+        name="acapela_diagnostic"
+        path="." />
 </paths>

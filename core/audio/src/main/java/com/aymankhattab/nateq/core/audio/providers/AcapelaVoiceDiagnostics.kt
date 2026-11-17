@@ -41,6 +41,32 @@ object AcapelaVoiceDiagnostics {
     /** اسم سجل المحرك الذي تكتبه المكتبة الأصلية. */
     const val LOG_FILE_NAME = "logfile.txt"
 
+    /**
+     * الملف المستقر الوحيد لتشخيص Acapela (بناء 10729). يُكتب تدريجياً
+     * في `cacheDir` ويُدفَّع بعد كل خطوة كي يبقى الجزء المكتوب إن
+     * انهارت عملية `:engine_host` في منتصف الاختبار.
+     */
+    const val ACAPELA_FULL_DIAGNOSTIC_FILE = "acapela_full_diagnostic.txt"
+
+    /** السقف الأقصى لأحرف التقرير المنسوخ/المُشارَك (بناء 10729). */
+    const val MAX_SHARED_REPORT_CHARS = 60_000
+
+    /**
+     * اقتطاع التقرير المنسوخ/المُشارَك إلى [maxChars] حرفاً بلا تجاوز.
+     * يُبقى على الصدارة (تشخيص Acapela أولاً) ويُحذف الذيل (أسطر
+     * logcat) لأنها تُضاف في نهاية التقرير.
+     */
+    fun capSharedReport(
+        report: String,
+        maxChars: Int = MAX_SHARED_REPORT_CHARS
+    ): String {
+        if (report.length <= maxChars) return report
+        val marker = "\n\n[تم الاقتطاع إلى $maxChars حرف: " +
+            "حُذفت أسطر logcat من النهاية]"
+        val keep = (maxChars - marker.length).coerceAtLeast(0)
+        return report.substring(0, keep) + marker
+    }
+
     /** اسم ملف تهيئة الصوت الأصلي ذي الـ 109 بايت. */
     private const val ORIGINAL_INI_NAME = "ar_sa_hd_salma_22k_lf.ini"
 
@@ -2232,9 +2258,26 @@ object AcapelaVoiceDiagnostics {
     fun buildAcapelaFullReport(context: Context): String {
         val sb = StringBuilder()
         sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10727) ===")
+        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10729) ===")
         sb.appendLine("==================================================")
         sb.appendLine("")
+
+        // ── [بناء 10729] الملف المستقر ثم ملفات 10725..10728 ─────────────────
+        // التشخيص المكتوب تدريجياً هو أحدث دليل على ما جرى داخل :engine_host،
+        // فيُقرأ أولاً ويُوضع في صدارة التقرير قبل أي قسم آخر.
+        sb.appendLine(
+            "--- [بناء 10729] الملف المستقر acapela_full_diagnostic.txt ---"
+        )
+        appendCachedDiagnosticFile(
+            sb, context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE
+        )
+        sb.appendLine("")
+        for (build in listOf(10728, 10727, 10726, 10725)) {
+            val name = "acapela_full_diagnostic_$build.txt"
+            sb.appendLine("--- [بناء 10729] $name ---")
+            appendCachedDiagnosticFile(sb, context.cacheDir, name)
+            sb.appendLine("")
+        }
 
         // ── [البند 1 من 10722] فحص أدلة نجاح 10708 و10709 ────────────────────
         sb.appendLine(getEvidenceReportFor10708And10709())
@@ -2492,6 +2535,11 @@ object AcapelaVoiceDiagnostics {
         fullNative.forEach { sb.appendLine("  $it") }
         sb.appendLine("")
 
+        // ── [بناء 10729] أسطر :engine_host صراحةً (في ذيل التقرير) ──────────
+        sb.appendLine("--- [بناء 10729] أسطر logcat :engine_host ---")
+        readEngineHostLogcatLines().forEach { sb.appendLine("  $it") }
+        sb.appendLine("")
+
         val fullOutput = sb.toString().trimEnd()
 
         // حفظ التقرير في ملف نصي واحد كما في البند 6
@@ -2589,6 +2637,62 @@ object AcapelaVoiceDiagnostics {
             }
         }.getOrElse { t ->
             listOf("(تعذر قراءة logcat للمكتبة الأصلية: ${t.message})")
+        }
+    }
+
+    /**
+     * [بناء 10729] أسطر logcat الخاصة بعملية `:engine_host` صراحةً،
+     * وتشمل سطور الانهيار (Cmdline/Process) التي تحوي `:engine_host`.
+     */
+    fun readEngineHostLogcatLines(maxLines: Int = 400): List<String> {
+        return runCatching {
+            val proc = Runtime.getRuntime().exec(
+                arrayOf(
+                    "logcat", "-d", "-v", "time",
+                    "-t", maxLines.coerceAtLeast(400).toString()
+                )
+            )
+            val lines = proc.inputStream
+                .bufferedReader(StandardCharsets.UTF_8).readLines()
+            proc.waitFor()
+            val matched = lines.filter {
+                it.contains("engine_host", ignoreCase = true)
+            }
+            if (matched.isNotEmpty()) {
+                matched.takeLast(maxLines)
+            } else {
+                listOf("(لم يُعثر على أسطر logcat تحوي :engine_host)")
+            }
+        }.getOrElse { t ->
+            listOf("(تعذر قراءة logcat :engine_host: ${t.message})")
+        }
+    }
+
+    /**
+     * [بناء 10729] إلحاق محتوى ملف تشخيص مخزَّن بالتقرير إن وُجد،
+     * مع وسم صريح عند غيابه كي لا يبدو التقرير مكتملاً وهو ناقص.
+     */
+    fun appendCachedDiagnosticFile(
+        sb: StringBuilder,
+        cacheDir: File?,
+        fileName: String
+    ) {
+        if (cacheDir == null) {
+            sb.appendLine("  (مجلد cache غير متاح: $fileName)")
+            return
+        }
+        val file = File(cacheDir, fileName)
+        if (!file.exists()) {
+            sb.appendLine("  (الملف غير موجود: $fileName)")
+            return
+        }
+        val text = runCatching {
+            file.readText(StandardCharsets.UTF_8)
+        }.getOrNull()
+        if (text.isNullOrBlank()) {
+            sb.appendLine("  (الملف فارغ: $fileName)")
+        } else {
+            sb.appendLine(text.trimEnd())
         }
     }
 

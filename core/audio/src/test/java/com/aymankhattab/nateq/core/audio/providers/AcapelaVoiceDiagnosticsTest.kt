@@ -1179,4 +1179,65 @@ class AcapelaVoiceDiagnosticsTest {
             dir.deleteRecursively()
         }
     }
+
+    @Test
+    fun capSharedReport_keepsShortReportUnchanged() {
+        val report = "تقرير قصير"
+        assertEquals(
+            report,
+            AcapelaVoiceDiagnostics.capSharedReport(report)
+        )
+    }
+
+    @Test
+    fun capSharedReport_capsLengthAndKeepsHeadTrimsLogcatTail() {
+        val head = "===acapela-stable-diagnostic==="
+        val tail = "LOGCAT_TAIL_MARKER"
+        val report = head +
+            "x".repeat(AcapelaVoiceDiagnostics.MAX_SHARED_REPORT_CHARS) +
+            tail
+
+        val capped = AcapelaVoiceDiagnostics.capSharedReport(report)
+
+        assertTrue(
+            capped.length <=
+                AcapelaVoiceDiagnostics.MAX_SHARED_REPORT_CHARS
+        )
+        assertTrue(capped.startsWith(head))
+        assertFalse(capped.contains(tail))
+        assertTrue(capped.contains("حُذفت أسطر logcat"))
+    }
+
+    @Test
+    fun buildAcapelaFullReport_readsStableFileFirstAndUses10729Header() {
+        val cache = context.cacheDir
+        val stable = File(
+            cache,
+            AcapelaVoiceDiagnostics.ACAPELA_FULL_DIAGNOSTIC_FILE
+        )
+        val legacy = File(cache, "acapela_full_diagnostic_10728.txt")
+        val stableMarker = "STABLE_DIAGNOSTIC_MARKER_10729"
+        val legacyMarker = "LEGACY_10728_MARKER"
+        try {
+            stable.writeText(stableMarker, StandardCharsets.UTF_8)
+            legacy.writeText(legacyMarker, StandardCharsets.UTF_8)
+
+            val report = AcapelaVoiceDiagnostics.buildAcapelaFullReport(
+                context
+            )
+
+            assertTrue(report.contains("(إصدار 10729)"))
+            assertTrue(report.contains(stableMarker))
+            assertTrue(report.contains(legacyMarker))
+            val stablePos = report.indexOf(stableMarker)
+            val legacyPos = report.indexOf(legacyMarker)
+            val sectionsPos = report.indexOf("أدلة نجاح 10708")
+            assertTrue(stablePos in 0 until legacyPos)
+            assertTrue(legacyPos < sectionsPos)
+            assertTrue(report.contains("أسطر logcat :engine_host"))
+        } finally {
+            stable.delete()
+            legacy.delete()
+        }
+    }
 }

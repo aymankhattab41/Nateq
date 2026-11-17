@@ -2558,7 +2558,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }
             }
 
-            buildString {
+            val rawReport = buildString {
                 appendLine(
                     context.getString(R.string.error_report_header_title)
                 )
@@ -2660,6 +2660,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     ttsLogLines.takeLast(300).forEach { appendLine(it) }
                 }
             }
+            // [بناء 10729] سقف التقرير المنسوخ/المُشارَك: يُبقى على
+            // الصدارة (تشخيص Acapela أولاً) ويُقتطع ذيل أسطر logcat.
+            AcapelaVoiceDiagnostics.capSharedReport(rawReport)
         }
 
     private fun writeLogToCacheFile(

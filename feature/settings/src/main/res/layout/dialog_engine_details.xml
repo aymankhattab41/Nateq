@@ -113,6 +113,16 @@
             android:layout_marginBottom="8dp"
             android:text="@string/copy_diagnostics" />
 
+        <!-- يظهر فقط في حوار محرك Acapela (بناء 10729). -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_share_acapela_diagnostic"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="@string/share_acapela_diagnostic"
+            android:visibility="gone" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_retry_init"
             style="@style/Widget.MaterialComponents.Button"

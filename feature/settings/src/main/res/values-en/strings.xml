@@ -713,6 +713,7 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Acapela diagnostics 10729: one stable file acapela_full_diagnostic.txt is written incrementally and flushed after every step so it survives an :engine_host crash; logcat is no longer cleared before the trial; the diagnostic is placed first alongside the 10725 to 10728 files and :engine_host lines in the report; the copied/shared report is capped at 60,000 characters; and a share-diagnostic-file button is added to the Acapela engine dialog.
 • Root fix for Acapela (10728): a single trial route Path_Original_Root_109 with no routes 1/2/3, no stage_v2 and no folder copies; nSetVoiceMode(MODE=prep_hd) is set before loading the voice even if nInit failed; every trial service is closed with nStop then nShutdown; one report acapela_full_diagnostic_10728.txt and one WAV file; a failed trial is never retried; and nInit parameters plus eb, nlpErr, sNLP, pcm and nSpeak results are logged.
 • Quiet hours end is now derived from the hour bitmask (isHourQuiet) instead of the legacy start and end keys, so the displayed window never contradicts the mask.
 • Language filtering: hiding embedded engines now works — a hidden engine is no longer added to the active engine set from language or category preferences, and the language catalog no longer forces Arabic and English without a visible engine that supports them.
@@ -867,6 +868,10 @@ Version %1$s
     <string name="no_code">—</string>
     <string name="retry_init">Retry Init</string>
     <string name="copy_diagnostics">Copy Diagnostics</string>
+    <string name="share_acapela_diagnostic">Share diagnostic file</string>
+    <string name="acapela_diagnostic_share_subject">Acapela diagnostic file</string>
+    <string name="acapela_diagnostic_not_ready">Diagnostic file not available yet</string>
+    <string name="acapela_diagnostic_share_failed">Could not share the diagnostic file</string>
     <string name="copied_to_clipboard">Copied to clipboard</string>
     <string name="engine_retry_success">%1$s re-initialized successfully</string>
     <string name="engine_retry_failed">Retry failed: %1$s - %2$s</string>

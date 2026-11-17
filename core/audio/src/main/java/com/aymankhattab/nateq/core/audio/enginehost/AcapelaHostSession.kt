@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.Charset
@@ -1565,14 +1566,17 @@ internal class AcapelaHostSession(
     }
 
     private fun recordAcapelaBreadcrumb(call: String) {
+        val ts = SimpleDateFormat(
+            "HH:mm:ss.SSS",
+            Locale.US
+        ).format(Date())
+        val line = "[$ts] $call"
         runCatching {
-            val f = File(context.cacheDir, "last_acapela_call.txt")
-            val ts = SimpleDateFormat(
-                "HH:mm:ss.SSS",
-                Locale.US
-            ).format(Date())
-            f.writeText("[$ts] $call\n", StandardCharsets.UTF_8)
+            File(context.cacheDir, "last_acapela_call.txt")
+                .writeText("$line\n", StandardCharsets.UTF_8)
         }
+        // [بناء 10729] كل خطوة أصلية تُدفَّع فوراً للملف المستقر.
+        appendAcapelaFullDiagnostic(line)
     }
 
     private fun recordTrialProgress(trial: VoiceLoadTrialResult) {
@@ -1581,6 +1585,45 @@ internal class AcapelaHostSession(
             val line = "${trial.method} => كود nSpeak: ${trial.speakCode} " +
                 "| عينات PCM: ${trial.samples}\n"
             f.appendText(line, StandardCharsets.UTF_8)
+        }
+    }
+
+    /**
+     * [بناء 10729] بدء الملف المستقر: يُفرَّغ مرة واحدة عند كل اختبار،
+     * ثم يُكتب إليه تدريجياً. الفصل بين البدء والإلحاق يمنع محو ما
+     * كُتب من خطوات سابقة عند كل إلحاق.
+     */
+    private fun beginAcapelaFullDiagnostic() {
+        runCatching {
+            val file = File(
+                context.cacheDir,
+                AcapelaVoiceDiagnostics.ACAPELA_FULL_DIAGNOSTIC_FILE
+            )
+            file.parentFile?.mkdirs()
+            if (file.exists()) file.delete()
+        }
+        appendAcapelaFullDiagnostic(
+            "=== بدء تشخيص Acapela الكامل (بناء 10729) ==="
+        )
+    }
+
+    /**
+     * [بناء 10729] إلحاق قسم بالملف المستقر مع تدفيع فوري بعد كل خطوة
+     * (`flush` ثم `fd.sync`) كي ينجو الجزء المكتوب من انهيار
+     * عملية `:engine_host` في منتصف الاختبار.
+     */
+    private fun appendAcapelaFullDiagnostic(text: String) {
+        runCatching {
+            val file = File(
+                context.cacheDir,
+                AcapelaVoiceDiagnostics.ACAPELA_FULL_DIAGNOSTIC_FILE
+            )
+            FileOutputStream(file, true).use { out ->
+                out.write(text.toByteArray(StandardCharsets.UTF_8))
+                if (!text.endsWith("\n")) out.write('\n'.code)
+                out.flush()
+                out.fd.sync()
+            }
         }
     }
 
@@ -2244,6 +2287,9 @@ internal class AcapelaHostSession(
         try {
             val regLen = registration.length
 
+            // [بناء 10729] ملف واحد مستقر يُكتب تدريجياً منذ هذه اللحظة.
+            beginAcapelaFullDiagnostic()
+
             // الخطوة 1: تقرير الجرد المتداخل وموقع ملف Salma الكبير
             logDiagnosticTrees(voice)
 
@@ -2257,6 +2303,10 @@ internal class AcapelaHostSession(
             HostLog.i(
                 HostProtocol.ENGINE_ACAPELA,
                 "[البند 1] فحص الملف الأصلي:\n$origIniDump"
+            )
+            // [بناء 10729] يُدفَع فوراً كي يبقى إن انهار :engine_host.
+            appendAcapelaFullDiagnostic(
+                "=== [البند 1] فحص الملف الأصلي 109 بايت ===\n$origIniDump"
             )
 
             // [البند 3] مقارنة ملفات NLP مع ملفات التهيئة وكشف المفقود
@@ -2348,6 +2398,10 @@ internal class AcapelaHostSession(
                 "($sha1ComparisonMsg)"
             Log.i(TAG, keyDiskStatus)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, keyDiskStatus)
+            // [بناء 10729] فحص الرخصة يُدفَع فوراً أيضاً.
+            appendAcapelaFullDiagnostic(
+                "=== [فحص الترخيص] ===\n$keyDiskStatus"
+            )
 
             val origSalmaDir = AcapelaVoiceDiagnostics
                 .findOriginalSalmaDir(context)
@@ -2359,7 +2413,8 @@ internal class AcapelaHostSession(
             // ── المسار الوحيد: Path_Original_Root_109 ──────────────────────
             // نسخة حرفية لجذر Salma/ بلا استبدال، ثم حاجز تحقق من ملف
             // ini قبل nInit، ثم محاولة واحدة فقط مع رصد الملفات المفتوحة.
-            AcapelaVoiceDiagnostics.clearNativeLogcat()
+            // [بناء 10729] لا يُمسح سجل logcat قبل الاختبار: ماضيه هو
+            // الدليل الوحيد على ما جرى قبل الانهيار.
             val root109Dir = AcapelaVoiceDiagnostics.stageOriginalRoot109(
                 context = context,
                 sourceDir = origSalmaDir
@@ -2368,6 +2423,10 @@ internal class AcapelaHostSession(
                 .verifyRoot109IniBeforeInit(root109Dir)
             Log.i(TAG, preInitCheck.report)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, preInitCheck.report)
+            // [بناء 10729] حاجز ما قبل nInit يُدفَع قبل أي نداء أصلي.
+            appendAcapelaFullDiagnostic(
+                "=== [حاجز التحقق قبل nInit] ===\n${preInitCheck.report}"
+            )
             runCatching {
                 val checkText = preInitCheck.report
                 File(
@@ -2403,6 +2462,12 @@ internal class AcapelaHostSession(
             }
             val trialsList = mutableListOf(trialRoot109)
             recordTrialProgress(trialRoot109)
+            // [بناء 10729] تفاصيل المحاولة (وسائط nInit وtrailingSlash
+            // والمتحدث وأكواد nSetVoiceMode/nSpeak وeb/nlpErr/sNLPConfig
+            // وعينات PCM وأسطر المكتبة) تُدفَع فور انتهائها.
+            if (trialRoot109.details.isNotBlank()) {
+                appendAcapelaFullDiagnostic(trialRoot109.details)
+            }
 
             // إغلاق خدمة التجربة الفاشلة فوراً: لا تُترك مهيّأةً بلا نطق
             // فتتراكم خدمات nInit مفتوحة (nStop ثم nShutdown). خدمة
@@ -2598,8 +2663,9 @@ internal class AcapelaHostSession(
                         }
                     }
                 }.trimEnd()
-                File(context.cacheDir, "acapela_full_diagnostic_10728.txt")
-                    .writeText(fullTrialsText, StandardCharsets.UTF_8)
+                // [بناء 10729] التقرير الكامل يُلحَق بالملف المستقر بعد
+                // الخطوات التدريجية، فلا يُفقد إن انهار :engine_host.
+                appendAcapelaFullDiagnostic(fullTrialsText)
             }
 
             // [بناء 10728] النجاح يُحكم بمعيار 10724 (PCM>0 وnSpeak≠-2
@@ -2636,16 +2702,14 @@ internal class AcapelaHostSession(
             val sw = java.io.StringWriter()
             t.printStackTrace(java.io.PrintWriter(sw))
             val errText =
-                "=== [استثناء يمنع تشغيل مسار Acapela 10728] ===\n" +
+                "=== [استثناء يمنع تشغيل مسار Acapela 10729] ===\n" +
                     "نوع الخطأ: ${t.javaClass.name}\n" +
                     "الرسالة: ${t.message ?: "بدون رسالة"}\n" +
                     "تتبع المكدس:\n$sw"
             Log.e(TAG, errText, t)
             HostLog.e(HostProtocol.ENGINE_ACAPELA, errText)
-            runCatching {
-                File(context.cacheDir, "acapela_full_diagnostic_10728.txt")
-                    .writeText(errText, StandardCharsets.UTF_8)
-            }
+            // [بناء 10729] الاستثناء يُلحَق بالملف المستقر لا بملف مرقم.
+            appendAcapelaFullDiagnostic(errText)
             return HostResult.failure(
                 "CONFIGURE_EXCEPTION",
                 t.message ?: "استثناء أثناء اختبار التوليفات"
