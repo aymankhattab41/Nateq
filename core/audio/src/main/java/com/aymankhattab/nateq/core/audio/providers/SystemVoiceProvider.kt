@@ -30,6 +30,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -488,13 +489,14 @@ class SystemVoiceProvider(
         // يُسقط تلقائياً وهذا متوقع.
         suspendCancellableCoroutine<Unit> { cont ->
             val cancelled = AtomicBoolean(false)
+            // بند ٩: الإلغاء خاصٌّ بهذه الجلسة. نحتفظ بالإصدار الذي تربطه
+            // الجلسة فعلاً (يُضبط في speakNow) ونوقفه وحده عند الإلغاء،
+            // لا كلّ المحركات المجمّعة — فإلغاء مقطعٍ كان يُصمِت جلساتٍ
+            // أخرى ما زالت تكتب صوتها فتُسمع مقاطعُها مبتورةً.
+            val sessionEngine = AtomicReference<TextToSpeech?>(null)
             cont.invokeOnCancellation {
                 cancelled.set(true)
-                // بند ب.txt 3.3: مع جلساتٍ متوازية على مثيلاتٍ مختلفة يجب
-                // إيقافها كلِّها عند الإلغاء — لا مثيلٌ محددّ —
-                // وإلا استمرّ محركٌ موزٍّ للكتابة على جلسةٍ أُلغيت من
-                // المسارين معاً.
-                for (instance in enginePool.values) {
+                sessionEngine.get()?.let { instance ->
                     runCatching { instance.stop() }
                 }
             }
@@ -569,6 +571,7 @@ class SystemVoiceProvider(
                 onAudioChunk,
                 cont,
                 cancelled,
+                sessionEngine,
                 desiredVoiceName,
                 cacheKey
             )
@@ -737,14 +740,21 @@ class SystemVoiceProvider(
         onAudioChunk: (ByteArray, Int) -> Unit,
         cont: kotlin.coroutines.Continuation<Unit>,
         cancelled: AtomicBoolean,
+        sessionEngine: AtomicReference<TextToSpeech?>,
         desiredVoiceName: String?,
         cacheKey: String?
     ) {
         val attemptedEngines = mutableSetOf(engine)
         val done = AtomicBoolean(false)
         val bindStartTime = SystemClock.uptimeMillis()
+        // بند ٧: سقف انتظار «نضوج» المحرك المُدفَّأ. بلا سقف كانت الحلقة
+        // تُعيد جدولة نفسها كل 100ms إلى الأبد إن تأخّر onInit أو غاب،
+        // فيعلق أول نطق بلا مهلة ولا يُبلَّغ المتصل بفشل المحرك.
+        val maturityDeadlines = HashMap<String, Long>()
         lateinit var attemptWith: (String, Int) -> Unit
         val speakNow = { engineInstance: TextToSpeech, enginePackage: String ->
+            // بند ٩: المثيل خاص بهذه الجلسة — يُسجَّل ليُوقف عند الإلغاء.
+            sessionEngine.set(engineInstance)
             val bindTimeMs = SystemClock.uptimeMillis() - bindStartTime
             if (!done.getAndSet(true)) {
                 runSynthesisOnBackground(
@@ -773,7 +783,8 @@ class SystemVoiceProvider(
             }
         }
         attemptWith = { currentEngine: String, rebindAttempts: Int ->
-            cancelled.set(false)
+            // بند ٩: لا نُصفِّر علم الإلغاء هنا — كان كلّ استدعاءٍ يعيد
+            // ضبطه false فيُعيد محركاً ألغاه المستخدم بلا قصد.
             if (!cancelled.get()) {
                 synchronized(ttsLock) {
                     when {
@@ -794,18 +805,47 @@ class SystemVoiceProvider(
                                 onActiveEngineSwitch(currentEngine)
                                 speakNow(instance, currentEngine)
                             } else if (currentEngine in prewarmingEngines) {
-                                Log.d(TAG,
-                                    "[Provider] await maturity:" +
-                                    " $currentEngine")
-                                mainHandler.postDelayed({
-                                    if (!shutdownCalled
-                                        && !cancelled.get()
-                                    ) {
-                                        attemptWith(
-                                            currentEngine, rebindAttempts
+                                // بند ٧: انتظارٌ محدود بـ INIT_TIMEOUT_MS —
+                                // لا استطلاع 100ms بلا نهاية.
+                                val now = SystemClock.elapsedRealtime()
+                                val waitDeadline =
+                                    maturityDeadlines.getOrPut(currentEngine) {
+                                        now + INIT_TIMEOUT_MS
+                                    }
+                                if (now >= waitDeadline) {
+                                    Log.w(TAG,
+                                        "[Provider] maturity wait timeout:" +
+                                        " $currentEngine")
+                                    synchronized(ttsLock) {
+                                        prewarmingEngines.remove(
+                                            currentEngine
                                         )
                                     }
-                                }, ENGINE_MATURITY_POLL_MS)
+                                    notifyEngineFailedOnce(currentEngine)
+                                    val fallback = resolveFallbackEngine(
+                                        currentEngine, attemptedEngines
+                                    )
+                                    if (fallback != null && !cancelled.get()) {
+                                        attemptedEngines.add(fallback)
+                                        done.set(false)
+                                        attemptWith(fallback, 0)
+                                    } else if (!done.getAndSet(true)) {
+                                        cont.resume(Unit)
+                                    }
+                                } else {
+                                    Log.d(TAG,
+                                        "[Provider] await maturity:" +
+                                        " $currentEngine")
+                                    mainHandler.postDelayed({
+                                        if (!shutdownCalled
+                                            && !cancelled.get()
+                                        ) {
+                                            attemptWith(
+                                                currentEngine, rebindAttempts
+                                            )
+                                        }
+                                    }, ENGINE_MATURITY_POLL_MS)
+                                }
                             } else {
                                 Log.w(TAG,
                                     "[Provider] init engine=" +
@@ -897,7 +937,6 @@ class SystemVoiceProvider(
                                                         fallback
                                                     )
                                                     done.set(false)
-                                                    cancelled.set(false)
                                                     attemptWith(fallback, 0)
                                                 } else if (!done
                                                     .getAndSet(true)
@@ -924,7 +963,6 @@ class SystemVoiceProvider(
                                         ) {
                                             attemptedEngines.add(fallback)
                                             done.set(false)
-                                            cancelled.set(false)
                                             attemptWith(fallback, 0)
                                         } else if (!done.getAndSet(true)) {
                                             cont.resume(Unit)
@@ -957,7 +995,6 @@ class SystemVoiceProvider(
                                         ) {
                                             attemptedEngines.add(fallback)
                                             done.set(false)
-                                            cancelled.set(false)
                                             attemptWith(fallback, 0)
                                         } else {
                                             cont.resume(Unit)
@@ -1357,6 +1394,8 @@ class SystemVoiceProvider(
 
         var success = false
         var finished = false
+        // بند ٥: يُرفع إلى هنا ليُقرأ أيضاً في سجل التشخيص بعد كتلة STATUS.
+        var tailCompleted = false
         if (status == TextToSpeech.SUCCESS) {
             // ننتظر فعلاً حتى يكتب المحرك الملف كاملاً
             // (أو يُلغى الإعلان/النطق) مع فحص الإلغاء كل
@@ -1389,7 +1428,6 @@ class SystemVoiceProvider(
             // فوراً ونسير في النجاح — يُرى [shouldFlushTailAfterStall].
             var lastLen = -1L
             var stallPolls = 0
-            var tailCompleted = false
             val cachedParts = ArrayList<ByteArray>()
             val totalCacheBytes = IntArray(1)
             try {
@@ -1499,35 +1537,37 @@ class SystemVoiceProvider(
                                         "المسار الكامل"
                                     }, e)
                             }
-                            // حسمُ اكتمال الكتابة: طولُ خانة البيانات
-                            // المُعلَن دليلٌ قاطعٌ يُنهي البثَّ فوراً،
-                            // وإعلام onDone دليلٌ قاطعٌ متأخر،
-                            // واستقرارُ حجم الملف بعد مهلة أمانٍ
-                            // أوّلًا، فلا يُقطعَ نصٌّ على توقّفٍ عابر.
-                            if (!finished && tempFile.exists() &&
-                                tempFile.length() > 44L
+                        }
+                        // حسمُ اكتمال الكتابة (خارج شرط الشريحة — بند ٦):
+                        // استطلاعُ الجمود يجب أن يعمل في كل دورةٍ بما فيها
+                        // دورات «لا نموّ يبلغ شريحةً واحدة»، وإلا ظلّ
+                        // العدّاد صفراً فلم يُكتشف التوقف بعد عشر محاولات
+                        // كما هو موثّق في [STALL_GRACE_POLLS]. كان هذا
+                        // الجزء داخل `if (toRead >= STREAM_CHUNK_BYTES)`
+                        // فلا يُعدّ استطلاعٌ حين يتوقف النموّ أصلاً.
+                        if (!finished && tempFile.exists() &&
+                            tempFile.length() > 44L
+                        ) {
+                            val nowLen = tempFile.length()
+                            if (nowLen == lastLen) {
+                                stallPolls++
+                            } else {
+                                lastLen = nowLen
+                                stallPolls = 0
+                            }
+                            val remaining = nowLen - start - readSoFar
+                            if (shouldFlushTailAfterStall(
+                                    emittedAny, finished, stallPolls,
+                                    remaining, STALL_GRACE_POLLS,
+                                    STALL_TAIL_MAX_BYTES
+                                )
+                                || isWavWriteComplete(streamMeta, nowLen)
                             ) {
-                                val nowLen = tempFile.length()
-                                if (nowLen == lastLen) {
-                                    stallPolls++
-                                } else {
-                                    lastLen = nowLen
-                                    stallPolls = 0
-                                }
-                                val remaining = nowLen - start - readSoFar
-                                if (shouldFlushTailAfterStall(
-                                        emittedAny, finished, stallPolls,
-                                        remaining, STALL_GRACE_POLLS,
-                                        STALL_TAIL_MAX_BYTES
-                                    )
-                                    || isWavWriteComplete(streamMeta, nowLen)
-                                ) {
-                                    tailCompleted = true
-                                    Log.d(TAG,
-                                        "[Provider] stream tail flushed on" +
-                                        " stall (finished delayed)")
-                                    break
-                                }
+                                tailCompleted = true
+                                Log.d(TAG,
+                                    "[Provider] stream tail flushed on" +
+                                    " stall (finished delayed)")
+                                break
                             }
                         }
                     }
@@ -1538,7 +1578,11 @@ class SystemVoiceProvider(
 
             val fileLen = if (tempFile.exists()) tempFile.length() else 0L
             val isEmptyWav = (fileLen <= 44L)
-            val isUnfinished = (!failed.get() && !finished)
+            // بند ٥: ذيلُ البثّ المُصَرَّف (استقرار/طول مُعلَن) إتمامٌ صالحٌ
+            // حتى لو تأخّر onDone. قبل هذا كان `!finished` يجعله
+            // «غير مكتمل» فيُرفض الصوت المبثوث ويُسقط المحرك في onFailure
+            // رغم أنّ بياناته وصلت كاملةً — سبب التقطيع بين الرسائل.
+            val isUnfinished = (!failed.get() && !finished && !tailCompleted)
             val isError = failed.get() || isEmptyWav || isUnfinished
 
             if (!isError && (finished || tailCompleted || emittedAny) &&
@@ -1670,7 +1714,8 @@ class SystemVoiceProvider(
         }
         val fileLen = if (tempFile.exists()) tempFile.length() else 0L
         val isEmptyWav = (fileLen <= 44L)
-        val isUnfinished = (!failed.get() && !finished)
+        // بند ٥: الذيل المُصَرَّف ليس «غير مكتمل» في سجل التشخيص أيضاً.
+        val isUnfinished = (!failed.get() && !finished && !tailCompleted)
         val cancelReason = when {
             cancelled.get() -> "user_cancelled"
             isEmptyWav -> "empty_wav_44b"
@@ -1764,8 +1809,13 @@ class SystemVoiceProvider(
                 Log.d(TAG, "[Provider] prewarm engine=$engine")
                 val mainHandler = Handler(Looper.getMainLooper())
                 val hold = arrayOfNulls<TextToSpeech>(1)
+                // بند ٧: مهلة onInit فعلية في التدفئة. قبل هذا كان مثيلٌ
+                // لا يُطلق onInit يبقى في prewarmingEngines للأبد، فيُعلِق
+                // attemptWith في انتظار نضوجه بلا سقف (حلقة 100ms).
+                val initSettled = AtomicBoolean(false)
                 val instance = try {
                     TextToSpeech(context, { status ->
+                        if (initSettled.getAndSet(true)) return@TextToSpeech
                         mainHandler.post {
                             val built = hold[0]
                             synchronized(ttsLock) {
@@ -1798,6 +1848,17 @@ class SystemVoiceProvider(
                     continue
                 }
                 hold[0] = instance
+                mainHandler.postDelayed({
+                    if (!initSettled.getAndSet(true)) {
+                        Log.w(TAG,
+                            "[Provider] prewarm init timeout:" +
+                            " ${INIT_TIMEOUT_MS}ms: $engine")
+                        synchronized(ttsLock) {
+                            prewarmingEngines.remove(engine)
+                        }
+                        runCatching { instance.shutdown() }
+                    }
+                }, INIT_TIMEOUT_MS)
             }
         }
     }

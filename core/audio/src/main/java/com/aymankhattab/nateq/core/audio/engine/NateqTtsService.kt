@@ -37,8 +37,6 @@ import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.engine.NumberWordDetector
 import java.util.Collections
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
@@ -68,6 +66,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -100,6 +99,12 @@ internal fun readerRateFromPercent(reqRate: Float): Float {
  * في معامل LORD (تفضيل التطبيق) ثم مضاعف السرعة العام (إن فعّله المستخدم)،
  * ثم يُقصّ على نطاقٍ آمن (0.1..6.0). عند اتباع سرعة القارئ يكون
  * المعامل = 1.0 فيُبقى الخرج = سرعة القارئ × المضاعف.
+ *
+ * **حدود السرعة — فرق موثّق (بند ١١):** هذا القصّ (0.1..6.0) هو حدّ
+ * التخطيط في هذه الخدمة. ثم يأتي [SystemVoiceProvider] ليقصّ القيمة
+ * مجدداً بحدٍّ خاصّ بكل محرك (`EngineQuirks.maxSafeSpeechRate`،
+ * افتراضياً 2.5) لأن بعض المحركات يتجاهل الأوامر أو يشوّه الصوت فوق
+ * حدّه — حدّ أدنى من هنا عمداً، وليس تعارضاً بين المسارات.
  */
 internal fun computeFinalSpeechRate(
     readerRate: Float,
@@ -234,6 +239,18 @@ class NateqTtsService : TextToSpeechService() {
          *  كمزجٍ بين صوتين طويلاً، وطويلةٌ بما يكفي لقتل «الكليك» عند
          *  الحَدّ بدل القفزة الحادّة. */
         private const val CROSSFADE_FRAMES = 512
+
+        /** بند ٨: تأخير debounce قبل إعادة تدفئة صوت الأرقام بعد تغيير
+         *  الإعدادات — يجمع سيل التعديلات المتتابعة في مهمة واحدة. */
+        private const val NUMBER_WARM_DEBOUNCE_MS = 600L
+
+        /** بند ١٣: أقصى عدد مقاطع يُطلَق قبل استهلاك سابقتها (نافذة
+         *  look-ahead) — بدل إطلاق مهمة لكل مقطع دفعةً واحدة. */
+        private const val PARALLEL_LOOKAHEAD = 3
+
+        /** بند ١٣: سقف بايتات الصوت المحتفظ بها في النافذة قبل الدفع —
+         *  يحول دون تكدّس دفعات مقاطع كاملة في الذاكرة. */
+        private const val PARALLEL_MAX_RETAINED_BYTES = 8L * 1024 * 1024
     }
 
     /** قاموس النطق الشخصي — سنجلتون Hilt موحَّد مع نسخة الواجهة، ويُرصد طابعه
@@ -385,13 +402,62 @@ class NateqTtsService : TextToSpeechService() {
 
     @Volatile private var interruptedBySensor = false
 
-    /** مراقب تغييرات الإعدادات لتسخين صوت الأرقام عند تعديلها. */
+    /** بند ٨: بصمة الإعدادات المؤثرة على تدفئة صوت الأرقام. يُقارَن عند كل
+     *  إشعار تغيير فلا تُعاد التدفئة إلا إن تغيّر أحدها فعلاً. بما أن
+     *  إشعار [SettingsChangeProvider] لا يحمل اسم المفتاح، نعتمد على
+     *  مقارنة البصمة بدل قراءة اسم المفتاح. */
+    @Volatile
+    private var numberWarmSettingsSnapshot: String? = null
+
+    /** حارس تشغيل–واحد: مهمة تدفئة واحدة معلّقة مهما تكرّر إشعار التغيير. */
+    private val numberWarmInFlight = AtomicBoolean(false)
+
+    private fun currentNumberWarmSettingsSnapshot(): String = listOf(
+        settings.getEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS
+        ),
+        settings.getEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_DEFAULT
+        ),
+        settings.getEngineForLanguage(LanguageCode.AR.tag),
+        settings.getEngineForLanguage(LanguageCode.EN.tag),
+        settings.getPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS
+        ),
+        settings.getVoiceForLanguage(LanguageCode.AR.tag),
+        settings.getVoiceForLanguage(LanguageCode.EN.tag),
+        settings.getSpeechRateForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS
+        ).toString(),
+        settings.getPitchForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS
+        ).toString()
+    ).joinToString("\u001f")
+
+    /** مراقب تغييرات الإعدادات لتسخين صوت الأرقام عند تعديلها فقط. */
     private val settingsChangeObserver = object : ContentObserver(
         Handler(Looper.getMainLooper())
     ) {
         override fun onChange(selfChange: Boolean) {
-            serviceScope.launch(AppDispatchers.io) {
-                warmNumberVoiceCache()
+            val fresh = currentNumberWarmSettingsSnapshot()
+            if (fresh == numberWarmSettingsSnapshot) return
+            numberWarmSettingsSnapshot = fresh
+            if (!numberWarmInFlight.compareAndSet(false, true)) return
+            // ربط المهمة بـ warmupJob: طلب كلامٍ واردٍ يُلغيها فوراً
+            // (onSynthesizeText يستدعي warmupJob?.cancel())، Debounce
+            // يجمع سيل الإشعارات، وsingle-flight يمنع التداخل.
+            warmupJob?.cancel()
+            warmupJob = serviceScope.launch(AppDispatchers.io) {
+                try {
+                    delay(NUMBER_WARM_DEBOUNCE_MS)
+                    warmNumberVoiceCache()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    Log.w(TAG, "تدفئة صوت الأرقام بعد تغيير الإعدادات فشلت", t)
+                } finally {
+                    numberWarmInFlight.set(false)
+                }
             }
         }
     }
@@ -420,19 +486,18 @@ class NateqTtsService : TextToSpeechService() {
         )
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
+        numberWarmSettingsSnapshot = currentNumberWarmSettingsSnapshot()
 
-        // تدفئة محركات TTS المثبتة على الخلفية (بند ب.txt 3.4-2): أول ربط
-        // TextToSpeech يكلف 150–800ms لدى بعض المحركات — نربطها قبل طلب
-        // النطق الأول فيأتي النطقُ على مثيلٍ دافئ من المسبح مباشرةً.
+        // تدفئة محركات TTS المختارة فعلاً على الخلفية (بند ٨): أول ربط
+        // TextToSpeech يكلف 150–800ms لدى بعض المحركات — نربط المحركات
+        // التي تُشير إليها الإعدادات لا كلَّ مثبَّت، فيأتي النطقُ على
+        // مثيلٍ دافئ من المسبح مباشرةً بلا إهدار ذاكرة على محركاتٍ
+        // لم يخترها المستخدم.
         providers.filterIsInstance<SystemVoiceProvider>()
             .firstOrNull()
             ?.let { system ->
                 runCatching {
-                    system.prewarmEngines(
-                        EnginePicker.installedEnginePackages(
-                            applicationContext
-                        )
-                    )
+                    system.prewarmEngines(configuredEnginePackages())
                 }
             }
 
@@ -848,16 +913,22 @@ class NateqTtsService : TextToSpeechService() {
             Collections.synchronizedList(
                 ArrayList<SpeechLatencyTracker.SegmentMetric>()
             )
-        val monitoredCallback = MonitoredSynthesisCallback(callback) { bytes ->
-            lastProgressAt.set(SystemClock.uptimeMillis())
-            if (bytes > 0) {
-                val dur = (bytes * 1000L) / 44100L
-                lastPieceDurationMs.set(dur)
-                ttfbMs.compareAndSet(
-                    0L, SystemClock.uptimeMillis() - startUptime
-                )
-            }
-        }
+        // بند ١٠: مُوجِّهُ النداءات إلى خيط تخليق واحد مخصّص (لا الرئيسي).
+        val callbackDispatcher = SynthesisCallbackDispatcher()
+        val monitoredCallback = MonitoredSynthesisCallback(
+            callback,
+            { bytes ->
+                lastProgressAt.set(SystemClock.uptimeMillis())
+                if (bytes > 0) {
+                    val dur = (bytes * 1000L) / 44100L
+                    lastPieceDurationMs.set(dur)
+                    ttfbMs.compareAndSet(
+                        0L, SystemClock.uptimeMillis() - startUptime
+                    )
+                }
+            },
+            callbackDispatcher
+        )
         // **المهلة تُشتقّ من المقاطع الفعلية** بعد التفتيت أدناه لا من
         // مجموع حروف النص — فانظر [synthesisTimeoutMsForSegments]
         // فأصلُ الانقطاع.
@@ -1175,6 +1246,7 @@ class NateqTtsService : TextToSpeechService() {
         }
         if (myGen < requestGeneration.get()) {
             Log.d(TAG, "onSynthesizeText stopped before start ($myGen)")
+            callbackDispatcher.close()
             return
         }
         activeJob = job
@@ -1228,13 +1300,13 @@ class NateqTtsService : TextToSpeechService() {
             Log.w(TAG, "onSynthesizeText join interrupted", t)
         } finally {
             val totalDurationMs = SystemClock.uptimeMillis() - startUptime
-            // **لا يُستبدل القياس الغائب بالزمن الكلي.** كان ذلك يجعل
-            // TTFB = مدة العبارة كاملة فيظهر «بطيئاً جداً» وهو لم يُقس
-            // أصلاً (رصد: 3148ms لعبارةٍ بلا بايت أول مُسجَّل).
+            // بند ١٢: غياب القياس يُسجَّل صريحاً (قيمة سالبة) ولا يُملأ
+            // بالزمن الكلي — كان التقرير يزعم «أول بايت = مدة العبارة»
+            // لعبارةٍ لم يُرصد فيها أي بايت أول أصلاً.
             val ttfb = if (ttfbMs.get() > 0L) {
                 ttfbMs.get()
             } else {
-                totalDurationMs
+                SpeechLatencyTracker.TTFB_NOT_MEASURED
             }
             SpeechLatencyTracker.recordUtterance(
                 SpeechLatencyTracker.UtteranceMetric(
@@ -1257,6 +1329,8 @@ class NateqTtsService : TextToSpeechService() {
             // علم «نطق جارٍ» — يُنبَّه المراقبون (متحدث الإعلانات) فوراً
             // فينطلق الإعلانُ المؤجَّل خلف القراءة.
             SpeechLock.setSpeaking(applicationContext, false)
+            // بند ١٠: إغلاق خيط النداءات بعد أن أنهت كل الدفعات عملها.
+            callbackDispatcher.close()
         }
     }
 
@@ -1363,12 +1437,11 @@ class NateqTtsService : TextToSpeechService() {
             languageTag, singleCategory
         )
         val convertRate = convertTarget?.convertRate?.takeIf { it != 1.0f }
+        // بند ١١: عند اتباع سرعة القارئ المضاعف = 1.0 صراحةً، حتى لو
+        // كانت سرعة LORD المحفوظة ≠ 1.0 — كان الفرع القديم يعيد ضربها
+        // فتتضاعف سرعة القارئ بصمت. خارج التفعيل يُستخدم التفضيل المحفوظ.
         val nateqMultiplier: Float = if (settings.isFollowReaderRateEnabled()) {
-            if (lordRate != 1.0f) {
-                convertRate ?: lordRate
-            } else {
-                convertRate ?: 1.0f
-            }
+            1.0f
         } else {
             convertRate ?: lordRate
         }
@@ -2066,12 +2139,10 @@ class NateqTtsService : TextToSpeechService() {
         // (لم يكن المسار المختلط يرى request إطلاقاً فتُنطق مقاطعه دائماً
         //  بسرعة LORD المطلقة ويُخالف المسار الأحادي — كان عيباً متوارثاً.)
         val convertRate = convert?.convertRate?.takeIf { it != 1.0f }
+        // بند ١١: نفس قاعدة المسار الأحادي — مضاعف LORD = 1.0 عند اتباع
+        // سرعة القارئ بلا استثناء (كان segRate يُضرب فيُخالف الأحادي).
         val nateqMultiplier: Float = if (settings.isFollowReaderRateEnabled()) {
-            if (segRate != 1.0f) {
-                convertRate ?: segRate
-            } else {
-                convertRate ?: 1.0f
-            }
+            1.0f
         } else {
             convertRate ?: segRate
         }
@@ -2876,23 +2947,50 @@ class NateqTtsService : TextToSpeechService() {
         onFirstByteEmitted: (() -> Unit)? = null,
         onSegmentMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
     ): Unit = coroutineScope {
-        val semaphore = Semaphore(3)
-        val deferreds = segments.map { segment ->
-            async(AppDispatchers.io) {
-                semaphore.withPermit {
-                    synthesizeSegmentRaw(
+        // بند ١٣: نافذة look-ahead محدودة بدل إطلاق كل المقاطع دفعةً واحدة.
+        // كل مقطع يُطلَق قبل استهلاك سابقه بـ [PARALLEL_LOOKAHEAD] فقط،
+        // وبشرط ألا تتجاوز بايتات المكتمل غير المستهلك [السقف].
+        val deferreds = ArrayList<kotlinx.coroutines.Deferred<SegmentAudio?>>()
+        val producedBytes = java.util.concurrent.ConcurrentHashMap<Int, Long>()
+        var nextToLaunch = 0
+        var consumedCount = 0
+
+        fun retainedBytes(): Long {
+            var total = 0L
+            for (i in consumedCount until deferreds.size) {
+                total += producedBytes[i] ?: 0L
+            }
+            return total
+        }
+
+        fun fillWindow() {
+            while (nextToLaunch < segments.size &&
+                nextToLaunch - consumedCount < PARALLEL_LOOKAHEAD &&
+                retainedBytes() < PARALLEL_MAX_RETAINED_BYTES
+            ) {
+                val index = nextToLaunch
+                val segment = segments[index]
+                nextToLaunch++
+                deferreds.add(async(AppDispatchers.io) {
+                    val audio = synthesizeSegmentRaw(
                         segment, readerRate, effectCategory,
                         appVoice, reqVoiceName, onSegmentMetric
                     )
-                }
+                    producedBytes[index] = audio?.chunks?.sumOf {
+                        it.size.toLong()
+                    } ?: 0L
+                    audio
+                })
             }
         }
+        fillWindow()
         var started = false
         val maxBytes = callback.maxBufferSize
         val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
         var hadCriticalDrop = false
 
-        for ((index, deferred) in deferreds.withIndex()) {
+        for (index in segments.indices) {
+            val deferred = deferreds[index]
             val segment = segments[index]
             val cat = when (segment.role) {
                 SpeechRole.NUMBER -> SettingsRepository.VOICE_CATEGORY_NUMBERS
@@ -2913,6 +3011,9 @@ class NateqTtsService : TextToSpeechService() {
                     )
                     break
                 }
+                producedBytes.remove(index)
+                consumedCount++
+                fillWindow()
                 continue
             }
             CategoryFailureTracker.recordSuccess(cat)
@@ -2930,6 +3031,10 @@ class NateqTtsService : TextToSpeechService() {
                     callback
                 )
             }
+            // استُهلك المقطع فأُطلق سراح بايتاته ومنافذه للنافذة التالية.
+            producedBytes.remove(index)
+            consumedCount++
+            fillWindow()
         }
         if (hadCriticalDrop) {
             callback.error()
@@ -3041,6 +3146,34 @@ class NateqTtsService : TextToSpeechService() {
                 }
             }
         }
+    }
+
+    /** بند ٨: المحركات التي تُشير إليها الإعدادات فعلاً (افتراضي/أرقام/
+     *  إيموجي/لكل لغة)، بعد تقاطعها مع المثبَّتة — تُستخدم في التدفئة
+     *  الأولية بدل «كل ما هو مثبَّت» فلا تُربط مثيلاتٌ لا تُستعمل. */
+    private fun configuredEnginePackages(): List<String> {
+        val installed = EnginePicker.installedEnginePackages(
+            applicationContext
+        ).toSet()
+        val selected = LinkedHashSet<String>()
+        listOf(
+            settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_DEFAULT
+            ),
+            settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            ),
+            settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            ),
+            settings.getEngineForLanguage(LanguageCode.AR.tag),
+            settings.getEngineForLanguage(LanguageCode.EN.tag)
+        ).forEach { engine ->
+            if (!engine.isNullOrBlank() && engine in installed) {
+                selected.add(engine)
+            }
+        }
+        return selected.toList()
     }
 
     private suspend fun warmNumberVoiceCache() {
@@ -3337,11 +3470,19 @@ if (rate == 1.0f && pitch == 1.0f && volume == 1.0f
  */
 internal class MonitoredSynthesisCallback(
     private val delegate: SynthesisCallback,
-    private val onProgress: (bytesWritten: Int) -> Unit
+    private val onProgress: (bytesWritten: Int) -> Unit,
+    // بند ١٠: عند تمريره تُرسَل كل نداءات delegate إلى خيط التخليق
+    // المخصّص. الافتراضي null يبقي السلوك متزامناً لاختبارات الوحدة.
+    private val dispatcher: SynthesisCallbackDispatcher? = null
 ) : SynthesisCallback by delegate {
 
     private val started = java.util.concurrent.atomic.AtomicBoolean(false)
     private val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** يرسل النداء إلى الخيط المخصّص ويحظر حتى تنفيذه (بند ١٠). */
+    private fun deliver(block: () -> Unit) {
+        if (dispatcher == null) block() else dispatcher.postAndWait(block)
+    }
 
     val hasStarted: Boolean
         get() = started.get()
@@ -3356,7 +3497,11 @@ internal class MonitoredSynthesisCallback(
             return TextToSpeech.SUCCESS
         }
         onProgress(0)
-        return delegate.start(sampleRateInHz, audioFormat, channelCount)
+        var result = TextToSpeech.ERROR
+        deliver {
+            result = delegate.start(sampleRateInHz, audioFormat, channelCount)
+        }
+        return result
     }
 
     override fun audioAvailable(
@@ -3371,18 +3516,22 @@ internal class MonitoredSynthesisCallback(
             start(22050, AudioFormat.ENCODING_PCM_16BIT, 1)
         }
         onProgress(length)
-        val maxChunk = delegate.maxBufferSize
-        var currentOffset = offset
-        var remaining = length
-        var result = TextToSpeech.SUCCESS
-        while (remaining > 0) {
-            val toWrite = minOf(maxChunk, remaining)
-            result = delegate.audioAvailable(buffer, currentOffset, toWrite)
-            if (result != TextToSpeech.SUCCESS) break
-            currentOffset += toWrite
-            remaining -= toWrite
+        val result = IntArray(1) { TextToSpeech.SUCCESS }
+        deliver {
+            val maxChunk = delegate.maxBufferSize
+            var currentOffset = offset
+            var remaining = length
+            while (remaining > 0) {
+                val toWrite = minOf(maxChunk, remaining)
+                result[0] = delegate.audioAvailable(
+                    buffer, currentOffset, toWrite
+                )
+                if (result[0] != TextToSpeech.SUCCESS) break
+                currentOffset += toWrite
+                remaining -= toWrite
+            }
         }
-        return result
+        return result[0]
     }
 
     override fun done(): Int {
@@ -3394,7 +3543,9 @@ internal class MonitoredSynthesisCallback(
             return TextToSpeech.SUCCESS
         }
         onProgress(0)
-        return delegate.done()
+        val result = IntArray(1) { TextToSpeech.ERROR }
+        deliver { result[0] = delegate.done() }
+        return result[0]
     }
 
     override fun error() {
@@ -3402,7 +3553,7 @@ internal class MonitoredSynthesisCallback(
             return
         }
         onProgress(0)
-        delegate.error()
+        deliver { delegate.error() }
     }
 
     override fun error(errorCode: Int) {
@@ -3410,7 +3561,7 @@ internal class MonitoredSynthesisCallback(
             return
         }
         onProgress(0)
-        delegate.error(errorCode)
+        deliver { delegate.error(errorCode) }
     }
 }
 

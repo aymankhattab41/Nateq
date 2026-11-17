@@ -12,6 +12,10 @@ object SpeechLatencyTracker {
 
     private const val MAX_HISTORY = 50
 
+    /** بند ١٢: قيمة بند TTFB حين لم يُسجَّل بايتٌ أول فعلاً. سالبةٌ
+     *  كي لا تُخلط بقياسٍ صحيح ولا تُحتسب في المتوسط. */
+    const val TTFB_NOT_MEASURED = -1L
+
     data class SegmentMetric(
         val text: String,
         val engine: String?,
@@ -63,10 +67,18 @@ object SpeechLatencyTracker {
     }
 
     fun getAverageTimeToFirstByteMs(): Long {
-        val list = history.toList()
-        if (list.isEmpty()) return 0L
-        return list.map { it.timeToFirstByteMs }.average().toLong()
+        // بند ١٢: القياسات الغائبة مستبعدة من المتوسط لا مُستبدَلة بزمن
+        // العبارة الكلي (كانت تُظهر «أول بايت» بمدة النطق كلِّه).
+        val measured = history.toList()
+            .map { it.timeToFirstByteMs }
+            .filter { it >= 0L }
+        if (measured.isEmpty()) return TTFB_NOT_MEASURED
+        return measured.average().toLong()
     }
+
+    /** عدد العبارات التي لم يُسجَّل لها بايتٌ أول (بند ١٢). */
+    fun getUnmeasuredTtfbCount(): Int =
+        history.count { it.timeToFirstByteMs == TTFB_NOT_MEASURED }
 
     fun getTop5Slowest(): List<UtteranceMetric> {
         return history.toList()
@@ -81,8 +93,15 @@ object SpeechLatencyTracker {
         sb.appendLine("• إجمالي العبارات المسجلة: $count (آخر $MAX_HISTORY)")
         sb.appendLine("• متوسط زمن النطق: ${getAverageDurationMs()} ms")
         sb.appendLine("• زمن p95 للنطق: ${getP95DurationMs()} ms")
+        val avgTtfb = getAverageTimeToFirstByteMs()
+        val ttfbText = if (avgTtfb == TTFB_NOT_MEASURED) {
+            "غير مقاس"
+        } else {
+            "$avgTtfb ms"
+        }
+        sb.appendLine("• متوسط زمن أول بايت (TTFB): $ttfbText")
         sb.appendLine(
-            "• متوسط زمن أول بايت (TTFB): ${getAverageTimeToFirstByteMs()} ms"
+            "• عبارات بلا قياس أول بايت: ${getUnmeasuredTtfbCount()}"
         )
         sb.appendLine(
             "• عدد المقاطع المحذوفة (droppedSegments): " +
@@ -98,10 +117,17 @@ object SpeechLatencyTracker {
                 } else {
                     item.text
                 }
+                val ttfbText = if (item.timeToFirstByteMs ==
+                    TTFB_NOT_MEASURED
+                ) {
+                    "غير مقاس"
+                } else {
+                    "${item.timeToFirstByteMs}ms"
+                }
                 sb.appendLine(
                     "  ${idx + 1}. \"$preview\" — إجمالي: " +
                         "${item.totalDurationMs}ms (أول بايت: " +
-                        "${item.timeToFirstByteMs}ms, " +
+                        "$ttfbText, " +
                         "${item.segments.size} مقاطع)"
                 )
             }
