@@ -198,4 +198,38 @@ class SelectorPacksTruncationTest {
             )
         )
     }
+
+    @Test
+    fun hasPrefixContinuity_acceptsSameTruncatedMessage() {
+        // بند ١٥: الاقتطاع كان يُسقط حارس الهوية فيُفتح أي إشعار.
+        assertTrue(
+            SelectorPacks.hasPrefixContinuity(
+                "مرحبا كيف حالك اليوم",
+                "مرحبا كيف حالك اليوم ... المزيد"
+            )
+        )
+        assertTrue(
+            SelectorPacks.hasPrefixContinuity(
+                "مرحبا كيف حالك اليوم",
+                "رسالة من أحمد مرحبا كيف حالك اليوم قراءة المزيد"
+            )
+        )
+    }
+
+    @Test
+    fun hasPrefixContinuity_rejectsDifferentMessage() {
+        // بند ١٥: رسالة أخرى تشترك في ذيل الكلمات لا تعد استمراراً.
+        assertFalse(
+            SelectorPacks.hasPrefixContinuity(
+                "مرحبا كيف حالك اليوم",
+                "السعر اليوم مائة دولار ... المزيد"
+            )
+        )
+        assertFalse(
+            SelectorPacks.hasPrefixContinuity("", "نص موجود")
+        )
+        assertFalse(
+            SelectorPacks.hasPrefixContinuity("نص موجود", null)
+        )
+    }
 }

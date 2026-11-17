@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.announcement.LoudnessStage
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
@@ -23,6 +24,17 @@ class MicrosoftEmbeddedVoiceProvider(
     companion object {
         private const val TAG = "MsEmbeddedProvider"
         const val PROVIDER_ID = "microsoft_embedded"
+        private const val MIN_API = Build.VERSION_CODES.O
+
+        /** مايكروسوفت تشترط API 26 (أندرويد 8.0) فأعلى للمحرك المدمج —
+         *  دالة نقية قابلة للاختبار بلا أندرويد (الثابت مُضمَّن وقت
+         *  التجميع). */
+        internal fun supportsApi(sdkInt: Int): Boolean = sdkInt >= MIN_API
+
+        /** سبب الرفض الواضح تحت API 26 — يُسجَّل في السجلّ عند الرفض. */
+        internal fun apiRejectionReason(sdkInt: Int): String =
+            "محرك مايكروسوفت المدمج يتطلب API 26 فأعلى " +
+                "(المستوى الحالي $sdkInt) — يُرفض"
 
         fun resolveDataDir(context: Context): File? =
             MicrosoftEmbeddedVoiceProvider(context).resolveDataDir()
@@ -39,6 +51,13 @@ class MicrosoftEmbeddedVoiceProvider(
     }
 
     override fun isConfigured(): Boolean {
+        // شرط مايكروسوفت: API 26 فأعلى. تحته نرفض بوضوح (سجلّ + سبب)
+        // بدل إظهار محرك مهيّأ شكلياً لكنه لن يعمل فعلياً.
+        val sdk = Build.VERSION.SDK_INT
+        if (!supportsApi(sdk)) {
+            Log.e(TAG, apiRejectionReason(sdk))
+            return false
+        }
         return EmbeddedStorage.inventory(
             context,
             EmbeddedStorage.Engine.MICROSOFT,

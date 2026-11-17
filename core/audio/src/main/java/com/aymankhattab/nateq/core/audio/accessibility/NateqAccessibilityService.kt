@@ -1162,16 +1162,32 @@ class NateqAccessibilityService : AccessibilityService() {
         val focusedText = focusSnapshot?.readableText().orEmpty()
         val prefixClean = prefix.trim()
 
-        // ع٤٣-1: فحص تطابق مرن بين نص الطلب والعنصر المفوكس
+        // بند ١٥: هوية العقدة قبل أي نقرة — تُقارن بعدها كي لا تُقرأ
+        // رسالة أخرى إن تغيّر التركيز أثناء انتظار التوسيع.
+        val initialIdentity = stableNodeIdentity(focusSnapshot)
+
+        // ع٤٣-1: فحص تطابق مرن بين نص الطلب والعنصر المفوكس.
+        // بند ١٥: الاقتطاع لم يعد يُبطل الفحص؛ حين يكون أحد النصين
+        // مقتطعاً نتحقق من استمرارية البادئة بدل التطابق العام، وإلا
+        // سقط الحارس عملياً وفُتحت أي رسالة مفوكسة أخرى.
         val isTruncatedPrefix = SelectorPacks.looksTruncated(prefixClean)
         val isTruncatedFocus = SelectorPacks.looksTruncated(focusedText)
-        if (prefixClean.isNotEmpty() &&
-            focusedText.isNotEmpty() &&
-            !SelectorPacks.isTextMatchingMessage(prefixClean, focusedText) &&
-            !isTruncatedPrefix &&
-            !isTruncatedFocus
-        ) {
-            Log.w(TAG, "[READMORE] Focused node does not match target text")
+        val identityMatches = prefixClean.isEmpty() ||
+            focusedText.isEmpty() ||
+            if (isTruncatedPrefix || isTruncatedFocus) {
+                SelectorPacks.hasPrefixContinuity(
+                    prefixClean, focusedText
+                )
+            } else {
+                SelectorPacks.isTextMatchingMessage(
+                    prefixClean, focusedText
+                )
+            }
+        if (!identityMatches) {
+            Log.w(
+                TAG,
+                "[READMORE] Focused node does not continue target prefix"
+            )
             return null
         }
 
@@ -1207,10 +1223,14 @@ class NateqAccessibilityService : AccessibilityService() {
             AccessibilityBridge.READ_MORE_CONTENT_CHANGE_MS
         )
 
-        // التحقق من النص المحدّث
+        // التحقق من النص المحدّث — بند ١٥: لا نُعيد نصاً إلا إن كان
+        // مكمّلاً لنفس البادئة ومن نفس العقدة التي بدأنا منها.
         val updatedSnapshot = findCurrentAccessibilityFocusSnapshot()
         val updatedText = updatedSnapshot?.readableText().orEmpty()
-        if (updatedText.length > oldLen) {
+        val updatedTrusted = expandedTextMatchesIdentity(
+            updatedSnapshot, updatedText, prefixClean, initialIdentity
+        )
+        if (updatedText.length > oldLen && updatedTrusted) {
             ReadMoreExpander.onExpandAttemptResult(
                 pkg = appPkg,
                 increased = true,
@@ -1231,7 +1251,10 @@ class NateqAccessibilityService : AccessibilityService() {
         }
         val finalSnapshot = findCurrentAccessibilityFocusSnapshot()
         val finalText = finalSnapshot?.readableText().orEmpty()
-        val didIncrease = finalText.length > oldLen
+        val finalTrusted = expandedTextMatchesIdentity(
+            finalSnapshot, finalText, prefixClean, initialIdentity
+        )
+        val didIncrease = finalText.length > oldLen && finalTrusted
         ReadMoreExpander.onExpandAttemptResult(
             pkg = appPkg,
             increased = didIncrease,
@@ -1246,15 +1269,49 @@ class NateqAccessibilityService : AccessibilityService() {
                     "$oldLen -> ${finalText.length} chars"
             )
             finalText
-        } else if (finalText.isNotEmpty() &&
-            (SelectorPacks.isTextMatchingMessage(prefixClean, finalText) ||
-                !SelectorPacks.looksTruncated(finalText))
+        } else if (finalTrusted && finalText.isNotEmpty() &&
+            (SelectorPacks.hasPrefixContinuity(prefixClean, finalText) ||
+                SelectorPacks.isTextMatchingMessage(
+                    prefixClean, finalText
+                ) || !SelectorPacks.looksTruncated(finalText))
         ) {
             finalText
         } else {
             Log.w(TAG, "[READMORE] Text did not grow after click")
             null
         }
+    }
+
+    /**
+     * بند ١٥: هوية مستقرة للعقدة لا تتغيّر بزيادة النص بعد التوسيع.
+     * تُقارن قبل وبعد النقر كي لا تُقرأ رسالة أخرى إن انتقل التركيز.
+     */
+    private fun stableNodeIdentity(snapshot: NodeView?): String {
+        if (snapshot == null) return ""
+        return "${snapshot.packageName.orEmpty()}|" +
+            "${snapshot.viewIdResourceName.orEmpty()}|" +
+            snapshot.className.orEmpty()
+    }
+
+    /**
+     * بند ١٥: هل النص بعد التوسيع ما زال لنفس العقدة ومكمّلاً
+     * للبادئة المطلوبة؟ يمنع إعادة نص رسالة مختلفة بعد النقر.
+     */
+    private fun expandedTextMatchesIdentity(
+        snapshot: NodeView?,
+        text: String,
+        prefix: String,
+        initialIdentity: String
+    ): Boolean {
+        if (initialIdentity.isNotEmpty() &&
+            stableNodeIdentity(snapshot) != initialIdentity
+        ) {
+            Log.w(TAG, "[READMORE] Focus changed during expansion")
+            return false
+        }
+        if (prefix.isBlank() || text.isBlank()) return true
+        return SelectorPacks.hasPrefixContinuity(prefix, text) ||
+            SelectorPacks.isTextMatchingMessage(prefix, text)
     }
 
     /** ع٤٣-1: تنفيذ صريح لإيماءة قراءة المزيد من KeyShortcutRouter. */

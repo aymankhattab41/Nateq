@@ -14,6 +14,7 @@ import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.engine.BytePool
 import com.aymankhattab.nateq.core.audio.engine.PcmEqualizer
+import com.aymankhattab.nateq.core.audio.engine.SpeechFlowDiagnostics
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
@@ -1604,6 +1605,12 @@ class SystemVoiceProvider(
                             cacheKey, cachedParts, totalCacheBytes,
                             enginePackage
                         )
+                        // بند ٢٦: تسجيل الذيل المُفرَّغ في التشخيص — كان
+                        // هذا المسار يبثّ صوتاً بلا أي تسجيل للبايتات.
+                        if (isSpeechFlow && remaining > 0) {
+                            SpeechFlowDiagnostics
+                                .recordAudioChunk(remaining.toInt())
+                        }
                         if (ttfbMs == 0L) {
                             ttfbMs = SystemClock.uptimeMillis() - synthStartTime
                         }
@@ -1683,6 +1690,12 @@ class SystemVoiceProvider(
                         // مُعاد استخدامه) — والبيانات الصحيحة
                         // حتى validLength فقط.
                         onAudioChunk(scaledData, validLength)
+                        // بند ٢٦: مسار الملف الكامل كان يبثّ بلا تسجيل —
+                        // البايتات الصالحة تُسجَّل الآن في التشخيص.
+                        if (isSpeechFlow && validLength > 0) {
+                            SpeechFlowDiagnostics
+                                .recordAudioChunk(validLength)
+                        }
                         success = true
                         // المستهلك نسخ الشريحة (audioAvailable)
                         // ولم يُمسك بمرجعها — فنعيد كل مسبَّحٍ صاحبَ

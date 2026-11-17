@@ -8,6 +8,10 @@ plugins {
     alias(libs.plugins.hilt.android)
 }
 
+// ع٤٢-3: سكربت تحقق من محاذاة مكتبات arm64 الجاهزة (readelf -l)
+// ومكتبة Vocalizer على 32-بت؛ يُصدر تحذيراً بلا إفشال البناء.
+apply(from = rootProject.file("gradle/elf-alignment-verification.gradle.kts"))
+
 android {
     namespace = "com.aymankhattab.nateq.core.audio"
     compileSdk = 37
@@ -24,6 +28,18 @@ android {
         ndk {
             abiFilters.add("arm64-v8a")
             abiFilters.add("armeabi-v7a")
+        }
+        // ع٤٢-3: المكتبة الوحيدة التي نملك مصدرها هنا (libnateqfdsan.so)
+        // تُربط بمحاذاة صفحات 16KB لتتوافق مع أندرويد 15+. المكتبات
+        // الثلاث المذكورة في الطلب جاهزة من موردين ولا مصدر لها لدينا.
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DCMAKE_SHARED_LINKER_FLAGS=" +
+                        "-Wl,-z,max-page-size=16384 " +
+                        "-Wl,-z,common-page-size=16384"
+                )
+            }
         }
     }
     compileOptions {

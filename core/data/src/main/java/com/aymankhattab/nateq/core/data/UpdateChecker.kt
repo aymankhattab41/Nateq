@@ -151,29 +151,61 @@ object UpdateChecker {
         .distinct()
         .map { "$ABI_APK_PREFIX$it.apk" }
 
-    /** اختيار مرفق الـAPK الأنسب: معمارية الجهاز أولاً بترتيب الأفضلية
-     *  ([preferredNames])، ثم الاسم العام ([APK_NAME]) لإصدارات أحادية
-     *  قديمة، ثم أي مرفق ينتهي بـ`.apk` — فنسخة قديمة تبحث عن اسمٍ سابق
-     *  لا ترى `nateq.apk` فتستدلّ بأول مرفق بدل أن تُعلن «محدّثاً» وهمياً.
-     *  تُعيد null إن لم يوجد أي مرفق APK. منطق نقي قابل للاختبار. */
+    /** نتيجة اختيار مرفق الـ APK. التمييز بين [Matched] و[Universal] يوضّح
+     *  سبب القبول، أمّا [NoCompatible] فيمنع تقديم مرفق معمارية أخرى. */
+    internal sealed class ApkPick<out T> {
+        /** مرفق معمارية الجهاز (واحد من أسماء الأفضلية). */
+        data class Matched<out T>(val asset: T) : ApkPick<T>()
+
+        /** المرفق العام الشامل لكل المعماريات — متوافق دائماً. */
+        data class Universal<out T>(val asset: T) : ApkPick<T>()
+
+        /** لا مرفق متوافق: لا مطابق ولا عام، والموجود معمارية أخرى. */
+        object NoCompatible : ApkPick<Nothing>()
+
+        /** الملف القابل للتنزيل، أو null إن لم يوجد مرفق متوافق. */
+        val assetOrNull: T?
+            get() = when (this) {
+                is Matched -> asset
+                is Universal -> asset
+                NoCompatible -> null
+            }
+    }
+
+    /** مرفق معمارية بعينه (`nateq-<abi>.apk`) — غير المرفق العام
+     *  `nateq.apk`. هذا بالضبط ما لا يجوز تقديمه لجهاز بمعمارية أخرى. */
+    private fun isAbiSpecificApk(name: String): Boolean =
+        name.endsWith(".apk", ignoreCase = true) &&
+            !name.equals(APK_NAME, ignoreCase = true) &&
+            name.startsWith(ABI_APK_PREFIX, ignoreCase = true)
+
+    /** اختيار مرفق الـ APK المتوافق: معمارية الجهاز أولاً بترتيب الأفضلية
+     *  ([preferredNames])، ثم المرفق العام الشامل ([APK_NAME]) — وهو متوافق
+     *  مع كل معمارية — ثم الاسم القديم غير المرتبط بمعمارية. **لا** يُسقط
+     *  إلى أي `.apk` عشوائي: مرفق `nateq-<abi>.apk` بمعمارية أخرى يُرفض
+     *  صراحةً بـ[ApkPick.NoCompatible] بدل تنزيل ملف خاطئ. منطق نقي. */
     internal fun <T> pickApkAsset(
         assets: List<T>,
         preferredNames: List<String> = emptyList(),
         nameOf: (T) -> String
-    ): T? {
+    ): ApkPick<T> {
         val apkAssets = assets.filter {
             nameOf(it).endsWith(".apk", ignoreCase = true)
         }
-        if (apkAssets.isEmpty()) return null
+        if (apkAssets.isEmpty()) return ApkPick.NoCompatible
         for (preferred in preferredNames) {
             apkAssets.firstOrNull {
                 nameOf(it).equals(preferred, ignoreCase = true)
-            }?.let { return it }
+            }?.let { return ApkPick.Matched(it) }
         }
         apkAssets.firstOrNull {
             nameOf(it).equals(APK_NAME, ignoreCase = true)
-        }?.let { return it }
-        return apkAssets.first()
+        }?.let { return ApkPick.Universal(it) }
+        // اسم قديم عام (مثل legacy_app.apk) يبقى شاملاً ومتوافقاً؛ أما
+        // nateq-<abi>.apk غير المطابق فهو معمارية مختلفة ولا يُقدَّم.
+        apkAssets.firstOrNull { !isAbiSpecificApk(nameOf(it)) }
+            ?.let { return ApkPick.Universal(it) }
+        return ApkPick.NoCompatible
     }
 
     sealed class CheckResult {
@@ -188,6 +220,10 @@ object UpdateChecker {
         ) : CheckResult()
         object UpToDate : CheckResult()
         object NetworkError : CheckResult()
+
+        /** إصدار أحدث منشور لكن كل مرفقاته بمعمارية أخرى — لا يوجد ملف
+         *  متوافق مع الجهاز، فلا يُقدَّم للمستخدم مرفق خاطئ. */
+        object NoCompatibleVersion : CheckResult()
     }
 
     suspend fun check(
@@ -253,27 +289,25 @@ object UpdateChecker {
                         ?: return@withContext CheckResult.NetworkError
                     val tag = root.optString("tag_name")
                     // مقارنة SemVer مكوّن مكوّن (لا قراءةٌ حرفية للرقم
-                    // الأول كما
-                    // كان takeWhile الأمعور — كان يعلّق «v0.4.1» على الرقم 0
-                    // فيُعطَّل التنبيه لكل اللهجات SemVer).
+                    // الأول كما كان takeWhile الأمعور — كان يعلّق «v0.4.1»
+                    // على الرقم 0 فيُعطَّل التنبيه لكل اللهجات SemVer).
                     if (!isNewerVersion(tag, currentVersionName)) {
                         return@withContext CheckResult.UpToDate
                     }
                     val assets = root.optArray("assets")
                     val apkAssets = (0 until (assets?.size() ?: 0))
                         .mapNotNull { assets?.get(it)?.optObject() }
-                    // الاسم المتوقع أولاً ثم أي مرفق APK — حتى لا يضيع التحديث
-                    // لو غُيّر اسم المرفق (نسخة سابقة باسمٍ قديم
-                    // لا ترى `nateq.apk` فكانت تُعلن تحديثاً وهمياً).
+                    // معمارية الجهاز أولاً ثم المرفق العام الشامل — ولا شيء
+                    // بعدهما: مرفق معمارية أخرى لا يُقدَّم كتحديث.
                     val apkAsset = pickApkAsset(
                         apkAssets,
                         preferredNames = deviceApkCandidates(),
                         nameOf = { it.optString("name") }
-                    )
-                    // إصدار أحدث لكن منشوره بلا أي مرفق APK على الإطلاق
-                    // → لا شيء ننزله.
+                    ).assetOrNull
+                    // إصدار أحدث لكن بلا مرفق متوافق مع معمارية الجهاز:
+                    // نُعلن عدم التوافق بدل تنزيل ملف معمارية أخرى.
                     if (apkAsset == null) {
-                        return@withContext CheckResult.UpToDate
+                        return@withContext CheckResult.NoCompatibleVersion
                     }
                     val urlEl = apkAsset.optMember("browser_download_url")
                     if (urlEl == null) {

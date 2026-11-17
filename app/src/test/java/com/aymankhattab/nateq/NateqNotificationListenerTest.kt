@@ -11,9 +11,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * اختبار ترتيب سقوط استخراج نص الإشعار: EXTRA_TEXT أولاً ثم نصّ الموسّع
- * (EXTRA_BIG_TEXT للإشعارات متعددة الأسطر مثل واتساب/أميل) ثم أسطر
- * EXTRA_TEXT_LINES — حتى لا تُفقد رسالة طويلة النص (بند 26).
+ * اختبار استخراج أنصّ وأكمل نص متاح من الإشعار (بند ١٧): يُقارَن
+ * EXTRA_TEXT مع BIG_TEXT وTEXT_LINES ومحتوى MessagingStyle، ويُختار
+ * الأطول — حتى لا تُقرأ بداية الرسالة المقتطعة فقط.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [24, 30, 35, 37])
@@ -38,13 +38,15 @@ class NateqNotificationListenerTest {
     }
 
     @Test
-    fun bodyText_prefersExtraText() {
+    fun bodyText_prefersLongestAndMostCompleteCandidate() {
+        // بند ١٧: كان short EXTRA_TEXT يُفضَّل على BIG_TEXT الأطول
+        // فتُقرأ بداية الرسالة فقط — صار الأطول والأكمل هو المختار.
         assertEquals(
-            "قصيرة",
+            "هذا هو النص الموسّع الكامل للرسالة",
             NateqNotificationListener.notificationBodyText(
                 extras(
                     text = "قصيرة",
-                    bigText = "موسّعة",
+                    bigText = "هذا هو النص الموسّع الكامل للرسالة",
                     lines = arrayOf("س1", "س2")
                 )
             )
@@ -78,5 +80,38 @@ class NateqNotificationListenerTest {
     @Test
     fun bodyText_none_returnsNull() {
         assertNull(NateqNotificationListener.notificationBodyText(extras()))
+    }
+
+    @Test
+    fun bodyText_messagingStyleContentIsUsedForText() {
+        // بند ١٧: كان محتوى MessagingStyle يُستخدم للمرسل فقط، فيُقرأ
+        // EXTRA_TEXT المختصر بدل نص الرسالة الكامل داخل النمط.
+        val context = org.robolectric.RuntimeEnvironment.application
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            val channel = android.app.NotificationChannel(
+                "test-channel", "test",
+                android.app.NotificationManager.IMPORTANCE_DEFAULT
+            )
+            val manager = context.getSystemService(
+                android.app.NotificationManager::class.java
+            )
+            manager?.createNotificationChannel(channel)
+        }
+        val person = androidx.core.app.Person.Builder()
+            .setName("أحمد").build()
+        val style = androidx.core.app.NotificationCompat
+            .MessagingStyle(person)
+            .addMessage("هذه رسالة كاملة من نمط المراسلة", 0L, person)
+        val notification = androidx.core.app.NotificationCompat
+            .Builder(context, "test-channel")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("أحمد")
+            .setContentText("مقتطع")
+            .setStyle(style)
+            .build()
+        assertEquals(
+            "هذه رسالة كاملة من نمط المراسلة",
+            NateqNotificationListener.notificationBodyText(notification)
+        )
     }
 }

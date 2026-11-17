@@ -3732,6 +3732,18 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         )
                     }
                 }
+                is UpdateChecker.CheckResult.NoCompatibleVersion -> {
+                    // بند ٢٢: لا نعرض مرفق معمارية أخرى — نُعلن صراحةً.
+                    if (showFeedback) {
+                        val msg = getString(
+                            R.string.check_updates_no_compatible
+                        )
+                        Toast.makeText(
+                            context, msg, Toast.LENGTH_SHORT
+                        ).show()
+                        view?.announceCompat(msg)
+                    }
+                }
             }
         }
     }

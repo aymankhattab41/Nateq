@@ -25,6 +25,10 @@ object ReadMoreExpander {
     private const val APP_WINDOW_MS = 60_000L
     private const val MAX_CLICKS_PER_APP_MINUTE = 12
 
+    // بند ١٦: انتهاء صلاحية العقدة الفاشلة — كانت تبقى للأبد فتمنع
+    // أي محاولة لاحقة حتى لو تغيّرت الرسالة أو أُصلح التطبيق.
+    private const val FAILED_NODE_TTL_MS = 60_000L
+
     // سجل أوقات النقر لكل عقدة: nodeKey -> timestamp
     private val lastNodeClickTime = ConcurrentHashMap<String, Long>()
 
@@ -417,12 +421,9 @@ object ReadMoreExpander {
 
         recordClick(pkg, key)
         logClick(node, pkg, strategy, "ACTION_CLICK", ok)
-        val hasClick = node.isClickable ||
-            ((node.actions and AccessibilityNodeInfo.ACTION_CLICK) != 0) ||
-            node.actionList.any {
-                it.id == AccessibilityNodeInfo.ACTION_CLICK
-            }
-        return ok || hasClick
+        // بند ١٦: لا نعتبر «قابلة للضغط» نجاحاً — نتيجة الإجراء
+        // الفعلية وحدها هي المعتمدة.
+        return ok
     }
 
     private fun performActionOnNode(
@@ -440,9 +441,9 @@ object ReadMoreExpander {
 
         recordClick(pkg, key)
         logClick(node, pkg, strategy, "ACTION_$actionId", ok)
-        val hasAction = ((node.actions and actionId) != 0) ||
-            node.actionList.any { it.id == actionId }
-        return ok || hasAction
+        // بند ١٦: الإعلان عن الإجراء لا يعني تنفيذه — نتيجة performAction
+        // وحدها تُعدّ نجاحاً.
+        return ok
     }
 
     private fun checkAppRateLimit(pkg: String): Boolean {
@@ -561,6 +562,12 @@ object ReadMoreExpander {
 
     private fun checkNodeRateLimit(nodeKey: String): Boolean {
         val now = SystemClock.uptimeMillis()
+        // بند ١٦: إزالة الفشل المنتهي الصلاحية قبل الفحص — فشلٌ قديم
+        // لا يجب أن يحجب رسالة جديدة بعد دقيقة كاملة.
+        val expired = failedNodes.filter {
+            now - it.value >= FAILED_NODE_TTL_MS
+        }.keys
+        expired.forEach { failedNodes.remove(it) }
         if (failedNodes.containsKey(nodeKey)) {
             Log.w(
                 TAG,
@@ -594,8 +601,13 @@ object ReadMoreExpander {
     private fun getNodeKey(node: AccessibilityNodeInfo, pkg: String): String {
         val cls = node.className?.toString().orEmpty()
         val id = node.viewIdResourceName.orEmpty()
-        val txt = node.text?.toString().orEmpty().take(30)
-        return "$pkg|$cls|$id|$txt"
+        val txt = node.text?.toString().orEmpty()
+        val desc = node.contentDescription?.toString().orEmpty()
+        // بند ١٦: هوية أدق من أول ٣٠ حرفاً — نضيف معرّف النافذة ووصف
+        // المحتوى وطول النص وبصمته الكاملة لتفادي تصادم الرسائل التي
+        // تشترك في ذات البداية. جزء الحزمة يبقى أولاً لاستخراجه.
+        val fingerprint = "${txt.length}:${txt.hashCode()}"
+        return "$pkg|$cls|$id|${node.windowId}|$desc|$fingerprint"
     }
 
     private fun logClick(

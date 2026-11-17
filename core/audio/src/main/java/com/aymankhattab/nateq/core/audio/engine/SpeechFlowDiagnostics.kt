@@ -32,17 +32,24 @@ object SpeechFlowDiagnostics {
     @Volatile
     private var lastExceptionText: String? = null
 
-    @Volatile
-    private var lastUtteranceText: String? = null
-
     fun isCalled(): Boolean = called.get()
 
+    /**
+     * بدء جلسة نداء جديدة. تُصفَّر هنا كل الحقول الخاصة بالنداء الواحد
+     * (بايتات/عينات/حالة/استثناء) حتى لا يرث النداء الثاني قيمَ الأول
+     * عند عرض التقرير. نص الكلام لا يُخزَّن إطلاقاً حفاظاً على الخصوصية؛
+     * يكفي تسجيل طوله في السجلّ.
+     */
     fun recordCall(text: String) {
+        totalBytes.set(0L)
+        totalSamples.set(0L)
+        lastResponseStatus = null
+        lastStatusText = null
+        lastExceptionText = null
         called.set(true)
         callCounter.incrementAndGet()
         lastCallEpoch.set(System.currentTimeMillis())
-        lastUtteranceText = text
-        Log.i(TAG, "استدعاء محرك SpeechFlow: \"$text\"")
+        Log.i(TAG, "استدعاء محرك SpeechFlow (طول النص=${text.length})")
     }
 
     fun recordResponse(status: Int) {
@@ -80,9 +87,6 @@ object SpeechFlowDiagnostics {
             ).format(Date(lastCallEpoch.get()))
             appendLine("  - وقت آخر استدعاء: $dateStr")
             appendLine(
-                "  - آخر نص مطلوب: \"${lastUtteranceText ?: "(فارغ)"}\""
-            )
-            appendLine(
                 "  - رمز استجابة synthesizeToFile: " +
                     "${lastResponseStatus ?: "لم يُسجل"}"
             )
@@ -116,6 +120,5 @@ object SpeechFlowDiagnostics {
         lastResponseStatus = null
         lastStatusText = null
         lastExceptionText = null
-        lastUtteranceText = null
     }
 }

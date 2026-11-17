@@ -87,32 +87,48 @@ class UpdateCheckerSemVerTest {
         assertFalse(UpdateChecker.isNewerVersion("v1.6.29", "v1.6.29"))
     }
 
-    /** بند المرفق المتغيّر: النسخة المثبّتة التي تبحث عن اسمٍ سابق
-     *  لا ترى مرفقاً باسم `nateq.apk` فتُعلن «محدّثاً» وهمياً — الاختيار
-     *  يجب أن يلتقط أي مرفق `.apk` مع أفضلية الاسم المتوقع. */
+    /** الاسم العام الشامل يُختار أولاً عند غياب معمارية مطابقة، والاسم
+     *  القديم غير المرتبط بمعمارية يبقى مقبولاً كمرفق شامل. */
     @Test
-    fun apkAsset_picksExpectedNameFirst_thenAnyApk() {
+    fun apkAsset_picksUniversalNameFirst_thenLegacyGenericName() {
         val names: List<String> = listOf(
             "nateq.apk", "legacy_app.apk", "notes.txt"
         )
-        val picked: String? = UpdateChecker.pickApkAsset(names) { it }
-        assertEquals("nateq.apk", picked)
-        // النسخة القديمة: لا `nateq.apk` في المرفقات — يلتقط legacy_app.apk.
+        val picked = UpdateChecker.pickApkAsset(names) { it }
+        assertEquals(
+            UpdateChecker.ApkPick.Universal("nateq.apk"), picked
+        )
+        // النسخة القديمة: لا `nateq.apk` في المرفقات — يبقى الاسم العام
+        // القديم مقبولاً لأنه ليس مرفق معمارية معيّنة.
         val oldRelease: List<String> = listOf("legacy_app.apk", "sha256.txt")
-        val pickedOld: String? =
-            UpdateChecker.pickApkAsset(oldRelease) { it }
-        assertEquals("legacy_app.apk", pickedOld)
-        // بلا أي مرفق APK: لا تحديث قابل للتنزيل.
-        val noApk: List<String> = listOf("readme.md")
-        assertNull(UpdateChecker.pickApkAsset(noApk) { it })
-        assertNull(
-            UpdateChecker.pickApkAsset(emptyList<String>()) { it }
+        val pickedOld = UpdateChecker.pickApkAsset(oldRelease) { it }
+        assertEquals(
+            UpdateChecker.ApkPick.Universal("legacy_app.apk"), pickedOld
         )
         // الأحرف الكبيرة في الامتداد مقبولة أيضاً.
         val upper: List<String> = listOf("MyApp.APK")
-        val pickedUpper: String? =
-            UpdateChecker.pickApkAsset(upper) { it }
-        assertEquals("MyApp.APK", pickedUpper)
+        val pickedUpper = UpdateChecker.pickApkAsset(upper) { it }
+        assertEquals(
+            UpdateChecker.ApkPick.Universal("MyApp.APK"), pickedUpper
+        )
+    }
+
+    /** الانحدار: لا مرفق APK إطلاقاً يجب أن يُعلن عدم التوافق صراحةً
+     *  بدل أن يُعلن «محدّثاً» وهمياً بلا ملف قابل للتنزيل. */
+    @Test
+    fun pickApkAsset_noApkAssets_yieldsNoCompatible_notSilentUpdate() {
+        val noApk: List<String> = listOf("readme.md")
+        assertEquals(
+            UpdateChecker.ApkPick.NoCompatible,
+            UpdateChecker.pickApkAsset(noApk) { it }
+        )
+        assertEquals(
+            UpdateChecker.ApkPick.NoCompatible,
+            UpdateChecker.pickApkAsset(emptyList<String>()) { it }
+        )
+        assertNull(
+            UpdateChecker.pickApkAsset(noApk) { it }.assetOrNull
+        )
     }
 
     /** الأرفاق صارت مستقلة لكل معمارية (`nateq-<abi>.apk`): يُختار مرفق
@@ -126,7 +142,7 @@ class UpdateCheckerSemVerTest {
         )
         // جهاز 64-بت: arm64 حتى لو بُرمج arm أولاً في أرفاق GitHub.
         assertEquals(
-            "nateq-arm64-v8a.apk",
+            UpdateChecker.ApkPick.Matched("nateq-arm64-v8a.apk"),
             UpdateChecker.pickApkAsset(
                 names,
                 listOf("nateq-arm64-v8a.apk", "nateq-armeabi-v7a.apk")
@@ -134,19 +150,61 @@ class UpdateCheckerSemVerTest {
         )
         // جهاز 32-بت فقط: لا يختار arm64.
         assertEquals(
-            "nateq-armeabi-v7a.apk",
+            UpdateChecker.ApkPick.Matched("nateq-armeabi-v7a.apk"),
             UpdateChecker.pickApkAsset(
                 names, listOf("nateq-armeabi-v7a.apk")
             ) { it }
         )
-        // معمارية الجهاز غير موجودة في الأرفاق → يسقط إلى nateq.apk.
+        // معمارية الجهاز غير موجودة → المرفق العام يبقى متوافقاً.
         val fallback: List<String> = listOf("nateq.apk", "legacy_app.apk")
         assertEquals(
-            "nateq.apk",
+            UpdateChecker.ApkPick.Universal("nateq.apk"),
             UpdateChecker.pickApkAsset(
                 fallback, listOf("nateq-arm64-v8a.apk")
             ) { it }
         )
+    }
+
+    /** (أ) المطابقة تفوز حتى مع وجود مرفق عام ومعمارية أخرى في القائمة. */
+    @Test
+    fun pickApkAsset_matchingAbiWins_overUniversalAndWrongAbi() {
+        val names = listOf(
+            "nateq-arm64-v8a.apk",
+            "nateq.apk",
+            "nateq-armeabi-v7a.apk"
+        )
+        val pick = UpdateChecker.pickApkAsset(
+            names,
+            listOf("nateq-armeabi-v7a.apk", "nateq-arm64-v8a.apk")
+        ) { it }
+        assertEquals(
+            UpdateChecker.ApkPick.Matched("nateq-armeabi-v7a.apk"), pick
+        )
+        assertEquals("nateq-armeabi-v7a.apk", pick.assetOrNull)
+    }
+
+    /** (ب) المرفق العام الشامل مقبول حتى لو احتوى الإصدار معمارية أخرى
+     *  لا توافق الجهاز — لا يُرفض الإصدار بسبب وجود مرفق خاطئ إلى جانبه. */
+    @Test
+    fun pickApkAsset_universalApk_stillAccepted() {
+        val pick = UpdateChecker.pickApkAsset(
+            listOf("nateq-arm64-v8a.apk", "nateq.apk"),
+            listOf("nateq-armeabi-v7a.apk")
+        ) { it }
+        assertEquals(UpdateChecker.ApkPick.Universal("nateq.apk"), pick)
+        assertEquals("nateq.apk", pick.assetOrNull)
+    }
+
+    /** (ج) الانحدار الأساسي: إصدار فيه مرفق ARM64 فقط لجهاز 32-بت كان
+     *  يُقدَّم كتحديث فيُثبَّت ملف خاطئ. الآن حالة عدم التوافق صريحة. */
+    @Test
+    fun pickApkAsset_wrongAbiOnly_yieldsNoCompatible_notWrongFile() {
+        val pick = UpdateChecker.pickApkAsset(
+            listOf("nateq-arm64-v8a.apk", "release-notes.txt"),
+            listOf("nateq-armeabi-v7a.apk")
+        ) { it }
+        assertEquals(UpdateChecker.ApkPick.NoCompatible, pick)
+        assertNull(pick.assetOrNull)
     }
 
     /** مشتقة أسماء الأرفاق من معماريات النظام: `armeabi` تنسدل إلى

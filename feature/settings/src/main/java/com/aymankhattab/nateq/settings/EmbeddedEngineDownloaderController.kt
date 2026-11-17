@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Process
 import java.text.SimpleDateFormat
 import java.util.Date
 import android.view.LayoutInflater
@@ -780,11 +779,13 @@ internal class EmbeddedEngineDownloaderController(
         }
     }
 
-    private fun is32BitArchitecture(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            !Process.is64Bit()
+    /** تنبيه حالة مدعوم على 32-بت — نصّ داخلي بلا تعديل strings.xml. */
+    private fun vocalizer32BitNote(): String {
+        val isArabicUi = LanguageCode.isArabic(Locale.getDefault().language)
+        return if (isArabicUi) {
+            "متاح على 32-بت (armeabi-v7a)"
         } else {
-            Build.SUPPORTED_64_BIT_ABIS.isNullOrEmpty()
+            "Available on 32-bit (armeabi-v7a)"
         }
     }
 
@@ -792,10 +793,24 @@ internal class EmbeddedEngineDownloaderController(
         item: VocalizerCatalogItem
     ) {
         val ctx = fragment.requireContext()
-        if (is32BitArchitecture()) {
+        // ع٤٢-2: المكتبة الأصلية مبنية أيضاً لـ armeabi-v7a، فلم يعد
+        // هناك حظر على 32-بت. يُمنع فقط جهازٌ بلا أي معمارية ARM مدعومة.
+        if (!VocalizerAbiEligibility.isDownloadAllowed(
+                Build.SUPPORTED_ABIS.toList()
+            )
+        ) {
+            val isArabicUi = LanguageCode.isArabic(
+                Locale.getDefault().language
+            )
+            val note = if (isArabicUi) {
+                "هذا الجهاز لا يدعم معمارية ARM المطلوبة لمحرك Vocalizer."
+            } else {
+                "This device does not support the ARM architecture " +
+                    "required by the Vocalizer engine."
+            }
             MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.embedded_engine_vocalizer)
-                .setMessage(R.string.vocalizer_32bit_unsupported)
+                .setMessage(note)
                 .setPositiveButton(android.R.string.ok, null)
                 .show()
             return
@@ -1295,12 +1310,7 @@ internal class EmbeddedEngineDownloaderController(
                 R.id.tv_engine_state_badge
             )
             tvName.text = entry.name
-            val stateLabel = if (
-                entry.id == VocalizerEmbeddedVoiceProvider.PROVIDER_ID &&
-                is32BitArchitecture()
-            ) {
-                ctx.getString(R.string.vocalizer_32bit_unsupported)
-            } else if (
+            val baseLabel = if (
                 entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID &&
                 status?.state == EngineStatusRegistry.State.NOT_INSTALLED
             ) {
@@ -1315,6 +1325,18 @@ internal class EmbeddedEngineDownloaderController(
                 status?.state?.let {
                     EngineStatusRegistry.labelAr(it)
                 } ?: ctx.getString(R.string.engine_state_unknown)
+            }
+            // ع٤٢-2: على 32-بت تُعرض الحالة الحقيقية بدل رسالة
+            // «غير مدعوم» القديمة، مع تنبيه داخلي يؤكد التوافق.
+            val stateLabel = if (
+                entry.id == VocalizerEmbeddedVoiceProvider.PROVIDER_ID &&
+                VocalizerAbiEligibility.is32BitOnly(
+                    Build.SUPPORTED_ABIS.toList()
+                )
+            ) {
+                "$baseLabel • ${vocalizer32BitNote()}"
+            } else {
+                baseLabel
             }
             tvBadge.text = stateLabel
             view.setOnClickListener {
@@ -1599,12 +1621,7 @@ internal class EmbeddedEngineDownloaderController(
         hostLog: String
     ) {
         val ctx = dialogView.context
-        val stateLabel = if (
-            entry.id == VocalizerEmbeddedVoiceProvider.PROVIDER_ID &&
-            is32BitArchitecture()
-        ) {
-            ctx.getString(R.string.vocalizer_32bit_unsupported)
-        } else if (
+        val baseLabel = if (
             entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID &&
             status?.state == EngineStatusRegistry.State.NOT_INSTALLED
         ) {
@@ -1613,6 +1630,17 @@ internal class EmbeddedEngineDownloaderController(
             status?.state?.let {
                 EngineStatusRegistry.labelAr(it)
             } ?: ctx.getString(R.string.engine_state_unknown)
+        }
+        // ع٤٢-2: النصّ القديم كان يزعم أن 32-بت غير مدعومة.
+        val stateLabel = if (
+            entry.id == VocalizerEmbeddedVoiceProvider.PROVIDER_ID &&
+            VocalizerAbiEligibility.is32BitOnly(
+                Build.SUPPORTED_ABIS.toList()
+            )
+        ) {
+            "$baseLabel • ${vocalizer32BitNote()}"
+        } else {
+            baseLabel
         }
 
         val code = status?.code ?: ctx.getString(R.string.no_code)
@@ -2339,5 +2367,31 @@ internal class EmbeddedEngineDownloaderController(
             vsf.refreshCategoryEngines()
             vsf.refreshVoiceCatalogDiscovery()
         }
+    }
+}
+
+/**
+ * ع٤٢-2: قرار أهلية تنزيل محرك Vocalizer حسب معمارية الجهاز.
+ * المكتبة الأصلية libNuanceVocalizer.so مبنية لكلٍّ من arm64-v8a
+ * وarmeabi-v7a، فأُزيل الحظر القديم على أجهزة 32-بت بالكامل.
+ */
+internal object VocalizerAbiEligibility {
+    const val ABI_ARM64 = "arm64-v8a"
+    const val ABI_ARM32 = "armeabi-v7a"
+
+    private val SUPPORTED_ABIS = setOf(ABI_ARM64, ABI_ARM32)
+
+    /**
+     * يسمح التنزيل متى وُجدت معمارية ARM مدعومة — بما فيها 32-بت.
+     * الحارس VocalizerAbiEligibilityTest يثبت قبول الحالة التي
+     * كانت مرفوضة سابقاً رغم وجود مكتبة armeabi-v7a.
+     */
+    fun isDownloadAllowed(deviceAbis: Collection<String>): Boolean {
+        return deviceAbis.any { it in SUPPORTED_ABIS }
+    }
+
+    /** صحيح للجهاز 32-بت ARM فقط (بلا دعم arm64-v8a إلى جانبه). */
+    fun is32BitOnly(deviceAbis: Collection<String>): Boolean {
+        return ABI_ARM32 in deviceAbis && ABI_ARM64 !in deviceAbis
     }
 }

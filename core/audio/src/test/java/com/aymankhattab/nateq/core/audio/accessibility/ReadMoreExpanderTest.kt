@@ -9,6 +9,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowSystemClock
+import java.util.concurrent.TimeUnit
 
 /**
  * اختبارات موسّع «قراءة المزيد» الذكي وقواعد حصر النقر ومنع النقر العشوائي.
@@ -23,6 +25,20 @@ class ReadMoreExpanderTest {
         ReadMoreExpander.resetStateForTesting()
     }
 
+    /**
+     * بند ١٦: النجاح صار مرتبطاً بنتيجة performAction الفعلية،
+     * فلا يكفي أن تكون العقدة معلنةً قابلة للضغط. نُسجّل مستمعاً
+     * يُعيد true كي تحاكي الاختبارات إجراءً ناجحاً فعلاً.
+     */
+    private fun allowAction(node: AccessibilityNodeInfo) {
+        shadowOf(node).setOnPerformActionListener { _, _ -> true }
+    }
+
+    /** بند ١٦: محاكاة رفض العقدة تنفيذ الإجراء فعلاً. */
+    private fun denyAction(node: AccessibilityNodeInfo) {
+        shadowOf(node).setOnPerformActionListener { _, _ -> false }
+    }
+
     @Test
     fun tryExpand_nullNode_returnsFalse() {
         assertFalse(ReadMoreExpander.tryExpand(null))
@@ -34,6 +50,7 @@ class ReadMoreExpanderTest {
         try {
             node.text = "قراءة المزيد"
             node.isClickable = true
+            allowAction(node)
             assertTrue(ReadMoreExpander.tryExpand(node))
         } finally {
             SafeNodeWalker.safeRecycle(node)
@@ -46,6 +63,7 @@ class ReadMoreExpanderTest {
         try {
             node.text = "رسالة طويلة مقتطعة…"
             node.addAction(AccessibilityNodeInfo.ACTION_EXPAND)
+            allowAction(node)
             assertTrue(ReadMoreExpander.tryExpand(node))
         } finally {
             SafeNodeWalker.safeRecycle(node)
@@ -62,6 +80,7 @@ class ReadMoreExpanderTest {
                 "توسيع الرسالة"
             )
             node.addAction(action)
+            allowAction(node)
             assertTrue(ReadMoreExpander.tryExpand(node))
         } finally {
             SafeNodeWalker.safeRecycle(node)
@@ -115,7 +134,7 @@ class ReadMoreExpanderTest {
         val buttonNode = AccessibilityNodeInfo.obtain().apply {
             text = "قراءة المزيد"
             isClickable = true
-        }
+        }.also { allowAction(it) }
         shadowOf(parent).addChild(textNode)
         shadowOf(parent).addChild(buttonNode)
 
@@ -132,7 +151,7 @@ class ReadMoreExpanderTest {
         val child = AccessibilityNodeInfo.obtain().apply {
             text = "نص الرسالة"
             addAction(AccessibilityNodeInfo.ACTION_EXPAND)
-        }
+        }.also { allowAction(it) }
         shadowOf(parent).addChild(child)
 
         try {
@@ -151,7 +170,7 @@ class ReadMoreExpanderTest {
         val buttonNode = AccessibilityNodeInfo.obtain().apply {
             text = "عرض المزيد"
             isClickable = true
-        }
+        }.also { allowAction(it) }
         shadowOf(parent).addChild(textNode)
         shadowOf(parent).addChild(buttonNode)
 
@@ -174,7 +193,7 @@ class ReadMoreExpanderTest {
                 "توسيع"
             )
             addAction(action)
-        }
+        }.also { allowAction(it) }
         shadowOf(parent).addChild(textNode)
         shadowOf(parent).addChild(siblingNode)
 
@@ -189,7 +208,7 @@ class ReadMoreExpanderTest {
     fun tryExpand_strategy4_parentHasExpandAction_succeeds() {
         val parent = AccessibilityNodeInfo.obtain().apply {
             addAction(AccessibilityNodeInfo.ACTION_EXPAND)
-        }
+        }.also { allowAction(it) }
         val textNode = AccessibilityNodeInfo.obtain().apply {
             text = "نص رسالة داخل فقاعة"
         }
@@ -258,7 +277,7 @@ class ReadMoreExpanderTest {
             text = "قراءة المزيد"
             isClickable = true
             packageName = "com.whatsapp"
-        }
+        }.also { allowAction(it) }
         try {
             assertTrue(ReadMoreExpander.tryExpand(node))
             // المحاولة الثانية مباشرة على نفس العقدة يجب أن تُحجب
@@ -269,18 +288,42 @@ class ReadMoreExpanderTest {
     }
 
     @Test
-    fun tryExpand_failedNodeTextDidNotIncrease_neverClickedAgain() {
+    fun tryExpand_declaredClickableWithoutRealAction_doesNotSucceed() {
+        // بند ١٦: كان `ok || hasClick` يُعلن نجاحاً بمجرّد أن العقدة
+        // قابلة للضغط حتى لو رفض performAction التنفيذ فعلاً.
+        val node = AccessibilityNodeInfo.obtain().apply {
+            text = "قراءة المزيد"
+            isClickable = true
+            packageName = "com.example.app"
+        }.also { denyAction(it) }
+        try {
+            assertFalse(ReadMoreExpander.tryExpand(node))
+        } finally {
+            SafeNodeWalker.safeRecycle(node)
+        }
+    }
+
+    @Test
+    fun tryExpand_failedNode_recoversAfterTtlExpiry() {
+        // بند ١٦: الفشل كانت لا تنتهي صلاحيته فيمنع العقدة للأبد؛
+        // الآن يُزال بعد دقيقة فيُسمح بالمحاولة من جديد.
         val node = AccessibilityNodeInfo.obtain().apply {
             text = "عرض المزيد"
             isClickable = true
             packageName = "org.telegram.messenger"
-        }
+        }.also { allowAction(it) }
         try {
             assertTrue(ReadMoreExpander.tryExpand(node))
-            // إبلاغ بأن النص لم يزد
             ReadMoreExpander.onExpandAttemptResult(false)
-            // المحاولة التالية محجوبة نهائياً
-            assertFalse(ReadMoreExpander.tryExpand(node))
+            assertFalse(
+                "الفشل الطازج يحجب العقدة",
+                ReadMoreExpander.tryExpand(node)
+            )
+            ShadowSystemClock.advanceBy(61, TimeUnit.SECONDS)
+            assertTrue(
+                "بعد انتهاء مدة الفشل تُسمح العقدة من جديد",
+                ReadMoreExpander.tryExpand(node)
+            )
         } finally {
             SafeNodeWalker.safeRecycle(node)
         }

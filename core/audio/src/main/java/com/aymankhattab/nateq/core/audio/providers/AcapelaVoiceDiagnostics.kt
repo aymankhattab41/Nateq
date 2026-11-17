@@ -154,6 +154,51 @@ object AcapelaVoiceDiagnostics {
         val report: String
     )
 
+    /**
+     * الأكواد المقيسة لتجربة تحميل صوت Acapela. تُحقن في باني التقرير
+     * كي لا تُكتب الأكواد كادعاءات يدوية، ويبقى المرصود منفصلاً عن
+     * الفرضي.
+     */
+    data class MeasuredNInitCodes(
+        val nlpInitError: Int,
+        val eb: Int,
+        val nSpeak: Int,
+        val pcmSamples: Long
+    ) {
+        /** سطر واحد يطبع الأكواد الأربعة المقيسة فقط. */
+        fun asLine(): String =
+            "nlpInitError=$nlpInitError | eb=$eb | " +
+                "nSpeak=$nSpeak | PCM=$pcmSamples"
+    }
+
+    /** الأكواد المرصودة فعلياً على جهاز المستخدم في تجربة Root_109. */
+    val observedRoot109Codes = MeasuredNInitCodes(
+        nlpInitError = -34,
+        eb = -27,
+        nSpeak = -2,
+        pcmSamples = 0L
+    )
+
+    /** ملف ini مقيس بمساره الكامل — يُحقن مع تسمية مصدره. */
+    data class MeasuredIniFile(
+        val label: String,
+        val file: File
+    )
+
+    /** نتيجة نسخ MultiTTS حرفياً ثم تجربة nInit عليه (قيم مقيسة). */
+    data class VerbatimExperiment(
+        val label: String,
+        val source: File,
+        val staged: File?,
+        val readable: Boolean,
+        val copiedFiles: Int,
+        val codes: MeasuredNInitCodes?,
+        val note: String = ""
+    )
+
+    /** ملف مع جذره — يُستخدم لحساب المسار النسبي في المقارنة. */
+    private data class FoundFile(val file: File, val root: File)
+
     /** ملف الرخصة البديل في جذر البيانات (يقرأه `check_license`). */
     private const val TEMPORARY_FILE_NAME = ".temporary"
 
@@ -1321,7 +1366,8 @@ object AcapelaVoiceDiagnostics {
         val stageDir = File(context.cacheDir, "acapela_stage_orig_root_109")
         val sb = StringBuilder()
         sb.appendLine(
-            "=== [بناء 10727] التحقق من مسار Path_Original_Root_109 ==="
+            "=== [بناء 10727] التحقق من مسار " +
+                "acapela_stage_orig_root_109 ==="
         )
         if (!stageDir.exists() || !stageDir.isDirectory) {
             sb.appendLine(
@@ -2331,12 +2377,26 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine("==================================================")
         sb.appendLine("")
 
-        // ── [بناء 10730] فحص sNLPConfig/-34 ومقارنة معاملات الترخيص أولاً ──
+        // [بناء 10730] المرصود منفصلاً عن الفرضي في فشل nInit
         sb.appendLine(getNlpInitAndLicenseArgumentComparison())
         sb.appendLine("")
 
-        // ── [بناء 10730] مقارنة ملفات التجهيز بالأصل بالقياس الفعلي ──────────
+        // [بناء 10730] مقارنة التجهيز بالأصل بالمسارات والقياس الفعلي
         sb.appendLine(getStagingVsMultiTtsFilesComparison(context))
+        sb.appendLine("")
+
+        // [بند 25] ملفات ini المقيسة وتجربة Root_109
+        sb.appendLine(
+            getMeasuredIniFilesReport(collectMeasuredIniFiles(context))
+        )
+        sb.appendLine("")
+
+        // [بند 25] تجربة نسخ MultiTTS حرفياً بلا ini مولَّد
+        sb.appendLine(
+            getMultiTtsVerbatimExperimentReport(
+                stageMultiTtsVerbatim(context)
+            )
+        )
         sb.appendLine("")
 
         // ── [بناء 10729] الملف المستقر ثم ملفات 10725..10728 ─────────────────
@@ -2449,7 +2509,8 @@ object AcapelaVoiceDiagnostics {
 
         // ── [البند 1 من 10727] التحقق من النسخة الحرفية لجذر Salma ──────
         sb.appendLine(
-            "--- [البند 1 من 10727] التحقق من Path_Original_Root_109 ---"
+            "--- [البند 1 من 10727] التحقق من " +
+                "acapela_stage_orig_root_109 ---"
         )
         sb.appendLine(getOriginalRoot109Verification(context))
         sb.appendLine("")
@@ -3999,112 +4060,40 @@ object AcapelaVoiceDiagnostics {
     }.trimEnd()
 
     /**
-     * [بناء 10730] لماذا يعود sNLPConfig=0 وNLPE_initEx بالرمز -34؟
-     * مقارنة مباشرة لما يمرّه المحرك المرجعي (MultiVoice,
-     * org.volodymyr.multivoice) مقابل ما نمرّه نحن في جلسة Acapela.
+     * [بناء 10730] يفصل المرصود عن الفرضي في فشل تحميل الصوت.
+     * لا يُطبع أي ادعاء مكتوب يدوياً عن سلامة الرخصة أو سبب الفشل؛
+     * تُطبع الأكواد المقيسة وحدها، ثم فرضيات موسومة بوضوح بأنها
+     * غير محقَّقة، كي لا تُفهم على أنها نتائج مقاسة.
      */
-    fun getNlpInitAndLicenseArgumentComparison(): String = buildString {
+    fun getNlpInitAndLicenseArgumentComparison(
+        measured: MeasuredNInitCodes = observedRoot109Codes
+    ): String = buildString {
         appendLine(
-            "=== [بناء 10730] تحقيق sNLPConfig=0 وNLPE_initEx=-34 " +
-                "ومقارنة معاملات nInit/nSetLicense ==="
+            "=== [بناء 10730] المرصود مقابل الفرضي: " +
+                "nlpInitError / eb / nSpeak / PCM ==="
         )
-        appendLine("1) sNLPConfig=0 لا يعني «صفر مكوّنات NLP»:")
-        appendLine(
-            "   - القالب الثابت الذي تحمّله tts_function_load_voicei هو:"
-        )
-        appendLine(
-            "     sSize=120, sMBRConfig=10, sSELConfig=0, sNLPConfig=0."
-        )
-        appendLine(
-            "   - هذه هي القيمة الافتراضية BABILE_NLP_BUFFERING0 لتخزين MBR"
-        )
-        appendLine(
-            "     المؤقت، وليست عدّاً لعناصر مصفوفة pNLPConfig."
-        )
-        appendLine(
-            "   - أسماء المكوّنات (BNX/CMA/DCA/PRO/...) تُمرَّر في المصفوفة"
-        )
-        appendLine(
-            "     pNLPConfig من نوع BB_DbLsTag، لا في الحقل sNLPConfig."
-        )
-        appendLine(
-            "   - إذن الرمز -34 (E_BABILE_LICENSE) لا يقول «لم يُمرَّر config»"
-        )
-        appendLine(
-            "     بل «تعذّر فتح قاعدة بيانات مكوّن PRO داخل حزمة الصوت»."
-        )
-        appendLine("2) ما يمرّره المحرك المرجعي MultiVoice فعلياً:")
-        appendLine(
-            "   - المسار الممتد: new AcattsandroidService(audio, reg) ثم"
-        )
-        appendLine(
-            "     nInit(stageDir.getCanonicalPath() + File.separator)."
-        )
-        appendLine(
-            "     يتبعه nSetVoiceMode(\"MODE=prep_hd\") ثم nSetLanguage ثم"
-        )
-        appendLine(
-            "     nSetCurrentVoice — ولا نداء nSetLicense في هذا المسار."
-        )
-        appendLine(
-            "   - المسار الكلاسيكي NativeEngine: nInitCallbacks() ثم قراءة"
-        )
-        appendLine(
-            "     runtime.dat (uid:long, pwd:long, len:int, lic UTF-8 بطول"
-        )
-        appendLine(
-            "     180) ثم nSetLicense(uid, pwd, lic) قبل تحميل الصوت."
-        )
-        appendLine("3) ما نمرّره نحن في Nateq:")
-        appendLine(
-            "   - nInit(stagePath) بالفاصل النهائي في تجربة الذيل، وبلا فاصل"
-        )
-        appendLine(
-            "     في التجربة الأخرى — وكلتاهما فشلتا بالرمز -34 ذاته."
-        )
-        appendLine(
-            "   - loadRuntimeLicense يقرأ runtime.dat بالترتيب نفسه"
-        )
-        appendLine(
-            "     ويستدعي nSetLicense(uid, pwd, lic) — مطابق للمسار الكلاسيكي."
-        )
-        appendLine(
-            "   - تسجيل 0x00169729 موجود وبصمة SHA1 تبدأ بـ 7e88،"
-        )
-        appendLine(
-            "     فالترخيص نفسه سليم وشكل المعاملات ليس الفارق الحاسم."
-        )
-        appendLine("4) الخلاصة والتصحيح في 10730:")
-        appendLine(
-            "   - الفارق الحقيقي هو محتوى مجلد الصوت: كان ملف ini المولَّد"
-        )
-        appendLine(
-            "     يحوي MODE= مكرَّرة داخل القيمة (61 بايت) بدل محتوى سلمى"
-        )
-        appendLine(
-            "     الأصلي (109 بايت)، فغاب المكوّن PRO عن pNLPConfig فعاد"
-        )
-        appendLine(
-            "     NLPE_initEx بـ -34 ثم eb=-27 ثم nSpeak=-2 وPCM=0."
-        )
-        appendLine(
-            "   - أُصلح writing الـ ini لينسخ محتوى الأصل 109 بايت حرفياً،"
-        )
-        appendLine(
-            "     وأُضيف قياس الحجم وMD5 لكل ملف مقابل الأصل في القسم التالي."
-        )
-        appendLine(
-            "   - فحص الحزمة (package_check.txt): الأصناف AcapelaPack و"
-        )
-        appendLine(
-            "     AcapelaSpeech وNativeEngine كلها في org.volodymyr.multivoice"
-        )
-        appendLine(
-            "     لا في org.nobody.multitts — صُحِّحت التسمية في الملاحظات."
-        )
+        appendLine("")
+        appendLine("1) المرصود — قيم مقيسة من سجلّ الجهاز:")
+        appendLine("   - ${measured.asLine()}")
+        appendLine("")
+        appendLine("2) الفرضيات — غير محقَّقة بهذا التقرير (بلا حكم):")
+        appendLine("   - قد يؤثر محتوى ملف ini على تحميل مكوّنات NLP.")
+        appendLine("   - قد يؤثر غياب nSetLicense في المسار الممتد.")
+        appendLine("   - قد يؤثر الفاصل النهائي في مسار nInit.")
+        appendLine("   (ما سبق فرضيات فقط؛ لم يُثبت أي منها بقياس هنا.)")
     }.trimEnd()
 
-    fun getStagingVsMultiTtsFilesComparison(context: Context): String {
+    /**
+     * [بناء 10730] مقارنة ملفات التجهيز بالمصدر المرجعي بالقياس الفعلي.
+     * يُطبع المسار المطلق الكامل لكل مصدر، والمسار النسبي والحجم وMD5
+     * لكل ملف. يُفضَّل مجلد MultiTTS الأصلي مرجعاً، ويُصرَّح عند تعذّر
+     * قراءة أي مجلد خاص بالتطبيق بدل إخفائه خلف تطابق بالاسم.
+     */
+    fun getStagingVsMultiTtsFilesComparison(
+        context: Context,
+        stageRootsOverride: List<File>? = null,
+        originalRootsOverride: List<File>? = null
+    ): String {
         val sb = StringBuilder()
         sb.appendLine(
             "=== [بناء 10730] مقارنة ملفات Acapela بالقياس الفعلي: " +
@@ -4116,13 +4105,15 @@ object AcapelaVoiceDiagnostics {
         )
         sb.appendLine("")
 
-        val stageRoots = listOfNotNull(
+        val declaredStageRoots = stageRootsOverride ?: listOfNotNull(
             context.cacheDir?.let { File(it, "acapela_stage") },
             context.cacheDir?.let { File(it, "acapela_stage_parent") },
             context.cacheDir?.let { File(it, "acapela_stage_direct") },
             context.cacheDir?.let { File(it, "acapela_stage_flat") },
             context.cacheDir?.let { File(it, "acapela_stage_min") },
-            context.cacheDir?.let { File(it, "acapela_stage_nounplugged") },
+            context.cacheDir?.let {
+                File(it, "acapela_stage_nounplugged")
+            },
             context.cacheDir?.let { File(it, "acapela_stage_v2") },
             context.cacheDir?.let {
                 File(it, "acapela_stage_10709_exact")
@@ -4131,78 +4122,121 @@ object AcapelaVoiceDiagnostics {
             context.cacheDir?.let {
                 File(it, "acapela_stage_full_nlp_subdir")
             },
-            context.cacheDir?.let { File(it, "Path_Original_Root_109") }
-        ).filter { it.exists() && it.isDirectory }
+            context.cacheDir?.let {
+                File(it, "acapela_stage_orig_root_109")
+            },
+            context.cacheDir?.let {
+                File(it, "acapela_stage_multitts_verbatim")
+            }
+        )
+        val declaredOriginalRoots = originalRootsOverride
+            ?: listOfNotNull(
+                File(
+                    "/storage/emulated/0/Android/data/" +
+                        "org.nobody.multitts/files"
+                ),
+                File(
+                    "/storage/emulated/0/Android/data/" +
+                        "org.volodymyr.multivoice/files"
+                ),
+                context.filesDir?.let {
+                    File(it, "Acapela/Salma/salma_lf")
+                },
+                context.filesDir?.let {
+                    File(it, "acapela/Salma/salma_lf")
+                },
+                context.filesDir?.let { File(it, "Acapela") },
+                context.filesDir
+            )
+        val stageRoots = declaredStageRoots
+            .distinctBy { it.absolutePath }
+            .filter { it.exists() && it.isDirectory }
+        val originalRoots = declaredOriginalRoots
+            .sortedByDescending { root ->
+                val path = root.absolutePath.lowercase(Locale.ROOT)
+                path.contains("multitts") ||
+                    path.contains("multivoice")
+            }
             .distinctBy { it.absolutePath }
 
-        val originalRoots = listOfNotNull(
-            context.filesDir?.let {
-                File(it, "Acapela/Salma/salma_lf")
-            },
-            context.filesDir?.let {
-                File(it, "acapela/Salma/salma_lf")
-            },
-            context.filesDir?.let { File(it, "Acapela") },
-            context.filesDir,
-            File(
-                "/storage/emulated/0/Android/data/" +
-                    "org.nobody.multitts/files"
-            ),
-            File(
-                "/storage/emulated/0/Android/data/" +
-                    "org.volodymyr.multivoice/files"
-            )
-        ).distinctBy { it.absolutePath }
+        sb.appendLine("0. مجلدات التجهيز (المسار المطلق الكامل):")
+        declaredStageRoots.distinctBy { it.absolutePath }
+            .forEach { root ->
+                val state = if (root.exists() && root.isDirectory) {
+                    "موجود"
+                } else {
+                    "غير موجود"
+                }
+                sb.appendLine("   - ${root.absolutePath} — $state")
+            }
+        sb.appendLine("")
 
-        fun findFileIn(roots: List<File>, name: String): File? =
+        sb.appendLine("1. مصادر الأصل (مرتبة بالأفضلية — المسار المطلق):")
+        originalRoots.forEach { root ->
+            val readable = root.exists() && root.isDirectory &&
+                root.canRead()
+            val state = if (readable) {
+                "مقروء"
+            } else {
+                "⚠ تعذّرت قراءة مجلد التطبيق الخاص"
+            }
+            sb.appendLine("   - ${root.absolutePath} — $state")
+        }
+        sb.appendLine(
+            "   - المصدر المرجعي المفضّل: " +
+                (originalRoots.firstOrNull {
+                    it.exists() && it.isDirectory && it.canRead()
+                }?.absolutePath ?: "(لا يوجد مصدر مقروء)")
+        )
+        sb.appendLine("")
+
+        fun findIn(roots: List<File>, name: String): FoundFile? =
             roots.firstNotNullOfOrNull { root ->
                 if (!root.exists() || !root.isDirectory) {
                     null
                 } else {
                     root.walkTopDown().maxDepth(7).firstOrNull { f ->
                         f.isFile && f.name.equals(name, true)
-                    }
+                    }?.let { FoundFile(it, root) }
                 }
             }
 
-        fun findDirIn(roots: List<File>, name: String): File? =
-            roots.firstNotNullOfOrNull { root ->
-                if (!root.exists() || !root.isDirectory) {
-                    null
-                } else {
-                    root.walkTopDown().maxDepth(7).firstOrNull { d ->
-                        d.isDirectory && d.name.equals(name, true)
-                    }
-                }
-            }
-
-        fun measure(f: File?): String = if (f == null || !f.isFile) {
-            "(غير موجود / غير مقروء)"
-        } else {
-            "${f.length()} بايت | MD5: ${calcFileMd5(f)}"
+        fun describe(found: FoundFile?): String {
+            if (found == null) return "(غير موجود / غير مقروء)"
+            val f = found.file
+            val rel = f.absolutePath
+                .removePrefix(found.root.absolutePath)
+                .trimStart(File.separatorChar, '/')
+                .ifEmpty { "(جذر المجلد)" }
+            return "${f.length()} بايت | MD5=${calcFileMd5(f)} | " +
+                "المسار=${f.absolutePath} | النسبي=$rel"
         }
 
         val mismatches = mutableListOf<String>()
 
         fun compare(name: String) {
-            val staged = findFileIn(stageRoots, name)
-            val original = findFileIn(originalRoots, name)
+            val staged = findIn(stageRoots, name)
+            val original = findIn(originalRoots, name)
             sb.appendLine("   - $name")
-            sb.appendLine("       التجهيز: ${measure(staged)}")
-            sb.appendLine("       الأصلي : ${measure(original)}")
+            sb.appendLine("       التجهيز: ${describe(staged)}")
+            sb.appendLine("       الأصلي : ${describe(original)}")
+            sb.appendLine(
+                "       المرجع المختار: " +
+                    (original?.root?.absolutePath ?: "(لا يوجد)")
+            )
             if (staged == null || original == null) {
                 mismatches.add(
                     "$name — غير مقروء في طرف واحد على الأقل"
                 )
             } else if (
-                staged.length() != original.length() ||
-                calcFileMd5(staged) != calcFileMd5(original)
+                staged.file.length() != original.file.length() ||
+                calcFileMd5(staged.file) != calcFileMd5(original.file)
             ) {
                 mismatches.add("$name — مختلف الحجم أو البصمة")
             }
         }
 
-        sb.appendLine("1. الملفات المطلوبة (الحجم + MD5 مقيسان الآن):")
+        sb.appendLine("2. الملفات المطلوبة (الحجم + MD5 مقيسان الآن):")
         for (name in listOf(
             "ar_sa.dca", "ar_sa_unplugged.dca", "ar_sa_hde_arq.dca",
             "ar_sa.bnx", "ar_sa_utf8.cma", "ar_sa.trz",
@@ -4213,38 +4247,48 @@ object AcapelaVoiceDiagnostics {
         }
         sb.appendLine("")
 
-        sb.appendLine("2. ملفات userdicos (بحسب الاسم):")
-        val stagedDico = stageRoots.flatMap { root ->
-            val dir = findDirIn(listOf(root), "userdicos")
-            if (dir != null && dir.isDirectory) {
-                dir.walkTopDown().filter { it.isFile }.toList()
-            } else {
-                emptyList()
+        sb.appendLine("3. ملفات userdicos (بحسب الاسم):")
+        fun findDirIn(roots: List<File>, name: String): FoundFile? =
+            roots.firstNotNullOfOrNull { root ->
+                if (!root.exists() || !root.isDirectory) {
+                    null
+                } else {
+                    root.walkTopDown().maxDepth(7).firstOrNull { d ->
+                        d.isDirectory && d.name.equals(name, true)
+                    }?.let { FoundFile(it, root) }
+                }
             }
-        }
-        val originalDico = originalRoots.flatMap { root ->
-            val dir = findDirIn(listOf(root), "userdicos")
-            if (dir != null && dir.isDirectory) {
-                dir.walkTopDown().filter { it.isFile }.toList()
-            } else {
-                emptyList()
+
+        fun dicoFiles(roots: List<File>): List<FoundFile> =
+            roots.flatMap { root ->
+                val dir = findDirIn(listOf(root), "userdicos")
+                if (dir != null && dir.file.isDirectory) {
+                    dir.file.walkTopDown().filter {
+                        it.isFile
+                    }.map { FoundFile(it, dir.root) }.toList()
+                } else {
+                    emptyList()
+                }
             }
-        }
+
+        val stagedDico = dicoFiles(stageRoots)
+        val originalDico = dicoFiles(originalRoots)
         val dicoNames = (
-            stagedDico.map { it.name } + originalDico.map { it.name }
+            stagedDico.map { it.file.name } +
+                originalDico.map { it.file.name }
             ).distinct().sorted()
         if (dicoNames.isEmpty()) {
             sb.appendLine("   (لا توجد قواميس مقروءة)")
         } else {
             for (name in dicoNames) {
-                val s = stagedDico.firstOrNull { it.name == name }
-                val o = originalDico.firstOrNull { it.name == name }
+                val s = stagedDico.firstOrNull { it.file.name == name }
+                val o = originalDico.firstOrNull { it.file.name == name }
                 sb.appendLine("   - userdicos/$name")
-                sb.appendLine("       التجهيز: ${measure(s)}")
-                sb.appendLine("       الأصلي : ${measure(o)}")
+                sb.appendLine("       التجهيز: ${describe(s)}")
+                sb.appendLine("       الأصلي : ${describe(o)}")
                 if (s == null || o == null ||
-                    s.length() != o.length() ||
-                    calcFileMd5(s) != calcFileMd5(o)
+                    s.file.length() != o.file.length() ||
+                    calcFileMd5(s.file) != calcFileMd5(o.file)
                 ) {
                     mismatches.add(
                         "userdicos/$name — مختلف أو غير مقروء"
@@ -4254,34 +4298,35 @@ object AcapelaVoiceDiagnostics {
         }
         sb.appendLine("")
 
-        sb.appendLine("3. كل ملفات .ini في مجلدات التجهيز:")
+        sb.appendLine("4. كل ملفات .ini في مجلدات التجهيز:")
         val stagedInis = stageRoots.flatMap { root ->
             root.walkTopDown().filter {
                 it.isFile && it.extension.equals("ini", true)
-            }.toList()
-        }.distinctBy { it.absolutePath }
-            .sortedBy { it.name.lowercase(Locale.ROOT) }
+            }.map { FoundFile(it, root) }.toList()
+        }.distinctBy { it.file.absolutePath }
+            .sortedBy { it.file.name.lowercase(Locale.ROOT) }
         if (stagedInis.isEmpty()) {
             sb.appendLine("   (لا توجد ملفات ini مقروءة)")
         } else {
             for (ini in stagedInis) {
-                val original = findFileIn(originalRoots, ini.name)
-                sb.appendLine("   - ${ini.name}")
-                sb.appendLine("       التجهيز: ${measure(ini)}")
-                sb.appendLine("       الأصلي : ${measure(original)}")
+                val original = findIn(originalRoots, ini.file.name)
+                sb.appendLine("   - ${ini.file.name}")
+                sb.appendLine("       التجهيز: ${describe(ini)}")
+                sb.appendLine("       الأصلي : ${describe(original)}")
                 if (original == null ||
-                    ini.length() != original.length() ||
-                    calcFileMd5(ini) != calcFileMd5(original)
+                    ini.file.length() != original.file.length() ||
+                    calcFileMd5(ini.file) !=
+                        calcFileMd5(original.file)
                 ) {
                     mismatches.add(
-                        "${ini.name} — مختلف أو غير مقروء"
+                        "${ini.file.name} — مختلف أو غير مقروء"
                     )
                 }
             }
         }
         sb.appendLine("")
 
-        sb.appendLine("4. أزواج غير مطابقة (⚠):")
+        sb.appendLine("5. أزواج غير مطابقة (⚠):")
         if (mismatches.isEmpty()) {
             sb.appendLine("   (لا يوجد — كل ملف مقيس متطابق)")
         } else {
@@ -4291,6 +4336,179 @@ object AcapelaVoiceDiagnostics {
         }
         return sb.toString().trimEnd()
     }
+
+    /** العثور على مجلد MultiTTS العامل المقروء، إن وُجد. */
+    private fun findWorkingMultiTtsDir(context: Context): File? {
+        val candidates = listOfNotNull(
+            File(
+                "/storage/emulated/0/Android/data/" +
+                    "org.nobody.multitts/files"
+            ),
+            File(
+                "/storage/emulated/0/Android/data/" +
+                    "org.volodymyr.multivoice/files"
+            ),
+            context.filesDir?.let { File(it, "MultiTTS") }
+        )
+        return candidates.firstOrNull {
+            it.exists() && it.isDirectory && it.canRead()
+        }
+    }
+
+    /** البحث عن ملف بالاسم داخل شجرة مجلد واحد. */
+    private fun findNamedIn(root: File, name: String): File? =
+        root.walkTopDown().maxDepth(7).firstOrNull { f ->
+            f.isFile && f.name.equals(name, ignoreCase = true)
+        }
+
+    /**
+     * جرد ملفات ini المقيسة بمساراتها الكاملة: الأصل من MultiTTS
+     * العامل، ونسخ التجهيز من مجلدات cacheDir. الأحجام مقاسة من القرص
+     * لا مكتوبة يدوياً، فيظهر الأصل بحجمه الحقيقي كما هو.
+     */
+    fun collectMeasuredIniFiles(context: Context): List<MeasuredIniFile> {
+        val result = mutableListOf<MeasuredIniFile>()
+        findWorkingMultiTtsDir(context)?.let { root ->
+            findNamedIn(root, ORIGINAL_INI_NAME)?.let { f ->
+                result.add(MeasuredIniFile("الأصل", f))
+            }
+        }
+        val cache = context.cacheDir ?: return result
+        for (root in cache.listFiles().orEmpty()) {
+            if (!root.isDirectory) continue
+            val f = File(root, ORIGINAL_INI_NAME).takeIf { it.isFile }
+                ?: findNamedIn(root, ORIGINAL_INI_NAME)
+            if (f != null) {
+                result.add(
+                    MeasuredIniFile("تجهيز: ${root.name}", f)
+                )
+            }
+        }
+        return result.distinctBy { it.file.absolutePath }
+    }
+
+    /**
+     * طباعة ملفات ini المختلفة بمساراتها وأحجامها المقيسة، ثم نتيجة
+     * تجربة Original_Root_109 بالأكواد المرصودة نفسها — بلا ادعاء
+     * مكتوب يدوياً عن سلامة ترخيص أو سبب فشل.
+     */
+    fun getMeasuredIniFilesReport(
+        files: List<MeasuredIniFile>,
+        root109Codes: MeasuredNInitCodes = observedRoot109Codes
+    ): String = buildString {
+        appendLine("=== ملفات ini المقيسة بمساراتها الكاملة ===")
+        if (files.isEmpty()) {
+            appendLine("  (لم يُعثر على ملفات ini مقروءة)")
+        } else {
+            for (item in files) {
+                val f = item.file
+                val size = if (f.isFile) {
+                    "${f.length()} بايت"
+                } else {
+                    "غير مقروء"
+                }
+                appendLine(
+                    "  - ${item.label}: $size | " +
+                        "المسار=${f.absolutePath} | MD5=${calcFileMd5(f)}"
+                )
+            }
+        }
+        appendLine("")
+        appendLine("=== تجربة Original_Root_109 (الأكواد المرصودة) ===")
+        appendLine("  - ${root109Codes.asLine()}")
+    }.trimEnd()
+
+    /**
+     * تجربة جديدة: نسخ مجلد MultiTTS العامل حرفياً بكل ملفاته
+     * ومجلداته الفرعية، بلا أي ini مولَّد، تمهيداً لتجربة nInit عليه.
+     * عند تعذّر قراءة المصدر يُصرَّح بذلك ولا تُنشأ نسخة. الأكواد
+     * المقيسة تُحقن لاحقاً عبر [VerbatimExperiment.copy] لأن nInit
+     * لا يمكن تشغيله على JVM.
+     */
+    fun stageMultiTtsVerbatim(
+        context: Context,
+        sourceDir: File? = null
+    ): VerbatimExperiment {
+        val fallback = File(
+            "/storage/emulated/0/Android/data/" +
+                "org.volodymyr.multivoice/files"
+        )
+        val source = sourceDir ?: findWorkingMultiTtsDir(context)
+        if (source == null || !source.exists() ||
+            !source.isDirectory || !source.canRead()
+        ) {
+            return VerbatimExperiment(
+                label = "MultiTTS_verbatim",
+                source = source ?: fallback,
+                staged = null,
+                readable = false,
+                copiedFiles = 0,
+                codes = null,
+                note = "⚠ تعذّرت قراءة مجلد MultiTTS"
+            )
+        }
+        val stageDir = File(
+            context.cacheDir, "acapela_stage_multitts_verbatim"
+        )
+        if (stageDir.exists()) {
+            runCatching { stageDir.deleteRecursively() }
+        }
+        stageDir.mkdirs()
+        val copied = copyTreeRootFirst(
+            source = source,
+            target = stageDir,
+            onSkipped = { _, _ -> }
+        )
+        return VerbatimExperiment(
+            label = "MultiTTS_verbatim",
+            source = source,
+            staged = stageDir,
+            readable = true,
+            copiedFiles = copied,
+            codes = null,
+            note = "نسخة حرفية بلا أي ini مولَّد"
+        )
+    }
+
+    /**
+     * طباعة نتيجة تجربة النسخ الحرفي كاملة: المسارات، وعدد الملفات،
+     * وأكواد nInit المقيسة إن حُقنت، أو تصريح بعدم إمكان تشغيله على JVM.
+     */
+    fun getMultiTtsVerbatimExperimentReport(
+        experiment: VerbatimExperiment
+    ): String = buildString {
+        appendLine("=== تجربة جديدة: نسخ MultiTTS العامل حرفياً ===")
+        appendLine("  - المصدر: ${experiment.source.absolutePath}")
+        appendLine(
+            "  - قابل للقراءة: " +
+                if (experiment.readable) "نعم" else "لا"
+        )
+        if (!experiment.readable) {
+            appendLine(
+                "  - ⚠ تعذّرت قراءة مجلد MultiTTS " +
+                    "— لا نسخة ولا nInit."
+            )
+            appendLine("  - ${experiment.note}")
+        } else {
+            appendLine(
+                "  - مجلد التجهيز: ${experiment.staged?.absolutePath}"
+            )
+            appendLine(
+                "  - عدد الملفات المنسوخة: ${experiment.copiedFiles}"
+            )
+            appendLine("  - ini مولَّد: لا (نُسخ المحتوى كما هو)")
+            val codes = experiment.codes
+            if (codes == null) {
+                appendLine(
+                    "  - nInit: لم تُحقن نتيجة مقيسة " +
+                        "(لا تشغيل على JVM)."
+                )
+            } else {
+                appendLine("  - نتيجة nInit المقيسة: ${codes.asLine()}")
+            }
+            appendLine("  - ${experiment.note}")
+        }
+    }.trimEnd()
 
     fun getBbnlpInitDisassemblyAnalysis(): String = buildString {
         appendLine(

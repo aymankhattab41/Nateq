@@ -401,4 +401,42 @@ object SelectorPacks {
 
         return false
     }
+
+    /**
+     * بند ١٥: استمرارية بادئة النص — يتحقق أن بداية النص المنطوق ما زالت
+     * موجودة في بداية نص العقدة (لا مجرد كلمات متفرقة في الذيل)، حتى لو
+     * كان النص مقتطعاً. يُستخدم حين يُعطَّل فحص التطابق العام بسبب الاقتطاع
+     * كي لا تُفتح أو تُقرأ رسالة أخرى تشترك معها في كلمات الذيل فقط.
+     */
+    fun hasPrefixContinuity(
+        spokenText: String?,
+        nodeText: String?
+    ): Boolean {
+        if (spokenText.isNullOrBlank() || nodeText.isNullOrBlank()) {
+            return false
+        }
+        val sWords = meaningfulWords(spokenText)
+        val nWords = meaningfulWords(nodeText)
+        if (sWords.isEmpty() || nWords.isEmpty()) return false
+        // أول كلمتين من النص المنطوق يجب أن تظهرا ضمن أول ٨ كلمات
+        // للعقدة بنفس الترتيب — هذا يمنع قراءة رسالة أخرى تشترك
+        // معها ببعض الكلمات في الذيل فقط.
+        val anchor = sWords.take(2)
+        val head = nWords.take(8)
+        var cursor = 0
+        for (word in anchor) {
+            val found = (cursor until head.size).firstOrNull { i ->
+                head[i] == word || head[i].startsWith(word) ||
+                    word.startsWith(head[i])
+            } ?: return false
+            cursor = found + 1
+        }
+        return true
+    }
+
+    private fun meaningfulWords(text: String): List<String> =
+        cleanBidi(text).trim().lowercase()
+            .split("\\s+".toRegex())
+            .map { it.trim { c -> !c.isLetterOrDigit() } }
+            .filter { it.length >= 3 }
 }

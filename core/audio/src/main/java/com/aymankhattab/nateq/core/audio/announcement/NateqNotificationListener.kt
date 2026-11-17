@@ -187,6 +187,21 @@ class NateqNotificationListener : NotificationListenerService() {
         ): String = "${pkg.orEmpty()}|${number.orEmpty()}|" +
             "${name.orEmpty()}"
 
+        /**
+         * بند ١٨: مفتاح هوية الإشعار — حدّ التكرار صار لكل محادثة/رسالة
+         * لا للحزمة كلها، فلا تُسقط رسالة مختلفة من شخص آخر في نفس التطبيق.
+         * يُضمّن نصّ الرسالة (بصمته) لتمييز الرسائل المختلفة.
+         */
+        fun notificationIdentityKey(
+            pkg: String?,
+            title: String?,
+            text: String?,
+            notificationId: Int = 0,
+            tag: String? = null
+        ): String = "${pkg.orEmpty()}|${tag.orEmpty()}|" +
+            "$notificationId|${title.orEmpty()}|" +
+            "${text.orEmpty().hashCode()}"
+
         /** هل يحوي عنوان/نص الإشعار رمز تحقق سري ينبغي حجبه؟ يُطبَّق فقط مع
          * تفعيل حماية الخصوصية — نفس منطق فلتر OTP الخاص بالرسائل النصية. */
         fun shouldMaskOtp(
@@ -197,21 +212,37 @@ class NateqNotificationListener : NotificationListenerService() {
             "${title.orEmpty()} ${text.orEmpty()}".trim()
         )
 
-        /** استخراج نص الإشعار بترتيب سقوط: EXTRA_TEXT ثم نصّ الموسّع
-         *  EXTRA_BIG_TEXT (إشعارات واتساب/أميل متعددة الأسطر) ثم أسطر
-         *  EXTRA_TEXT_LINES مربوطة — حتى لا تُفقد رسالة طويلة النص
-         *  (تحسين [بند 26]). */
+        /** بند ١٧: استخراج أنصّ وأكمل نص متاح من الإشعار بدل تفضيل
+         *  EXTRA_TEXT القصير على BIG_TEXT وTEXT_LINES الأطول. */
         fun notificationBodyText(extras: android.os.Bundle): String? {
-            val bigText = extras.getCharSequence(
-                Notification.EXTRA_BIG_TEXT
-            )?.toString()?.trim()
-            val textLines = extras.getCharSequenceArray(
-                Notification.EXTRA_TEXT_LINES
-            )?.filterNotNull()?.joinToString("\n")
-            return extras.getCharSequence(Notification.EXTRA_TEXT)
-                ?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: bigText?.takeIf { it.isNotEmpty() }
-                ?: textLines?.takeIf { it.isNotEmpty() }
+            val candidates = listOfNotNull(
+                extras.getCharSequence(Notification.EXTRA_TEXT)
+                    ?.toString()?.trim(),
+                extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
+                    ?.toString()?.trim(),
+                extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+                    ?.filterNotNull()?.joinToString("\n")?.trim()
+            ).filter { it.isNotEmpty() }
+            return candidates.maxByOrNull { it.length }
+        }
+
+        /**
+         * بند ١٧: إضافة محتوى MessagingStyle نفسه (لا المرسل فقط) إلى
+         * المرشحين، واختيار الأطول — إشعارات المراسلة تضع النص الكامل
+         * داخل الرسائل لا في EXTRA_TEXT المختصر.
+         */
+        fun notificationBodyText(notification: Notification?): String? {
+            if (notification == null) return null
+            val fromExtras = notificationBodyText(notification.extras)
+            val messagesText = runCatching {
+                NotificationCompat.MessagingStyle
+                    .extractMessagingStyleFromNotification(notification)
+            }.getOrNull()?.messages?.mapNotNull { message ->
+                message.text?.toString()?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+            }?.joinToString("\n")?.takeIf { it.isNotEmpty() }
+            return listOfNotNull(fromExtras, messagesText)
+                .maxByOrNull { it.length }
         }
     }
 
@@ -233,23 +264,24 @@ class NateqNotificationListener : NotificationListenerService() {
         }
     )
 
-    /** هل الإشعار من هذه الحزمة مسقطُ الشفرة (وصل إشعارٌ سابق خلال
-     *  [minIntervalMs])؟ فحصٌ والتحديث معاً تحت نفس القفل — القابلية
-     *  للاختبار بحقن خريطة (بند [10]). */
+    /** هل هذا الإشعار (مفتاح هويته) مسقطُ الشفرة (وصل إشعارٌ مماثل
+     *  خلال [minIntervalMs])؟ فحصٌ والتحديث معاً تحت نفس القفل —
+     *  القابلية للاختبار بحقن خريطة (بند ١٨): المفتاح المُمرَّر هو
+     *  هوية المحادثة/الرسالة لا الحزمة كي لا تُسقط رسائل مختلفة. */
     internal fun isNotificationRateLimited(
-        pkg: String,
+        key: String,
         now: Long,
         times: MutableMap<String, Long> = lastNotifTimes
     ): Boolean {
         return synchronized(times) {
-            val last = times[pkg]
+            val last = times[key]
             if (last == null) {
-                // أول إشعار من هذه الحزمة: مسموح دوماً ويُسجَّل وقتُه.
-                times[pkg] = now
+                // أول إشعار لهذه الهوية: مسموح دوماً ويُسجَّل وقتُه.
+                times[key] = now
                 false
             } else {
                 val limited = (now - last) < minIntervalMs
-                if (!limited) times[pkg] = now
+                if (!limited) times[key] = now
                 limited
             }
         }
@@ -457,17 +489,29 @@ class NateqNotificationListener : NotificationListenerService() {
             // قراءة التطبيقات المختارة فقط (للمستخدم حرية اختيار قائمتها).
             if (!settings.shouldReadNotificationApp(pkg)) return
 
-            // تجنب إسقاط الإشعارات المتتالية بشكل سريع — لكل حزمة حدُّها
-            // المستقل (بند [10]) فلا يُسقط إشعارُ تطبيقٍ إشعارَ تطبيقٍ آخر.
-            if (isNotificationRateLimited(pkg, System.currentTimeMillis())) {
-                return
-            }
-
             val extras = sbn.notification?.extras ?: return
 
             val title = extras.getCharSequence(Notification.EXTRA_TITLE)
                 ?.toString()?.trim()
-            val text = notificationBodyText(extras)
+            // بند ١٧: نص الرسالة من أطول مرشح متاح بما في ذلك
+            // محتوى MessagingStyle لا المرسل وحده.
+            val text = notificationBodyText(sbn.notification)
+
+            // بند ١٨: الحدّ لكل محادثة/رسالة لا للحزمة — إشعاران من
+            // شخصين مختلفين في نفس التطبيق لا يُسقط أحدهما الآخر.
+            val identityKey = notificationIdentityKey(
+                pkg = pkg,
+                title = title,
+                text = text,
+                notificationId = sbn.id,
+                tag = sbn.tag
+            )
+            if (isNotificationRateLimited(
+                    identityKey, System.currentTimeMillis()
+                )
+            ) {
+                return
+            }
 
             if (title.isNullOrBlank() && text.isNullOrBlank()) return
 

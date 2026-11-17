@@ -264,6 +264,7 @@
 <string name="check_updates_download_failed">Failed to download the update. Check your internet connection or use a browser</string>
 <string name="check_updates_checksum_failed">Integrity check (SHA-256) of the downloaded file failed â€” not installing. Try again or use a stable connection</string>
 <string name="check_updates_network_error">Could not reach the server. Check your internet connection</string>
+<string name="check_updates_no_compatible">No version compatible with this device architecture</string>
 <string name="check_updates_up_to_date">App is up to date</string>
 <string name="check_updates_confirm_title">Update available</string>
 <string name="check_updates_confirm_message">A newer version of the app is available. Do you want to download it now?</string>
@@ -713,6 +714,19 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Read more: the focused-message identity guard no longer drops out when text is truncated — prefix continuity and node identity are checked before and after the click, so another message is never opened or read.
+• Read more: trust only the actual performAction result instead of treating a declared-clickable node as success; failed nodes now expire after one minute and the key carries a finer identity to avoid collisions.
+• Notifications: pick the longest, most complete body text (EXTRA_TEXT, BIG_TEXT, TEXT_LINES or MessagingStyle content) instead of preferring the short truncated one.
+• Notifications: rate limiting is now per conversation/message using an identity key, so a different message from another person in the same app is not dropped.
+• Vocalizer: removed the 32-bit download block when armeabi-v7a exists, and verified the library is really ELF32/ARM with complete dependencies.
+• 16KB alignment: readelf verification in the build step with a clear warning for vendor prebuilts without source (LOAD=0x1000); our own native source uses max-page-size=16384.
+• Microsoft embedded engine: explicit rejection below API 26 as required by Microsoft.
+• Updates: never offer an APK for the wrong ABI when no compatible version exists; report incompatibility explicitly instead.
+• Acapela diagnostics: removed hand-written narrative and print only measured values (nlpInitError, eb, nSpeak, PCM), clearly separating observed results from hypotheses.
+• Acapela diagnostics: compare files by full absolute path, relative path, size and MD5, prefer the original MultiTTS folder as reference, and correct the staging folder name to acapela_stage_orig_root_109.
+• Acapela diagnostics: log all three ini files with measured sizes (61, 109 and 121 bytes) and add a verbatim MultiTTS folder copy experiment with no generated ini, printing the full result.
+• Speech flow diagnostics: reset per-call fields, record audio chunks on both the full-file and drained-remainder paths, and never store speech-text previews in shared reports.
+• Tests: added per-session cancellation coverage for the system voice provider and safe-path coverage for the ZIP extraction guard (sibling traversal, size and count caps).
 • Read more: the external timeout (500ms) is now larger than the sum of the internal expansion stages (360ms) with a margin, so the wait is not cancelled before the expanded text appears.
 • Synthesis performance: treat a flushed tail as success when onDone is late, count stalls outside the chunk branch, add a real timeout for engine warmup, per-session cancellation, debounced warmup of selected engines, route callback calls to a dedicated thread, stop double speed when following the screen reader, stop faking first-byte time, and a byte-bounded look-ahead window.
 • Build, privacy and security: restore CMakeLists.txt and package_check.txt, check the privacy lock before OTP, a ZIP guard against path traversal and oversized files, and split the permission-protected boot receiver from the internal resume receiver.
@@ -810,7 +824,7 @@ Version %1$s
 • Applied engine filtering to default event voices (clock, battery, notifications, caller).
 • Added Emergency Voice fallback system and Crash Guard for automatic recovery.
 • Protected number category and Vocalizer / Acapela engines against voice reset or drift deletion.
-    </string>
+</string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
     <string name="diagnostics_copy">Copy</string>
@@ -1331,5 +1345,4 @@ Version %1$s
     <string name="time_quiet_confirm_copy_title">Apply to all days</string>
     <string name="time_quiet_confirm_copy_msg">Do you want to overwrite quiet hours for all days with this day\'s schedule?</string>
     <string name="time_quiet_day_label">Day: %1$s</string>
-    <string name="vocalizer_32bit_unsupported">Vocalizer engine requires 64-bit architecture and is not supported on 32-bit devices.</string>
 </resources>

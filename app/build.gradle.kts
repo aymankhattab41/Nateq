@@ -148,6 +148,11 @@ androidComponents {
     }
 }
 
+// ع٤٢-3: تحقق محاذاة مكتبات arm64 الجاهزة قبل بناء APK — تحذير فقط.
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(":core:audio:verifyArm64SoAlignment")
+}
+
 dependencies {
     // البند 4 — الوحدات التي تفكّك إليها :app شفرة المصدر تدرّجياً:
     // تتبنى :app كل الوحدات وتوزّع الشفرة عليها لاحقاً (تبقى الملفات في

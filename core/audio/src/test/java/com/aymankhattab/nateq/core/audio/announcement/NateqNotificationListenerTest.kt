@@ -129,4 +129,56 @@ class NateqNotificationListenerTest {
             listener.isNotificationRateLimited("com.whatsapp", 4_001L, times)
         )
     }
+
+    // ===== بند ١٨: الحد لكل محادثة/رسالة لا للحزمة =====
+
+    @Test
+    fun `different messages in same package are not dropped`() {
+        // كان الحد على مستوى الحزمة فيُسقط رسالة أحمد حين تصل بعد
+        // رسالة محمد بثانية واحدة في نفس تطبيق المراسلة.
+        val listener = NateqNotificationListener()
+        val times = HashMap<String, Long>()
+        val first = NateqNotificationListener.notificationIdentityKey(
+            "com.whatsapp", "محمد", "مرحبا", 1
+        )
+        val second = NateqNotificationListener.notificationIdentityKey(
+            "com.whatsapp", "أحمد", "مساء الخير", 2
+        )
+        assertFalse(listener.isNotificationRateLimited(first, 1_000L, times))
+        assertFalse(
+            "رسالة مختلفة من شخص آخر لا تُسقط",
+            listener.isNotificationRateLimited(second, 1_100L, times)
+        )
+    }
+
+    @Test
+    fun `different text in same conversation is not dropped`() {
+        val listener = NateqNotificationListener()
+        val times = HashMap<String, Long>()
+        val first = NateqNotificationListener.notificationIdentityKey(
+            "com.telegram", "أحمد", "رسالة أولى", 7
+        )
+        val second = NateqNotificationListener.notificationIdentityKey(
+            "com.telegram", "أحمد", "رسالة ثانية مختلفة", 7
+        )
+        assertFalse(listener.isNotificationRateLimited(first, 1_000L, times))
+        assertFalse(
+            "نص مختلف في نفس المحادثة لا يُسقط",
+            listener.isNotificationRateLimited(second, 1_200L, times)
+        )
+    }
+
+    @Test
+    fun `identical message within interval is still dropped`() {
+        val listener = NateqNotificationListener()
+        val times = HashMap<String, Long>()
+        val key = NateqNotificationListener.notificationIdentityKey(
+            "com.whatsapp", "أحمد", "نفس الرسالة", 5
+        )
+        assertFalse(listener.isNotificationRateLimited(key, 1_000L, times))
+        assertTrue(
+            "تكرار نفس الرسالة خلال 3 ثوانٍ يُسقط",
+            listener.isNotificationRateLimited(key, 2_000L, times)
+        )
+    }
 }

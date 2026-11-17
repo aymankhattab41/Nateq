@@ -562,11 +562,15 @@ class AcapelaVoiceDiagnosticsTest {
             assertTrue(comp.contains("ar_sa_hd_salma_22k_lf.ini"))
             assertTrue(comp.contains("التجهيز: 6 بايت"))
             assertTrue(comp.contains("الأصلي : 8 بايت"))
-            assertTrue(comp.contains("MD5:"))
+            assertTrue(comp.contains("MD5="))
             assertTrue(comp.contains("مختلف الحجم أو البصمة"))
             assertTrue(comp.contains(AcapelaVoiceDiagnostics.calcFileMd5(
                 stagedDca
             )))
+            assertTrue(comp.contains("المسار=${stagedDca.absolutePath}"))
+            assertTrue(comp.contains("المسار=${originalDca.absolutePath}"))
+            assertTrue(comp.contains("النسبي=ar_sa.dca"))
+            assertTrue(comp.contains("acapela_stage_orig_root_109"))
         } finally {
             stagedDca.delete()
             originalDca.delete()
@@ -1108,7 +1112,7 @@ class AcapelaVoiceDiagnosticsTest {
             val report = AcapelaVoiceDiagnostics
                 .getOriginalRoot109Verification(context)
 
-            assertTrue(report.contains("Path_Original_Root_109"))
+            assertTrue(report.contains("acapela_stage_orig_root_109"))
             assertTrue(
                 report.contains("\"salma_22k_lf.bvcu\" → موجود")
             )
@@ -1312,9 +1316,196 @@ class AcapelaVoiceDiagnosticsTest {
             assertTrue(stablePos in 0 until legacyPos)
             assertTrue(legacyPos < sectionsPos)
             assertTrue(report.contains("أسطر logcat :engine_host"))
+            assertTrue(report.contains("ملفات ini المقيسة بمساراتها"))
+            assertTrue(report.contains("تجربة جديدة: نسخ MultiTTS"))
         } finally {
             stable.delete()
             legacy.delete()
         }
+    }
+
+    @Test
+    fun getNlpInitComparison_printsOnlyMeasuredCodesAndLabelsHypotheses() {
+        val report = AcapelaVoiceDiagnostics
+            .getNlpInitAndLicenseArgumentComparison()
+
+        assertTrue(report.contains("المرصود"))
+        assertTrue(report.contains(
+            "nlpInitError=-34 | eb=-27 | nSpeak=-2 | PCM=0"
+        ))
+        assertTrue(report.contains("الفرضيات"))
+        assertFalse(report.contains("الترخيص نفسه سليم"))
+        assertFalse(report.contains("package_check"))
+        assertFalse(report.contains("الأصل 109 بايت"))
+
+        val injected = AcapelaVoiceDiagnostics
+            .getNlpInitAndLicenseArgumentComparison(
+                AcapelaVoiceDiagnostics.MeasuredNInitCodes(
+                    nlpInitError = -9,
+                    eb = -8,
+                    nSpeak = -7,
+                    pcmSamples = 12L
+                )
+            )
+        assertTrue(injected.contains("nlpInitError=-9"))
+        assertTrue(injected.contains("PCM=12"))
+    }
+
+    @Test
+    fun stagingComparison_prefersMultiTtsAndStatesUnreadableSources() {
+        val stage = tempDir()
+        val multittsRoot = tempDir()
+        val multitts = File(multittsRoot, "multitts_files").apply {
+            mkdirs()
+        }
+        val nateq = tempDir()
+        val missingParent = tempDir()
+        val missing = File(missingParent, "missing_private_folder")
+        try {
+            File(stage, "ar_sa.dca").writeText("STAGE")
+            File(multitts, "ar_sa.dca").writeText("REF")
+            File(nateq, "ar_sa.dca").writeText("NATEQ")
+            val comp = AcapelaVoiceDiagnostics
+                .getStagingVsMultiTtsFilesComparison(
+                    context,
+                    stageRootsOverride = listOf(stage),
+                    originalRootsOverride = listOf(
+                        nateq, multitts, missing
+                    )
+                )
+
+            assertTrue(comp.contains(
+                "المصدر المرجعي المفضّل: " + multitts.absolutePath
+            ))
+            assertTrue(comp.contains(
+                "المرجع المختار: " + multitts.absolutePath
+            ))
+            assertTrue(comp.contains(stage.absolutePath))
+            val refPath = File(multitts, "ar_sa.dca").absolutePath
+            assertTrue(comp.contains("المسار=$refPath"))
+            assertTrue(comp.contains(
+                "⚠ تعذّرت قراءة مجلد التطبيق الخاص"
+            ))
+        } finally {
+            stage.deleteRecursively()
+            multittsRoot.deleteRecursively()
+            nateq.deleteRecursively()
+            missingParent.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun getMeasuredIniFilesReport_logsThreeIniFilesWithFullPaths() {
+        val root = tempDir()
+        try {
+            val original = File(root, "working.ini").apply {
+                writeBytes(ByteArray(61))
+            }
+            val staged109 = File(root, "stage109.ini").apply {
+                writeBytes(ByteArray(109))
+            }
+            val staged121 = File(root, "stage121.ini").apply {
+                writeBytes(ByteArray(121))
+            }
+            val report = AcapelaVoiceDiagnostics
+                .getMeasuredIniFilesReport(
+                    listOf(
+                        AcapelaVoiceDiagnostics.MeasuredIniFile(
+                            "الأصل", original
+                        ),
+                        AcapelaVoiceDiagnostics.MeasuredIniFile(
+                            "تجهيز 109", staged109
+                        ),
+                        AcapelaVoiceDiagnostics.MeasuredIniFile(
+                            "تجهيز 121", staged121
+                        )
+                    )
+                )
+
+            assertTrue(report.contains("الأصل: 61 بايت"))
+            assertTrue(report.contains(original.absolutePath))
+            assertTrue(report.contains("تجهيز 109: 109 بايت"))
+            assertTrue(report.contains(staged109.absolutePath))
+            assertTrue(report.contains("تجهيز 121: 121 بايت"))
+            assertTrue(report.contains(staged121.absolutePath))
+            assertTrue(report.contains(
+                "nlpInitError=-34 | eb=-27 | nSpeak=-2 | PCM=0"
+            ))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun stageMultiTtsVerbatim_copiesAllFilesWithoutGeneratingIni() {
+        val root = tempDir()
+        try {
+            val source = File(root, "MultiTTS").apply { mkdirs() }
+            val sub = File(source, "NLP").apply { mkdirs() }
+            val iniBytes = "MODE=prep_hd\n".toByteArray(
+                StandardCharsets.ISO_8859_1
+            )
+            File(source, "ar_sa_hd_salma_22k_lf.ini")
+                .writeBytes(iniBytes)
+            File(source, "salma_22k_lf.bvcu")
+                .writeBytes(ByteArray(2048) { it.toByte() })
+            File(sub, "ar_sa.dca").writeBytes(ByteArray(64))
+
+            val experiment = AcapelaVoiceDiagnostics
+                .stageMultiTtsVerbatim(context, source)
+            val staged = experiment.staged!!
+
+            assertTrue(experiment.readable)
+            assertEquals(3, experiment.copiedFiles)
+            org.junit.Assert.assertArrayEquals(
+                iniBytes,
+                File(staged, "ar_sa_hd_salma_22k_lf.ini").readBytes()
+            )
+            assertTrue(File(staged, "NLP/ar_sa.dca").exists())
+            assertEquals(
+                File(source, "salma_22k_lf.bvcu").length(),
+                File(staged, "salma_22k_lf.bvcu").length()
+            )
+            val iniCount = staged.walkTopDown()
+                .count { it.isFile && it.extension.equals("ini", true) }
+            assertEquals(1, iniCount)
+
+            val injected = experiment.copy(
+                codes = AcapelaVoiceDiagnostics.MeasuredNInitCodes(
+                    nlpInitError = -34,
+                    eb = -27,
+                    nSpeak = -2,
+                    pcmSamples = 0L
+                )
+            )
+            val report = AcapelaVoiceDiagnostics
+                .getMultiTtsVerbatimExperimentReport(injected)
+            assertTrue(report.contains(source.absolutePath))
+            assertTrue(report.contains(staged.absolutePath))
+            assertTrue(report.contains("ini مولَّد: لا"))
+            assertTrue(report.contains(
+                "nlpInitError=-34 | eb=-27 | nSpeak=-2 | PCM=0"
+            ))
+        } finally {
+            root.deleteRecursively()
+            File(context.cacheDir, "acapela_stage_multitts_verbatim")
+                .deleteRecursively()
+        }
+    }
+
+    @Test
+    fun getMultiTtsVerbatimReport_statesUnreadableFolderExplicitly() {
+        val experiment = AcapelaVoiceDiagnostics
+            .stageMultiTtsVerbatim(
+                context,
+                sourceDir = File("no_such_multitts_folder_12345")
+            )
+        val report = AcapelaVoiceDiagnostics
+            .getMultiTtsVerbatimExperimentReport(experiment)
+
+        assertFalse(experiment.readable)
+        assertEquals(null, experiment.staged)
+        assertTrue(report.contains("تعذّرت قراءة مجلد MultiTTS"))
+        assertTrue(report.contains("لا نسخة ولا nInit"))
     }
 }
