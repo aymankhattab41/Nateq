@@ -483,7 +483,12 @@ class NateqNotificationListener : NotificationListenerService() {
             val isOtp = shouldMaskOtp(
                 privacyEnabled, title, text
             )
-            val speechText = if (isOtp) {
+            // ثابت الأمان: قفل الشاشة يسبق فرع OTP بلا استثناء. قبل هذا
+            // الترتيب كان رمز التحقق يُستخرج ويُنطق حرفاً حرفاً والشاشة
+            // مقفولة لأن فرع OTP كان يُفحَص أولاً — وهو خرق لخصوصية القفل.
+            val speechText = if (privacyLocked) {
+                buildSpeechText(appName, title, text, privacyLocked = true)
+            } else if (isOtp) {
                 val appLang = if (LocaleUtils.containsArabic(appName)) {
                     LanguageCode.AR.tag
                 } else {

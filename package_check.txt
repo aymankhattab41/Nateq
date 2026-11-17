@@ -1,0 +1,40 @@
+فحص الحزم — multith_export (قياس فعلي من البايت كود)
+التاريخ: 2026-11-17
+المصدر: C:\Users\pc\Documents\Nateq\multitts_export
+
+=== 1) الأصناف تحت org/nobody/multitts ===
+(لا يوجد أي صنف تحت هذه الحزمة في مجلد التصدير — فحص recursي لكل الملفات)
+النتيجة: صفر أصناف. هذه ليست حزمة التطبيق المُفكَّك.
+
+=== 2) الأصناف تحت org/volodymyr/multivoice ===
+من bytecode_dumps/ (أسماء أصناف مؤكدة من رأس الملف):
+  Lorg/volodymyr/multivoice/AcapelaMetadataCodec;
+  Lorg/volodymyr/multivoice/AcapelaPack;
+  Lorg/volodymyr/multivoice/AcapelaParameters;
+  Lorg/volodymyr/multivoice/AcapelaSpeech;
+  Lorg/volodymyr/multivoice/AcapelaSpeech$Engine;
+  Lorg/volodymyr/multivoice/AcapelaSpeech$ExtendedEngine;
+  Lorg/volodymyr/multivoice/AcapelaSpeech$NativeEngine;
+  Lorg/volodymyr/multivoice/AcapelaSpeech$Prepared;
+
+من decompiled_java/org/volodymyr/multivoice/ (شيفرة مصدر مُفكَّكة):
+  AcapelaMetadataCodec.java
+  AcapelaPack.java
+  AcapelaParameters.java
+  AcapelaSpeech.java
+
+=== 3) حاملو الأصناف المطلوبة ===
+  AcapelaPack    -> org.volodymyr.multivoice.AcapelaPack
+  AcapelaSpeech  -> org.volodymyr.multivoice.AcapelaSpeech
+  NativeEngine   -> org.volodymyr.multivoice.AcapelaSpeech$NativeEngine
+
+=== 4) حزمة التطبيق من المانيفست ===
+  package="org.volodymyr.multivoice"
+  android:versionCode="294" android:versionName="0.350"
+  الخدمة: org.volodymyr.multivoice.MultiVoiceService
+
+=== الخلاصة ===
+الملاحظات التي تنسب أصناف AcapelaPack / AcapelaSpeech / NativeEngine إلى
+"MultiTTS (org.nobody.multitts)" كانت خاطئة. الأصناف كلها تخص حزمة
+org.volodymyr.multivoice (المعروفة بـ MultiVoice). أُصلحت التسمية في ملفات
+الملاحظات والتقرير المدمج.

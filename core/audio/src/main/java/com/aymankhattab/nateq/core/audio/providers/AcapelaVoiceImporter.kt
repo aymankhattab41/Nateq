@@ -118,27 +118,23 @@ object AcapelaVoiceImporter {
             if (!tempUnpack.exists()) {
                 tempUnpack.mkdirs()
             }
-            val canonicalUnpack = tempUnpack.canonicalPath
+            // حارس واحد لكل الحلقة: فحص مكوّنات المسار + سقفا الحجم والعدد.
+            val guard = ZipExtractionGuard(tempUnpack)
 
             // استخراج كل محتويات ZIP إلى المجلد المؤقت بأمان من Zip Slip
             ZipInputStream(tempZip.inputStream()).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
                 while (entry != null) {
                     val entryName = entry.name.replace('\\', '/')
-                    val outFile = File(tempUnpack, entryName)
-                    val canonicalOut = outFile.canonicalPath
-                    if (!canonicalOut.startsWith(canonicalUnpack)) {
-                        throw SecurityException(
-                            "محاولة اختراق مسار عبر Zip Slip: $entryName"
-                        )
-                    }
+                    guard.onEntry(entry)
+                    val outFile = guard.resolve(entryName)
 
                     if (entry.isDirectory) {
                         outFile.mkdirs()
                     } else {
                         outFile.parentFile?.mkdirs()
                         FileOutputStream(outFile).use { fos ->
-                            zis.copyTo(fos, BUFFER_SIZE)
+                            guard.copy(zis, fos, ByteArray(BUFFER_SIZE))
                         }
                     }
                     zis.closeEntry()

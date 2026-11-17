@@ -138,27 +138,23 @@ object VoicePackageImporter {
             baseDir.mkdirs()
         }
 
-        val canonicalBase = baseDir.canonicalPath
+        // حارس واحد لكل الحلقة: فحص مكوّنات المسار + سقفا الحجم والعدد.
+        val guard = ZipExtractionGuard(baseDir)
         val extractedFiles = mutableListOf<String>()
 
         ZipInputStream(tempZip.inputStream()).use { zis ->
             var entry: ZipEntry? = zis.nextEntry
             while (entry != null) {
                 val entryName = entry.name.replace('\\', '/')
-                val outFile = File(baseDir, entryName)
-                val canonicalOut = outFile.canonicalPath
-                if (!canonicalOut.startsWith(canonicalBase)) {
-                    throw SecurityException(
-                        "محاولة اختراق مسار عبر Zip Slip: $entryName"
-                    )
-                }
+                guard.onEntry(entry)
+                val outFile = guard.resolve(entryName)
 
                 if (entry.isDirectory) {
                     outFile.mkdirs()
                 } else {
                     outFile.parentFile?.mkdirs()
                     FileOutputStream(outFile).use { fos ->
-                        zis.copyTo(fos, BUFFER_SIZE)
+                        guard.copy(zis, fos, ByteArray(BUFFER_SIZE))
                     }
                     extractedFiles.add(outFile.name)
                 }

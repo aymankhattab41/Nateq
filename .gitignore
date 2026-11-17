@@ -29,6 +29,12 @@ acapela_license.properties
 # استثناء: ملف الأداء الأساسي (بند 6#6) مصدرُه أساسي ويُلتزم رغم قاعدة *.txt
 !**/baseline-prof.txt
 
+# استثناءات *.txt التي تُعدّ مصدراً أو نتيجةً مطلوبةً في المستودع:
+# - CMakeLists.txt مصدر بناء أصلي؛ استبعاده يكسر البناء من نسخة نظيفة.
+# - package_check.txt نتيجة فحص الحزم المُشار إليها في المستجدات.
+!**/CMakeLists.txt
+!/package_check.txt
+
 # كاش وأسرار wrangler (Cloudflare) — لا تُرفع أبداً (قد تحوي بيانات حساب)
 relay-worker/.wrangler/
 
