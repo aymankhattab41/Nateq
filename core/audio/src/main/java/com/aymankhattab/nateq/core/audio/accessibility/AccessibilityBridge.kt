@@ -14,6 +14,30 @@ import java.util.concurrent.atomic.AtomicReference
  */
 object AccessibilityBridge {
 
+    /** بند ١٤: مهلة إعادة محاولة العثور على العنصر المفوكس. */
+    internal const val READ_MORE_FOCUS_RETRY_MS = 50L
+
+    /** بند ١٤: مهلة انتظار إشارة تغيّر المحتوى بعد التوسيع. */
+    internal const val READ_MORE_CONTENT_CHANGE_MS = 250L
+
+    /** بند ١٤: مهلة التعليق الإضافية إن لم تصل إشارة التغيّر. */
+    internal const val READ_MORE_GRACE_MS = 60L
+
+    /** بند ١٤: أقصى ميزانية للمسار الداخلي expandReadMoreInternal =
+     *  مجموع مراحله الثلاث. المراجع الوحيد للمهل الداخلية. */
+    internal const val READ_MORE_INTERNAL_BUDGET_MS =
+        READ_MORE_FOCUS_RETRY_MS + READ_MORE_CONTENT_CHANGE_MS +
+            READ_MORE_GRACE_MS
+
+    /** بند ١٤: هامش أمان يُضاف فوق الميزانية الداخلية كي لا تُلغى
+     *  المهلة الخارجية قبل ظهور النصّ الموسَّع. */
+    internal const val READ_MORE_EXTERNAL_MARGIN_MS = 140L
+
+    /** بند ١٤: المهلة الخارجية = الميزانية الداخلية + الهامش (500ms).
+     *  مصدرُ الحقيقة الوحيد لكلّ نقاط الاستدعاء (TTS والجسر). */
+    const val READ_MORE_EXTERNAL_TIMEOUT_MS =
+        READ_MORE_INTERNAL_BUDGET_MS + READ_MORE_EXTERNAL_MARGIN_MS
+
     data class ResolvedPackageInfo(
         val packageName: String?,
         val source: String
@@ -261,7 +285,7 @@ object AccessibilityBridge {
      */
     suspend fun expandReadMore(
         prefix: String,
-        timeoutMs: Long = 200L
+        timeoutMs: Long = READ_MORE_EXTERNAL_TIMEOUT_MS
     ): String? {
         val service = activeServiceRef.get() ?: return null
         return withTimeoutOrNull(timeoutMs) {

@@ -1177,7 +1177,7 @@ class NateqAccessibilityService : AccessibilityService() {
 
         var focusedNode = findAccessibilityFocusAcrossWindows()
         if (focusedNode == null) {
-            delay(50L)
+            delay(AccessibilityBridge.READ_MORE_FOCUS_RETRY_MS)
             focusedNode = findAccessibilityFocusAcrossWindows()
         }
 
@@ -1202,7 +1202,10 @@ class NateqAccessibilityService : AccessibilityService() {
         }
 
         // ع٤٣-3: انتظار استجابة إشارة التغير بمهلة سريعة (250ms كحد أقصى)
-        val signaled = AccessibilityBridge.awaitContentChange(signal, 250L)
+        val signaled = AccessibilityBridge.awaitContentChange(
+            signal,
+            AccessibilityBridge.READ_MORE_CONTENT_CHANGE_MS
+        )
 
         // التحقق من النص المحدّث
         val updatedSnapshot = findCurrentAccessibilityFocusSnapshot()
@@ -1224,7 +1227,7 @@ class NateqAccessibilityService : AccessibilityService() {
 
         // مهلة تعليق إضافية قصيرة جداً (60ms) فقط إن لم تكن الإشارة قد وصلت
         if (!signaled) {
-            delay(60L)
+            delay(AccessibilityBridge.READ_MORE_GRACE_MS)
         }
         val finalSnapshot = findCurrentAccessibilityFocusSnapshot()
         val finalText = finalSnapshot?.readableText().orEmpty()

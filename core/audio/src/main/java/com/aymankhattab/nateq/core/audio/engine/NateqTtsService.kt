@@ -1064,7 +1064,8 @@ class NateqTtsService : TextToSpeechService() {
                 if (readMoreEnabled && isPkgAllowed && isTruncated) {
                     val expanded = AccessibilityBridge.expandReadMore(
                         rawText,
-                        timeoutMs = 200L
+                        timeoutMs =
+                            AccessibilityBridge.READ_MORE_EXTERNAL_TIMEOUT_MS
                     )
                     val cleanRaw = SelectorPacks.cleanBidi(rawText).trim()
                     val isValid = if (expanded != null) {

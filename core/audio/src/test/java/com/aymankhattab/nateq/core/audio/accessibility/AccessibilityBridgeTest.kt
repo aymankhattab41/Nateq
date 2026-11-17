@@ -56,4 +56,36 @@ class AccessibilityBridgeTest {
             )
             assertFalse(received)
         }
+
+    @Test
+    fun `external read-more timeout exceeds internal budget with margin`() {
+        // بند ١٤: كان 200ms أقل من مجموع المسار الداخلي
+        // (50 إعادة محاولة + 250 انتظار إشارة + 60 تعليق = 360ms)،
+        // فتُلغى المهلة قبل ظهور النص الموسَّع. الحارس يثبت أن المهلة
+        // الخارجية الآن أكبر من المجموع بهامش صريح.
+        val internalSum =
+            AccessibilityBridge.READ_MORE_FOCUS_RETRY_MS +
+                AccessibilityBridge.READ_MORE_CONTENT_CHANGE_MS +
+                AccessibilityBridge.READ_MORE_GRACE_MS
+        assertEquals(
+            "budget must equal the sum of the three internal stages",
+            internalSum,
+            AccessibilityBridge.READ_MORE_INTERNAL_BUDGET_MS
+        )
+        assertTrue(
+            "external timeout must exceed internal budget " +
+                "($internalSum ms), was " +
+                "${AccessibilityBridge.READ_MORE_EXTERNAL_TIMEOUT_MS}",
+            AccessibilityBridge.READ_MORE_EXTERNAL_TIMEOUT_MS > internalSum
+        )
+        assertEquals(
+            "external timeout must keep an explicit safety margin",
+            AccessibilityBridge.READ_MORE_EXTERNAL_MARGIN_MS,
+            AccessibilityBridge.READ_MORE_EXTERNAL_TIMEOUT_MS - internalSum
+        )
+        assertTrue(
+            "legacy 200ms gap that caused the bug must be gone",
+            200L < AccessibilityBridge.READ_MORE_INTERNAL_BUDGET_MS
+        )
+    }
 }
