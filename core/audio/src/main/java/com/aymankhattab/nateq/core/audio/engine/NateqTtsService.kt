@@ -926,9 +926,10 @@ class NateqTtsService : TextToSpeechService() {
                         0L, SystemClock.uptimeMillis() - startUptime
                     )
                 }
-            },
-            callbackDispatcher
+            }
         )
+        // بند ١٠: إسناد مُوجِّه الخيط بعد الإنشاء (يحفظ توقيع lambda الأخير).
+        monitoredCallback.attachDispatcher(callbackDispatcher)
         // **المهلة تُشتقّ من المقاطع الفعلية** بعد التفتيت أدناه لا من
         // مجموع حروف النص — فانظر [synthesisTimeoutMsForSegments]
         // فأصلُ الانقطاع.
@@ -3471,18 +3472,27 @@ if (rate == 1.0f && pitch == 1.0f && volume == 1.0f
  */
 internal class MonitoredSynthesisCallback(
     private val delegate: SynthesisCallback,
-    private val onProgress: (bytesWritten: Int) -> Unit,
-    // بند ١٠: عند تمريره تُرسَل كل نداءات delegate إلى خيط التخليق
-    // المخصّص. الافتراضي null يبقي السلوك متزامناً لاختبارات الوحدة.
-    private val dispatcher: SynthesisCallbackDispatcher? = null
+    private val onProgress: (bytesWritten: Int) -> Unit
 ) : SynthesisCallback by delegate {
 
     private val started = java.util.concurrent.atomic.AtomicBoolean(false)
     private val finished = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    // بند ١٠: عند إسناده تُرسَل كل نداءات delegate إلى خيط التخليق
+    // المخصّص. يبقى null في اختبارات الوحدة فيُحافَظ على التزامن المباشر
+    // وعلى توقيع المُنشئ ذي المعاملين (lambda أخير) دون كسر الاختبارات.
+    @Volatile
+    private var dispatcher: SynthesisCallbackDispatcher? = null
+
+    /** يُسند مُوجِّه الخيط المخصّص بعد الإنشاء (بند ١٠). */
+    fun attachDispatcher(d: SynthesisCallbackDispatcher) {
+        dispatcher = d
+    }
+
     /** يرسل النداء إلى الخيط المخصّص ويحظر حتى تنفيذه (بند ١٠). */
     private fun deliver(block: () -> Unit) {
-        if (dispatcher == null) block() else dispatcher.postAndWait(block)
+        val d = dispatcher
+        if (d == null) block() else d.postAndWait(block)
     }
 
     val hasStarted: Boolean
