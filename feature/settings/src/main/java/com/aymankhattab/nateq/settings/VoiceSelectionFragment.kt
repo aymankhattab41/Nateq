@@ -1273,27 +1273,29 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         if (!VisibleEngines.isFilterEnabled()) {
             return null
         }
-        val set = mutableSetOf<String>()
-        set.addAll(VisibleEngines.visibleSet())
-        val defaultEng = settings.getEnginePreferenceForLanguage("ar").engine
-        if (!defaultEng.isNullOrBlank()) set.add(defaultEng)
-        // «ع٤٠-2»: تفضيل اللغة الإنجليزية (الخريطة الديناميكية)
-        // يشارك في المحركات النشطة
-        val primaryFallbackEng =
+        // [بناء 10728] لا يُضاف محرك أخفاه المستخدم: كل إضافة تمرّ على
+        // VisibleEngines.isVisible، وإلا عاد المحرك المخفي إلى الاكتشاف
+        // عبر تفضيلات اللغة أو الفئات.
+        val candidates = mutableListOf<String?>(
+            settings.getEnginePreferenceForLanguage("ar").engine,
+            // «ع٤٠-2»: تفضيل اللغة الإنجليزية (الخريطة الديناميكية)
+            // يشارك في المحركات النشطة
             settings.getEnginePreferenceForLanguage("en").engine
-        if (!primaryFallbackEng.isNullOrBlank()) set.add(primaryFallbackEng)
+        )
 
         val categories = SettingsRepository.ALL_VOICE_CATEGORIES +
             listOf("emoji")
         for (cat in categories) {
-            val eng = settings.getEngineForCategory(cat)
-            if (!eng.isNullOrBlank()) set.add(eng)
+            candidates.add(settings.getEngineForCategory(cat))
         }
         for (lang in listOf("ar", "en")) {
-            val eng = settings.getEngineForLanguage(lang)
-            if (!eng.isNullOrBlank()) set.add(eng)
+            candidates.add(settings.getEngineForLanguage(lang))
         }
-        return set
+        return activeEnginesOrNull(
+            allowed = VisibleEngines.visibleSet(),
+            candidates = candidates,
+            isVisible = VisibleEngines::isVisible
+        )
     }
 
     /** ع٤٠-2: كشف عدم اتساق أزواج (محرك، صوت) في لغات نقطة الدخول. */
@@ -4431,4 +4433,25 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             "****"
         }
     }
+}
+
+/**
+ * [بناء 10728] بناء مجموعة المحركات النشطة للاكتشاف: كل محرك (مسموح أو
+ * مرشَّح من تفضيلات اللغة/الفئة) يمرّ على [isVisible]، فلا يعود محرك
+ * أخفاه المستخدم إلى الاكتشاف. القائمة الفارغة تعود `null` (بلا تقييد)
+ * حمايةً من إفراغ قوائم الأصوات إذا كان الفلتر مفعّلاً بلا اختيار.
+ */
+internal fun activeEnginesOrNull(
+    allowed: Iterable<String>,
+    candidates: Iterable<String?>,
+    isVisible: (String) -> Boolean
+): Set<String>? {
+    val set = mutableSetOf<String>()
+    allowed.forEach { engine ->
+        if (engine.isNotBlank() && isVisible(engine)) set.add(engine)
+    }
+    candidates.forEach { engine ->
+        if (!engine.isNullOrBlank() && isVisible(engine)) set.add(engine)
+    }
+    return set.ifEmpty { null }
 }

@@ -111,7 +111,8 @@ internal class EngineVoicesCatalog(
     }
 
     /** اللغات المعروضة: تنبثق ديناميكياً من المحركات المرئية
-     *  فقط مع بقاء العربية والإنجليزية دائماً كأساس للتطبيق. */
+     *  فقط. [بناء 10728] لا تُفرض العربية والإنجليزية إلا إذا كان هناك
+     *  محرك ظاهر يدعمهما فعلياً، وإلا ظهرت لغة لا صوت لها. */
     internal fun languages(): List<String> {
         val supported = byLanguage.filter { (_, rows) ->
             rows.any { row ->
@@ -122,8 +123,8 @@ internal class EngineVoicesCatalog(
             .filterNot { it == LANGUAGE_AR || it == LANGUAGE_EN }
             .sorted()
         val all = mutableListOf<String>()
-        all.add(LANGUAGE_AR)
-        all.add(LANGUAGE_EN)
+        if (LANGUAGE_AR in supported) all.add(LANGUAGE_AR)
+        if (LANGUAGE_EN in supported) all.add(LANGUAGE_EN)
         all.addAll(rest)
         return all
     }

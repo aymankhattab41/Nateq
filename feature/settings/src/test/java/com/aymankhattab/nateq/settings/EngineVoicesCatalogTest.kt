@@ -1,14 +1,27 @@
 package com.aymankhattab.nateq.settings
 
+import com.aymankhattab.nateq.core.common.VisibleEngines
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 /** اختبارات كتالوج أصوات المحركات المتدرجة (لغة ← محرك ← أصوات):
  *  ترتيب اللغات، قوائم الأصوات للمحرك/اللغة، السقوط للأصوات المنطقية،
  *  والتسميات المعروضة — منطق نقي بلا أندرويد. */
 class EngineVoicesCatalogTest {
+
+    @Before
+    fun resetEngineFilter() {
+        VisibleEngines.resetForTest()
+    }
+
+    @After
+    fun clearEngineFilter() {
+        VisibleEngines.resetForTest()
+    }
 
     private val acapella = EngineVoicesRow(
         enginePackage = "com.acapella",
@@ -131,9 +144,34 @@ class EngineVoicesCatalogTest {
             emptyMap(), "العربية", "English"
         )
         assertTrue(empty.voicesFor("fr", null).isEmpty())
-        assertEquals(
-            listOf("ar", "en"), empty.languages()
+        // [بناء 10728] لا تُفرض ar/en بلا محرك ظاهر يدعمهما.
+        assertTrue(empty.languages().isEmpty())
+    }
+
+    @Test
+    fun `hidden embedded engine drops its languages from catalog`() {
+        val embedded = EngineVoicesRow(
+            "acapela_embedded",
+            "Acapela Embedded",
+            listOf(VoiceOption("Salma", "سلمى"))
         )
+        val cat = EngineVoicesCatalog(
+            initial = mapOf("ar" to listOf(embedded)),
+            arabicVoiceLabel = "العربية",
+            englishVoiceLabel = "English"
+        )
+
+        // محرك آخر مسموح: العربية لا تظهر لأن acapela_embedded مخفي.
+        VisibleEngines.setFilter(true, setOf("com.google.android.tts"))
+        assertTrue(cat.languages().isEmpty())
+
+        // الاسم القصير للمحرك المدمج يُظهره (قبول الشكلين).
+        VisibleEngines.setFilter(true, setOf("acapela"))
+        assertEquals(listOf("ar"), cat.languages())
+
+        // رفع الفلتر يعيد كل اللغات.
+        VisibleEngines.setFilter(false, null)
+        assertEquals(listOf("ar"), cat.languages())
     }
 
     @Test

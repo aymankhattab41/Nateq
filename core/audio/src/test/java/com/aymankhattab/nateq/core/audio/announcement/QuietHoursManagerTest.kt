@@ -153,4 +153,106 @@ class QuietHoursManagerTest {
         settings.setTime24Hour(false)
         assertFalse(settings.isTime24Hour())
     }
+
+    /**
+     * [بناء 10728] نهاية الهدوء تُشتقّ من قناع البتات: صمت 1..7 ينتهي
+     * 08:00 لا من المفتاح القديم الذي لم يعد يُحدَّث.
+     */
+    @Test
+    fun testQuietEndFromBitmask_1To7EndsAt8() {
+        settings.setQuietHoursBitmaskForDay(
+            Calendar.MONDAY,
+            maskForHours(1..7)
+        )
+        val mondayMorning = Calendar.getInstance().apply {
+            set(2026, Calendar.JUNE, 1, 5, 10, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        assertEquals(
+            Calendar.MONDAY,
+            mondayMorning.get(Calendar.DAY_OF_WEEK)
+        )
+
+        val end = TimeAnnouncementManager.quietEndMillisFrom(
+            mondayMorning
+        ) { day, hour -> settings.isHourQuiet(day, hour) }
+
+        val endCal = Calendar.getInstance().apply { timeInMillis = end }
+        assertEquals(Calendar.MONDAY, endCal.get(Calendar.DAY_OF_WEEK))
+        assertEquals(8, endCal.get(Calendar.HOUR_OF_DAY))
+        assertEquals(0, endCal.get(Calendar.MINUTE))
+        assertEquals(0, endCal.get(Calendar.SECOND))
+    }
+
+    /**
+     * [بناء 10728] عبور منتصف الليل: هدوء الجمعة 23 و24 والسبت 1..3
+     * ينتهي السبت 04:00.
+     */
+    @Test
+    fun testQuietEndFromBitmask_crossesMidnightToSaturday4() {
+        settings.setQuietHoursBitmaskForDay(
+            Calendar.FRIDAY,
+            maskForHours(listOf(23, 24))
+        )
+        settings.setQuietHoursBitmaskForDay(
+            Calendar.SATURDAY,
+            maskForHours(1..3)
+        )
+        val fridayNight = Calendar.getInstance().apply {
+            set(2026, Calendar.JUNE, 5, 23, 30, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        assertEquals(
+            Calendar.FRIDAY,
+            fridayNight.get(Calendar.DAY_OF_WEEK)
+        )
+
+        val end = TimeAnnouncementManager.quietEndMillisFrom(
+            fridayNight
+        ) { day, hour -> settings.isHourQuiet(day, hour) }
+
+        val endCal = Calendar.getInstance().apply { timeInMillis = end }
+        assertEquals(Calendar.SATURDAY, endCal.get(Calendar.DAY_OF_WEEK))
+        assertEquals(4, endCal.get(Calendar.HOUR_OF_DAY))
+        assertEquals(0, endCal.get(Calendar.MINUTE))
+    }
+
+    /**
+     * [بناء 10728] مفاتيح قديمة مضللة (23→7) لا تُقرأ: النتيجة من
+     * القناع (1..7) = 08:00 ولو كان المفتاح القديم يعطي 07:00.
+     */
+    @Test
+    fun testQuietEndIgnoresStaleStartEndKeys() {
+        settings.setQuietHoursBitmaskForDay(
+            Calendar.MONDAY,
+            maskForHours(1..7)
+        )
+        context.getSharedPreferences(
+            "nateq_settings",
+            Context.MODE_PRIVATE
+        ).edit()
+            .putInt("time_quiet_day2_start", 23)
+            .putInt("time_quiet_day2_end", 7)
+            .commit()
+
+        val mondayMorning = Calendar.getInstance().apply {
+            set(2026, Calendar.JUNE, 1, 5, 10, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val end = TimeAnnouncementManager.quietEndMillisFrom(
+            mondayMorning
+        ) { day, hour -> settings.isHourQuiet(day, hour) }
+
+        val endCal = Calendar.getInstance().apply { timeInMillis = end }
+        assertEquals(8, endCal.get(Calendar.HOUR_OF_DAY))
+    }
+
+    /** قناع بتات لساعات 1..24 (قيمة بت = الساعة). */
+    private fun maskForHours(hours: Iterable<Int>): Int {
+        var mask = 0
+        for (hour in hours) {
+            mask = mask or (1 shl (hour - 1))
+        }
+        return mask
+    }
 }

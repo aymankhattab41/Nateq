@@ -79,6 +79,43 @@ class TimeAnnouncementManager(
                 }
             }
         }
+
+        /**
+         * حساب حدّ نهاية الهدوء من دالة فحص (يوم، ساعة): يبدأ من كتلة
+         * الساعة الحالية ويمضي ساعةً ساعةً حتى أول كتلة غير هادئة.
+         *
+         * دالة نقية على [java.util.Calendar] قابلة للاختبار على JVM بلا
+         * سياق أندرويد؛ والمصدر الفعلي في [TimeAnnouncementManager]
+         * هو `settings.isHourQuiet`.
+         */
+        internal fun quietEndMillisFrom(
+            base: Calendar,
+            isQuiet: (dayOfWeek: Int, hour: Int) -> Boolean
+        ): Long {
+            var day = base.get(Calendar.DAY_OF_WEEK)
+            var hour = base.get(Calendar.HOUR_OF_DAY)
+            var step = 0
+            val maxSteps = 7 * 24
+            while (step < maxSteps) {
+                hour += 1
+                if (hour >= 24) {
+                    hour = 0
+                    day = if (day == Calendar.SATURDAY) {
+                        Calendar.SUNDAY
+                    } else {
+                        day + 1
+                    }
+                }
+                step += 1
+                if (!isQuiet(day, hour)) break
+            }
+            return (base.clone() as Calendar).apply {
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+                add(Calendar.HOUR_OF_DAY, step)
+            }.timeInMillis
+        }
     }
 
     /** لغة التطبيق الفعلية: المختارة يدوياً دوناً عن
@@ -214,48 +251,17 @@ class TimeAnnouncementManager(
 
     /**
      * أثناء ساعات الهدوء: حساب أقرب لحظة مستقبلية لنهاية فترة الهدوء الحالية
-     * (اليوم عند ساعة النهاية، وإلا غداً إن كانت النهاية بالأمس بالنسبة للآن —
-     * يغطي الفترات العابرة لمنتصف الليل كـ 23→7) وضبط منبه واحد عندها بدل
-     * صحوة كل فاصل دون أي نطق (بند [13.2] — استنزاف بطارية ساعات الهدوء).
+     * من قناع البتات الفعلي (لا من المفاتيح القديمة `getQuietStartForDay` /
+     * `getQuietEndForDay` التي لم تكن تُحدَّث بعد الانتقال إلى القناع).
+     *
+     * نمرّ ساعةً ساعةً من الساعة الحالية عبر الأيام التالية (حتى 7×24) حتى
+     * نجد أول كتلة ساعة غير هادئة؛ حدُّها هو نهاية الهدوء. ساعة 00 تُمرَّر
+     * إلى `isHourQuiet` التي تقرأ بت 24 لليوم السابق (غطاء منتصف الليل).
      */
     private fun calculateQuietEndMillis(): Long {
-        val now = timeProvider.currentTimeMillis()
-        val calendar = timeProvider.now()
-        val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
-        val day = calendar.get(Calendar.DAY_OF_WEEK)
-
-        val yesterday = if (day == Calendar.SUNDAY) {
-            Calendar.SATURDAY
-        } else {
-            day - 1
+        return quietEndMillisFrom(timeProvider.now()) { day, hour ->
+            settings.isHourQuiet(day, hour)
         }
-        if (settings.isDayQuietEnabled(yesterday)) {
-            val start = settings.getQuietStartForDay(yesterday)
-            val end = settings.getQuietEndForDay(yesterday)
-            if (start > end && currentHour < end) {
-                val endCal = timeProvider.now().apply {
-                    set(Calendar.HOUR_OF_DAY, end)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }
-                return endCal.timeInMillis
-            }
-        }
-
-        val endHour = settings.getQuietEndForDay(day)
-        val endCal = timeProvider.now().apply {
-            set(Calendar.HOUR_OF_DAY, endHour)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        var candidate = endCal.timeInMillis
-        if (candidate <= now) {
-            endCal.add(Calendar.DAY_OF_YEAR, 1)
-            candidate = endCal.timeInMillis
-        }
-        return candidate
     }
 
     /** ضبط المنبه الوحيد عند نهاية ساعات الهدوء

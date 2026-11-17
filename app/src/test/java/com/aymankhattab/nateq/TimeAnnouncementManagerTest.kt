@@ -398,19 +398,31 @@ class TimeAnnouncementManagerTest {
 
     @Test
     fun calculateQuietEnd_crossMidnight_returnsTomorrowEnd() {
-        // الأحد 2017-01-01 23:30 — نافذة 23→7 تعبر منتصف الليل، فتُحسب نهاية
-        // الهدوء صباح الاثنين 07:00 (لحظة الغد) وليست نهاية اليوم المنقضي.
+        // الأحد 2017-01-01 23:30 — قناع 23 و24 للأحد و1..7 للاثنين:
+        // آخر ساعة هادئة 07:00–08:00، فالنهاية صباح الاثنين 08:00.
         val clock = FakeClock(
             millisFor(2017, Calendar.JANUARY, 1, 23, 30)
         )
         manager = newManager(clock)
+        for (d in 1..7) settings.setQuietHoursBitmaskForDay(d, 0)
         val day = clock.now().get(Calendar.DAY_OF_WEEK)
-        settings.setQuietStartForDay(day, 23)
-        settings.setQuietEndForDay(day, 7)
+        val tomorrow = if (day == Calendar.SATURDAY) {
+            Calendar.SUNDAY
+        } else {
+            day + 1
+        }
+        settings.setQuietHoursBitmaskForDay(
+            day,
+            quietMask(23, 24)
+        )
+        settings.setQuietHoursBitmaskForDay(
+            tomorrow,
+            quietMask(1, 2, 3, 4, 5, 6, 7)
+        )
 
         val end = calculateQuietEnd()
         assertEquals(
-            millisFor(2017, Calendar.JANUARY, 2, 7, 0), end
+            millisFor(2017, Calendar.JANUARY, 2, 8, 0), end
         )
         assertTrue(
             "نهاية الهدوء في المستقبل",
@@ -420,19 +432,23 @@ class TimeAnnouncementManagerTest {
 
     @Test
     fun calculateQuietEnd_sameDayWindow_returnsTodayEnd() {
-        // الأحد 2017-01-01 10:00 — نافذة 7→23 تنتهي اليوم (23:00)
-        // لأنها بعد الآن.
+        // الأحد 2017-01-01 10:00 — قناع 7..23: آخر ساعة هادئة 23:00–24:00
+        // فالنهاية منتصف ليل الاثنين.
         val clock = FakeClock(
             millisFor(2017, Calendar.JANUARY, 1, 10, 0)
         )
         manager = newManager(clock)
+        for (d in 1..7) settings.setQuietHoursBitmaskForDay(d, 0)
         val day = clock.now().get(Calendar.DAY_OF_WEEK)
-        settings.setQuietStartForDay(day, 7)
-        settings.setQuietEndForDay(day, 23)
+        settings.setQuietHoursBitmaskForDay(
+            day,
+            quietMask(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                19, 20, 21, 22, 23)
+        )
 
         val end = calculateQuietEnd()
         assertEquals(
-            millisFor(2017, Calendar.JANUARY, 1, 23, 0), end
+            millisFor(2017, Calendar.JANUARY, 2, 0, 0), end
         )
         assertTrue(
             "نهاية الهدوء في المستقبل",
@@ -767,6 +783,13 @@ class TimeAnnouncementManagerTest {
             set(year, month, day, hour, minute, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
+
+    /** قناع بتات لساعات 1..24 (قيمة بت = الساعة). */
+    private fun quietMask(vararg hours: Int): Int {
+        var mask = 0
+        for (hour in hours) mask = mask or (1 shl (hour - 1))
+        return mask
+    }
 }
 
 /** ساعة افتراضية قابلة للضبط — تحكّم كامل بالخط الزمني في الاختبارات. */

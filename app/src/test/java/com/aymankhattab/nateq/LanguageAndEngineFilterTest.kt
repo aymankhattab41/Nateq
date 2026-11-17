@@ -153,6 +153,41 @@ class LanguageAndEngineFilterTest {
     }
 
     /**
+     * (هـ) [بناء 10728] فلترة المحركات المدمجة تعمل فعلاً: إخفاء
+     * acapela_embedded يُخفيه ويُخفي اسمه القصير acapela، وإظهار
+     * vocalizer يُظهر شكلَيه.
+     */
+    @Test
+    fun filterEngines_hidesEmbeddedEngineAndAcceptsShortAlias() {
+        VisibleEngines.setFilter(
+            true,
+            setOf("vocalizer_embedded", "microsoft_embedded")
+        )
+
+        assertFalse(VisibleEngines.isVisible("acapela_embedded"))
+        assertFalse(VisibleEngines.isVisible("acapela"))
+        assertTrue(VisibleEngines.isVisible("vocalizer"))
+        assertTrue(VisibleEngines.isVisible("vocalizer_embedded"))
+        assertEquals(
+            setOf("vocalizer_embedded", "microsoft_embedded"),
+            VisibleEngines.visibleSet()
+        )
+    }
+
+    /**
+     * (و) [بناء 10728] فلتر مفعّل بقائمة فارغة لا يُخفي شيئاً
+     * (حماية من إسكات التطبيق كله).
+     */
+    @Test
+    fun filterEngines_emptyAllowedListHidesNothing() {
+        VisibleEngines.setFilter(true, emptySet())
+
+        assertTrue(VisibleEngines.isVisible("com.google.android.tts"))
+        assertTrue(VisibleEngines.isVisible("acapela_embedded"))
+        assertTrue(VisibleEngines.visibleSet().isEmpty())
+    }
+
+    /**
      * (د) اختبار معماري: مسح الكود المصدري للتأكد من عدم وجود استدعاءات
      * مباشرة لـ Locale.getAvailableLocales() أو getEngines() خارج
      * المصدر الموحد (نافذة الاختيار فقط).
