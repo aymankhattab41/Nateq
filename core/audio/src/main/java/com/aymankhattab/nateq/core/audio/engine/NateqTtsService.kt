@@ -1622,6 +1622,9 @@ class NateqTtsService : TextToSpeechService() {
         var effPitch = finalPitch
         var effVolume = finalVolume
         var isEmergency = false
+        // البند ١٧: المزوّد الذي جُرِّب فعلاً، يُقرأ في فرع التحويل
+        // أدناه لتسجيل حالات Acapela بمحركها الصحيح.
+        var attemptedProvider: VoiceProvider? = null
         try {
             val targetProvider = if (finalEngine != null) {
                 catalog.findProvider(finalEngine) ?: provider
@@ -1834,6 +1837,7 @@ class NateqTtsService : TextToSpeechService() {
             } else {
                 activeTargetProvider
             }
+            attemptedProvider = effProvider
 
             effProvider.synthesize(
                 speechText, voice, effRate, effPitch, effVolume,
@@ -1898,7 +1902,9 @@ class NateqTtsService : TextToSpeechService() {
                 }
             }
             val acapelaFailure = effEngine.contains("acapela", true) ||
-                effProvider?.providerId?.contains("acapela", true) == true
+                attemptedProvider?.providerId?.contains(
+                    "acapela", true
+                ) == true
             if (acapelaFailure) {
                 SpeechFallbackTracker.noteAcapelaFailure(
                     reason = "فشل تخليق Acapela في $effEngine",
