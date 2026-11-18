@@ -18,6 +18,7 @@ import com.aymankhattab.nateq.core.audio.accessibility.A11yStateStore
 import com.aymankhattab.nateq.core.audio.accessibility.A11yVoiceResolver
 import com.aymankhattab.nateq.core.audio.accessibility.AppPolicy
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
+import com.aymankhattab.nateq.core.audio.accessibility.UnlabeledElementStore
 import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
 import com.aymankhattab.nateq.core.data.AppProfile
 import com.aymankhattab.nateq.core.data.AppProfileStore
@@ -199,6 +200,27 @@ class ScreenServicesCardController(
             "switch_a11y_ocr_reading",
             FeatureFlags.FEATURE_OCR_READING
         )
+        bindSwitch(
+            root,
+            "switch_a11y_custom_unlabeled",
+            FeatureFlags.FEATURE_CUSTOM_UNLABELED
+        )
+        bindSwitch(
+            root,
+            "switch_a11y_auto_describe_unlabeled",
+            FeatureFlags.FEATURE_AUTO_DESCRIBE_UNLABELED
+        )
+        val switchAutoSaveUnlabeled = root.findViewWithTag<SwitchMaterial>(
+            "switch_a11y_auto_save_unlabeled"
+        )
+        switchAutoSaveUnlabeled?.isChecked =
+            settings.isAutoSaveUnlabeledDescriptionsEnabled()
+        switchAutoSaveUnlabeled?.setOnCheckedChangeListener { _, checked ->
+            settings.setAutoSaveUnlabeledDescriptionsEnabled(checked)
+            onStatusChanged()
+        }
+        root.findViewWithTag<MaterialButton>("btn_a11y_manage_unlabeled")
+            ?.setOnClickListener { showUnlabeledLabelsDialog() }
         bindSwitch(
             root,
             "switch_a11y_key_shortcuts",
@@ -1249,6 +1271,146 @@ class ScreenServicesCardController(
                 .sortedBy { it.second }
         }.getOrDefault(emptyList())
     }
+
+
+    /** إدارة تسميات العناصر غير المسماة (عرض/إضافة/تعديل/حذف) — البند 5. */
+    private fun showUnlabeledLabelsDialog() {
+        val store = UnlabeledElementStore.getInstance(context)
+        val labels = store.getAllCustomLabels().toSortedMap()
+        if (labels.isEmpty()) {
+            MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.unlabeled_labels_title)
+                .setMessage(R.string.unlabeled_labels_empty)
+                .setPositiveButton(R.string.unlabeled_labels_add) { _, _ ->
+                    showUnlabeledLabelEditorDialog(null, null, null)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+            return
+        }
+        val keys = labels.keys.toList()
+        val items = keys.map { key ->
+            val label = labels[key].orEmpty()
+            "$key\n$label"
+        }.toTypedArray()
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.unlabeled_labels_title)
+            .setItems(items) { _, which ->
+                val key = keys[which]
+                val parts = key.split(":", limit = 2)
+                val pkg = parts.getOrElse(0) { "" }
+                val viewId = parts.getOrElse(1) { "" }
+                val label = labels[key].orEmpty()
+                showUnlabeledLabelActionsDialog(pkg, viewId, label)
+            }
+            .setPositiveButton(R.string.unlabeled_labels_add) { _, _ ->
+                showUnlabeledLabelEditorDialog(null, null, null)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showUnlabeledLabelActionsDialog(
+        pkg: String,
+        viewId: String,
+        label: String
+    ) {
+        val options = arrayOf(
+            context.getString(R.string.unlabeled_labels_edit),
+            context.getString(R.string.unlabeled_labels_delete)
+        )
+        MaterialAlertDialogBuilder(context)
+            .setTitle(label)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showUnlabeledLabelEditorDialog(pkg, viewId, label)
+                    1 -> MaterialAlertDialogBuilder(context)
+                        .setTitle(R.string.unlabeled_labels_delete)
+                        .setMessage(R.string.unlabeled_labels_delete_confirm)
+                        .setPositiveButton(R.string.unlabeled_labels_delete) { _, _ ->
+                            UnlabeledElementStore.getInstance(context)
+                                .setCustomLabel(pkg, viewId, null)
+                            Toast.makeText(
+                                context,
+                                R.string.unlabeled_labels_deleted,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showUnlabeledLabelEditorDialog(
+        pkg: String?,
+        viewId: String?,
+        label: String?
+    ) {
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        val etPkg = EditText(context).apply {
+            hint = context.getString(R.string.unlabeled_labels_package_hint)
+            setText(pkg.orEmpty())
+            minHeight = (48 * resources.displayMetrics.density).toInt()
+        }
+        val etViewId = EditText(context).apply {
+            hint = context.getString(R.string.unlabeled_labels_viewid_hint)
+            setText(viewId.orEmpty())
+            minHeight = (48 * resources.displayMetrics.density).toInt()
+        }
+        val etLabel = EditText(context).apply {
+            hint = context.getString(R.string.unlabeled_labels_label_hint)
+            setText(label.orEmpty())
+            minHeight = (48 * resources.displayMetrics.density).toInt()
+        }
+        container.addView(etPkg)
+        container.addView(etViewId)
+        container.addView(etLabel)
+
+        MaterialAlertDialogBuilder(context)
+            .setTitle(
+                if (pkg == null) R.string.unlabeled_labels_add
+                else R.string.unlabeled_labels_edit
+            )
+            .setView(container)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val newPkg = etPkg.text?.toString()?.trim().orEmpty()
+                val newViewId = etViewId.text?.toString()?.trim().orEmpty()
+                val newLabel = etLabel.text?.toString()?.trim().orEmpty()
+                if (newPkg.isBlank() ||
+                    newViewId.isBlank() ||
+                    newLabel.isBlank()
+                ) {
+                    Toast.makeText(
+                        context,
+                        R.string.unlabeled_labels_invalid,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@setPositiveButton
+                }
+                val store = UnlabeledElementStore.getInstance(context)
+                if (!pkg.isNullOrBlank() && !viewId.isNullOrBlank() &&
+                    (pkg != newPkg || viewId != newViewId)
+                ) {
+                    store.setCustomLabel(pkg, viewId, null)
+                }
+                store.setCustomLabel(newPkg, newViewId, newLabel)
+                Toast.makeText(
+                    context,
+                    R.string.unlabeled_labels_saved,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
 
     companion object {
         /** رمز طلب إذن BLUETOOTH_CONNECT (ع٤١-ب9). */

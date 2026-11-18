@@ -452,12 +452,15 @@ internal class EmbeddedEngineDownloaderController(
                 container,
                 false
             )
+            val title = languageTitle(locale)
+            val tag = locale.toLanguageTag()
             itemView.findViewById<TextView>(
                 R.id.tv_language_title
-            ).text = languageTitle(locale)
+            ).text = title
             itemView.findViewById<TextView>(
                 R.id.tv_language_tag
-            ).text = locale.toLanguageTag()
+            ).text = tag
+            itemView.contentDescription = "$title، $tag"
             itemView.setOnClickListener {
                 selectedLocale = locale
                 selectedVoiceKey = null
@@ -494,16 +497,19 @@ internal class EmbeddedEngineDownloaderController(
                 container,
                 false
             )
-            itemView.findViewById<TextView>(
-                R.id.tv_voice_group_title
-            ).text = if (isAr) node.titleAr else node.titleEn
-            itemView.findViewById<TextView>(
-                R.id.tv_voice_group_subtitle
-            ).text = fragment.getString(
+            val groupTitle = if (isAr) node.titleAr else node.titleEn
+            val groupSub = fragment.getString(
                 R.string.embedded_voice_installed_count,
                 installed,
                 node.variants.size
             )
+            itemView.findViewById<TextView>(
+                R.id.tv_voice_group_title
+            ).text = groupTitle
+            itemView.findViewById<TextView>(
+                R.id.tv_voice_group_subtitle
+            ).text = groupSub
+            itemView.contentDescription = "$groupTitle، $groupSub"
             itemView.setOnClickListener {
                 selectedVoiceKey = node.key
                 navLevel = NavLevel.QUALITIES
@@ -967,12 +973,15 @@ internal class EmbeddedEngineDownloaderController(
                 container,
                 false
             )
+            val title = languageTitle(locale)
+            val tag = locale.toLanguageTag()
             itemView.findViewById<TextView>(
                 R.id.tv_language_title
-            ).text = languageTitle(locale)
+            ).text = title
             itemView.findViewById<TextView>(
                 R.id.tv_language_tag
-            ).text = locale.toLanguageTag()
+            ).text = tag
+            itemView.contentDescription = "$title، $tag"
             itemView.setOnClickListener {
                 selectedLocale = locale
                 selectedVoiceKey = null
@@ -1009,16 +1018,19 @@ internal class EmbeddedEngineDownloaderController(
                 container,
                 false
             )
-            itemView.findViewById<TextView>(
-                R.id.tv_voice_group_title
-            ).text = if (isAr) node.titleAr else node.titleEn
-            itemView.findViewById<TextView>(
-                R.id.tv_voice_group_subtitle
-            ).text = fragment.getString(
+            val groupTitle = if (isAr) node.titleAr else node.titleEn
+            val groupSub = fragment.getString(
                 R.string.embedded_voice_installed_count,
                 installed,
                 node.variants.size
             )
+            itemView.findViewById<TextView>(
+                R.id.tv_voice_group_title
+            ).text = groupTitle
+            itemView.findViewById<TextView>(
+                R.id.tv_voice_group_subtitle
+            ).text = groupSub
+            itemView.contentDescription = "$groupTitle، $groupSub"
             itemView.setOnClickListener {
                 selectedVoiceKey = node.key
                 navLevel = NavLevel.QUALITIES
@@ -1339,6 +1351,7 @@ internal class EmbeddedEngineDownloaderController(
                 baseLabel
             }
             tvBadge.text = stateLabel
+            view.contentDescription = "${entry.name}، $stateLabel"
             view.setOnClickListener {
                 showEngineDetailsDialog(entry)
             }

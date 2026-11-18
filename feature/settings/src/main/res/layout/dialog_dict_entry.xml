@@ -13,6 +13,7 @@
             android:id="@+id/et_dict_word"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:hint="@string/dict_word_hint"
             android:inputType="text" />
     </com.google.android.material.textfield.TextInputLayout>
 
@@ -25,6 +26,7 @@
             android:id="@+id/et_dict_phonetic"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:hint="@string/dict_phonetic_hint"
             android:inputType="text" />
     </com.google.android.material.textfield.TextInputLayout>
 
@@ -40,6 +42,7 @@
         android:id="@+id/spinner_dict_match_mode"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:contentDescription="@string/dict_match_mode_title"
         android:minHeight="48dp" />
 
     <TextView
@@ -54,6 +57,7 @@
         android:id="@+id/spinner_dict_scope"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:contentDescription="@string/dict_scope_title"
         android:minHeight="48dp" />
 
     <TextView
@@ -68,6 +72,7 @@
         android:id="@+id/spinner_dict_value_lang"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:contentDescription="@string/dict_pronunciation_lang_title"
         android:minHeight="48dp" />
 
     <com.google.android.material.button.MaterialButton

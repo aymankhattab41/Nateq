@@ -36,6 +36,8 @@ object VoiceResolutionPolicy {
     const val SOURCE_CATEGORY_NUMBER = "category_number"
     const val SOURCE_CATEGORY_NUMBER_PARAMS = "category_number_params"
     const val SOURCE_CATEGORY_EMOJI = "category_emoji"
+    const val SOURCE_CATEGORY_DIALOGUE = "category_dialogue"
+    const val SOURCE_CATEGORY_NARRATION = "category_narration"
     const val SOURCE_CATEGORY = "category"
     const val SOURCE_LANGUAGE_DEFAULT = "language_default"
     const val SOURCE_EMERGENCY = "emergency"
@@ -187,6 +189,48 @@ object VoiceResolutionPolicy {
                     ResolvedVoice(null, SOURCE_LANGUAGE_DEFAULT)
                 }
             }
+            SpeechRole.DIALOGUE -> {
+                // صوت الحوار (قارئ متعدد الأصوات): فئة الحوار إن وُجدت، وإلا النص
+                if (!effectiveCategoryVoice.isNullOrBlank()) {
+                    ResolvedVoice(
+                        effectiveCategoryVoice,
+                        SOURCE_CATEGORY_DIALOGUE
+                    )
+                } else if (!contactVoice.isNullOrBlank()) {
+                    ResolvedVoice(contactVoice, SOURCE_CONTACT)
+                } else if (!appVoice.isNullOrBlank()) {
+                    ResolvedVoice(appVoice, SOURCE_APP)
+                } else if (!languageDefaultVoice.isNullOrBlank()) {
+                    ResolvedVoice(
+                        languageDefaultVoice, SOURCE_LANGUAGE_DEFAULT
+                    )
+                } else if (!emergencyVoice.isNullOrBlank()) {
+                    ResolvedVoice(emergencyVoice, SOURCE_EMERGENCY)
+                } else {
+                    ResolvedVoice(null, SOURCE_LANGUAGE_DEFAULT)
+                }
+            }
+            SpeechRole.NARRATION -> {
+                // صوت السرد (قارئ متعدد الأصوات): فئة السرد إن وُجدت، وإلا النص
+                if (!effectiveCategoryVoice.isNullOrBlank()) {
+                    ResolvedVoice(
+                        effectiveCategoryVoice,
+                        SOURCE_CATEGORY_NARRATION
+                    )
+                } else if (!contactVoice.isNullOrBlank()) {
+                    ResolvedVoice(contactVoice, SOURCE_CONTACT)
+                } else if (!appVoice.isNullOrBlank()) {
+                    ResolvedVoice(appVoice, SOURCE_APP)
+                } else if (!languageDefaultVoice.isNullOrBlank()) {
+                    ResolvedVoice(
+                        languageDefaultVoice, SOURCE_LANGUAGE_DEFAULT
+                    )
+                } else if (!emergencyVoice.isNullOrBlank()) {
+                    ResolvedVoice(emergencyVoice, SOURCE_EMERGENCY)
+                } else {
+                    ResolvedVoice(null, SOURCE_LANGUAGE_DEFAULT)
+                }
+            }
             SpeechRole.TEXT -> {
                 when {
                     !contactVoice.isNullOrBlank() -> {
@@ -277,6 +321,12 @@ object VoiceResolutionPolicy {
             SpeechRole.NUMBER -> settings.getPreferredVoiceIdForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             )
+            SpeechRole.DIALOGUE -> settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_DIALOGUE
+            )
+            SpeechRole.NARRATION -> settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NARRATION
+            )
             SpeechRole.TEXT -> null
         }
         val categoryEngine = when (role) {
@@ -285,6 +335,12 @@ object VoiceResolutionPolicy {
             )
             SpeechRole.NUMBER -> settings.getEngineForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+            SpeechRole.DIALOGUE -> settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_DIALOGUE
+            )
+            SpeechRole.NARRATION -> settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_NARRATION
             )
             SpeechRole.TEXT -> null
         }?.takeIf { VisibleEngines.isVisible(it) }
@@ -312,7 +368,9 @@ object VoiceResolutionPolicy {
         )
         val targetEngine = when (resolvedVoice.source) {
             SOURCE_CATEGORY_EMOJI,
-            SOURCE_CATEGORY_NUMBER -> {
+            SOURCE_CATEGORY_NUMBER,
+            SOURCE_CATEGORY_DIALOGUE,
+            SOURCE_CATEGORY_NARRATION -> {
                 categoryEngine ?: defaultCategoryEngine ?: routed.engine
             }
             SOURCE_APP -> {

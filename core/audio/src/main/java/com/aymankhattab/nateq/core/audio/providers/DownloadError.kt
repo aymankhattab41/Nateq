@@ -22,7 +22,6 @@ class DownloadError(
         const val NETWORK = "NETWORK"
         const val MODEL_TOO_SMALL = "MODEL_TOO_SMALL"
         const val TOKENS_EMPTY = "TOKENS_EMPTY"
-        const val HASH_MISMATCH = "HASH_MISMATCH"
 
         fun http(code: Int): String = "HTTP_$code"
     }

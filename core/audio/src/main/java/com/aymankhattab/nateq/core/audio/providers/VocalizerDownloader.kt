@@ -1,17 +1,12 @@
 package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
-import android.speech.tts.TextToSpeech
 import android.util.Log
-import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.util.Locale
 import java.util.zip.ZipInputStream
 
 /**
@@ -85,41 +80,6 @@ object VocalizerDownloader {
      * تنزيل حزمة صوت Vocalizer Expressive 2 وفك ضغط ملفات .dat و .hdr
      * تلقائياً داخل المجلد مع التحقق الكامل ورموز الخطأ الواضحة (ع٣٠-6).
      */
-    /**
-     * إعلان مسموع (أفضل جهد) عند فشل التحقق من بصمة الحزمة.
-     */
-    private fun announceHashMismatch(context: Context) {
-        val appCtx = context.applicationContext
-        val msg = "فشل تنزيل حزمة الصوت: بصمة التحقق غير متطابقة"
-        try {
-            Handler(Looper.getMainLooper()).post {
-                runCatching {
-                    Toast.makeText(appCtx, msg, Toast.LENGTH_LONG).show()
-                }
-            }
-        } catch (_: Throwable) {
-        }
-        try {
-            var tts: TextToSpeech? = null
-            tts = TextToSpeech(appCtx) { status ->
-                try {
-                    if (status == TextToSpeech.SUCCESS) {
-                        tts?.language = Locale.forLanguageTag("ar")
-                        @Suppress("DEPRECATION")
-                        tts?.speak(
-                            msg,
-                            TextToSpeech.QUEUE_FLUSH,
-                            null,
-                            "hash_mismatch"
-                        )
-                    }
-                } catch (_: Throwable) {
-                }
-            }
-        } catch (_: Throwable) {
-        }
-    }
-
     suspend fun downloadVoice(
         context: Context,
         item: VocalizerCatalogItem,
@@ -226,27 +186,6 @@ object VocalizerDownloader {
                     "ZIP_MAGIC", DownloadError.NOT_A_ZIP,
                     "head=$headText"
                 )
-            }
-
-            // 2. فك ضغط ملفات الـ Zip داخل مجلد VocalizerEx2
-            // بند 6: التحقق من بصمة SHA-256 للحزمة (إن توفرت) قبل فك الضغط.
-            val expectedSha = item.sha256?.trim().orEmpty()
-            if (expectedSha.isNotEmpty()) {
-                val ok = runCatching {
-                    DownloadHttpHelper.verifySha256(partZipFile, expectedSha)
-                }.getOrDefault(false)
-                if (!ok) {
-                    Log.e(
-                        TAG,
-                        "بصمة SHA-256 غير متطابقة [STEP=HASH] للصوت ${item.id}"
-                    )
-                    partZipFile.delete()
-                    announceHashMismatch(context)
-                    throw stepError(
-                        "HASH", DownloadError.HASH_MISMATCH,
-                        "بصمة التحقق غير متطابقة"
-                    )
-                }
             }
 
             // 2. فك ضغط ملفات الـ Zip داخل مجلد VocalizerEx2

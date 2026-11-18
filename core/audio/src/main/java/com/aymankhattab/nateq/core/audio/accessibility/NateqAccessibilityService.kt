@@ -275,19 +275,157 @@ object ProgressHandler : A11yFeatureHandler {
 }
 
 /**
- * معالج العناصر غير المسماة — يغلف UnlabeledElementStore.
+ * ينطق التسمية المخصصة المحفوظة لعنصر غير مُسمّى عند التركيز (البند 5).
  */
 object UnlabeledLabelsHandler : A11yFeatureHandler {
     override val feature = FeatureFlags.FEATURE_CUSTOM_UNLABELED
     override val acceptedEventTypes =
         AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+
     override fun handle(
         service: AccessibilityService,
         event: AccessibilityEvent,
         settings: SettingsRepository,
         stateStore: A11yStateStore?
     ) {
-        // التسميات المخصصة تُستعلم عند الحاجة من UnlabeledElementStore
+        val node = event.source ?: return
+        try {
+            val pkg = event.packageName?.toString().orEmpty()
+            val viewId = node.viewIdResourceName
+            val label = UnlabeledElementStore.getInstance(service)
+                .getCustomLabel(pkg, viewId)
+            if (label.isNullOrBlank()) return
+            if (!UnlabeledElementHelper.isUnlabeled(node)) return
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = service.applicationContext,
+                text = label,
+                isInterruptAllowed = true
+            )
+        } finally {
+            runCatching { node.recycle() }
+        }
+    }
+}
+
+/**
+ * وصف تلقائي للعناصر غير المسماة عند التركيز (البند 4، أفضل جهد).
+ * يستدل من خصائص العقدة، ويحفظ الوصف تلقائياً عند تفعيل الخيار.
+ */
+object AutoDescribeUnlabeledHandler : A11yFeatureHandler {
+    override val feature = FeatureFlags.FEATURE_AUTO_DESCRIBE_UNLABELED
+    override val acceptedEventTypes =
+        AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+
+    override fun handle(
+        service: AccessibilityService,
+        event: AccessibilityEvent,
+        settings: SettingsRepository,
+        stateStore: A11yStateStore?
+    ) {
+        val node = event.source ?: return
+        try {
+            val pkg = event.packageName?.toString().orEmpty()
+            val viewId = node.viewIdResourceName
+            val store = UnlabeledElementStore.getInstance(service)
+            // إن وُجدت تسمية مخصصة محفوظة فالأولوية لها (ينطقها المعالج الآخر)
+            val existing = store.getCustomLabel(pkg, viewId)
+            if (!existing.isNullOrBlank()) return
+            if (!UnlabeledElementHelper.isUnlabeled(node)) return
+
+            val description = UnlabeledElementHelper.describeNode(node)
+            if (description.isBlank()) return
+
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = service.applicationContext,
+                text = description,
+                isInterruptAllowed = true
+            )
+
+            if (settings.isAutoSaveUnlabeledDescriptionsEnabled() &&
+                !pkg.isBlank() && !viewId.isNullOrBlank()
+            ) {
+                store.setCustomLabel(pkg, viewId, description)
+            }
+        } finally {
+            runCatching { node.recycle() }
+        }
+    }
+}
+
+/** مساعدات توصيف/كشف العناصر غير المسماة (استدلال خصائص العقدة). */
+internal object UnlabeledElementHelper {
+
+    fun isUnlabeled(node: AccessibilityNodeInfo): Boolean {
+        val text = node.text?.toString()?.trim().orEmpty()
+        val desc = node.contentDescription?.toString()?.trim().orEmpty()
+        if (text.isNotEmpty() || desc.isNotEmpty()) return false
+        // اعتبره مُسمّى إن كان لأي ابن نص/وصف مباشر ظاهر
+        val childLabel = firstDirectChildLabel(node)
+        return childLabel.isNullOrBlank()
+    }
+
+    private fun firstDirectChildLabel(
+        node: AccessibilityNodeInfo
+    ): String? {
+        val count = node.childCount
+        for (i in 0 until count) {
+            val child = node.getChild(i) ?: continue
+            try {
+                val t = child.text?.toString()?.trim().orEmpty()
+                if (t.isNotEmpty()) return t
+                val d = child.contentDescription?.toString()?.trim().orEmpty()
+                if (d.isNotEmpty()) return d
+            } finally {
+                runCatching { child.recycle() }
+            }
+        }
+        return null
+    }
+
+    fun describeNode(node: AccessibilityNodeInfo): String {
+        val role = roleLabel(node)
+        val state = stateLabel(node)
+        return buildString {
+            if (role.isNotBlank()) append(role)
+            if (state.isNotBlank()) {
+                if (isNotEmpty()) append('،')
+                append(' ')
+                append(state)
+            }
+        }.trim()
+    }
+
+    private fun roleLabel(node: AccessibilityNodeInfo): String {
+        val cls = node.className?.toString().orEmpty()
+        return when {
+            cls.endsWith("Button") ||
+                cls.endsWith("ImageButton") -> "زر"
+            cls.endsWith("ImageView") -> "صورة"
+            cls.endsWith("EditText") -> "حقل تحرير"
+            cls.endsWith("CheckBox") -> "خانة اختيار"
+            cls.endsWith("RadioButton") -> "زر اختيار"
+            cls.endsWith("Switch") ||
+                cls.endsWith("SwitchCompat") ||
+                cls.endsWith("ToggleButton") -> "مفتاح تبديل"
+            cls.endsWith("SeekBar") -> "شريط تمرير"
+            cls.endsWith("ProgressBar") -> "شريط تقدم"
+            cls.endsWith("Spinner") -> "قائمة منسدلة"
+            cls.endsWith("TextView") -> "نص"
+            node.isClickable -> "عنصر قابل للنقر"
+            node.isEditable -> "حقل تحرير"
+            node.isCheckable -> "عنصر قابل للتحديد"
+            else -> "عنصر"
+        }
+    }
+
+    private fun stateLabel(node: AccessibilityNodeInfo): String {
+        val parts = mutableListOf<String>()
+        if (node.isCheckable) {
+            parts += if (node.isChecked) "محدد" else "غير محدد"
+        }
+        if (node.isSelected) parts += "مُختار"
+        if (!node.isEnabled) parts += "غير مفعّل"
+        return parts.joinToString("، ")
     }
 }
 
@@ -359,7 +497,8 @@ class NateqAccessibilityService : AccessibilityService() {
         ChatSummaryHandler,
         PopupHandler,
         ProgressHandler,
-        UnlabeledLabelsHandler
+        UnlabeledLabelsHandler,
+        AutoDescribeUnlabeledHandler
     )
 
     override fun onCreate() {

@@ -26,6 +26,9 @@ internal class TextReadingController(
     // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
     private var spinnerPunctuationLevel: Spinner? = null
     private var switchTashkeelPreserved: SwitchMaterial? = null
+    private var switchEgyptianSpeechProcessing: SwitchMaterial? = null
+    private var switchDynamicSpeed: SwitchMaterial? = null
+    private var switchMultiVoiceReader: SwitchMaterial? = null
     private var btnSecondaryLanguage: MaterialButton? = null
     private var btnNumberReadingLanguage: MaterialButton? = null
 
@@ -79,8 +82,60 @@ internal class TextReadingController(
         switchTashkeelPreserved?.isChecked =
             runCatching { settings.isTashkeelPreserved() }
                 .getOrDefault(false)
-        switchTashkeelPreserved?.setOnCheckedChangeListener { _, checked ->
+        switchTashkeelPreserved?.setOnCheckedChangeListener {
+            _, checked ->
             runCatching { settings.setTashkeelPreserved(checked) }
+            onStatusChanged()
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
+                )
+            )
+        }
+
+        switchEgyptianSpeechProcessing =
+            view.findViewById(R.id.switch_egyptian_speech_processing)
+        switchEgyptianSpeechProcessing?.isChecked = runCatching {
+            settings.isEgyptianSpeechProcessingEnabled()
+        }.getOrDefault(false)
+        switchEgyptianSpeechProcessing?.setOnCheckedChangeListener {
+            _, checked ->
+            runCatching { settings.setEgyptianSpeechProcessingEnabled(checked) }
+            onStatusChanged()
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
+                )
+            )
+        }
+
+        switchDynamicSpeed =
+            view.findViewById(R.id.switch_dynamic_speed)
+        switchDynamicSpeed?.isChecked = runCatching {
+            settings.isDynamicSpeedEnabled()
+        }.getOrDefault(false)
+        switchDynamicSpeed?.setOnCheckedChangeListener {
+            _, checked ->
+            runCatching { settings.setDynamicSpeedEnabled(checked) }
+            onStatusChanged()
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
+                )
+            )
+        }
+
+        switchMultiVoiceReader =
+            view.findViewById(R.id.switch_multi_voice_reader)
+        switchMultiVoiceReader?.isChecked = runCatching {
+            settings.isMultiVoiceReaderEnabled()
+        }.getOrDefault(false)
+        switchMultiVoiceReader?.setOnCheckedChangeListener {
+            _, checked ->
+            runCatching { settings.setMultiVoiceReaderEnabled(checked) }
             onStatusChanged()
             fragment.view?.announceCompat(
                 fragment.getString(

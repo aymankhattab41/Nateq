@@ -22,7 +22,9 @@ class SpeechPlannerTest {
         private val categoryEngines: Map<String, String?> = emptyMap(),
         private val categoryRates: Map<String, Float> = emptyMap(),
         private val categoryPitches: Map<String, Float> = emptyMap(),
-        private val categoryVolumes: Map<String, Float> = emptyMap()
+        private val categoryVolumes: Map<String, Float> = emptyMap(),
+        private val dynamicSpeedEnabled: Boolean = false,
+        private val multiVoiceReaderEnabled: Boolean = false
     ) : VoicePrefsProvider {
         override fun getEngineForLanguage(
             languageTag: String
@@ -68,6 +70,10 @@ class SpeechPlannerTest {
         override fun setAnnouncementFallbackEngine(
             enginePackage: String?
         ) {}
+
+        override fun isDynamicSpeedEnabled(): Boolean = dynamicSpeedEnabled
+        override fun isMultiVoiceReaderEnabled(): Boolean =
+            multiVoiceReaderEnabled
     }
 
     @Test
@@ -299,10 +305,10 @@ class SpeechPlannerTest {
     @Test
     fun splitLongSentenceChunks_longTextWithDelimiters_splitsCorrectly() {
         val s1 = "هذه هي الجملة الأولى الطويلة التي تحتوي على تفاصيل كثيرة " +
-            "لتوضيح الأمر للقارئ بشكل كامل ومفصل."
+            "لتوضيح معنى الكلام بشكل كامل ومفيد."
         val s2 = "وهذه هي الجملة الثانية التي تلي الأولى وتوضح فكرة جديدة " +
-            "ومفيدة في سياق الحديث والنطق."
-        val s3 = "أما الجملة الثالثة فهي خاتمة هذا النص الطويل المنطوق."
+            "ومفيدة في سياق الحديث والنص."
+        val s3 = "أما الجملة الثالثة فهي خاتمة لهذا النص الطويل المنقول."
         val full = "$s1 $s2 $s3"
         assertTrue("النص أطول من 220 حرفاً", full.length > 220)
 
@@ -314,5 +320,164 @@ class SpeechPlannerTest {
                 chunk.length <= 220
             )
         }
+    }
+
+    @Test
+    fun dynamicSpeedFactor_numberRole_isSlower() {
+        val item = SpeechPlanItem(
+            text = "123",
+            languageTag = "ar",
+            role = SpeechRole.NUMBER,
+            engine = null,
+            voiceId = null,
+            rate = 1.0f,
+            pitch = 1.0f,
+            volume = 1.0f
+        )
+        assertEquals(0.9f, SpeechPlanner.dynamicSpeedFactor(item), 0.001f)
+    }
+
+    @Test
+    fun dynamicSpeedFactor_shortText_isSlightlySlower() {
+        val item = SpeechPlanItem(
+            text = "مرحبا",
+            languageTag = "ar",
+            role = SpeechRole.TEXT,
+            engine = null,
+            voiceId = null,
+            rate = 1.0f,
+            pitch = 1.0f,
+            volume = 1.0f
+        )
+        val factor = SpeechPlanner.dynamicSpeedFactor(item)
+        assertTrue("النص القصير أبطأ قليلاً", factor < 1.0f)
+        assertTrue("ضمن الحدود الآمنة", factor >= 0.85f)
+    }
+
+    @Test
+    fun dynamicSpeedFactor_longText_isFasterWithinBounds() {
+        val longText = "هذا نص طويل جداً يحتوي على عدد كبير من الكلمات " +
+            "والجمل المتتابعة بحيث يتجاوز الطول المعتاد للجمل القصيرة " +
+            "ويحتاج إلى تسريع بسيط ضمن حدود آمنة للحفاظ على وضوح " +
+            "النطق وجودة القراءة دون إفراط في السرعة أو بطء."
+        val item = SpeechPlanItem(
+            text = longText,
+            languageTag = "ar",
+            role = SpeechRole.TEXT,
+            engine = null,
+            voiceId = null,
+            rate = 1.0f,
+            pitch = 1.0f,
+            volume = 1.0f
+        )
+        val factor = SpeechPlanner.dynamicSpeedFactor(item)
+        assertTrue("النص الطويل أسرع قليلاً", factor > 1.0f)
+        assertTrue("لا يتجاوز الحد الأعلى", factor <= 1.20f)
+    }
+
+    @Test
+    fun plan_dynamicSpeedEnabled_scalesItemRate() {
+        val prefs = FakeVoicePrefs(dynamicSpeedEnabled = true)
+        val short = "مرحبا"
+        val items = SpeechPlanner.plan(
+            rawText = short,
+            fallbackLanguage = LanguageCode.AR.tag,
+            settings = prefs,
+            defaultRate = 1.0f
+        )
+        assertEquals(1, items.size)
+        assertTrue(
+            "معدل النص القصير أقل من 1 عند التفعيل",
+            items[0].rate < 1.0f
+        )
+    }
+
+    @Test
+    fun plan_dynamicSpeedDisabled_keepsDefaultRate() {
+        val prefs = FakeVoicePrefs(dynamicSpeedEnabled = false)
+        val short = "مرحبا"
+        val items = SpeechPlanner.plan(
+            rawText = short,
+            fallbackLanguage = LanguageCode.AR.tag,
+            settings = prefs,
+            defaultRate = 1.0f
+        )
+        assertEquals(1, items.size)
+        assertEquals(1.0f, items[0].rate, 0.001f)
+    }
+
+    @Test
+    fun splitDialogueNarration_plainText_isNarration() {
+        val parts = SpeechPlanner.splitDialogueNarration("هذا نص سردي عادي")
+        assertEquals(1, parts.size)
+        assertEquals(SpeechRole.NARRATION, parts[0].first)
+        assertEquals("هذا نص سردي عادي", parts[0].second)
+    }
+
+    @Test
+    fun splitDialogueNarration_quotedDialogue_splitsRoles() {
+        val text = "قال \"مرحبا\" ثم ذهب"
+        val parts = SpeechPlanner.splitDialogueNarration(text)
+        assertTrue("انقسام إلى أكثر من جزء", parts.size >= 2)
+        assertTrue(
+            "وجود جزء حوار",
+            parts.any { it.first == SpeechRole.DIALOGUE }
+        )
+        assertTrue(
+            "وجود جزء سرد",
+            parts.any { it.first == SpeechRole.NARRATION }
+        )
+        val joined = parts.joinToString(" ") { it.second }
+        assertTrue(joined.contains("مرحبا"))
+        assertTrue(joined.contains("قال") || joined.contains("ذهب"))
+    }
+
+    @Test
+    fun splitDialogueNarration_dashLine_isDialogue() {
+        val text = "— مرحبا يا صديقي"
+        val parts = SpeechPlanner.splitDialogueNarration(text)
+        assertEquals(1, parts.size)
+        assertEquals(SpeechRole.DIALOGUE, parts[0].first)
+    }
+
+    @Test
+    fun plan_multiVoiceReaderDisabled_keepsTextRole() {
+        val prefs = FakeVoicePrefs(
+            voices = mapOf("ar" to "voice-ar"),
+            multiVoiceReaderEnabled = false
+        )
+        val items = SpeechPlanner.plan(
+            rawText = "قال \"مرحبا\"",
+            fallbackLanguage = LanguageCode.AR.tag,
+            settings = prefs
+        )
+        assertTrue(items.isNotEmpty())
+        assertTrue(items.none { it.role == SpeechRole.DIALOGUE })
+        assertTrue(items.none { it.role == SpeechRole.NARRATION })
+    }
+
+    @Test
+    fun plan_multiVoiceReaderEnabled_splitsDialogueAndNarration() {
+        val prefs = FakeVoicePrefs(
+            voices = mapOf("ar" to "voice-ar"),
+            categoryVoices = mapOf(
+                SettingsRepository.VOICE_CATEGORY_DIALOGUE to "voice-dlg",
+                SettingsRepository.VOICE_CATEGORY_NARRATION to "voice-nar"
+            ),
+            multiVoiceReaderEnabled = true
+        )
+        val items = SpeechPlanner.plan(
+            rawText = "قال \"مرحبا\" ثم ذهب",
+            fallbackLanguage = LanguageCode.AR.tag,
+            settings = prefs
+        )
+        assertTrue(
+            "وجود دور حوار عند التفعيل",
+            items.any { it.role == SpeechRole.DIALOGUE }
+        )
+        assertTrue(
+            "وجود دور سرد عند التفعيل",
+            items.any { it.role == SpeechRole.NARRATION }
+        )
     }
 }

@@ -11,6 +11,7 @@ import com.aymankhattab.nateq.engine.pipeline.CleanupStep
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
 import com.aymankhattab.nateq.engine.pipeline.DateStep
 import com.aymankhattab.nateq.engine.pipeline.DictionaryStep
+import com.aymankhattab.nateq.engine.pipeline.EgyptianSpeechProcessingStep
 import com.aymankhattab.nateq.engine.pipeline.EmojiStripStep
 import com.aymankhattab.nateq.engine.pipeline.FrancoArabicStep
 import com.aymankhattab.nateq.engine.pipeline.IndicDigitsStep
@@ -173,6 +174,13 @@ class TextProcessor(
         steps += TashkeelStripStep
         steps += EmojiStripStep { emojiEnabled }
         return steps
+    }
+
+    /** معالجة مصرية/تشكيل خفيف على النص العربي النهائي (قبل المحرك). */
+    private fun applyEgyptianProcessing(text: String): String {
+        val s = injectedSettings ?: return text
+        if (!s.isEgyptianSpeechProcessingEnabled()) return text
+        return EgyptianSpeechProcessingStep { true }.apply(text)
     }
 
     private fun buildBaseSteps(
@@ -431,7 +439,8 @@ class TextProcessor(
             out = unmaskUrls(out, urls)
             val cleaned = CleanupStep.apply(out)
             val finalized = finalizeArabic(voweledSource, cleaned)
-            return stripNumberMarkersIfUnmarked(finalized, markNumbers)
+            val egyptian = applyEgyptianProcessing(finalized)
+            return stripNumberMarkersIfUnmarked(egyptian, markNumbers)
         }
 
         for (step in buildHeavySteps(markNumbers)) out = step.apply(out)
@@ -446,7 +455,8 @@ class TextProcessor(
         }
         val cleaned = CleanupStep.apply(out)
         val finalized = finalizeArabic(voweledSource, cleaned)
-        return stripNumberMarkersIfUnmarked(finalized, markNumbers)
+        val egyptian = applyEgyptianProcessing(finalized)
+        return stripNumberMarkersIfUnmarked(egyptian, markNumbers)
     }
 
     /**
@@ -652,7 +662,8 @@ class TextProcessor(
             }
             result = markRemainingDigits(result)
         }
-        return CleanupStep.apply(result)
+        val cleanedAr = CleanupStep.apply(result)
+        return applyEgyptianProcessing(cleanedAr)
     }
 
     /**

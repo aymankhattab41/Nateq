@@ -75,6 +75,16 @@ object SpeechPlanner {
                     SettingsRepository.VOICE_CATEGORY_NUMBERS
                 )
             }.getOrNull()
+            SpeechRole.DIALOGUE -> runCatching {
+                settings?.getPreferredVoiceIdForCategory(
+                    SettingsRepository.VOICE_CATEGORY_DIALOGUE
+                )
+            }.getOrNull()
+            SpeechRole.NARRATION -> runCatching {
+                settings?.getPreferredVoiceIdForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NARRATION
+                )
+            }.getOrNull()
             SpeechRole.TEXT -> null
         }
 
@@ -92,6 +102,16 @@ object SpeechPlanner {
             SpeechRole.NUMBER -> runCatching {
                 settings?.getEngineForCategory(
                     SettingsRepository.VOICE_CATEGORY_NUMBERS
+                )
+            }.getOrNull()
+            SpeechRole.DIALOGUE -> runCatching {
+                settings?.getEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_DIALOGUE
+                )
+            }.getOrNull()
+            SpeechRole.NARRATION -> runCatching {
+                settings?.getEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NARRATION
                 )
             }.getOrNull()
             SpeechRole.TEXT -> null
@@ -118,6 +138,16 @@ object SpeechPlanner {
                     SettingsRepository.VOICE_CATEGORY_NUMBERS
                 )
             }.getOrNull() ?: defaultEngine
+            VoiceResolutionPolicy.SOURCE_CATEGORY_DIALOGUE -> runCatching {
+                settings?.getEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_DIALOGUE
+                )
+            }.getOrNull() ?: defaultEngine
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NARRATION -> runCatching {
+                settings?.getEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NARRATION
+                )
+            }.getOrNull() ?: defaultEngine
             else -> {
                 val langEngine = runCatching {
                     settings?.getEngineForLanguage(languageTag)
@@ -127,103 +157,65 @@ object SpeechPlanner {
             }
         }
 
-        val rate = when (resolved.source) {
-            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> {
-                if (settings?.hasExplicitSpeechRateForCategory(
-                        SettingsRepository.VOICE_CATEGORY_EMOJI
-                    ) == true
-                ) {
-                    settings?.getSpeechRateForCategory(
-                        SettingsRepository.VOICE_CATEGORY_EMOJI
-                    ) ?: defaultRate
-                } else {
-                    defaultRate
-                }
-            }
+        val categoryForSource = when (resolved.source) {
+            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI ->
+                SettingsRepository.VOICE_CATEGORY_EMOJI
             VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> {
-                if (settings?.hasExplicitSpeechRateForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    ) == true
-                ) {
-                    settings?.getSpeechRateForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    ) ?: defaultRate
-                } else {
-                    defaultRate
-                }
-            }
-            else -> {
-                val langRate = settings?.getSpeechRateOrNull(languageTag)
-                    ?: settings?.getSpeechRateOrNull(canonicalTag)
-                langRate ?: defaultRate
-            }
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS ->
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            VoiceResolutionPolicy.SOURCE_CATEGORY_DIALOGUE ->
+                SettingsRepository.VOICE_CATEGORY_DIALOGUE
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NARRATION ->
+                SettingsRepository.VOICE_CATEGORY_NARRATION
+            else -> null
         }
 
-        val pitch = when (resolved.source) {
-            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> {
-                if (settings?.hasExplicitPitchForCategory(
-                        SettingsRepository.VOICE_CATEGORY_EMOJI
-                    ) == true
-                ) {
-                    settings?.getPitchForCategory(
-                        SettingsRepository.VOICE_CATEGORY_EMOJI
-                    ) ?: defaultPitch
-                } else {
-                    defaultPitch
-                }
+        val rate = if (categoryForSource != null) {
+            if (settings?.hasExplicitSpeechRateForCategory(
+                    categoryForSource
+                ) == true
+            ) {
+                settings?.getSpeechRateForCategory(categoryForSource)
+                    ?: defaultRate
+            } else {
+                defaultRate
             }
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> {
-                if (settings?.hasExplicitPitchForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    ) == true
-                ) {
-                    settings?.getPitchForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    ) ?: defaultPitch
-                } else {
-                    defaultPitch
-                }
-            }
-            else -> {
-                val langPitch = settings?.getPitchOrNull(languageTag)
-                    ?: settings?.getPitchOrNull(canonicalTag)
-                langPitch ?: defaultPitch
-            }
+        } else {
+            val langRate = settings?.getSpeechRateOrNull(languageTag)
+                ?: settings?.getSpeechRateOrNull(canonicalTag)
+            langRate ?: defaultRate
         }
 
-        val volume = when (resolved.source) {
-            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> {
-                if (settings?.hasExplicitVolumeForCategory(
-                        SettingsRepository.VOICE_CATEGORY_EMOJI
-                    ) == true
-                ) {
-                    settings?.getVolumeForCategory(
-                        SettingsRepository.VOICE_CATEGORY_EMOJI
-                    ) ?: defaultVolume
-                } else {
-                    defaultVolume
-                }
+        val pitch = if (categoryForSource != null) {
+            if (settings?.hasExplicitPitchForCategory(
+                    categoryForSource
+                ) == true
+            ) {
+                settings?.getPitchForCategory(categoryForSource)
+                    ?: defaultPitch
+            } else {
+                defaultPitch
             }
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> {
-                if (settings?.hasExplicitVolumeForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    ) == true
-                ) {
-                    settings?.getVolumeForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    ) ?: defaultVolume
-                } else {
-                    defaultVolume
-                }
+        } else {
+            val langPitch = settings?.getPitchOrNull(languageTag)
+                ?: settings?.getPitchOrNull(canonicalTag)
+            langPitch ?: defaultPitch
+        }
+
+        val volume = if (categoryForSource != null) {
+            if (settings?.hasExplicitVolumeForCategory(
+                    categoryForSource
+                ) == true
+            ) {
+                settings?.getVolumeForCategory(categoryForSource)
+                    ?: defaultVolume
+            } else {
+                defaultVolume
             }
-            else -> {
-                val langVol = settings?.getVolumeOrNull(languageTag)
-                    ?: settings?.getVolumeOrNull(canonicalTag)
-                langVol ?: defaultVolume
-            }
+        } else {
+            val langVol = settings?.getVolumeOrNull(languageTag)
+                ?: settings?.getVolumeOrNull(canonicalTag)
+            langVol ?: defaultVolume
         }
 
         return VoiceResolution(
@@ -292,6 +284,9 @@ object SpeechPlanner {
         val diagnostics = runCatching {
             settings?.isLanguageDiagnosticsEnabled() ?: false
         }.getOrDefault(false)
+        val multiVoiceEnabled = runCatching {
+            settings?.isMultiVoiceReaderEnabled() == true
+        }.getOrDefault(false)
         LanguageSegmenter.diagnosticsEnabled = diagnostics
         LatinLanguageDetector.diagnosticsEnabled = diagnostics
 
@@ -335,18 +330,11 @@ object SpeechPlanner {
                 for (seg in segs) {
                     val isNumCandidate = seg.role == SpeechRole.NUMBER ||
                         seg.isNumericOnly()
-                    val textRes = resolveVoiceForSegment(
-                        languageTag = seg.languageTag,
-                        role = SpeechRole.TEXT,
-                        settings = settings,
-                        defaultEngine = defaultEngine,
-                        defaultVoiceId = defaultVoiceId,
-                        defaultRate = defaultRate,
-                        defaultPitch = defaultPitch,
-                        defaultVolume = defaultVolume
-                    )
-                    val numRes = if (isNumCandidate) {
-                        resolveVoiceForSegment(
+                    val cleanSegText = seg.text
+                        .replace(EngineMarkers.NUMBER_MARK_START, "")
+                        .replace(EngineMarkers.NUMBER_MARK_END, "")
+                    if (isNumCandidate) {
+                        val numRes = resolveVoiceForSegment(
                             languageTag = seg.languageTag,
                             role = SpeechRole.NUMBER,
                             settings = settings,
@@ -356,56 +344,129 @@ object SpeechPlanner {
                             defaultPitch = defaultPitch,
                             defaultVolume = defaultVolume
                         )
-                    } else {
-                        textRes
-                    }
-
-                    val role = if (isNumCandidate && numRes != textRes) {
-                        SpeechRole.NUMBER
-                    } else {
-                        SpeechRole.TEXT
-                    }
-                    val resolved = if (role == SpeechRole.NUMBER) {
-                        numRes
-                    } else {
-                        textRes
-                    }
-
-                    val cleanText = seg.text
-                        .replace(EngineMarkers.NUMBER_MARK_START, "")
-                        .replace(EngineMarkers.NUMBER_MARK_END, "")
-                    Log.i(
-                        TAG,
-                        "[SpeechRouting] تخطيط المقطع: النص='$cleanText', " +
-                            "اللغة='${seg.languageTag}', " +
-                            "المحرك='${resolved.engine ?: "default"}', " +
-                            "الصوت='${resolved.voiceId ?: "default"}'"
-                    )
-                    items.add(
-                        SpeechPlanItem(
-                            text = cleanText,
+                        val textRes = resolveVoiceForSegment(
                             languageTag = seg.languageTag,
-                            role = role,
-                            engine = resolved.engine,
-                            voiceId = resolved.voiceId,
-                            rate = resolved.rate,
-                            pitch = resolved.pitch,
-                            volume = resolved.volume
+                            role = SpeechRole.TEXT,
+                            settings = settings,
+                            defaultEngine = defaultEngine,
+                            defaultVoiceId = defaultVoiceId,
+                            defaultRate = defaultRate,
+                            defaultPitch = defaultPitch,
+                            defaultVolume = defaultVolume
                         )
-                    )
+                        val role = if (numRes != textRes) {
+                            SpeechRole.NUMBER
+                        } else {
+                            SpeechRole.TEXT
+                        }
+                        val resolved = if (role == SpeechRole.NUMBER) {
+                            numRes
+                        } else {
+                            textRes
+                        }
+                        Log.i(
+                            TAG,
+                            "[SpeechRouting] تخطيط المقطع: النص='$cleanSegText', " +
+                                "اللغة='${seg.languageTag}', " +
+                                "المحرك='${resolved.engine ?: "default"}', " +
+                                "الصوت='${resolved.voiceId ?: "default"}'"
+                        )
+                        items.add(
+                            SpeechPlanItem(
+                                text = cleanSegText,
+                                languageTag = seg.languageTag,
+                                role = role,
+                                engine = resolved.engine,
+                                voiceId = resolved.voiceId,
+                                rate = resolved.rate,
+                                pitch = resolved.pitch,
+                                volume = resolved.volume
+                            )
+                        )
+                    } else if (multiVoiceEnabled) {
+                        val roleChunks = splitDialogueNarration(cleanSegText)
+                        for ((chunkRole, chunkText) in roleChunks) {
+                            if (chunkText.isBlank()) continue
+                            val resolved = resolveVoiceForSegment(
+                                languageTag = seg.languageTag,
+                                role = chunkRole,
+                                settings = settings,
+                                defaultEngine = defaultEngine,
+                                defaultVoiceId = defaultVoiceId,
+                                defaultRate = defaultRate,
+                                defaultPitch = defaultPitch,
+                                defaultVolume = defaultVolume
+                            )
+                            Log.i(
+                                TAG,
+                                "[SpeechRouting] تخطيط المقطع: النص='$chunkText', " +
+                                    "اللغة='${seg.languageTag}', " +
+                                    "الدور='$chunkRole', " +
+                                    "المحرك='${resolved.engine ?: "default"}', " +
+                                    "الصوت='${resolved.voiceId ?: "default"}'"
+                            )
+                            items.add(
+                                SpeechPlanItem(
+                                    text = chunkText,
+                                    languageTag = seg.languageTag,
+                                    role = chunkRole,
+                                    engine = resolved.engine,
+                                    voiceId = resolved.voiceId,
+                                    rate = resolved.rate,
+                                    pitch = resolved.pitch,
+                                    volume = resolved.volume
+                                )
+                            )
+                        }
+                    } else {
+                        val resolved = resolveVoiceForSegment(
+                            languageTag = seg.languageTag,
+                            role = SpeechRole.TEXT,
+                            settings = settings,
+                            defaultEngine = defaultEngine,
+                            defaultVoiceId = defaultVoiceId,
+                            defaultRate = defaultRate,
+                            defaultPitch = defaultPitch,
+                            defaultVolume = defaultVolume
+                        )
+                        Log.i(
+                            TAG,
+                            "[SpeechRouting] تخطيط المقطع: النص='$cleanSegText', " +
+                                "اللغة='${seg.languageTag}', " +
+                                "المحرك='${resolved.engine ?: "default"}', " +
+                                "الصوت='${resolved.voiceId ?: "default"}'"
+                        )
+                        items.add(
+                            SpeechPlanItem(
+                                text = cleanSegText,
+                                languageTag = seg.languageTag,
+                                role = SpeechRole.TEXT,
+                                engine = resolved.engine,
+                                voiceId = resolved.voiceId,
+                                rate = resolved.rate,
+                                pitch = resolved.pitch,
+                                volume = resolved.volume
+                            )
+                        )
+                    }
                 }
             }
         }
 
         // دمج المقاطع المتجاورة التي تتطابق كل إعداداتها (الجولة 50 - الأمر 3)
+        // مع عدم دمج أدوار الحوار/السرد المختلفة في القارئ متعدد الأصوات.
         val mergedItems = ArrayList<SpeechPlanItem>()
         for (item in items) {
             val last = mergedItems.lastOrNull()
-            val canMergeRoles = last?.role == item.role ||
+            val rolesCompatible = last?.role == item.role ||
                 (last?.role != SpeechRole.EMOJI &&
-                    item.role != SpeechRole.EMOJI)
+                    item.role != SpeechRole.EMOJI &&
+                    last?.role != SpeechRole.DIALOGUE &&
+                    item.role != SpeechRole.DIALOGUE &&
+                    last?.role != SpeechRole.NARRATION &&
+                    item.role != SpeechRole.NARRATION)
             if (last != null &&
-                canMergeRoles &&
+                rolesCompatible &&
                 last.engine == item.engine &&
                 last.voiceId == item.voiceId &&
                 last.languageTag == item.languageTag &&
@@ -443,20 +504,34 @@ object SpeechPlanner {
 
         // تقسيم المقاطع الطويلة (> 220 حرفاً) عند الحدود اللغوية
         // أو الفواصل لتسريع زمن أول شريحة صوتية وتفادي تأخير وبطء الجمل الطويلة
-        val finalItems = ArrayList<SpeechPlanItem>()
+        val splitItems = ArrayList<SpeechPlanItem>()
         for (item in phoneSplitItems) {
             if (item.text.length > 220) {
                 val sentenceChunks = splitLongSentenceChunks(item.text, 220)
                 if (sentenceChunks.size > 1) {
                     for (chunk in sentenceChunks) {
-                        finalItems.add(item.copy(text = chunk))
+                        splitItems.add(item.copy(text = chunk))
                     }
                 } else {
-                    finalItems.add(item)
+                    splitItems.add(item)
                 }
             } else {
-                finalItems.add(item)
+                splitItems.add(item)
             }
+        }
+
+        val dynamicSpeedEnabled = runCatching {
+            settings?.isDynamicSpeedEnabled() == true
+        }.getOrDefault(false)
+        val finalItems = if (dynamicSpeedEnabled) {
+            val adjusted = ArrayList<SpeechPlanItem>(splitItems.size)
+            for (item in splitItems) {
+                val factor = dynamicSpeedFactor(item)
+                adjusted.add(item.copy(rate = item.rate * factor))
+            }
+            adjusted
+        } else {
+            splitItems
         }
 
         // خطوة 5: تسجيل debug تفصيلي لكل مقطع (ع٤٢-8)
@@ -508,6 +583,112 @@ object SpeechPlanner {
         return result
     }
 
+    /** تقسيم تقريبي إلى حوار/سرد حسب علامات الاقتباس والشرطات (إرشادي). */
+    internal fun splitDialogueNarration(
+        text: String
+    ): List<Pair<SpeechRole, String>> {
+        if (text.isBlank()) return listOf(SpeechRole.NARRATION to text)
+        val result = ArrayList<Pair<SpeechRole, String>>()
+        val sb = StringBuilder()
+        var currentRole = SpeechRole.NARRATION
+        var inQuote = false
+        var quoteChar: Char? = null
+        var i = 0
+        fun flush() {
+            if (sb.isNotEmpty()) {
+                val chunk = sb.toString()
+                if (chunk.isNotBlank()) {
+                    result.add(currentRole to chunk.trim())
+                }
+                sb.setLength(0)
+            }
+        }
+
+        // سطر يبدأ بشرطة حوار يُعامل كحوار كامل (إرشادي)
+        val trimmedStart = text.trimStart()
+        if (trimmedStart.isNotEmpty() &&
+            isDialogueDash(trimmedStart.first())
+        ) {
+            return listOf(SpeechRole.DIALOGUE to text.trim())
+        }
+
+        while (i < text.length) {
+            val c = text[i]
+            when {
+                isOpeningQuote(c) -> {
+                    if (!inQuote) {
+                        flush()
+                        inQuote = true
+                        quoteChar = matchingCloseQuote(c)
+                        currentRole = SpeechRole.DIALOGUE
+                        sb.append(c)
+                    } else {
+                        sb.append(c)
+                    }
+                }
+                inQuote && c == quoteChar -> {
+                    sb.append(c)
+                    flush()
+                    inQuote = false
+                    quoteChar = null
+                    currentRole = SpeechRole.NARRATION
+                }
+                inQuote && isAnyClosingQuote(c) && c != quoteChar -> {
+                    // إغلاق غير متوقع، أغلِق الحوار
+                    sb.append(c)
+                    flush()
+                    inQuote = false
+                    quoteChar = null
+                    currentRole = SpeechRole.NARRATION
+                }
+                c == '\n' -> {
+                    // شرطة حوار بعد سطر جديد
+                    var j = i + 1
+                    while (j < text.length && text[j].isWhitespace() && text[j] != '\n') j++
+                    if (j < text.length && isDialogueDash(text[j])) {
+                        flush()
+                        inQuote = false
+                        quoteChar = null
+                        currentRole = SpeechRole.DIALOGUE
+                        sb.append(c)
+                    } else {
+                        if (inQuote) {
+                            sb.append(c)
+                        } else {
+                            sb.append(c)
+                        }
+                    }
+                }
+                else -> sb.append(c)
+            }
+            i++
+        }
+        flush()
+        if (result.isEmpty()) {
+            return listOf(SpeechRole.NARRATION to text.trim())
+        }
+        return result
+    }
+
+    private fun isOpeningQuote(c: Char): Boolean =
+        c == '«' || c == '"' || c == '\u201C' || c == '\u201E' ||
+            c == '‹' || c == '\u300C'
+
+    private fun matchingCloseQuote(c: Char): Char = when (c) {
+        '«' -> '»'
+        '‹' -> '›'
+        '\u300C' -> '\u300D'
+        '"' -> '"'
+        '\u201C', '\u201E' -> '\u201D'
+        else -> c
+    }
+
+    private fun isAnyClosingQuote(c: Char): Boolean =
+        c == '»' || c == '"' || c == '\u201D' || c == '›' || c == '\u300D'
+
+    private fun isDialogueDash(c: Char): Boolean =
+        c == '—' || c == '–' || c == 'ـ' || c == '-'
+
     internal fun splitLongSentenceChunks(
         text: String,
         maxChars: Int = 220
@@ -548,5 +729,39 @@ object SpeechPlanner {
             }
         }
         return if (result.isEmpty()) listOf(text) else result
+    }
+
+    /**
+     * معامل سرعة ديناميكي لكل مقطع (قصير/أرقام أبطأ، طويل أسرع) بحدود آمنة.
+     * يُطبَّق فقط عند تفعيل السرعة الديناميكية ويتجاوز تسريع النص الطويل.
+     */
+    internal fun dynamicSpeedFactor(item: SpeechPlanItem): Float {
+        if (item.role == SpeechRole.NUMBER) return 0.9f
+        val text = item.text
+        val len = text.length
+        if (len == 0) return 1.0f
+        var letters = 0
+        var digits = 0
+        var i = 0
+        while (i < text.length) {
+            val cp = text.codePointAt(i)
+            when {
+                Character.isLetter(cp) -> letters++
+                Character.isDigit(cp) -> digits++
+            }
+            i += Character.charCount(cp)
+        }
+        val total = letters + digits
+        val digitRatio = if (total > 0) digits.toFloat() / total else 0f
+        if (digitRatio >= 0.5f) return 0.9f
+        val factor = when {
+            len <= 25 -> 0.92f
+            len <= 60 -> 0.97f
+            len <= 120 -> 1.0f
+            len <= 220 -> 1.05f
+            len <= 400 -> 1.10f
+            else -> 1.15f
+        }
+        return factor.coerceIn(0.85f, 1.20f)
     }
 }

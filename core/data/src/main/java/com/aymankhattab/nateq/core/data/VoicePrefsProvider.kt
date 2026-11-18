@@ -109,4 +109,10 @@ interface VoicePrefsProvider {
 
     /** هل تم حفظ صوت الطوارئ صراحةً؟ */
     fun isEmergencySaved(): Boolean = false
+
+    /** تفعيل السرعة الديناميكية حسب طول الجملة/المحتوى (افتراضي مقفول). */
+    fun isDynamicSpeedEnabled(): Boolean = false
+
+    /** تفعيل القارئ متعدد الأصوات للحوار/السرد (افتراضي مقفول). */
+    fun isMultiVoiceReaderEnabled(): Boolean = false
 }

@@ -723,15 +723,18 @@
 <string name="read_later_clear_all">Clear all</string>
     <string name="changelog_text">
 Version %1$s
+• Features 1–5 (off by default): (1) Egyptian speech processing and light Arabic diacritics before any engine (best effort, independent of preserving diacritics) via “Egyptian speech and light diacritics”. (2) Dynamic speed per segment/sentence within safe bounds, overriding long-text speedup when enabled while keeping legacy behavior when off. (3) Multi-voice reader (dialogue/narration) with role detection and per-role voice/engine selection, safe fallback, and no merging of adjacent dialogue/narration roles. (4) Best-effort auto description of unlabeled elements on focus using node properties, with optional auto-save. (5) Unlabeled element labels enabled with an accessible management screen (view/add/edit/delete) integrated with auto description.
+• Fixes and integration for this release: resolved new feature key contract/override conflicts and completed dialogue/narration role handling in planning and synthesis, added missing Arabic feature strings, fixed the label-management delete button reference and removed a BOM from the voice selection layout, plus targeted unit tests for Egyptian processing, dynamic speed, and dialogue/narration split/planning.
+• Reverted items 6 and 7: removed network security restrictions and SHA-256-verified voice-provider downloads, removed the first-speech baseline benchmark scenario, and cleaned related code and changelog.
+• Completed item 9 (accessibility): improved labels/states for interactive elements in settings and voice selection, announced collapsible section state and moved focus on expand/collapse, with dynamic accessibility and resource translation updates.
+• Completed item 14 (safe refactoring): extracted delegates/extensions for SettingsRepository and VoiceSelectionFragment (announcement templates, text processing/conversion, phone/keyboard input, general settings, device health/battery and audio cues, caller announcement, and UI actions/helpers) while preserving behavior and public contracts.
 • Accessibility and live-reading responsiveness: cache the home launcher package (invalidate on package changes) to avoid PackageManager queries on every tap, restrict FLAG_INCLUDE_NOT_IMPORTANT_VIEWS to required cases, and use a 100ms notification timeout for live/chat and Read more with content-change throttling preserved.
 • Logic cleanup: moved recurring Regex patterns to companion object constants in number, planning, accessibility, and TTS settings automation paths.
-• Download security hardening: removed the cleartext domain exception and enforced HTTPS-only downloads, with SHA-256 verification infrastructure before extraction (optional catalog hash field, storage check, and audible rejection on mismatch when a hash is provided).
 • UI/i18n improvements: moved hardcoded layout texts to string resources with English translations (speed dial) and verified no remaining hardcoded Arabic layout texts.
 • Read later: save shared text (Share → Nateq) to a local queue (up to 50 items) with view/play/delete/clear actions in Voice Selection.
 • Repeat last spoken: limited history to the last 10 items while relying on policies that exclude sensitive texts (e.g. OTP-like codes) and caller announcements.
 • YouTube ad skip (experimental): an accessibility option that tries to auto-click the Skip ad button (Arabic/English) in YouTube only, announces Ad skipped, and performs a lightweight periodic check.
-• Baseline Profile: added a best-effort first-utterance (preview) attempt to the startup/settings benchmark journey; generating the profile file still requires a connected device/emulator.
-• Comprehensive Vocalizer voice fixes (1-12): unified names/aliases (Tarek/Tariq/Tarik, Leila/Layla) and BCP-47 language matching, no silent selection for language-only IDs with clear reason, distinct Tarik variants (Compact/High) by variant/header identity with legacy value compatibility, voice completeness via .dat referenced by .hdr with unified recursive scan, no silent drop of empty language and propagated list-voices failure reasons with raw logging, preview text by language tag only, conversion dialog without silent drop/selection with audible absence reasons and save/enable handling, normalized mixed-text segLang/convertLang comparison, and audible announcement on VOICE_NOT_FOUND/LOAD_VOICE_FAILED while preserving the error reason.
+• Comprehensive Vocalizer voice fixes (1-12): unified names/aliases (Tarek/Tariq/Tarik, Leila/Layla) and BCP-47 language matching, no silent selection for language-only IDs with clear reason, distinct Tarik variants (Compact/High) by variant/header identity with legacy value compatibility, voice completeness via.dat referenced by.hdr with unified recursive scan, no silent drop of empty language and propagated list-voices failure reasons with raw logging, preview text by language tag only, conversion dialog without silent drop/selection with audible absence reasons and save/enable handling, normalized mixed-text segLang/convertLang comparison, and audible announcement on VOICE_NOT_FOUND/LOAD_VOICE_FAILED while preserving the error reason.
 • Voice save is reported successful only after a real success; failures are audible and visible.
 • Switching engines with unsaved edits offers Save/Discard/Cancel with no silent loss.
 • Voice-to-engine matching ignores whitespace and letter case, with an audible rejection.
@@ -816,7 +819,7 @@ Version %1$s
 • Resolved embedded Acapela voice loading failure (e.g. Salma init…
 • Fixed embedded Acapela voice loading (e.g. Salma and Mehdi) by…
 • Unified speech rate calculation across TalkBack, service, and preview…
-• Resolved Acapela embedded engine playback by ensuring both .inf and…
+• Resolved Acapela embedded engine playback by ensuring both.inf and…
 • Fixed embedded Acapela voice filtering when selecting Arabic by…
 • Fixed embedded Acapela voice synthesis and playback after import by…
 • Enforced instantaneous speech rate, pitch, and volume routing per…
@@ -1402,4 +1405,39 @@ Version %1$s
     <string name="speed_dial_tab_saved">Saved</string>
     <string name="speed_dial_slot_badge">Speed dial</string>
     <string name="speed_dial_slot_empty_hint">Long press to assign a number</string>
+    <string name="cd_dictionary_entry_item">Dictionary entry</string>
+    <string name="cd_embedded_language_item">Embedded engine language</string>
+    <string name="cd_embedded_voice_group_item">Embedded voice group</string>
+    <string name="cd_engine_status_item">Engine status</string>
+
+    <!-- Unlabeled element labels and auto description -->
+    <string name="a11y_custom_unlabeled_title">Speak custom labels for unlabeled elements</string>
+    <string name="a11y_custom_unlabeled_summary">Speaks a saved label when focusing an element that has no text or description.</string>
+    <string name="a11y_auto_describe_unlabeled_title">Auto-describe unlabeled elements</string>
+    <string name="a11y_auto_describe_unlabeled_summary">Generates a best-effort description for unlabeled elements on focus using available node properties.</string>
+    <string name="a11y_auto_save_unlabeled_title">Auto-save unlabeled element descriptions</string>
+    <string name="a11y_auto_save_unlabeled_summary">Saves the generated description as a custom label for that element (when package and view id are known) for future use.</string>
+    <string name="a11y_manage_unlabeled_labels">Manage unlabeled element labels</string>
+    <string name="unlabeled_labels_title">Unlabeled element labels</string>
+    <string name="unlabeled_labels_empty">No saved labels. You can add a label for an element by package name and view id.</string>
+    <string name="unlabeled_labels_add">Add label</string>
+    <string name="unlabeled_labels_edit">Edit label</string>
+    <string name="unlabeled_labels_delete">Delete label</string>
+    <string name="unlabeled_labels_delete_confirm">Delete this label?</string>
+    <string name="unlabeled_labels_deleted">Label deleted</string>
+    <string name="unlabeled_labels_saved">Label saved</string>
+    <string name="unlabeled_labels_invalid">Enter package name, view id, and label</string>
+    <string name="unlabeled_labels_package_hint">Package name</string>
+    <string name="unlabeled_labels_viewid_hint">View id</string>
+    <string name="unlabeled_labels_label_hint">Label</string>
+
+    <!-- Text processing and reading features (1-3) -->
+    <string name="egyptian_speech_processing_enabled">Egyptian speech processing and light diacritics</string>
+    <string name="egyptian_speech_processing_summary">Applies best-effort Arabic processing (common Egyptian alternatives and light diacritics for selected words) before any engine, independent of preserving diacritics.</string>
+    <string name="dynamic_speed_enabled">Dynamic speed per segment</string>
+    <string name="dynamic_speed_summary">Adjusts each segment/sentence speed automatically within safe bounds based on length and content. When enabled it overrides long-text speedup; when disabled the previous behavior is kept.</string>
+    <string name="multi_voice_reader_enabled">Multi-voice reader (dialogue/narration)</string>
+    <string name="multi_voice_reader_summary">Splits dialogue and narration roles and uses dialogue/narration category voices/engines with safe fallback to the default voice, without merging adjacent roles.</string>
+    <string name="voice_category_dialogue">Dialogue</string>
+    <string name="voice_category_narration">Narration</string>
 </resources>

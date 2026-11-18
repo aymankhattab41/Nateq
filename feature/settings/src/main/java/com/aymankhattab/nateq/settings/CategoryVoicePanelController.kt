@@ -59,6 +59,14 @@ internal enum class CategoryPanelEntry(
         SettingsRepository.VOICE_CATEGORY_NUMBERS,
         R.string.voice_category_numbers
     ),
+    DIALOGUE(
+        SettingsRepository.VOICE_CATEGORY_DIALOGUE,
+        R.string.voice_category_dialogue
+    ),
+    NARRATION(
+        SettingsRepository.VOICE_CATEGORY_NARRATION,
+        R.string.voice_category_narration
+    ),
     NOTIFICATIONS(
         SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
         R.string.voice_category_notifications

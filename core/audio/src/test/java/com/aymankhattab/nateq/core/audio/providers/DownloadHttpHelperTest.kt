@@ -15,13 +15,19 @@ class DownloadHttpHelperTest {
     }
 
     @Test
-    fun validateProtocol_rejectsCleartextHttp() {
+    fun validateProtocol_acceptsAllowedCleartextDomain() {
         val url = URL(
             "http://downloads.codefactoryglobal.com/vocalizer/voice.zip"
         )
+        DownloadHttpHelper.validateProtocol(url)
+    }
+
+    @Test
+    fun validateProtocol_rejectsOtherCleartextHttp() {
+        val url = URL("http://example.com/voice.zip")
         try {
             DownloadHttpHelper.validateProtocol(url)
-            fail("Expected DownloadError for cleartext HTTP")
+            fail("Expected DownloadError for unauthorized cleartext HTTP")
         } catch (e: DownloadError) {
             assertEquals(DownloadError.REDIRECT_BLOCKED, e.code)
         }

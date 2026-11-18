@@ -70,6 +70,9 @@ class FeatureFlagsUsageGuardTest {
             FeatureFlags.FEATURE_CUSTOM_UNLABELED to listOf(
                 "NateqAccessibilityService (via UnlabeledLabelsHandler) ✅",
             ),
+            FeatureFlags.FEATURE_AUTO_DESCRIBE_UNLABELED to listOf(
+                "NateqAccessibilityService (via AutoDescribeUnlabeledHandler) ✅",
+            ),
             FeatureFlags.FEATURE_TYPING_ECHO to listOf(
                 "NateqAccessibilityService (via TypingEchoHandler) ✅",
             ),

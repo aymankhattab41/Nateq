@@ -9,13 +9,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
-import java.security.MessageDigest
 import javax.net.ssl.SSLException
 
 /**
@@ -24,6 +22,8 @@ import javax.net.ssl.SSLException
 object DownloadHttpHelper {
 
     private const val TAG = "DownloadHttpHelper"
+    private const val ALLOWED_CLEARTEXT_HOST =
+        "downloads.codefactoryglobal.com"
 
     /** مجلد التنزيلات المؤقتة الداخلي الدائم (ع٣٠-7). */
     fun getDownloadsDir(context: Context): File {
@@ -40,61 +40,41 @@ object DownloadHttpHelper {
         val contentType: String
     )
 
-
-
     /**
-     * يتحقق من توفر مساحة تخزين كافية (بالميغابايت) في مسار الوجهة.
+     * التحقق من مساحة التخزين المتاحة مقابل الحجم المطلوب (مؤقت + مستخرج).
      */
-    fun checkStorageSpace(destination: File, requiredMb: Int) {
-        if (requiredMb <= 0) return
+    fun checkStorageSpace(dir: File, requiredMb: Int) {
         try {
-            val dir = if (destination.exists() && destination.isDirectory) {
-                destination
-            } else {
-                destination.parentFile ?: destination
-            }
+            if (!dir.exists()) dir.mkdirs()
             val stat = StatFs(dir.absolutePath)
-            val available = stat.availableBytes
-            val required = requiredMb.toLong() * 1024L * 1024L
-            if (available < required) {
+            val availableBytes = stat.availableBytes
+            val requiredBytes = requiredMb * 2L * 1024 * 1024
+            if (availableBytes < requiredBytes) {
+                val availMb = availableBytes / (1024 * 1024)
+                val reqMb = requiredMb * 2
                 throw DownloadError(
                     DownloadError.NO_SPACE,
-                    "المساحة المتاحة غير كافية"
+                    "المساحة المتاحة (${availMb}MB) أقل من المطلوب (${reqMb}MB)"
                 )
             }
         } catch (e: DownloadError) {
             throw e
         } catch (t: Throwable) {
-            Log.w(TAG, "تعذر فحص المساحة: ${t.message}")
+            Log.w(TAG, "StatFs check skipped for ${dir.path}: ${t.message}")
         }
-    }
-
-    /** حساب بصمة SHA-256 لملف (سداسي عشري بحروف صغيرة). */
-    fun sha256Hex(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        FileInputStream(file).use { fis ->
-            val buffer = ByteArray(8192)
-            var read: Int
-            while (fis.read(buffer).also { read = it } != -1) {
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
-
-    /** يتحقق من تطابق بصمة الملف مع القيمة المتوقعة (غير حسّاس لحالة الأحرف). */
-    fun verifySha256(file: File, expectedHex: String): Boolean {
-        val actual = sha256Hex(file)
-        return actual.equals(expectedHex.trim(), ignoreCase = true)
     }
 
     /**
-     * السماح ببروتوكول https فقط (بند 6: إزالة استثناء HTTP لحزم التنزيل).
+     * التحقق من أن البروتوكول آمن https
+     * أو مسموح به صراحة في network_security_config.
      */
     fun validateProtocol(url: URL) {
         val protocol = url.protocol.lowercase()
         val host = url.host.lowercase()
         if (protocol == "https") {
+            return
+        }
+        if (protocol == "http" && host == ALLOWED_CLEARTEXT_HOST) {
             return
         }
         throw DownloadError(

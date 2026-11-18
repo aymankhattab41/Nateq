@@ -92,6 +92,7 @@
             android:id="@+id/seek_emergency_rate"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:contentDescription="@string/speech_rate_label"
             android:max="25"
             android:progress="5" />
 
@@ -120,6 +121,7 @@
             android:id="@+id/seek_emergency_pitch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:contentDescription="@string/pitch_label"
             android:max="15"
             android:progress="5" />
 
@@ -148,6 +150,7 @@
             android:id="@+id/seek_emergency_volume"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:contentDescription="@string/volume_label"
             android:max="20"
             android:progress="20" />
 

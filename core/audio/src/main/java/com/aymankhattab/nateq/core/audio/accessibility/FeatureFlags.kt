@@ -17,6 +17,8 @@ object FeatureFlags {
     const val FEATURE_APP_PROFILES = "a11y_app_profiles"
     const val FEATURE_AUTO_PROFILE_SWITCH = "a11y_auto_profile_switch"
     const val FEATURE_CUSTOM_UNLABELED = "a11y_custom_unlabeled"
+    /** وصف تلقائي للعناصر بلا تسمية (OCR/استدلال) عند التركيز. */
+    const val FEATURE_AUTO_DESCRIBE_UNLABELED = "a11y_auto_describe_unlabeled"
     const val FEATURE_TYPING_ECHO = "a11y_typing_echo"
     const val FEATURE_KEY_SHORTCUTS = "a11y_key_shortcuts"
     const val FEATURE_ACCESSIBILITY_BUTTON = "a11y_accessibility_button"
@@ -45,6 +47,7 @@ object FeatureFlags {
         FEATURE_APP_PROFILES,
         FEATURE_AUTO_PROFILE_SWITCH,
         FEATURE_CUSTOM_UNLABELED,
+        FEATURE_AUTO_DESCRIBE_UNLABELED,
         FEATURE_TYPING_ECHO,
         FEATURE_KEY_SHORTCUTS,
         FEATURE_ACCESSIBILITY_BUTTON,

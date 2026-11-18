@@ -25,6 +25,13 @@ interface TextProcessingPreferences {
 
     /** نطق الروابط بنطاقها المختصر بدل قراءتها كاملة. الافتراضي: false. */
     fun isUrlShorteningEnabled(): Boolean = false
+
+    /**
+     * معالجة النص العربية بأسلوب مصري/تشكيل تلقائي خفيف (قواعد نطق مصرية
+     * كالجيم/القاف وكلمات شائعة + تشكيل للكلمات الشائعة) قبل أي محرك.
+     * الافتراضي: false (مقفول).
+     */
+    fun isEgyptianSpeechProcessingEnabled(): Boolean = false
 }
 
 /**
@@ -39,6 +46,12 @@ interface SynthesisConfig : TextProcessingPreferences {
 
     /** مستوى نطق علامات الترقيم والرموز: 0 لا شيء، 1 البعض، 2 الكل. */
     fun getPunctuationLevel(): Int
+
+    /** سرعة ديناميكية حسب طول الجملة/نوع المحتوى (افتراضي مقفول). */
+    fun isDynamicSpeedEnabled(): Boolean = false
+
+    /** قارئ متعدد الأصوات للحوار/السرد (افتراضي مقفول). */
+    fun isMultiVoiceReaderEnabled(): Boolean = false
 
     /**
      * الحفاظ على تشكيل النصوص العربية المُرسلة للمحرك: التجريد الداخلي

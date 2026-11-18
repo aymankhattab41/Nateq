@@ -43,7 +43,7 @@ class SettingsRepository(context: Context) :
     AccessibilityPrefs {
 
     companion object {
-        private const val TAG = "NATEQ_TTS"
+        internal const val TAG = "NATEQ_TTS"
         private const val NEW_PREFS = "nateq_settings"
         private const val OLD_PREFS = "nateq_secure_settings"
         private const val FALLBACK_PREFS = "nateq_fallback_settings"
@@ -51,19 +51,19 @@ class SettingsRepository(context: Context) :
 
         /** **بند V2:** تفعيلُ الصدى (PresetReverb) — مستقلٌّ عن
          *  `audio_expansion_level` وافتراضياً false. */
-        private const val KEY_AUDIO_REVERB_ENABLED = "audio_reverb_enabled"
+        internal const val KEY_AUDIO_REVERB_ENABLED = "audio_reverb_enabled"
 
         const val KEY_ANDROID17_BANKING_HARDENING =
             "android17_banking_hardening"
 
         /** **بند V3:** فئاتُ الإعلانات التي عُطّل فيها مؤثر الصوت. */
-        private const val KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES =
+        internal const val KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES =
             "audio_effects_disabled_categories"
 
         /** فئاتُ الإعلانات التي يقبلها [KNOWN_EFFECT_CATEGORIES] — مطابقة
          *  لـ`AnnouncementSpeaker.EVENT_CATEGORIES` عمداً، فكلُّ فئةٍ
          *  إعلانية قابلةٌ للتعطيل ما عدا قراءةِ النص الطويل. */
-        private val KNOWN_EFFECT_CATEGORIES = setOf(
+        internal val KNOWN_EFFECT_CATEGORIES = setOf(
             VOICE_CATEGORY_TIME,
             VOICE_CATEGORY_BATTERY,
             ANNOUNCE_CATEGORY_CALLER,
@@ -98,6 +98,8 @@ class SettingsRepository(context: Context) :
         const val VOICE_CATEGORY_NOTIFICATIONS = "notifications"
         const val VOICE_CATEGORY_DEFAULT = "default"
         const val VOICE_CATEGORY_EMOJI = "emoji"
+        const val VOICE_CATEGORY_DIALOGUE = "dialogue"
+        const val VOICE_CATEGORY_NARRATION = "narration"
         const val VOICE_CATEGORY_BATTERY = "battery"
         const val VOICE_CATEGORY_LORD_SYSTEM = "lord_system"
         const val ENGINE_LORD_TTS = "lord_tts"
@@ -148,6 +150,8 @@ class SettingsRepository(context: Context) :
             VOICE_CATEGORY_TIME,
             VOICE_CATEGORY_NUMBERS,
             VOICE_CATEGORY_NOTIFICATIONS,
+            VOICE_CATEGORY_DIALOGUE,
+            VOICE_CATEGORY_NARRATION,
             VOICE_CATEGORY_BATTERY,
             VOICE_CATEGORY_LORD_SYSTEM,
             ANNOUNCE_CATEGORY_CALLER,
@@ -195,7 +199,7 @@ class SettingsRepository(context: Context) :
          *  الهز/التقارب يفعّلان مستشعرات فعلية تُثبَّت false عند الترميم
          *  حتى لا تستهلك مستشعراً بلا علم المستخدم
          *  (المحور 6 — «إعداد آمن عند الاستيراد»). */
-        private val SAFE_DEFAULT_FALSE_KEYS = setOf(
+        internal val SAFE_DEFAULT_FALSE_KEYS = setOf(
             "shake_to_stop_enabled",
             "proximity_silence_enabled",
             "long_text_speedup_enabled",
@@ -234,7 +238,7 @@ class SettingsRepository(context: Context) :
          *  (تبدأ بـ «_») لكن لا يجوز أن يمسحها clear() في importSettings وإلا
          *  يتحرك الترحيل من جديد فوق نسخةٍ مكتملة.
          *  تُحفظ وتُعاد عند الاستيراد. */
-        private val MIGRATION_KEYS = listOf(
+        internal val MIGRATION_KEYS = listOf(
             KEY_MIGRATED,
             KEY_QUIET_MIGRATED,
             KEY_QUIET_BITMASK_MIGRATED,
@@ -287,8 +291,8 @@ class SettingsRepository(context: Context) :
         const val KEY_APP_PROFILES = "app_profiles"
         const val KEY_CONTACT_VOICES = "contact_voices"
         const val KEY_READ_LATER = "read_later_queue"
-        private const val MAX_READ_LATER_ITEMS = 50
-        private const val MAX_READ_LATER_TEXT_CHARS = 20_000
+        internal const val MAX_READ_LATER_ITEMS = 50
+        internal const val MAX_READ_LATER_TEXT_CHARS = 20_000
         const val BOOT_MIRROR_PREFS = "nateq_boot_mirror"
         const val KEY_EMERGENCY_ENGINE = "emergency_engine"
         const val KEY_EMERGENCY_VOICE = "emergency_voice"
@@ -426,7 +430,7 @@ class SettingsRepository(context: Context) :
     /** المخزن الحقيقي على القرص (مصدر اللقطة): تُقرأ منه وسوم الترحيل عبر
      *  [rawPrefs] لا من [prefs] لأن الرصدَ الخارجي قد يكتب المخزن مباشرةً
      *  (اختبار/مكوّن قديم) فيبقى قرصه محدّثاً ولقطةُ الغلاف غيرَ ملتقطة. */
-    private val rawPrefs: SharedPreferences = openSharedPrefs().also {
+    internal val rawPrefs: SharedPreferences = openSharedPrefs().also {
         migrateIfNeeded(it)
         migrateBatteryVoicePrefsIfNeeded(it)
         migratePreferredVoiceEngineKeysIfNeeded(it)
@@ -445,7 +449,7 @@ class SettingsRepository(context: Context) :
      * ([migrateIfNeeded])، ثم تُبني اللقطة من مضمونه فيحسب النطق والمستخدم
      * الجديد ما ترحّل مباشرةً بلا دورة إضافية.
      */
-    private val prefs: SnapshotPrefs = SnapshotPrefs(
+    internal val prefs: SnapshotPrefs = SnapshotPrefs(
         delegate = rawPrefs,
         onChanged = ::notifySettingsChanged,
         stampProvider = ::prefsFileStamp
@@ -753,7 +757,7 @@ class SettingsRepository(context: Context) :
      * المخزنة قبل إعادة التسمية تعمل وتعرض بشكل صحيح في شاشات الإعدادات.
      * القاعدة كلها في [VoiceIdContract].
      */
-    private fun normalizeVoiceId(id: String?): String? =
+    internal fun normalizeVoiceId(id: String?): String? =
         VoiceIdContract.normalize(id)
 
     /**
@@ -1740,40 +1744,42 @@ class SettingsRepository(context: Context) :
         return null
     }
 
-    // ============ جملتا إعلان المتصل (قبل / بعد) ============
+    // ============ جملتا إعلان المتصل (قبل / بعد) وقالب الرسائل (مفوّض) ============
+    private val announcementTemplateDelegate by lazy {
+        SettingsAnnouncementTemplateDelegate(this)
+    }
 
-    /** الحقلّان الجديدان يحدّدهما المستخدم: ما يُنطق قبل اسم المتصل وما
-     *  يُنطق بعده. **حُذف القالب الواحد** بقرار المستخدم: قالبٌ واحدٌ
-     *  يستبدل العبارة كلها كان يخلط «قبل» بـ«بعد» فيصير ضبطُهما مستحيلاً
-     *  بلا كتابة العبارة كاملة. */
+    /** تفعيل/تعطيل البادئة النصية قبل اسم المتصل. */
     override fun isCallerPrefixEnabled(): Boolean =
-        prefs.getBoolean("caller_prefix_enabled", false)
+        announcementTemplateDelegate.isCallerPrefixEnabled()
+
     override fun setCallerPrefixEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("caller_prefix_enabled", enabled).apply()
+        announcementTemplateDelegate.setCallerPrefixEnabled(enabled)
+
     override fun getCallerPrefixText(): String =
-        prefs.getString("caller_prefix_text", "") ?: ""
+        announcementTemplateDelegate.getCallerPrefixText()
+
     override fun setCallerPrefixText(text: String?) =
-        prefs.edit()
-            .putString("caller_prefix_text", text?.trim().orEmpty())
-            .apply()
+        announcementTemplateDelegate.setCallerPrefixText(text)
 
     override fun isCallerSuffixEnabled(): Boolean =
-        prefs.getBoolean("caller_suffix_enabled", false)
-    override fun setCallerSuffixEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("caller_suffix_enabled", enabled).apply()
-    override fun getCallerSuffixText(): String =
-        prefs.getString("caller_suffix_text", "") ?: ""
-    override fun setCallerSuffixText(text: String?) =
-        prefs.edit()
-            .putString("caller_suffix_text", text?.trim().orEmpty())
-            .apply()
+        announcementTemplateDelegate.isCallerSuffixEnabled()
 
-    /** قالب قراءة الرسائل: يُستبدل {name} و{message} باسم المرسل
-     *  ومحتوى الرسالة. */
+    override fun setCallerSuffixEnabled(enabled: Boolean) =
+        announcementTemplateDelegate.setCallerSuffixEnabled(enabled)
+
+    override fun getCallerSuffixText(): String =
+        announcementTemplateDelegate.getCallerSuffixText()
+
+    override fun setCallerSuffixText(text: String?) =
+        announcementTemplateDelegate.setCallerSuffixText(text)
+
+    /** قالب إعلان الرسائل: يدعم {name} و{message}. */
     override fun getSmsAnnouncementTemplate(): String =
-        prefs.getString("sms_announcement_template", "") ?: ""
+        announcementTemplateDelegate.getSmsAnnouncementTemplate()
+
     override fun setSmsAnnouncementTemplate(template: String?) =
-        prefs.edit().putString("sms_announcement_template", template).apply()
+        announcementTemplateDelegate.setSmsAnnouncementTemplate(template)
 
     // ============ إعدادات إعلان الوقت ============
 
@@ -2380,560 +2386,490 @@ class SettingsRepository(context: Context) :
     override fun setTime24Hour(enabled: Boolean) =
         prefs.edit().putBoolean("time_display_24h", enabled).apply()
 
-    // ============ قراءة النصوص: الترقيم والتهجئة الذكية ============
-
-    /** مستوى نطق علامات الترقيم والرموز (0 لا شيء، 1 البعض، 2 الكل).
-     *  الافتراضي «البعض» حفاظاً على السلوك القائم للنطق بالرموز الشائعة. */
-    override fun getPunctuationLevel(): Int =
-        prefs.getInt("punctuation_level", PunctuationLevels.SOME)
-    override fun setPunctuationLevel(level: Int) =
-        prefs.edit()
-            .putInt(
-                "punctuation_level",
-                level.coerceIn(PunctuationLevels.MIN, PunctuationLevels.MAX)
-            )
-            .apply()
-
-
-    /** الحفاظ على تشكيل النصوص العربية المُرسلة للمحرك (بند 1.7):
-     *  تُعاد الكلمات الأصلية غير المتحوّلة بتشكيلها الأصلي بدل إرسالها
-     *  مجرّدةً — تفيد المحركات العربية التي تنطق التشكيل بوضوح. معطّل
-     *  افتراضياً حفاظاً على السلوك القائم (المحركات التي لا تفهم التشكيل
-     *  قد تُعلِق على الحركات إن سُلّمت). */
-    override fun isTashkeelPreserved(): Boolean =
-        prefs.getBoolean("tashkeel_preserved", false)
-    override fun setTashkeelPreserved(enabled: Boolean) =
-        prefs.edit().putBoolean("tashkeel_preserved", enabled).apply()
-
-    override fun getSingleLetterMode(): String =
-        prefs.getString("single_letter_mode", "name") ?: "name"
-
-    override fun setSingleLetterMode(mode: String) {
-        val sanitized = sanitizeString("single_letter_mode", mode)
-        prefs.edit().putString("single_letter_mode", sanitized).apply()
+    // ============ قراءة النصوص ومعالجة/تحويل النص (مفوّض) ============
+    private val textProcessingDelegate by lazy {
+        SettingsTextProcessingDelegate(this)
     }
 
+    /** مستوى نطق علامات الترقيم (0 بدون، 1 بعضها، 2 كلها). */
+    override fun getPunctuationLevel(): Int =
+        textProcessingDelegate.getPunctuationLevel()
+
+    override fun setPunctuationLevel(level: Int) =
+        textProcessingDelegate.setPunctuationLevel(level)
+
+    /** الحفاظ على التشكيل عند تمرير النص للمحرّك. */
+    override fun isTashkeelPreserved(): Boolean =
+        textProcessingDelegate.isTashkeelPreserved()
+
+    override fun setTashkeelPreserved(enabled: Boolean) =
+        textProcessingDelegate.setTashkeelPreserved(enabled)
+
+    override fun getSingleLetterMode(): String =
+        textProcessingDelegate.getSingleLetterMode()
+
+    override fun setSingleLetterMode(mode: String) =
+        textProcessingDelegate.setSingleLetterMode(mode)
+
     override fun isNumberVoiceSpelledWordsEnabled(): Boolean =
-        prefs.getBoolean("number_voice_spelled_words", true)
+        textProcessingDelegate.isNumberVoiceSpelledWordsEnabled()
 
     override fun setNumberVoiceSpelledWordsEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("number_voice_spelled_words", enabled).apply()
-
-    // ============ مراحل تحويل معالجة النصوص ============
+        textProcessingDelegate.setNumberVoiceSpelledWordsEnabled(enabled)
 
     override fun isTimeConversionEnabled(): Boolean =
-        prefs.getBoolean("text_processing_time", true)
+        textProcessingDelegate.isTimeConversionEnabled()
+
     override fun setTimeConversionEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("text_processing_time", enabled).apply()
+        textProcessingDelegate.setTimeConversionEnabled(enabled)
 
     override fun isCurrencyConversionEnabled(): Boolean =
-        prefs.getBoolean("text_processing_currency", true)
+        textProcessingDelegate.isCurrencyConversionEnabled()
+
     override fun setCurrencyConversionEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("text_processing_currency", enabled).apply()
+        textProcessingDelegate.setCurrencyConversionEnabled(enabled)
 
     override fun isUnitConversionEnabled(): Boolean =
-        prefs.getBoolean("text_processing_units", true)
+        textProcessingDelegate.isUnitConversionEnabled()
+
     override fun setUnitConversionEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("text_processing_units", enabled).apply()
+        textProcessingDelegate.setUnitConversionEnabled(enabled)
 
     override fun isSymbolConversionEnabled(): Boolean =
-        prefs.getBoolean("text_processing_symbols", true)
+        textProcessingDelegate.isSymbolConversionEnabled()
+
     override fun setSymbolConversionEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("text_processing_symbols", enabled).apply()
+        textProcessingDelegate.setSymbolConversionEnabled(enabled)
 
     override fun isPhoneConversionEnabled(): Boolean =
-        prefs.getBoolean("text_processing_phones", true)
+        textProcessingDelegate.isPhoneConversionEnabled()
+
     override fun setPhoneConversionEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("text_processing_phones", enabled).apply()
+        textProcessingDelegate.setPhoneConversionEnabled(enabled)
 
     override fun isArabicNormalizationEnabled(): Boolean =
-        prefs.getBoolean("arabic_normalization", true)
+        textProcessingDelegate.isArabicNormalizationEnabled()
+
     override fun setArabicNormalizationEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("arabic_normalization", enabled).apply()
+        textProcessingDelegate.setArabicNormalizationEnabled(enabled)
 
-    /**
-     * نطق الروابط بنطاقاتها المختصرة (ع٤١-ب7)
-     * — مطفأٌ افتراضياً.
-     * المفتاحُ هو نفسه الذي تكتبه بطاقةُ الإعدادات
-     * في خدمة إمكانية الوصول
-     * (`FeatureFlags.FEATURE_URL_SHORTENING` =
-     * `a11y_url_shortening`)،
-     * لكن لا يُشارَك من `:core:audio` تفادياً
-     * للاعتماد العكسي — فالقيمةُ حرفٌ واحد في الموضعين
-     * (اقرأ التعليق في FeatureFlags).
-     */
+    /** اختصار الروابط الطويلة (ميزة وصولية اختيارية). */
     override fun isUrlShorteningEnabled(): Boolean =
-        isAccessibilityFeatureEnabled("a11y_url_shortening")
+        textProcessingDelegate.isUrlShorteningEnabled()
 
-    /** اتباع سرعة قارئ الشاشة (النسبة المئوية 100 = طبيعي) في نطق نصه:
-     *  عند التفعيل (افتراضياً) تُهمل أشرطة سرعة LORD فتكون سرعة النطق
-     *  سرعة القارئ الفعلية بلا مضاعفة. */
+    /** اتباع سرعة القارئ عند مستوى صوت 100. */
     override fun isFollowReaderRateEnabled(): Boolean =
-        prefs.getBoolean("follow_reader_rate_enabled", true)
+        textProcessingDelegate.isFollowReaderRateEnabled()
+
     override fun setFollowReaderRateEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("follow_reader_rate_enabled", enabled).apply()
+        textProcessingDelegate.setFollowReaderRateEnabled(enabled)
 
-    /** تسريع نطق النصوص الطويلة بعد 300 حرف: مطفأ افتراضياً. */
+    /** تسريع النص الطويل تلقائياً (اختياري). */
     override fun isLongTextSpeedupEnabled(): Boolean =
-        prefs.getBoolean("long_text_speedup_enabled", false)
+        textProcessingDelegate.isLongTextSpeedupEnabled()
+
     override fun setLongTextSpeedupEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("long_text_speedup_enabled", enabled).apply()
+        textProcessingDelegate.setLongTextSpeedupEnabled(enabled)
 
-    // ============ الإسكات الفوري: الهز والتقارب ============
+    /** معالجة مصرية/تشكيل تلقائي خفيف للنص العربي (افتراضي مقفول). */
+    override fun isEgyptianSpeechProcessingEnabled(): Boolean =
+        textProcessingDelegate.isEgyptianSpeechProcessingEnabled()
 
-    /** هز الجهاز أثناء النطق يوقفه فوراً. معطّل افتراضياً. */
+    override fun setEgyptianSpeechProcessingEnabled(enabled: Boolean) =
+        textProcessingDelegate.setEgyptianSpeechProcessingEnabled(enabled)
+
+    /** سرعة ديناميكية حسب طول الجملة/نوع المحتوى (افتراضي مقفول). */
+    override fun isDynamicSpeedEnabled(): Boolean =
+        textProcessingDelegate.isDynamicSpeedEnabled()
+
+    override fun setDynamicSpeedEnabled(enabled: Boolean) =
+        textProcessingDelegate.setDynamicSpeedEnabled(enabled)
+
+    /** قارئ متعدد الأصوات للحوار/السرد (افتراضي مقفول). */
+    override fun isMultiVoiceReaderEnabled(): Boolean =
+        textProcessingDelegate.isMultiVoiceReaderEnabled()
+
+    override fun setMultiVoiceReaderEnabled(enabled: Boolean) =
+        textProcessingDelegate.setMultiVoiceReaderEnabled(enabled)
+
+    // ============ الإسكات الفوري: الهز والتقارب (مفوّض) ============
+    private val instantSilenceDelegate by lazy {
+        SettingsInstantSilenceDelegate(this)
+    }
+
+    /** إيقاف النطق فوراً عند هز الجهاز. معطّل افتراضياً. */
     override fun isShakeToStopEnabled(): Boolean =
-        prefs.getBoolean("shake_to_stop_enabled", false)
-    override fun setShakeToStopEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("shake_to_stop_enabled", enabled).apply()
+        instantSilenceDelegate.isShakeToStopEnabled()
 
-    /** تغطية الجهاز (يد/جيب) أثناء النطق توقفه فوراً. معطّل افتراضياً. */
+    override fun setShakeToStopEnabled(enabled: Boolean) =
+        instantSilenceDelegate.setShakeToStopEnabled(enabled)
+
+    /** تقريب الهاتف (يد/جيب) يوقف النطق فوراً. معطّل افتراضياً. */
     override fun isProximitySilenceEnabled(): Boolean =
-        prefs.getBoolean("proximity_silence_enabled", false)
+        instantSilenceDelegate.isProximitySilenceEnabled()
+
     override fun setProximitySilenceEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("proximity_silence_enabled", enabled).apply()
+        instantSilenceDelegate.setProximitySilenceEnabled(enabled)
 
     /**
      * المراقبة الاستباقية للتطبيقات المحمية (UsageStats). معطّلة
-     * افتراضياً: تستهلك البطارية باستطلاعٍ دوري لأحداث الاستخدام.
+     * افتراضياً: تستهلك طاقةً إضافيةً دون حاجة واضحة لمعظم المستخدمين.
      */
     override fun isProactiveProtectedWatchEnabled(): Boolean =
-        prefs.getBoolean("proactive_protected_watch_enabled", false)
+        instantSilenceDelegate.isProactiveProtectedWatchEnabled()
+
     override fun setProactiveProtectedWatchEnabled(enabled: Boolean) =
-        prefs.edit()
-            .putBoolean("proactive_protected_watch_enabled", enabled)
-            .apply()
+        instantSilenceDelegate.setProactiveProtectedWatchEnabled(enabled)
 
-    // ============ إعدادات عامة ============
+    // ============ الإعدادات العامة (مفوّض) ============
+    private val generalDelegate by lazy {
+        SettingsGeneralDelegate(this)
+    }
 
-    /** السرعة العامة الافتراضية */
+    /** السرعة الافتراضية للإعلانات */
     override fun getDefaultSpeechRate(): Float =
-        if (prefs.contains("default_speech_rate")) {
-            prefs.getFloat("default_speech_rate", 1.0f)
-        } else {
-            getSpeechRateForCategory(VOICE_CATEGORY_DEFAULT)
-        }
+        generalDelegate.getDefaultSpeechRate()
 
     override fun setDefaultSpeechRate(rate: Float) {
-        val clamped = rate.coerceIn(0f, 2f)
-        prefs.edit()
-            .putFloat("default_speech_rate", clamped)
-            .putFloat("speech_rate_$VOICE_CATEGORY_DEFAULT", clamped)
-            .apply()
+        generalDelegate.setDefaultSpeechRate(rate)
     }
 
-    /** النبرة العامة الافتراضية */
+    /** النبرة الافتراضية للإعلانات */
     override fun getDefaultPitch(): Float =
-        if (prefs.contains("default_pitch")) {
-            prefs.getFloat("default_pitch", 1.0f)
-        } else {
-            getPitchForCategory(VOICE_CATEGORY_DEFAULT)
-        }
+        generalDelegate.getDefaultPitch()
 
     override fun setDefaultPitch(pitch: Float) {
-        val clamped = pitch.coerceIn(0f, 2f)
-        prefs.edit()
-            .putFloat("default_pitch", clamped)
-            .putFloat("pitch_$VOICE_CATEGORY_DEFAULT", clamped)
-            .apply()
+        generalDelegate.setDefaultPitch(pitch)
     }
 
-    /** مستوى الصوت العام الافتراضي */
+    /** مستوى الصوت الافتراضي للإعلانات */
     override fun getDefaultVolume(): Float =
-        if (prefs.contains("default_volume")) {
-            prefs.getFloat("default_volume", 1.0f)
-        } else {
-            getVolumeForCategory(VOICE_CATEGORY_DEFAULT)
-        }
+        generalDelegate.getDefaultVolume()
 
     override fun setDefaultVolume(volume: Float) {
-        val clamped = volume.coerceIn(0f, 1f)
-        prefs.edit()
-            .putFloat("default_volume", clamped)
-            .putFloat("volume_$VOICE_CATEGORY_DEFAULT", clamped)
-            .apply()
+        generalDelegate.setDefaultVolume(volume)
     }
 
-    /** مستوى اتساع الصوت (0 إيقاف، 1 خفيف، 2 متوسط) */
+    /** مستوى توسيع الصوت */
     override fun getAudioExpansionLevel(): Int =
-        prefs.getInt("audio_expansion_level", AudioExpansionLevels.DEFAULT)
+        generalDelegate.getAudioExpansionLevel()
 
     override fun setAudioExpansionLevel(level: Int) {
-        val safe = level.coerceIn(
-            AudioExpansionLevels.MIN,
-            AudioExpansionLevels.MAX
-        )
-        prefs.edit().putInt("audio_expansion_level", safe).apply()
+        generalDelegate.setAudioExpansionLevel(level)
     }
 
-    /** **بند V2:** الصدى مفتاحٌ مستقل عن الاتساع، **افتراضياً مُعطَّل**
-     *  (الأساسُ هو Virtualizer وحده عبر مستوى الاتساع). */
     override fun isAudioReverbEnabled(): Boolean =
-        prefs.getBoolean(KEY_AUDIO_REVERB_ENABLED, false)
+        generalDelegate.isAudioReverbEnabled()
 
     override fun setAudioReverbEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_AUDIO_REVERB_ENABLED, enabled).apply()
+        generalDelegate.setAudioReverbEnabled(enabled)
     }
 
-    /** **بند V3:** فئاتُ الإعلانات التي عُطّل فيها المؤثر — تُنقّى إلى
-     *  [KNOWN_EFFECT_CATEGORIES] فلا يتسرّب مفتاحٌ غريب من نسخةِ استيراد
-     *  قديمة أو من قيمةٍ كُتبت يدوياً. */
     override fun getAudioEffectsDisabledCategories(): Set<String> =
-        prefs.getStringSet(
-            KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES,
-            mutableSetOf<String>()
-        ).orEmpty().filter { it in KNOWN_EFFECT_CATEGORIES }.toSet()
+        generalDelegate.getAudioEffectsDisabledCategories()
 
-    override fun setAudioEffectsDisabledCategories(categories: Set<String>) {
-        prefs.edit().putStringSet(
-            KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES,
-            categories.filter { it in KNOWN_EFFECT_CATEGORIES }.toSet()
-        ).apply()
+    override fun setAudioEffectsDisabledCategories(
+        categories: Set<String>
+    ) {
+        generalDelegate.setAudioEffectsDisabledCategories(categories)
     }
 
-    /** مضاعف السرعة العام (مربع تفعيل + قيمة 1.0..2.5) — يُضرب بالسرعة
-     *  النهائية في كل مسارات النطق قبل قصّها على الحد الآمن. */
     override fun isSpeechBoostEnabled(): Boolean =
-        prefs.getBoolean("speech_boost_enabled", false)
-    override fun setSpeechBoostEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("speech_boost_enabled", enabled).apply()
+        generalDelegate.isSpeechBoostEnabled()
+
+    override fun setSpeechBoostEnabled(enabled: Boolean) {
+        generalDelegate.setSpeechBoostEnabled(enabled)
+    }
+
     override fun getSpeechBoostValue(): Float =
-        prefs.getFloat("speech_boost_value", 1.0f)
-    override fun setSpeechBoostValue(value: Float) =
-        prefs.edit()
-            .putFloat("speech_boost_value", value.coerceIn(1f, 2.5f))
-            .apply()
+        generalDelegate.getSpeechBoostValue()
 
-    /** مضاعف الصوت العام (مربع تفعيل + قيمة 1.0..2.5) — يُضرب بمستوى
-     *  الصوت النهائي في كل مسارات النطق ثم يُقصّ على الكامل (1.0). */
+    override fun setSpeechBoostValue(value: Float) {
+        generalDelegate.setSpeechBoostValue(value)
+    }
+
     override fun isVolumeBoostEnabled(): Boolean =
-        prefs.getBoolean("volume_boost_enabled", false)
-    override fun setVolumeBoostEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("volume_boost_enabled", enabled).apply()
+        generalDelegate.isVolumeBoostEnabled()
+
+    override fun setVolumeBoostEnabled(enabled: Boolean) {
+        generalDelegate.setVolumeBoostEnabled(enabled)
+    }
+
     override fun getVolumeBoostValue(): Float =
-        prefs.getFloat("volume_boost_value", 1.0f)
-    override fun setVolumeBoostValue(value: Float) =
-        prefs.edit()
-            .putFloat("volume_boost_value", value.coerceIn(1f, 2.5f))
-            .apply()
+        generalDelegate.getVolumeBoostValue()
 
+    override fun setVolumeBoostValue(value: Float) {
+        generalDelegate.setVolumeBoostValue(value)
+    }
 
-    // ============ إعدادات إعلان مستوى البطارية ============
+    // ============ صحة الجهاز والبطارية ومؤثرات الرنات (مفوّض) ============
+    private val deviceHealthAudioDelegate by lazy {
+        SettingsDeviceHealthAudioDelegate(this)
+    }
 
-    /** العناصر المختارة في قسم «صحة الجهاز» للنطق عند الطلب. */
     override fun getDeviceHealthItems(): Set<String> =
-        prefs.getStringSet("device_health_items", null)
-            ?.filter { it in validDeviceHealthItems() }
-            ?.toSet() ?: DEFAULT_DEVICE_HEALTH_ITEMS
+        deviceHealthAudioDelegate.getDeviceHealthItems()
 
-    override fun setDeviceHealthItems(items: Set<String>) =
-        prefs.edit().putStringSet(
-            "device_health_items",
-            items.filter { it in validDeviceHealthItems() }.toMutableSet()
-        ).apply()
+    override fun setDeviceHealthItems(items: Set<String>) {
+        deviceHealthAudioDelegate.setDeviceHealthItems(items)
+    }
 
-    private fun validDeviceHealthItems(): Set<String> = setOf(
-        DEVICE_HEALTH_BATTERY,
-        DEVICE_HEALTH_CHARGING,
-        DEVICE_HEALTH_STORAGE,
-        DEVICE_HEALTH_MEMORY
-    )
+    internal fun validDeviceHealthItems(): Set<String> =
+        deviceHealthAudioDelegate.validDeviceHealthItems()
 
-    /** تفعيل/إيقاف إعلان مستوى البطارية */
     override fun isBatteryAnnouncementEnabled(): Boolean =
-        prefs.getBoolean("battery_announcement_enabled", false)
-    override fun setBatteryAnnouncementEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("battery_announcement_enabled", enabled).apply()
+        deviceHealthAudioDelegate.isBatteryAnnouncementEnabled()
 
-    /**
-     * مستويات البطارية المفعّلة (كنسب مئوية مضاعفات 5) التي يُعلن عنها.
-     * مثلاً {"20","15"} تُنطق عند وصول البطارية إلى 20% ثم 15%.
-     */
+    override fun setBatteryAnnouncementEnabled(enabled: Boolean) {
+        deviceHealthAudioDelegate.setBatteryAnnouncementEnabled(enabled)
+    }
+
     override fun getBatteryAnnouncementLevels(): Set<String> =
-        prefs.getStringSet(
-            "battery_announcement_levels",
-            mutableSetOf("20", "15")
-        )
-            ?.toSet() ?: setOf("20", "15")
-    override fun setBatteryAnnouncementLevels(levels: Set<String>) =
-        prefs.edit()
-            .putStringSet(
-                "battery_announcement_levels",
-                levels.toMutableSet()
-            )
-            .apply()
+        deviceHealthAudioDelegate.getBatteryAnnouncementLevels()
 
-    /** صوت إعلان البطارية (معرّف صوت موحّد) */
+    override fun setBatteryAnnouncementLevels(levels: Set<String>) {
+        deviceHealthAudioDelegate.setBatteryAnnouncementLevels(levels)
+    }
+
     override fun getBatteryAnnouncementVoiceId(): String? =
-        getPreferredVoiceIdForCategory(VOICE_CATEGORY_BATTERY)
+        deviceHealthAudioDelegate.getBatteryAnnouncementVoiceId()
+
     override fun setBatteryAnnouncementVoiceId(voiceId: String?) {
-        if (voiceId != null) {
-            setPreferredVoiceIdForCategory(VOICE_CATEGORY_BATTERY, voiceId)
-        }
+        deviceHealthAudioDelegate.setBatteryAnnouncementVoiceId(voiceId)
     }
 
-    /** لغة الصوت المختارة لإعلان البطارية */
     fun getBatteryAnnouncementLanguage(): String? =
-        getLanguageForCategory(VOICE_CATEGORY_BATTERY)
-    fun setBatteryAnnouncementLanguage(language: String?) =
-        setLanguageForCategory(VOICE_CATEGORY_BATTERY, language)
+        deviceHealthAudioDelegate.getBatteryAnnouncementLanguage()
 
-    /** سرعة نطق إعلان البطارية */
-    override fun getBatteryAnnouncementRate(): Float =
-        getSpeechRateForCategory(VOICE_CATEGORY_BATTERY)
-    override fun setBatteryAnnouncementRate(rate: Float) =
-        setSpeechRateForCategory(VOICE_CATEGORY_BATTERY, rate)
-
-    /** مستوى صوت إعلان البطارية */
-    override fun getBatteryAnnouncementVolume(): Float =
-        getVolumeForCategory(VOICE_CATEGORY_BATTERY)
-    override fun setBatteryAnnouncementVolume(volume: Float) =
-        setVolumeForCategory(VOICE_CATEGORY_BATTERY, volume)
-
-    // ============ مؤثرات الصوت (رنة الساعة + نغمات البطارية) ============
-
-    /** نغمات الرنة المتاحة لرنة رأس الساعة. */
-    private fun validTimeChimeSounds(): Set<String> = setOf(
-        "classic_bell", "digital_chime", "soft_ding"
-    )
-
-    /** تفعيل/إيقاف رنة رأس الساعة (تسبق نطق الوقت عند الدقيقة صفر). */
-    override fun isTimeChimeEnabled(): Boolean =
-        prefs.getBoolean("time_chime_enabled", true)
-    override fun setTimeChimeEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("time_chime_enabled", enabled).apply()
-
-    /** تفعيل رنة رأس الساعة (:00). */
-    override fun isTimeChimeAt0Enabled(): Boolean =
-        prefs.getBoolean("time_chime_at_0", true)
-    override fun setTimeChimeAt0Enabled(enabled: Boolean) =
-        prefs.edit().putBoolean("time_chime_at_0", enabled).apply()
-
-    /** تفعيل رنة الربع (:15). */
-    override fun isTimeChimeAt15Enabled(): Boolean =
-        prefs.getBoolean("time_chime_at_15", false)
-    override fun setTimeChimeAt15Enabled(enabled: Boolean) =
-        prefs.edit().putBoolean("time_chime_at_15", enabled).apply()
-
-    /** تفعيل رنة النصف (:30). */
-    override fun isTimeChimeAt30Enabled(): Boolean =
-        prefs.getBoolean("time_chime_at_30", false)
-    override fun setTimeChimeAt30Enabled(enabled: Boolean) =
-        prefs.edit().putBoolean("time_chime_at_30", enabled).apply()
-
-    /** تفعيل رنة الـ 45 دقيقة (:45). */
-    override fun isTimeChimeAt45Enabled(): Boolean =
-        prefs.getBoolean("time_chime_at_45", false)
-    override fun setTimeChimeAt45Enabled(enabled: Boolean) =
-        prefs.edit().putBoolean("time_chime_at_45", enabled).apply()
-
-    /** اسم الرنة المختارة: classic_bell | digital_chime | soft_ding. */
-    override fun getTimeChimeSound(): String {
-        val value = prefs.getString("time_chime_sound", "classic_bell")
-            ?: "classic_bell"
-        return value.takeIf { it in validTimeChimeSounds() }
-            ?: "classic_bell"
+    fun setBatteryAnnouncementLanguage(language: String?) {
+        deviceHealthAudioDelegate.setBatteryAnnouncementLanguage(language)
     }
-    override fun setTimeChimeSound(sound: String) =
-        prefs.edit()
-            .putString(
-                "time_chime_sound",
-                sound.takeIf { it in validTimeChimeSounds() }
-                    ?: "classic_bell"
-            )
-            .apply()
 
-    /** مستوى صوت رنة الساعة 0.1..1.0. */
+    override fun getBatteryAnnouncementRate(): Float =
+        deviceHealthAudioDelegate.getBatteryAnnouncementRate()
+
+    override fun setBatteryAnnouncementRate(rate: Float) {
+        deviceHealthAudioDelegate.setBatteryAnnouncementRate(rate)
+    }
+
+    override fun getBatteryAnnouncementVolume(): Float =
+        deviceHealthAudioDelegate.getBatteryAnnouncementVolume()
+
+    override fun setBatteryAnnouncementVolume(volume: Float) {
+        deviceHealthAudioDelegate.setBatteryAnnouncementVolume(volume)
+    }
+
+    internal fun validTimeChimeSounds(): Set<String> =
+        deviceHealthAudioDelegate.validTimeChimeSounds()
+
+    override fun isTimeChimeEnabled(): Boolean =
+        deviceHealthAudioDelegate.isTimeChimeEnabled()
+
+    override fun setTimeChimeEnabled(enabled: Boolean) {
+        deviceHealthAudioDelegate.setTimeChimeEnabled(enabled)
+    }
+
+    override fun isTimeChimeAt0Enabled(): Boolean =
+        deviceHealthAudioDelegate.isTimeChimeAt0Enabled()
+
+    override fun setTimeChimeAt0Enabled(enabled: Boolean) {
+        deviceHealthAudioDelegate.setTimeChimeAt0Enabled(enabled)
+    }
+
+    override fun isTimeChimeAt15Enabled(): Boolean =
+        deviceHealthAudioDelegate.isTimeChimeAt15Enabled()
+
+    override fun setTimeChimeAt15Enabled(enabled: Boolean) {
+        deviceHealthAudioDelegate.setTimeChimeAt15Enabled(enabled)
+    }
+
+    override fun isTimeChimeAt30Enabled(): Boolean =
+        deviceHealthAudioDelegate.isTimeChimeAt30Enabled()
+
+    override fun setTimeChimeAt30Enabled(enabled: Boolean) {
+        deviceHealthAudioDelegate.setTimeChimeAt30Enabled(enabled)
+    }
+
+    override fun isTimeChimeAt45Enabled(): Boolean =
+        deviceHealthAudioDelegate.isTimeChimeAt45Enabled()
+
+    override fun setTimeChimeAt45Enabled(enabled: Boolean) {
+        deviceHealthAudioDelegate.setTimeChimeAt45Enabled(enabled)
+    }
+
+    override fun getTimeChimeSound(): String =
+        deviceHealthAudioDelegate.getTimeChimeSound()
+
+    override fun setTimeChimeSound(sound: String) {
+        deviceHealthAudioDelegate.setTimeChimeSound(sound)
+    }
+
     override fun getTimeChimeVolume(): Float =
-        prefs.getFloat("time_chime_volume", 0.5f)
-            .coerceIn(0.1f, 1f)
-    override fun setTimeChimeVolume(volume: Float) =
-        prefs.edit().putFloat(
-            "time_chime_volume", volume.coerceIn(0.1f, 1f)
-        ).apply()
+        deviceHealthAudioDelegate.getTimeChimeVolume()
 
-    /**
-     * تتبُّعُ الرنّةِ لنطق الساعة — **مفعّلٌ افتراضياً**: فالرنّةُ لم
-     * تعد ضابطاً مستقلاً بل تابعاً لصوت النطق، والمستوى اليدويّ
-     * تجاوزٌ لمن أراد فصلهما.
-     */
+    override fun setTimeChimeVolume(volume: Float) {
+        deviceHealthAudioDelegate.setTimeChimeVolume(volume)
+    }
+
     override fun isTimeChimeVolumeFollowsAnnouncement(): Boolean =
-        prefs.getBoolean("time_chime_volume_follows_announcement", true)
-    override fun setTimeChimeVolumeFollowsAnnouncement(follows: Boolean) =
-        prefs.edit()
-            .putBoolean("time_chime_volume_follows_announcement", follows)
-            .apply()
+        deviceHealthAudioDelegate.isTimeChimeVolumeFollowsAnnouncement()
 
-    /**
-     * المستوى الذي يُبنى عليه [AudioCue] فعلياً. **مصدرُ الحقيقة
-     * الوحيد:** كلُّ مستهلكٍ للرنّة يقرأ هنا، فلا يستعمل أحدٌ القيمةَ
-     * اليدويةَ مباشرةً فيُسمع ما لم يُختر.
-     */
+    override fun setTimeChimeVolumeFollowsAnnouncement(
+        follows: Boolean
+    ) {
+        deviceHealthAudioDelegate
+            .setTimeChimeVolumeFollowsAnnouncement(follows)
+    }
+
     override fun getEffectiveTimeChimeVolume(): Float =
-        TimeChimeVolumeLink.effective(
-            followsAnnouncement =
-                isTimeChimeVolumeFollowsAnnouncement(),
-            announcementVolume =
-                getVolumeForCategory(VOICE_CATEGORY_TIME),
-            manualVolume = getTimeChimeVolume()
-        )
+        deviceHealthAudioDelegate.getEffectiveTimeChimeVolume()
 
-    /** مسار URI لملف رنة الساعة المخصص. */
     override fun getCustomChimeUri(): String =
-        prefs.getString("custom_chime_uri", "").orEmpty()
+        deviceHealthAudioDelegate.getCustomChimeUri()
 
-    override fun setCustomChimeUri(uri: String) =
-        prefs.edit().putString("custom_chime_uri", uri).apply()
+    override fun setCustomChimeUri(uri: String) {
+        deviceHealthAudioDelegate.setCustomChimeUri(uri)
+    }
 
     override fun getCustomChimeUri15(): String =
-        prefs.getString("custom_chime_uri_15", "").orEmpty()
+        deviceHealthAudioDelegate.getCustomChimeUri15()
 
-    override fun setCustomChimeUri15(uri: String) =
-        prefs.edit().putString("custom_chime_uri_15", uri).apply()
+    override fun setCustomChimeUri15(uri: String) {
+        deviceHealthAudioDelegate.setCustomChimeUri15(uri)
+    }
 
     override fun getCustomChimeUri30(): String =
-        prefs.getString("custom_chime_uri_30", "").orEmpty()
+        deviceHealthAudioDelegate.getCustomChimeUri30()
 
-    override fun setCustomChimeUri30(uri: String) =
-        prefs.edit().putString("custom_chime_uri_30", uri).apply()
+    override fun setCustomChimeUri30(uri: String) {
+        deviceHealthAudioDelegate.setCustomChimeUri30(uri)
+    }
 
     override fun getCustomChimeUri45(): String =
-        prefs.getString("custom_chime_uri_45", "").orEmpty()
+        deviceHealthAudioDelegate.getCustomChimeUri45()
 
-    override fun setCustomChimeUri45(uri: String) =
-        prefs.edit().putString("custom_chime_uri_45", uri).apply()
+    override fun setCustomChimeUri45(uri: String) {
+        deviceHealthAudioDelegate.setCustomChimeUri45(uri)
+    }
 
     override fun isTimeAlarmMaxPrecisionEnabled(): Boolean =
-        prefs.getBoolean("time_alarm_max_precision", false)
-    override fun setTimeAlarmMaxPrecisionEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("time_alarm_max_precision", enabled).apply()
+        deviceHealthAudioDelegate.isTimeAlarmMaxPrecisionEnabled()
 
-    /** مستوى صوت نغمة البطارية 0.1..1.0 (مستقل عن صوت النطق — بند 3-3). */
+    override fun setTimeAlarmMaxPrecisionEnabled(enabled: Boolean) {
+        deviceHealthAudioDelegate.setTimeAlarmMaxPrecisionEnabled(enabled)
+    }
+
     override fun getBatteryCueVolume(): Float =
-        prefs.getFloat("battery_cue_volume", 0.8f)
-            .coerceIn(0.1f, 1f)
-    override fun setBatteryCueVolume(volume: Float) =
-        prefs.edit()
-            .putFloat("battery_cue_volume", volume.coerceIn(0.1f, 1f))
-            .apply()
+        deviceHealthAudioDelegate.getBatteryCueVolume()
 
-    /**
-     * وضع مؤثر البطارية: 0=نطق ومؤثر، 1=نطق فقط، 2=مؤثر فقط.
-     */
+    override fun setBatteryCueVolume(volume: Float) {
+        deviceHealthAudioDelegate.setBatteryCueVolume(volume)
+    }
+
     override fun getBatterySoundCueMode(): Int =
-        prefs.getInt("battery_sound_cue_mode", 0).coerceIn(0, 2)
-    override fun setBatterySoundCueMode(mode: Int) =
-        prefs.edit()
-            .putInt("battery_sound_cue_mode", mode.coerceIn(0, 2))
-            .apply()
+        deviceHealthAudioDelegate.getBatterySoundCueMode()
 
-    // ============ إعدادات إعلان اسم المتصل ============
+    override fun setBatterySoundCueMode(mode: Int) {
+        deviceHealthAudioDelegate.setBatterySoundCueMode(mode)
+    }
 
-    /** تفعيل/إيقاف إعلان اسم المتصل */
+    // ============ إعدادات إعلان اسم المتصل (مفوّض) ============
+    private val callerAnnouncementDelegate by lazy {
+        SettingsCallerAnnouncementDelegate(this)
+    }
+
     override fun isCallerAnnouncementEnabled(): Boolean =
-        prefs.getBoolean("caller_announcement_enabled", false)
-    override fun setCallerAnnouncementEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("caller_announcement_enabled", enabled).apply()
+        callerAnnouncementDelegate.isCallerAnnouncementEnabled()
+
+    override fun setCallerAnnouncementEnabled(enabled: Boolean) {
+        callerAnnouncementDelegate.setCallerAnnouncementEnabled(enabled)
+    }
 
     override fun isCallerLockScreenPrivacyEnabled(): Boolean =
-        prefs.getBoolean("caller_lock_screen_privacy_enabled", false)
-    override fun setCallerLockScreenPrivacyEnabled(enabled: Boolean) =
-        prefs.edit()
-            .putBoolean("caller_lock_screen_privacy_enabled", enabled)
-            .apply()
+        callerAnnouncementDelegate.isCallerLockScreenPrivacyEnabled()
 
-    /** نطق اسم المتصل الثاني الوارد أثناء مكالمة نشطة (مكالمة انتظار) */
+    override fun setCallerLockScreenPrivacyEnabled(enabled: Boolean) {
+        callerAnnouncementDelegate
+            .setCallerLockScreenPrivacyEnabled(enabled)
+    }
+
     override fun isCallerAnnouncementDuringCallEnabled(): Boolean =
-        prefs.getBoolean("caller_announcement_during_call_enabled", false)
-    override fun setCallerAnnouncementDuringCallEnabled(enabled: Boolean) =
-        prefs.edit()
-            .putBoolean("caller_announcement_during_call_enabled", enabled)
-            .apply()
+        callerAnnouncementDelegate
+            .isCallerAnnouncementDuringCallEnabled()
 
-    /** خفضُ نغمة الرنين أثناء إعلان المتصل: مربّعٌ معطّل افتراضياً
-     *  (لا نُمسّ الرنين إلا بطلب صريح)، ونسبةُ خفضٍ يختارها المستخدم. */
+    override fun setCallerAnnouncementDuringCallEnabled(
+        enabled: Boolean
+    ) {
+        callerAnnouncementDelegate
+            .setCallerAnnouncementDuringCallEnabled(enabled)
+    }
+
     override fun isCallerRingDuckingEnabled(): Boolean =
-        prefs.getBoolean("caller_ring_ducking_enabled", false)
-    override fun setCallerRingDuckingEnabled(enabled: Boolean) =
-        prefs.edit()
-            .putBoolean("caller_ring_ducking_enabled", enabled)
-            .apply()
+        callerAnnouncementDelegate.isCallerRingDuckingEnabled()
+
+    override fun setCallerRingDuckingEnabled(enabled: Boolean) {
+        callerAnnouncementDelegate.setCallerRingDuckingEnabled(enabled)
+    }
+
     override fun getCallerRingDuckPercent(): Int =
-        prefs.getInt("caller_ring_duck_percent", CALLER_RING_DUCK_DEFAULT)
-    override fun setCallerRingDuckPercent(percent: Int) =
-        prefs.edit()
-            .putInt(
-                "caller_ring_duck_percent",
-                percent.coerceIn(CALLER_RING_DUCK_MIN, CALLER_RING_DUCK_MAX)
-            )
-            .apply()
+        callerAnnouncementDelegate.getCallerRingDuckPercent()
 
-    /** عدد مرات تكرار اسم المتصل: من مرة واحدة إلى عشر (بقرار المدير) */
+    override fun setCallerRingDuckPercent(percent: Int) {
+        callerAnnouncementDelegate.setCallerRingDuckPercent(percent)
+    }
+
     override fun getCallerAnnouncementRepeat(): Int =
-        prefs.getInt("caller_announcement_repeat", 1)
-    override fun setCallerAnnouncementRepeat(repeat: Int) =
-        prefs.edit()
-            .putInt(
-                "caller_announcement_repeat",
-                repeat.coerceIn(CALLER_REPEAT_MIN, CALLER_REPEAT_MAX)
-            )
-            .apply()
+        callerAnnouncementDelegate.getCallerAnnouncementRepeat()
 
-    /** عدد مرات تكرار إعلان مكالمة الانتظار (افتراضياً 1) — 1..10 */
+    override fun setCallerAnnouncementRepeat(repeat: Int) {
+        callerAnnouncementDelegate.setCallerAnnouncementRepeat(repeat)
+    }
+
     override fun getCallWaitingRepeat(): Int =
-        prefs.getInt("call_waiting_repeat", 1)
-            .coerceIn(CALLER_REPEAT_MIN, CALLER_REPEAT_MAX)
-    override fun setCallWaitingRepeat(repeat: Int) =
-        prefs.edit()
-            .putInt(
-                "call_waiting_repeat",
-                repeat.coerceIn(CALLER_REPEAT_MIN, CALLER_REPEAT_MAX)
-            )
-            .apply()
+        callerAnnouncementDelegate.getCallWaitingRepeat()
 
-    /** الفاصل الزمني (بالثواني) بين كل مرة نطق لاسم المتصل — 3..5 ثوانٍ */
+    override fun setCallWaitingRepeat(repeat: Int) {
+        callerAnnouncementDelegate.setCallWaitingRepeat(repeat)
+    }
+
     override fun getCallerAnnouncementIntervalSeconds(): Int =
-        prefs.getInt("caller_announcement_interval_seconds", 3)
-            .coerceIn(CALLER_INTERVAL_MIN, CALLER_INTERVAL_MAX)
-    override fun setCallerAnnouncementIntervalSeconds(seconds: Int) =
-        prefs.edit()
-            .putInt(
-                "caller_announcement_interval_seconds",
-                seconds.coerceIn(CALLER_INTERVAL_MIN, CALLER_INTERVAL_MAX)
-            )
-            .apply()
+        callerAnnouncementDelegate
+            .getCallerAnnouncementIntervalSeconds()
 
-    /** صوت إعلان المتصل بلغة عربية (معرّف صوت موحّد) */
+    override fun setCallerAnnouncementIntervalSeconds(seconds: Int) {
+        callerAnnouncementDelegate
+            .setCallerAnnouncementIntervalSeconds(seconds)
+    }
+
     override fun getCallerAnnouncementArabicVoiceId(): String? =
-        normalizeVoiceId(
-            prefs.getString("caller_announcement_voice_ar", null)
-        )
-    override fun setCallerAnnouncementArabicVoiceId(voiceId: String?) =
-        prefs.edit().putString("caller_announcement_voice_ar", voiceId).apply()
+        callerAnnouncementDelegate.getCallerAnnouncementArabicVoiceId()
 
-    /** صوت إعلان المتصل بلغة إنجليزية (معرّف صوت موحّد) */
+    override fun setCallerAnnouncementArabicVoiceId(voiceId: String?) {
+        callerAnnouncementDelegate
+            .setCallerAnnouncementArabicVoiceId(voiceId)
+    }
+
     override fun getCallerAnnouncementEnglishVoiceId(): String? =
-        normalizeVoiceId(
-            prefs.getString("caller_announcement_voice_en", null)
-        )
-    override fun setCallerAnnouncementEnglishVoiceId(voiceId: String?) =
-        prefs.edit().putString("caller_announcement_voice_en", voiceId).apply()
+        callerAnnouncementDelegate.getCallerAnnouncementEnglishVoiceId()
 
-    /** سرعة نطق إعلان المتصل */
+    override fun setCallerAnnouncementEnglishVoiceId(voiceId: String?) {
+        callerAnnouncementDelegate
+            .setCallerAnnouncementEnglishVoiceId(voiceId)
+    }
+
     override fun getCallerAnnouncementRate(): Float =
-        prefs.getFloat("caller_announcement_rate", 1.0f)
-    override fun setCallerAnnouncementRate(rate: Float) =
-        prefs.edit()
-            .putFloat("caller_announcement_rate", rate.coerceIn(0f, 2f))
-            .apply()
+        callerAnnouncementDelegate.getCallerAnnouncementRate()
 
-    /** مستوى صوت إعلان المتصل */
+    override fun setCallerAnnouncementRate(rate: Float) {
+        callerAnnouncementDelegate.setCallerAnnouncementRate(rate)
+    }
+
     override fun getCallerAnnouncementVolume(): Float =
-        prefs.getFloat("caller_announcement_volume", 1.0f)
-    override fun setCallerAnnouncementVolume(volume: Float) =
-        prefs.edit()
-            .putFloat("caller_announcement_volume", volume.coerceIn(0f, 1f))
-            .apply()
+        callerAnnouncementDelegate.getCallerAnnouncementVolume()
+
+    override fun setCallerAnnouncementVolume(volume: Float) {
+        callerAnnouncementDelegate.setCallerAnnouncementVolume(volume)
+    }
 
     // ============ إعدادات قراءة الرسائل الواردة ============
 
@@ -3415,299 +3351,34 @@ class SettingsRepository(context: Context) :
         return NOTIF_READ_ALL in selection || pkg in selection
     }
 
-    // ============ النسخ الاحتياطي / الاستعادة ============
+    // ============ النسخ الاحتياطي / الاستعادة (مفوّض) ============
+    private val backupRestoreDelegate by lazy {
+        SettingsBackupRestoreDelegate(this)
+    }
 
-    /** كل الإعدادات القابلة للنسخ (لا يُصدَّر أي وسم ترحيل داخلي). */
+    /** يقرأ كل الإعدادات القابلة للنسخ (لا يضمِّن وسوم ترحيل داخلية). */
     fun exportSettings(): Map<String, Any> =
-        prefs.all.entries
-            .filter { !it.key.startsWith("_") }
-            .mapNotNull { (k, v) -> v?.let { k to it } }
-            .toMap()
+        backupRestoreDelegate.exportSettings()
 
-    /** تعقّل قيمة عددية حسب المفتاح حفاظاً على سلامة النطاقات. */
-    private fun sanitizeInt(key: String, value: Int): Int = when {
-        key.startsWith("time_quiet_day") &&
-            key.endsWith("_start") -> value.coerceIn(0, 23)
-        key.startsWith("time_quiet_day") &&
-            key.endsWith("_end") -> value.coerceIn(0, 23)
-        key == "time_announcement_interval" ->
-            if (value in 5..60 && value % 5 == 0) value else 30
-        key == "number_reading_mode" -> value.coerceIn(1, 8)
-        key == "punctuation_level" ->
-            if (value in PunctuationLevels.MIN..PunctuationLevels.MAX) {
-                value
-            } else {
-                PunctuationLevels.SOME
-            }
-        key == "audio_expansion_level" ->
-            value.coerceIn(
-                AudioExpansionLevels.MIN,
-                AudioExpansionLevels.MAX
-            )
-        key == "caller_announcement_repeat" ||
-        key == "call_waiting_repeat" ->
-            value.coerceIn(CALLER_REPEAT_MIN, CALLER_REPEAT_MAX)
-        key == "caller_ring_duck_percent" ->
-            value.coerceIn(CALLER_RING_DUCK_MIN, CALLER_RING_DUCK_MAX)
-        key == "caller_announcement_interval_seconds" ->
-            value.coerceIn(CALLER_INTERVAL_MIN, CALLER_INTERVAL_MAX)
-        key == "power_saver_battery_threshold" -> value.coerceIn(0, 100)
-        key == "battery_sound_cue_mode" -> value.coerceIn(0, 2)
-        key == "a11y_service_pause_level" -> value.coerceIn(1, 2)
-        key == KEY_KEYBOARD_SIZE_LEVEL -> value.coerceIn(0, 2)
-        key == KEY_DIALPAD_SIZE_LEVEL -> value.coerceIn(0, 2)
-        key == KEY_DICTIONARY_STANDALONE_MAX_LENGTH -> value.coerceIn(0, 3)
-        key.startsWith("loudness_headset_cap_") -> value.coerceIn(0, 100)
-        else -> value
+    /** يستورد الإعدادات مع تثبيت القيم؛ يُرجع true عند تطبيق أي مفتاح. */
+    fun importSettings(map: Map<String, Any>): Boolean =
+        backupRestoreDelegate.importSettings(map)
+
+
+    // ============ محرك TTS الاحتياطي للإعلانات (مفوّض) ============
+    private val announcementFallbackDelegate by lazy {
+        SettingsAnnouncementFallbackDelegate(this)
     }
 
-    /** تعقّل قيمة نصية (رنة الساعة تقبل الأسماء الثلاثة فقط، واللغة
-     *  الاحتياطية اللغات المدعومة فقط). */
-    private fun sanitizeString(
-        key: String,
-        value: String
-    ): String = when (key) {
-        "single_letter_mode" -> when (value) {
-            "as_written", "dictionary" -> value
-            else -> "name"
-        }
-        "time_chime_sound" -> value.takeIf {
-            it in validTimeChimeSounds()
-        } ?: "classic_bell"
-        "secondary_language" -> value.takeIf {
-            it in VALID_SECONDARY_LANGUAGES
-        } ?: LanguageCode.EN.tag
-        "number_reading_language" ->
-            if (value == "en" || value == "auto") value else "ar"
-        KEY_EMOJI_PRONUNCIATION_LANGUAGE -> when (value.uppercase()) {
-            "AR" -> "AR"
-            "EN" -> "EN"
-            else -> "AUTO"
-        }
-        // جملتا «قبل» و«بعد»: تُقصّان إلى الفراغ عند كل مدخل (كتابةً
-        // أو استيراداً) فمسافاتٌ فقط ليست جملةً تُنطق.
-        "caller_prefix_text" -> value.trim()
-        "caller_suffix_text" -> value.trim()
-        KEY_PHONE_MODE -> value.takeIf {
-            it in setOf(PHONE_MODE_BLIND, PHONE_MODE_LOW_VISION)
-        } ?: PHONE_MODE_BLIND
-        KEY_PHONE_ACTIVATION -> value.takeIf {
-            it in setOf(PHONE_ACTIVATION_LIFT, PHONE_ACTIVATION_DOUBLE_TAP)
-        } ?: PHONE_ACTIVATION_LIFT
-        KEY_PHONE_RECORD_MODE -> value.takeIf {
-            it in setOf(
-                PHONE_RECORD_MODE_MANUAL,
-                PHONE_RECORD_MODE_AUTO_ALL,
-                PHONE_RECORD_MODE_AUTO_UNSAVED
-            )
-        } ?: PHONE_RECORD_MODE_MANUAL
-        KEY_DIALPAD_LAYOUT_STYLE -> value.takeIf {
-            it in setOf(
-                DIALPAD_STYLE_GRID_WIDE,
-                DIALPAD_STYLE_GRID_5X2,
-                DIALPAD_STYLE_SINGLE_ROW
-            )
-        } ?: DIALPAD_STYLE_GRID_WIDE
-        KEY_DAY_PERIOD_STYLE -> when (value) {
-            DAY_PERIOD_STYLE_PREPOSITIONAL, DAY_PERIOD_STYLE_AS_IS -> value
-            else -> DAY_PERIOD_STYLE_EXPLICIT_NUN_COMMA
-        }
-        KEY_INCOMING_CALL_UI_MODE -> when (value) {
-            INCOMING_CALL_UI_FULLSCREEN,
-            INCOMING_CALL_UI_NOTIFICATION -> value
-            else -> INCOMING_CALL_UI_AUTO
-        }
-        else -> if (key.startsWith("loudness_stream_mode_")) {
-            StreamMode.fromId(value).id
-        } else {
-            value
-        }
-    }
-
-    /** تعقّل قيمة عشرية حسب المفتاح (السرعة/النبرة تعبان، المستوى نسبة). */
-    private fun sanitizeFloat(key: String, value: Float): Float {
-        if (!value.isFinite()) return 1.0f
-        return when {
-            // مضاعفا السرعة والصوت نطاقهما آمنٌ خاص (1.0..2.5) — لا يقعان تحت
-            // فرعَي _rate/_volume (اسماهما لا يحويان المقطعين) فبدون هذا
-            // الفرع تمرّ قيمتهما الجامحة من sanitizeFloat بلا قصّ أصلاً.
-            key == "speech_boost_value" ||
-                key == "volume_boost_value" -> value.coerceIn(1f, 2.5f)
-            key == KEY_EMERGENCY_RATE -> value.coerceIn(0.5f, 3.0f)
-            key == KEY_EMERGENCY_PITCH -> value.coerceIn(0.5f, 2.0f)
-            key == KEY_EMERGENCY_VOLUME -> value.coerceIn(0.0f, 1.0f)
-            // مستويا صوت الرنة ونغمة البطارية لا يهبطان تحت 0.1 — يُفحصان قبل
-            // الفرع العام لـ _volume وإلا ابتلعه الفرعُ العامُ بمجرد احتوائهما
-            // على المقطع (0..1) فسقط السقف الأدنى.
-            key == "time_chime_volume" ||
-                key == "battery_cue_volume" -> value.coerceIn(0.1f, 1f)
-            key == KEY_EVENT_PCM_GAIN_DB ->
-                value.coerceIn(0f, MAX_EVENT_PCM_GAIN_DB)
-            key.contains("_volume") ||
-                key == "default_volume" -> value.coerceIn(0f, 1f)
-            key.contains("_rate") ||
-                key.contains("_pitch") -> value.coerceIn(0f, 2f)
-            else -> value
-        }
-    }
-
-    /** تعقّل مجموعة سلاسل: مستويات البطارية تبقى مضاعفات 5 في المدى 5..100. */
-    private fun sanitizeStringSet(
-        key: String,
-        value: Set<String>
-    ): Set<String> = when (key) {
-        "battery_announcement_levels" -> value.filter {
-            it.toIntOrNull()?.let { n -> n in 5..100 && n % 5 == 0 } == true
-        }.toSet()
-        "device_health_items" -> value.filter {
-            it in validDeviceHealthItems()
-        }.toSet()
-        KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES -> value.filter {
-            it in KNOWN_EFFECT_CATEGORIES
-        }.toSet()
-        KEY_FILTER_LANGUAGES_SET -> value.map {
-            VisibleLanguages.normalize(it)
-        }.filter { it.isNotBlank() }.toSet()
-        KEY_FILTER_ENGINES_SET -> value.map { it.trim() }
-            .filter { it.isNotBlank() }.toSet()
-        else -> value
-    }
-
-    /**
-     * استعادة الإعدادات من خريطة صادرة عن exportSettings، مع تعقّل النطاقات.
-     * تجمَّع العمليات أولاً (بلا لمس القرص) ثم تُطبق دفعة واحدة — فلا يبقى
-     * الملف نصف مُمسوح إن فشل التجميع.
-     */
-    fun importSettings(map: Map<String, Any>): Boolean {
-        return try {
-            class Op(
-                val apply: (SharedPreferences.Editor) ->
-                    SharedPreferences.Editor
-            )
-            val ops = mutableListOf<Op>()
-            var meaningful = 0
-            for ((key, value) in map) {
-                if (key.startsWith("_")) continue
-                when (value) {
-                    is Int -> {
-                        val v = sanitizeInt(key, value)
-                        ops.add(Op { it.putInt(key, v) }); meaningful++
-                    }
-                    is Long -> {
-                        // بند 5.1: القيم الطولية تُستعاد كما هي (putLong) —
-                        // كانت تتحول sanitizeInt/putInt فتقتطع خارج مدى Int
-                        // أو تُرمى في النسخ الاحتياطي عند تصدير JSON.
-                        ops.add(Op { it.putLong(key, value) }); meaningful++
-                    }
-                    is Float -> {
-                        val v = sanitizeFloat(key, value)
-                        ops.add(Op { it.putFloat(key, v) }); meaningful++
-                    }
-                    is Boolean -> {
-                        if (key == "hijri_date" ||
-                            key == "hijri_date_enabled") continue
-                        // المفاتيح الحساسة تُثبَّت false على الاستيراد مهما
-                        // وردت في النسخة (انظر SAFE_DEFAULT_FALSE_KEYS).
-                        val safe = if (key in SAFE_DEFAULT_FALSE_KEYS) {
-                            false
-                        } else {
-                            value
-                        }
-                        ops.add(Op { it.putBoolean(key, safe) })
-                        meaningful++
-                    }
-                    is String -> {
-                        val v = sanitizeString(key, value)
-                        ops.add(Op { it.putString(key, v) })
-                        meaningful++
-                    }
-                    is Set<*> -> {
-                        @Suppress("UNCHECKED_CAST")
-                        val v = sanitizeStringSet(key, value as Set<String>)
-                        ops.add(Op { it.putStringSet(key, v) }); meaningful++
-                    }
-                    is Double -> {
-                        val isFloatKey = key.contains("_volume") ||
-                            key.contains("_rate") ||
-                            key.contains("_pitch") ||
-                            key.startsWith("rms_calibration_") ||
-                            key == "default_volume" ||
-                            key == "time_chime_volume" ||
-                            key == "battery_cue_volume" ||
-                            key == "speech_boost_value" ||
-                            key == "volume_boost_value"
-                        if (isFloatKey) {
-                            val v = sanitizeFloat(key, value.toFloat())
-                            ops.add(Op { it.putFloat(key, v) })
-                            meaningful++
-                        } else {
-                            val v = sanitizeInt(key, value.toInt())
-                            ops.add(Op { it.putInt(key, v) })
-                            meaningful++
-                        }
-                    }
-                    is Number -> {
-                        val isFloatKey = key.contains("_volume") ||
-                            key.contains("_rate") ||
-                            key.contains("_pitch") ||
-                            key.startsWith("rms_calibration_") ||
-                            key == "default_volume" ||
-                            key == "time_chime_volume" ||
-                            key == "battery_cue_volume" ||
-                            key == "speech_boost_value" ||
-                            key == "volume_boost_value"
-                        if (isFloatKey) {
-                            val v = sanitizeFloat(key, value.toFloat())
-                            ops.add(Op { it.putFloat(key, v) })
-                            meaningful++
-                        } else {
-                            val v = sanitizeInt(key, value.toInt())
-                            ops.add(Op { it.putInt(key, v) })
-                            meaningful++
-                        }
-                    }
-                    else -> {}
-                }
-            }
-            if (meaningful == 0) return false
-            // كانت وسوم الترحيل الداخلية (التي تبدأ بـ «_» وتُستثنى من
-            // الاستيراد) تُمسح مع clear() فيتحرّك الترحيل الثلاثي من جديد
-            // على النسخة المستوردة وربما أعاد تحويل قيمٍ نُقّيت بعد ترحيلها.
-            // نحفظها ونعيدها بعد المسح — الإعدادات وحيدةٌ فعلياً بلا إعادة
-            // ترحيل، والوسوم نفسها لا تُصدَّر عند النسخ الاحتياطي.
-            val migrationFlags = MIGRATION_KEYS.mapNotNull { key ->
-                if (rawPrefs.contains(key)) {
-                    key to rawPrefs.getBoolean(key, false)
-                } else null
-            }.toMap()
-            val editor = prefs.edit().clear()
-            for (op in ops) editor.let(op.apply)
-            for ((key, flag) in migrationFlags) {
-                editor.putBoolean(key, flag)
-            }
-            editor.commit()
-        } catch (t: Throwable) {
-            Log.e(TAG, "import settings failed", t)
-            false
-        }
-    }
-
-    // ============ محرك TTS الاحتياطي للإعلانات ============
-
-    /** مفتاح محرك TTS الاحتياطي للإعلانات (اختياري، مختار يدوياً). */
+    /** مفتاح محرك TTS الاحتياطي للإعلانات (اختياري، مخفى أدوياً). */
     override fun getAnnouncementFallbackEngine(): String? =
-        prefs.getString("announcement_fallback_engine", null)
+        announcementFallbackDelegate.getAnnouncementFallbackEngine()
 
     /** حفظ محرك TTS الاحتياطي للإعلانات (null = حذف). */
-    override fun setAnnouncementFallbackEngine(enginePackage: String?) {
-        if (enginePackage.isNullOrBlank()) {
-            prefs.edit().remove("announcement_fallback_engine").apply()
-        } else {
-            prefs.edit()
-                .putString("announcement_fallback_engine", enginePackage)
-                .apply()
-        }
-    }
+    override fun setAnnouncementFallbackEngine(enginePackage: String?) =
+        announcementFallbackDelegate.setAnnouncementFallbackEngine(
+            enginePackage
+        )
 
     // ============ إعدادات خدمة إمكانية الوصول وخدمات الشاشة ============
 
@@ -3730,6 +3401,16 @@ class SettingsRepository(context: Context) :
             editor.putBoolean("a11y_read_more", enabled)
         }
         editor.apply()
+    }
+
+    /** حفظ الأوصاف التلقائية للعناصر غير المسماة (البند 4). */
+    override fun isAutoSaveUnlabeledDescriptionsEnabled(): Boolean =
+        prefs.getBoolean("auto_save_unlabeled_descriptions", false)
+
+    override fun setAutoSaveUnlabeledDescriptionsEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean("auto_save_unlabeled_descriptions", enabled)
+            .apply()
     }
 
     fun getReadMoreAllowedPackages(): Set<String> {
@@ -4091,220 +3772,196 @@ class SettingsRepository(context: Context) :
             .apply()
     }
 
+    private val phoneInputDelegate by lazy {
+        SettingsPhoneInputDelegate(this)
+    }
+
     fun getKeyboardMode(): String =
-        prefs.getString(KEY_KEYBOARD_MODE, KEYBOARD_MODE_BLIND)
-            ?: KEYBOARD_MODE_BLIND
+        phoneInputDelegate.getKeyboardMode()
 
     fun setKeyboardMode(mode: String) {
-        prefs.edit().putString(KEY_KEYBOARD_MODE, mode).commit()
+        phoneInputDelegate.setKeyboardMode(mode)
     }
 
     fun getKeyboardActivation(): String =
-        prefs.getString(KEY_KEYBOARD_ACTIVATION, KEYBOARD_ACTIVATION_LIFT)
-            ?: KEYBOARD_ACTIVATION_LIFT
+        phoneInputDelegate.getKeyboardActivation()
 
     fun setKeyboardActivation(activation: String) {
-        prefs.edit().putString(KEY_KEYBOARD_ACTIVATION, activation).commit()
+        phoneInputDelegate.setKeyboardActivation(activation)
     }
 
     fun isKeyboardAnnounceAfterLiftEnabled(): Boolean =
-        prefs.getBoolean(KEY_KEYBOARD_ANNOUNCE_AFTER_LIFT, false)
+        phoneInputDelegate.isKeyboardAnnounceAfterLiftEnabled()
 
     fun isKeyboardAnnounceAfterLift(): Boolean =
-        isKeyboardAnnounceAfterLiftEnabled()
+        phoneInputDelegate.isKeyboardAnnounceAfterLift()
 
     fun setKeyboardAnnounceAfterLiftEnabled(enabled: Boolean) {
-        prefs.edit()
-            .putBoolean(KEY_KEYBOARD_ANNOUNCE_AFTER_LIFT, enabled)
-            .commit()
+        phoneInputDelegate.setKeyboardAnnounceAfterLiftEnabled(enabled)
     }
 
     fun setKeyboardAnnounceAfterLift(enabled: Boolean) {
-        setKeyboardAnnounceAfterLiftEnabled(enabled)
+        phoneInputDelegate.setKeyboardAnnounceAfterLift(enabled)
     }
 
     fun isKeyboardHapticEnabled(): Boolean =
-        prefs.getBoolean(KEY_KEYBOARD_HAPTIC, false)
+        phoneInputDelegate.isKeyboardHapticEnabled()
 
     fun setKeyboardHapticEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_KEYBOARD_HAPTIC, enabled).commit()
+        phoneInputDelegate.setKeyboardHapticEnabled(enabled)
     }
 
     fun isKeyboardSoundEnabled(): Boolean =
-        prefs.getBoolean(KEY_KEYBOARD_SOUND, true)
+        phoneInputDelegate.isKeyboardSoundEnabled()
 
     fun setKeyboardSoundEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_KEYBOARD_SOUND, enabled).commit()
+        phoneInputDelegate.setKeyboardSoundEnabled(enabled)
     }
 
     fun isKeyboardPhoneticEnabled(): Boolean =
-        prefs.getBoolean(KEY_KEYBOARD_PHONETIC, true)
+        phoneInputDelegate.isKeyboardPhoneticEnabled()
 
     fun setKeyboardPhoneticEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_KEYBOARD_PHONETIC, enabled).commit()
+        phoneInputDelegate.setKeyboardPhoneticEnabled(enabled)
     }
 
     fun isKeyboardAlwaysShowNumberRow(): Boolean =
-        prefs.getBoolean(KEY_KEYBOARD_ALWAYS_SHOW_NUMBER_ROW, false)
+        phoneInputDelegate.isKeyboardAlwaysShowNumberRow()
 
     fun setKeyboardAlwaysShowNumberRow(enabled: Boolean) {
-        prefs.edit()
-            .putBoolean(KEY_KEYBOARD_ALWAYS_SHOW_NUMBER_ROW, enabled)
-            .commit()
+        phoneInputDelegate.setKeyboardAlwaysShowNumberRow(enabled)
     }
 
     fun getPhoneMode(): String =
-        prefs.getString(KEY_PHONE_MODE, PHONE_MODE_BLIND)
-            ?: PHONE_MODE_BLIND
+        phoneInputDelegate.getPhoneMode()
 
     fun setPhoneMode(mode: String) {
-        prefs.edit().putString(KEY_PHONE_MODE, mode).commit()
+        phoneInputDelegate.setPhoneMode(mode)
     }
 
     fun getPhoneActivation(): String =
-        prefs.getString(KEY_PHONE_ACTIVATION, PHONE_ACTIVATION_LIFT)
-            ?: PHONE_ACTIVATION_LIFT
+        phoneInputDelegate.getPhoneActivation()
 
     fun setPhoneActivation(activation: String) {
-        prefs.edit().putString(KEY_PHONE_ACTIVATION, activation).commit()
+        phoneInputDelegate.setPhoneActivation(activation)
     }
 
     fun isPhoneAnnounceAfterLiftEnabled(): Boolean =
-        prefs.getBoolean(KEY_PHONE_ANNOUNCE_AFTER_LIFT, false)
+        phoneInputDelegate.isPhoneAnnounceAfterLiftEnabled()
 
     fun setPhoneAnnounceAfterLiftEnabled(enabled: Boolean) {
-        prefs.edit()
-            .putBoolean(KEY_PHONE_ANNOUNCE_AFTER_LIFT, enabled)
-            .commit()
+        phoneInputDelegate.setPhoneAnnounceAfterLiftEnabled(enabled)
     }
 
     fun isPhoneHapticEnabled(): Boolean =
-        prefs.getBoolean(KEY_PHONE_HAPTIC, false)
+        phoneInputDelegate.isPhoneHapticEnabled()
 
     fun setPhoneHapticEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_PHONE_HAPTIC, enabled).commit()
+        phoneInputDelegate.setPhoneHapticEnabled(enabled)
     }
 
     fun isPhoneSoundEnabled(): Boolean =
-        prefs.getBoolean(KEY_PHONE_SOUND, true)
+        phoneInputDelegate.isPhoneSoundEnabled()
 
     fun setPhoneSoundEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_PHONE_SOUND, enabled).commit()
+        phoneInputDelegate.setPhoneSoundEnabled(enabled)
     }
 
     fun isPhoneRecordEnabled(): Boolean =
-        prefs.getBoolean(KEY_PHONE_RECORD_ENABLED, false)
+        phoneInputDelegate.isPhoneRecordEnabled()
 
     fun setPhoneRecordEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_PHONE_RECORD_ENABLED, enabled).commit()
+        phoneInputDelegate.setPhoneRecordEnabled(enabled)
     }
 
     fun getPhoneRecordMode(): String =
-        prefs.getString(KEY_PHONE_RECORD_MODE, PHONE_RECORD_MODE_MANUAL)
-            ?: PHONE_RECORD_MODE_MANUAL
+        phoneInputDelegate.getPhoneRecordMode()
 
     fun setPhoneRecordMode(mode: String) {
-        prefs.edit().putString(KEY_PHONE_RECORD_MODE, mode).commit()
+        phoneInputDelegate.setPhoneRecordMode(mode)
     }
 
     fun isPhoneShowRecordButton(): Boolean =
-        prefs.getBoolean(KEY_PHONE_SHOW_RECORD_BUTTON, true)
+        phoneInputDelegate.isPhoneShowRecordButton()
 
     fun setPhoneShowRecordButton(show: Boolean) {
-        prefs.edit().putBoolean(KEY_PHONE_SHOW_RECORD_BUTTON, show).commit()
+        phoneInputDelegate.setPhoneShowRecordButton(show)
     }
 
     fun isPhoneRecordBoostVolumeEnabled(): Boolean =
-        prefs.getBoolean(KEY_PHONE_RECORD_BOOST_VOLUME, true)
+        phoneInputDelegate.isPhoneRecordBoostVolumeEnabled()
 
     fun setPhoneRecordBoostVolumeEnabled(enabled: Boolean) {
-        prefs.edit()
-            .putBoolean(KEY_PHONE_RECORD_BOOST_VOLUME, enabled)
-            .commit()
+        phoneInputDelegate.setPhoneRecordBoostVolumeEnabled(enabled)
     }
 
     fun isPhoneAutoSpeakerProximityEnabled(): Boolean =
-        prefs.getBoolean(KEY_PHONE_AUTO_SPEAKER_PROXIMITY, false)
+        phoneInputDelegate.isPhoneAutoSpeakerProximityEnabled()
 
     fun setPhoneAutoSpeakerProximityEnabled(enabled: Boolean) {
-        prefs.edit()
-            .putBoolean(KEY_PHONE_AUTO_SPEAKER_PROXIMITY, enabled)
-            .commit()
+        phoneInputDelegate.setPhoneAutoSpeakerProximityEnabled(enabled)
     }
 
     fun isPhoneHardwareKeysAnswerEnabled(): Boolean =
-        prefs.getBoolean(KEY_PHONE_HARDWARE_KEYS_ANSWER, true)
+        phoneInputDelegate.isPhoneHardwareKeysAnswerEnabled()
 
     fun setPhoneHardwareKeysAnswerEnabled(enabled: Boolean) {
-        prefs.edit()
-            .putBoolean(KEY_PHONE_HARDWARE_KEYS_ANSWER, enabled)
-            .commit()
+        phoneInputDelegate.setPhoneHardwareKeysAnswerEnabled(enabled)
     }
 
     fun isPhoneLauncherIconEnabled(): Boolean =
-        prefs.getBoolean(KEY_PHONE_LAUNCHER_ICON, false)
+        phoneInputDelegate.isPhoneLauncherIconEnabled()
 
     fun setPhoneLauncherIconEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_PHONE_LAUNCHER_ICON, enabled).commit()
+        phoneInputDelegate.setPhoneLauncherIconEnabled(enabled)
     }
 
     fun isSpeedDialLauncherIconEnabled(): Boolean =
-        prefs.getBoolean(KEY_SPEED_DIAL_LAUNCHER_ICON, false)
+        phoneInputDelegate.isSpeedDialLauncherIconEnabled()
 
     fun setSpeedDialLauncherIconEnabled(enabled: Boolean) {
-        prefs.edit()
-            .putBoolean(KEY_SPEED_DIAL_LAUNCHER_ICON, enabled)
-            .commit()
+        phoneInputDelegate.setSpeedDialLauncherIconEnabled(enabled)
     }
 
-    fun getKeyboardSizeLevel(): Int {
-        val level = prefs.getInt(KEY_KEYBOARD_SIZE_LEVEL, 0).coerceIn(0, 2)
-        if (getKeyboardMode() == KEYBOARD_MODE_LOW_VISION && level < 1) {
-            return 1
-        }
-        return level
-    }
+    fun getKeyboardSizeLevel(): Int =
+        phoneInputDelegate.getKeyboardSizeLevel()
 
     fun setKeyboardSizeLevel(level: Int) {
-        val clamped = level.coerceIn(0, 2)
-        prefs.edit().putInt(KEY_KEYBOARD_SIZE_LEVEL, clamped).commit()
+        phoneInputDelegate.setKeyboardSizeLevel(level)
     }
 
     fun getDialpadSizeLevel(): Int =
-        prefs.getInt(KEY_DIALPAD_SIZE_LEVEL, 0).coerceIn(0, 2)
+        phoneInputDelegate.getDialpadSizeLevel()
 
     fun setDialpadSizeLevel(level: Int) {
-        val clamped = level.coerceIn(0, 2)
-        prefs.edit().putInt(KEY_DIALPAD_SIZE_LEVEL, clamped).commit()
+        phoneInputDelegate.setDialpadSizeLevel(level)
     }
 
     fun getDialpadLayoutStyle(): String =
-        prefs.getString(KEY_DIALPAD_LAYOUT_STYLE, DIALPAD_STYLE_GRID_WIDE)
-            ?: DIALPAD_STYLE_GRID_WIDE
+        phoneInputDelegate.getDialpadLayoutStyle()
 
     fun setDialpadLayoutStyle(style: String) {
-        val effective = when (style) {
-            DIALPAD_STYLE_GRID_5X2, DIALPAD_STYLE_SINGLE_ROW -> style
-            else -> DIALPAD_STYLE_GRID_WIDE
-        }
-        prefs.edit().putString(KEY_DIALPAD_LAYOUT_STYLE, effective).commit()
+        phoneInputDelegate.setDialpadLayoutStyle(style)
     }
 
     fun getAppProfilesRaw(): String? =
-        prefs.getString(KEY_APP_PROFILES, null)
+        phoneInputDelegate.getAppProfilesRaw()
 
-    fun setAppProfilesRaw(raw: String): Boolean = synchronized(this) {
-        prefs.edit().putString(KEY_APP_PROFILES, raw).commit()
-    }
+    fun setAppProfilesRaw(raw: String): Boolean =
+        phoneInputDelegate.setAppProfilesRaw(raw)
 
     fun getContactVoicesRaw(): String? =
-        prefs.getString(KEY_CONTACT_VOICES, null)
+        phoneInputDelegate.getContactVoicesRaw()
 
-    fun setContactVoicesRaw(raw: String): Boolean = synchronized(this) {
-        prefs.edit().putString(KEY_CONTACT_VOICES, raw).commit()
+    fun setContactVoicesRaw(raw: String): Boolean =
+        phoneInputDelegate.setContactVoicesRaw(raw)
+
+
+
+    // ============ اقرأ لاحقاً (مفوّض) ============
+    private val readLaterDelegate by lazy {
+        SettingsReadLaterDelegate(this)
     }
-
-    // ============ اقرأ لاحقاً (بند 12) ============
 
     data class ReadLaterItem(
         val id: Long,
@@ -4312,69 +3969,19 @@ class SettingsRepository(context: Context) :
         val timestampMs: Long
     )
 
-    fun getReadLaterItems(): List<ReadLaterItem> = synchronized(this) {
-        val raw = prefs.getString(KEY_READ_LATER, null) ?: return emptyList()
-        runCatching {
-            val arr = org.json.JSONArray(raw)
-            val out = ArrayList<ReadLaterItem>(arr.length())
-            for (i in 0 until arr.length()) {
-                val obj = arr.optJSONObject(i) ?: continue
-                val text = obj.optString("text", "").trim()
-                if (text.isEmpty()) continue
-                out.add(
-                    ReadLaterItem(
-                        id = obj.optLong("id", 0L),
-                        text = text,
-                        timestampMs = obj.optLong("ts", 0L)
-                    )
-                )
-            }
-            out
-        }.getOrDefault(emptyList())
-    }
+    fun getReadLaterItems(): List<ReadLaterItem> =
+        readLaterDelegate.getReadLaterItems()
 
-    fun addReadLaterText(text: String): Boolean = synchronized(this) {
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) return false
-        val current = getReadLaterItems().toMutableList()
-        current.add(
-            0,
-            ReadLaterItem(
-                id = System.currentTimeMillis(),
-                text = trimmed.take(MAX_READ_LATER_TEXT_CHARS),
-                timestampMs = System.currentTimeMillis()
-            )
-        )
-        val capped = if (current.size > MAX_READ_LATER_ITEMS) {
-            current.take(MAX_READ_LATER_ITEMS)
-        } else {
-            current
-        }
-        saveReadLaterItems(capped)
-    }
+    fun addReadLaterText(text: String): Boolean =
+        readLaterDelegate.addReadLaterText(text)
 
-    fun removeReadLaterItem(id: Long): Boolean = synchronized(this) {
-        val current = getReadLaterItems().filterNot { it.id == id }
-        saveReadLaterItems(current)
-    }
+    fun removeReadLaterItem(id: Long): Boolean =
+        readLaterDelegate.removeReadLaterItem(id)
 
-    fun clearReadLater(): Boolean = synchronized(this) {
-        prefs.edit().remove(KEY_READ_LATER).commit()
-    }
+    fun clearReadLater(): Boolean =
+        readLaterDelegate.clearReadLater()
 
-    private fun saveReadLaterItems(
-        items: List<ReadLaterItem>
-    ): Boolean {
-        val arr = org.json.JSONArray()
-        for (item in items) {
-            val obj = org.json.JSONObject()
-            obj.put("id", item.id)
-            obj.put("text", item.text)
-            obj.put("ts", item.timestampMs)
-            arr.put(obj)
-        }
-        return prefs.edit().putString(KEY_READ_LATER, arr.toString()).commit()
-    }
+
 }
 
 /**

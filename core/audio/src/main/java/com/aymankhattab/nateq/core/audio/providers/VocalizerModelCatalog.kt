@@ -20,8 +20,7 @@ data class VocalizerCatalogItem(
     val downloadUrl: String,
     val sampleUrl: String,
     val sizeMb: Int,
-    val quality: String,
-    val sha256: String? = null
+    val quality: String
 ) {
     /** اسم الملف النموذجي الدال على التثبيت */
     val indicatorFileName: String

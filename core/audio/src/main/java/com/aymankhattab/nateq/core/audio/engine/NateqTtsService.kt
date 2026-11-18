@@ -1432,7 +1432,12 @@ class NateqTtsService : TextToSpeechService() {
                     SettingsRepository.VOICE_CATEGORY_NUMBERS
                 SpeechRole.EMOJI ->
                     SettingsRepository.VOICE_CATEGORY_EMOJI
-                else -> SettingsRepository.VOICE_CATEGORY_DEFAULT
+                SpeechRole.DIALOGUE ->
+                    SettingsRepository.VOICE_CATEGORY_DIALOGUE
+                SpeechRole.NARRATION ->
+                    SettingsRepository.VOICE_CATEGORY_NARRATION
+                SpeechRole.TEXT ->
+                    SettingsRepository.VOICE_CATEGORY_DEFAULT
             }
         val lordRate = requestHandler.getSpeechRateFor(
             languageTag, singleCategory
@@ -2103,6 +2108,10 @@ class NateqTtsService : TextToSpeechService() {
         val segmentCategory = when (segment.role) {
             SpeechRole.EMOJI -> SettingsRepository.VOICE_CATEGORY_EMOJI
             SpeechRole.NUMBER -> SettingsRepository.VOICE_CATEGORY_NUMBERS
+            SpeechRole.DIALOGUE ->
+                SettingsRepository.VOICE_CATEGORY_DIALOGUE
+            SpeechRole.NARRATION ->
+                SettingsRepository.VOICE_CATEGORY_NARRATION
             SpeechRole.TEXT -> effectCategory.takeIf { it.isNotEmpty() }
         }
         val effCategory = segmentCategory ?:
@@ -2941,9 +2950,15 @@ class NateqTtsService : TextToSpeechService() {
             val deferred = deferreds[index]
             val segment = segments[index]
             val cat = when (segment.role) {
-                SpeechRole.NUMBER -> SettingsRepository.VOICE_CATEGORY_NUMBERS
-                SpeechRole.EMOJI -> SettingsRepository.VOICE_CATEGORY_EMOJI
-                else -> effectCategory.ifBlank {
+                SpeechRole.NUMBER ->
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS
+                SpeechRole.EMOJI ->
+                    SettingsRepository.VOICE_CATEGORY_EMOJI
+                SpeechRole.DIALOGUE ->
+                    SettingsRepository.VOICE_CATEGORY_DIALOGUE
+                SpeechRole.NARRATION ->
+                    SettingsRepository.VOICE_CATEGORY_NARRATION
+                SpeechRole.TEXT -> effectCategory.ifBlank {
                     SettingsRepository.VOICE_CATEGORY_DEFAULT
                 }
             }
