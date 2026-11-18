@@ -19,6 +19,8 @@ class CategoryPanelLogicTest {
                 SettingsRepository.VOICE_CATEGORY_TIME,
                 SettingsRepository.VOICE_CATEGORY_BATTERY,
                 SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                SettingsRepository.VOICE_CATEGORY_DIALOGUE,
+                SettingsRepository.VOICE_CATEGORY_NARRATION,
                 SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
                 SettingsRepository.VOICE_CATEGORY_EMOJI,
                 SettingsRepository.ANNOUNCE_CATEGORY_CALLER

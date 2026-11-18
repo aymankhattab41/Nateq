@@ -27,7 +27,10 @@ class LanguageConvertDialogLogicTest {
     @Test
     fun engineChoice_emptyEngines_returnsSingleDisabledNoOptions() {
         val choice = engineChoice(row(), "بدون", "لا خيارات", null)
-        assertEquals(listOf("لا خيارات"), choice.labels)
+        assertEquals(
+            listOf("لا خيارات (لا محرك متاح لهذه اللغة)"),
+            choice.labels
+        )
         assertNull(choice.resolvedIndex)
     }
 
@@ -139,9 +142,11 @@ class LanguageConvertDialogLogicTest {
     }
 
     @Test
-    fun voiceChoice_unknownSavedVoice_fallsBackToFirst() {
-        assertEquals(0, voiceChoice(listOf("أصفر"), "لا", "لا-أعرف")
-            .resolvedIndex)
+    fun voiceChoice_unknownSavedVoice_hasNoResolvedSelection() {
+        assertNull(
+            voiceChoice(listOf("أصفر"), "لا", "لا-أعرف")
+                .resolvedIndex
+        )
     }
 
     @Test
