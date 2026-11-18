@@ -238,9 +238,8 @@ internal class EngineSectionController(
         pitch: Float,
         rate: Float
     ) {
-        val isArabic = LanguageCode.isArabic(languageTag) ||
-            voiceName.lowercase().contains("ar") ||
-            voiceName.lowercase().contains("arab")
+        // بند 7: نص المعاينة يُختار بوسم اللغة فقط (لا اسم الصوت).
+        val isArabic = LanguageCode.isArabic(languageTag)
         val sampleText = if (isArabic) {
             fragment.getString(R.string.sample_text_preview_ar)
         } else {

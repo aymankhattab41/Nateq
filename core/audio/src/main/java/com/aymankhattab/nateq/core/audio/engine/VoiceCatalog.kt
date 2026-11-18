@@ -479,10 +479,24 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         >()
             for ((pkg, voices) in voicesByEngine) {
                 for (voice in voices) {
-                    val lang = LocaleUtils.normalizeLanguageCode(
-                        voice.locale?.language
-                    )
-                    if (lang.isBlank()) continue
+                    val rawLang = voice.locale?.language.orEmpty()
+                    // بند 5: عدم إسقاط لغة فارغة بصمت — اشتقاق وتسجيل.
+                    if (rawLang.isBlank()) {
+                        val derived = LocaleUtils.toBcp47Tag(voice.name)
+                            ?.let { LocaleUtils.normalizeLanguageCode(it) }
+                            ?: LocaleUtils.normalizeLanguageCode(rawLang)
+                        Log.w(
+                            TAG,
+                            "groupVoicesByLanguage: لغة فارغة " +
+                                "voice=${voice.name} pkg=$pkg " +
+                                "derived=$derived"
+                        )
+                        grouped.getOrPut(derived) { LinkedHashMap() }
+                            .getOrPut(pkg) { mutableListOf() }
+                            .add(voice)
+                        continue
+                    }
+                    val lang = LocaleUtils.normalizeLanguageCode(rawLang)
                     grouped.getOrPut(lang) { LinkedHashMap() }
                         .getOrPut(pkg) { mutableListOf() }
                         .add(voice)

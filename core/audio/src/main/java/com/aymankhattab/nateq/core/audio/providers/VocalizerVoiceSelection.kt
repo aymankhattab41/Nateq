@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
+import com.aymankhattab.nateq.util.VoiceIdContract
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
@@ -24,14 +25,7 @@ internal data class VocalizerVoiceResolution(
     val reason: String
 )
 
-/** الأسماء المستعارة التي يكتبها المستخدم أو المضيف بصيغ مختلفة. */
-private val VOICE_ALIASES = mapOf(
-    "leila" to "Laila",
-    "layla" to "Laila",
-    "tariq" to "Tarik",
-    "tarek" to "Tarik",
-    "tarick" to "Tarik"
-)
+/** الأسماء البديلة تُوحَّد عبر [VoiceIdContract.canonicalVoiceName] (بند 1). */
 
 /** أسماء أصوات Vocalizer المعروفة — للتصنيف فقط، لا لاختيار صوت مثبت. */
 private val KNOWN_VOICE_NAMES = setOf(
@@ -62,19 +56,22 @@ internal fun hasInstalledVoiceForLanguage(
     installed: List<InstalledVocalizerVoice>
 ): Boolean = installed.any { languagesMatch(it.language, languageTag) }
 
-/** توحيد الاسم المستعار والاتجاهين قبل أي مقارنة. */
-private fun canonicalVoiceName(name: String): String {
-    val trimmed = name.trim()
-    return VOICE_ALIASES[trimmed.lowercase(Locale.ROOT)] ?: trimmed
-}
+/** توحيد الاسم والمرادفات قبل المقارنة (مرجع موحد — بند 1). */
+internal fun canonicalVocalizerVoiceName(name: String): String =
+    VoiceIdContract.canonicalVoiceName(name)
 
 /** هل الاسم معروف كصوت Vocalizer (بلا كتالوج التنزيل)؟ */
 fun isKnownVocalizerVoiceName(voiceName: String?): Boolean {
-    val name = voiceName?.trim()?.lowercase(Locale.ROOT) ?: return false
-    if (name.isEmpty()) return false
-    if (name.startsWith("vocalizer")) return true
-    if (name in VOICE_ALIASES) return true
-    return name in KNOWN_VOICE_NAMES
+    val trimmed = voiceName?.trim().orEmpty()
+    if (trimmed.isEmpty()) return false
+    val lower = trimmed.lowercase(Locale.ROOT)
+    if (lower.startsWith("vocalizer")) return true
+    val canonical = canonicalVocalizerVoiceName(trimmed)
+        .lowercase(Locale.ROOT)
+    if (canonical in KNOWN_VOICE_NAMES) return true
+    // أسماء بديلة معروفة تُعدّ معروفة كذلك.
+    return VoiceIdContract.sameVoiceName(trimmed, "Tarik") ||
+        VoiceIdContract.sameVoiceName(trimmed, "Laila")
 }
 
 private fun decideVoice(
@@ -82,7 +79,7 @@ private fun decideVoice(
     requestedLanguage: String?,
     installed: List<InstalledVocalizerVoice>
 ): VocalizerVoiceResolution {
-    val request = canonicalVoiceName(requestedName)
+    val request = canonicalVocalizerVoiceName(requestedName)
     if (installed.isEmpty()) {
         return VocalizerVoiceResolution(
             requestedName.trim(), false, "لا أصوات Vocalizer مثبتة"
@@ -105,7 +102,8 @@ private fun decideVoice(
         }
     }
     val exact = installed.firstOrNull {
-        canonicalVoiceName(it.name).equals(request, ignoreCase = true)
+        canonicalVocalizerVoiceName(it.name)
+            .equals(request, ignoreCase = true)
     }
     if (exact != null) {
         return VocalizerVoiceResolution(
@@ -113,7 +111,7 @@ private fun decideVoice(
         )
     }
     val partial = installed.firstOrNull { voice ->
-        val known = canonicalVoiceName(voice.name)
+        val known = canonicalVocalizerVoiceName(voice.name)
         known.contains(request, ignoreCase = true) ||
             request.contains(known, ignoreCase = true)
     }

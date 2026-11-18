@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.util
 
+import java.util.Locale
 import java.util.logging.Logger
 
 /**
@@ -29,6 +30,15 @@ object VoiceIdContract {
      * على JVM مباشرةً، فاستخدام Stub الأندرويد كان سيفشل الاختبار.
      */
     private val warnLog = Logger.getLogger(VoiceIdContract::class.java.name)
+
+    /** أسماء بديلة تهجئةً لنفس الصوت تُوحَّد إلى الاسم المعتمد. */
+    private val VOICE_NAME_ALIASES = mapOf(
+        "leila" to "Laila",
+        "layla" to "Laila",
+        "tariq" to "Tarik",
+        "tarek" to "Tarik",
+        "tarick" to "Tarik"
+    )
 
     private val LEGACY_LOCAL = Regex(
         "^nateq-(.+)-local$",
@@ -66,6 +76,48 @@ object VoiceIdContract {
      *  بحرف. كلُّ اسمٍ مولَّد من [createId] بالعقد نفسه فلا ينفرد عنه. */
     fun declaredVoiceNames(): List<String> =
         declaredLanguages().map { createId(it) }
+
+    /**
+     * توحيد اسم الصوت إلى اسمٍ قانوني واحد (canonical): يطبّق الأسماء
+     * البديلة المعروفة (Tarek/Tariq/Tarik → Tarik، Leila/Layla → Laila)
+     * مع إزالة لاحقة العرض بين قوسين، دون تقليص أسماء موسّعة مجهولة
+     * (مثل "Laila Extra") حتى تبقى المطابقة الصارمة سليمة.
+     */
+    fun canonicalVoiceName(raw: String?): String {
+        val trimmed = raw?.trim().orEmpty()
+        if (trimmed.isEmpty()) return ""
+        val noParen = trimmed.substringBefore('(').trim().ifEmpty { trimmed }
+        // تطابق الاسم كاملاً (بدون قوس) أو الرمز الأول كبديل تهجئة.
+        VOICE_NAME_ALIASES[noParen.lowercase(Locale.ROOT)]?.let { return it }
+        VOICE_NAME_ALIASES[trimmed.lowercase(Locale.ROOT)]?.let { return it }
+        val first = noParen.substringBefore(' ').trim()
+        val firstAlias = VOICE_NAME_ALIASES[first.lowercase(Locale.ROOT)]
+        if (firstAlias != null && noParen.contains(' ')) {
+            // اسم بديل مرفق بلاحقة جودة/وصف (مثل "Tarek Compact") →
+            // يُوحَّد إلى الاسم القانوني مع الحفاظ على دلالة الاسم فقط.
+            return firstAlias
+        }
+        return noParen
+    }
+
+    /** هل الاسمان يشيـران إلى الصوت نفسه بعد توحيد الأسماء البديلة؟ */
+    fun sameVoiceName(a: String?, b: String?): Boolean {
+        val ca = canonicalVoiceName(a)
+        val cb = canonicalVoiceName(b)
+        if (ca.isEmpty() || cb.isEmpty()) return false
+        return ca.equals(cb, ignoreCase = true)
+    }
+
+    /** هل المعرّف/الاسم يتطابق مع صوتٍ قانونيٍّ معيّن بعد التوحيد؟ */
+    fun matchesCanonicalVoiceName(candidate: String?, target: String?): Boolean {
+        if (candidate.isNullOrBlank() || target.isNullOrBlank()) return false
+        if (sameVoiceName(candidate, target)) return true
+        val c = canonicalVoiceName(candidate)
+        val t = canonicalVoiceName(target)
+        if (c.isEmpty() || t.isEmpty()) return false
+        return candidate.contains(t, ignoreCase = true) ||
+            t.contains(c, ignoreCase = true)
+    }
 
     /**
      * يطبّع معرّفاً وارداً/مخزّناً إلى الصيغة الموحّدة:

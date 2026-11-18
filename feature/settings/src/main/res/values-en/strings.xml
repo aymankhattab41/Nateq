@@ -715,6 +715,7 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Comprehensive Vocalizer voice fixes (1-12): unified names/aliases (Tarek/Tariq/Tarik, Leila/Layla) and BCP-47 language matching, no silent selection for language-only IDs with clear reason, distinct Tarik variants (Compact/High) by variant/header identity with legacy value compatibility, voice completeness via .dat referenced by .hdr with unified recursive scan, no silent drop of empty language and propagated list-voices failure reasons with raw logging, preview text by language tag only, conversion dialog without silent drop/selection with audible absence reasons and save/enable handling, normalized mixed-text segLang/convertLang comparison, and audible announcement on VOICE_NOT_FOUND/LOAD_VOICE_FAILED while preserving the error reason.
 • Voice save is reported successful only after a real success; failures are audible and visible.
 • Switching engines with unsaved edits offers Save/Discard/Cancel with no silent loss.
 • Voice-to-engine matching ignores whitespace and letter case, with an audible rejection.

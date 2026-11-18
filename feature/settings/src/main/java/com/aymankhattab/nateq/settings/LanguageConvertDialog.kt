@@ -10,6 +10,7 @@ import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
 import com.aymankhattab.nateq.core.audio.engine.UnavailableEngine
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.util.VoiceIdContract
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.button.MaterialButton
@@ -55,7 +56,7 @@ internal data class ConvertChoice(
 
 /** عناصر قائمة المحرك + فهرس المحرّك المحفوظ: خيار «بدون محرك» في المقدمة
  *  ثم محركات اللغة ثم المحركات غير المتاحة بشاراتها؛ ولغة بلا محرك تُعرض
- *  بعنصر وحيد «لا توجد خيارات». */
+ *  بسبب غيابٍ مفسَّر (غير جاهز/فشل جلب الأصوات/غير متاح) وليس صامتاً. */
 internal fun engineChoice(
     row: LanguageRow,
     noEngineLabel: String,
@@ -63,7 +64,11 @@ internal fun engineChoice(
     savedEngine: String?
 ): ConvertChoice {
     if (row.engines.isEmpty() && row.unavailableEngines.isEmpty()) {
-        return ConvertChoice(listOf(noOptionsLabel), null)
+        // بند 10: سبب الغياب بنص مسموع (لا محرك/أصوات متاحة لهذه اللغة).
+        return ConvertChoice(
+            listOf("$noOptionsLabel (لا محرك متاح لهذه اللغة)"),
+            null
+        )
     }
     val items = mutableListOf(noEngineLabel)
     items += row.engines.map { it.engineLabel }
@@ -103,7 +108,10 @@ internal fun enginePackageForLabel(
 ): String? {
     if (selectedLabel.isNullOrBlank()) return null
     val trimmed = selectedLabel.trim()
-    if (trimmed == noEngineLabel || trimmed == noOptionsLabel) return null
+    if (trimmed == noEngineLabel ||
+        trimmed == noOptionsLabel ||
+        trimmed.startsWith(noOptionsLabel)
+    ) return null
     val matched = row.engines.firstOrNull { it.engineLabel == trimmed }
     if (matched != null) return matched.enginePackage
     val unavail = row.unavailableEngines.firstOrNull { un ->
@@ -115,7 +123,10 @@ internal fun enginePackageForLabel(
 }
 
 /** عناصر قائمة الصوت المحسومة من أسماء أصوات المحرك المختار + فهرس
- *  الصوت المحفوظ؛ قائمة فارغة (بلا محرك) → «لا توجد خيارات». */
+ *  الصوت المحفوظ؛ قائمة فارغة (بلا محرك) → «لا توجد خيارات».
+ *  بند 9: عند غياب الصوت المحفوظ لا يُختار أول صوت بصمتاً.
+ *  بند 4: توافق القيم المحفوظة القديمة (اسم أساسي بلا جودة/بدائل تهجئة)
+ *  عبر مطابقة قانونية موحّدة عند وجود تطابق وحيد. */
 internal fun voiceChoice(
     voiceNames: List<String>,
     noOptionsLabel: String,
@@ -124,13 +135,47 @@ internal fun voiceChoice(
     if (voiceNames.isEmpty()) {
         return ConvertChoice(listOf(noOptionsLabel), null)
     }
-    val idx = voiceNames.indexOf(savedVoice).takeIf { it >= 0 } ?: 0
+    val idx = if (savedVoice.isNullOrBlank()) {
+        0
+    } else {
+        val exact = voiceNames.indexOf(savedVoice)
+        if (exact >= 0) {
+            exact
+        } else {
+            // توافق قديم: طابق بالاسم القانوني/البدائل أو احتواء وحيد.
+            val byCanonical = voiceNames.withIndex().filter { (_, n) ->
+                VoiceIdContract.sameVoiceName(n, savedVoice) ||
+                    VoiceIdContract.canonicalVoiceName(n)
+                        .equals(
+                            VoiceIdContract.canonicalVoiceName(savedVoice),
+                            ignoreCase = true
+                        )
+            }
+            if (byCanonical.size == 1) {
+                byCanonical.first().index
+            } else {
+                val byContains = voiceNames.withIndex().filter { (_, n) ->
+                    n.contains(savedVoice, ignoreCase = true) ||
+                        savedVoice.contains(n, ignoreCase = true)
+                }
+                if (byContains.size == 1) byContains.first().index else null
+            }
+        }
+    }
     return ConvertChoice(voiceNames, idx)
 }
 
-/** أسماء أصوات محركٍ (بعد إزالة تكرار الأسماء) — مدخل الـ UI لصياغة القائمة. */
-internal fun engineVoiceNames(engine: EngineWithVoices): List<String> =
-    engine.voices.distinctBy { it.name }.map { it.name }
+/** أسماء أصوات محركٍ مرتّبة للعرض.
+ *  بند 4: لا ندمج متغيّرات مختلفة بالاسم؛ نحافظ على ترتيب الظهور ونزيل
+ *  التكرار الحرفي فقط (تمييز الجودة مثل Tarik Compact/High يظهر بالاسم). */
+internal fun engineVoiceNames(engine: EngineWithVoices): List<String> {
+    val seen = LinkedHashSet<String>()
+    for (v in engine.voices) {
+        val name = v.name
+        if (name.isNotBlank()) seen.add(name)
+    }
+    return seen.toList()
+}
 
 /** الاسم الصوتي من العنوان المختار (null لـ«لا توجد خيارات»/فارغ). */
 internal fun voiceNameFromLabel(
@@ -334,9 +379,35 @@ internal class LanguageConvertDialogController(
             row, actvEngine.text?.toString(), noEngineLabel, noOptionsLabel
         )
         bindVoiceFor(enginePkg)
+        val hadMissingVoiceMsg =
+            tvSaved.text?.toString()?.startsWith(
+                "الصوت المحفوظ غير متاح"
+            ) == true
         pending = false
-        tvSaved.text = ""
         btnSave.isEnabled = false
+        if (!hadMissingVoiceMsg) {
+            // بند 9/10: عرض السطر الكامل أو سبب الغياب إن لم تُعرض رسالة أهم.
+            val selectedEngine = enginePackageForLabel(
+                row, actvEngine.text?.toString(),
+                noEngineLabel, noOptionsLabel
+            )
+            val voiceLabel = voiceNameFromLabel(
+                actvVoice.text?.toString(), noOptionsLabel
+            )
+            val reasonMsg = if (row.engines.isEmpty() &&
+                row.unavailableEngines.isEmpty()
+            ) {
+                "لا محرك متاح لهذه اللغة (غير جاهز أو فشل جلب الأصوات)"
+            } else {
+                null
+            }
+            tvSaved.text = reasonMsg ?: fullSelectionLine(
+                selectedEngine, voiceLabel
+            )
+            if (reasonMsg != null) {
+                tvSaved.announceCompat(reasonMsg)
+            }
+        }
     }
 
     private fun onLanguageSelected(position: Int) {
@@ -351,50 +422,124 @@ internal class LanguageConvertDialogController(
         val enginePkg = enginePackageForLabel(
             currentRow, label, noEngineLabel, noOptionsLabel
         )
-        savedVoice = if (enginePkg != null) {
-            settings.getPreferredVoiceForEngine(
+        // بند 9: عدم إسقاط الصوت عند تغيير المحرك — إن كان الصوت
+        // المختار حالياً موجوداً في أصوات المحرك الجديد نُبقيه.
+        val currentVoice = voiceNameFromLabel(
+            actvVoice.text?.toString(), noOptionsLabel
+        )
+        val newEngine = currentRow.engines.firstOrNull {
+            it.enginePackage == enginePkg
+        }
+        val newNames = newEngine?.let { engineVoiceNames(it) }.orEmpty()
+        savedVoice = when {
+            enginePkg == null -> null
+            currentVoice != null && newNames.any { it == currentVoice } ->
+                currentVoice
+            else -> settings.getPreferredVoiceForEngine(
                 enginePkg, currentRow.languageTag
-            )
-        } else {
-            settings.getPreferredVoiceForEngine(
-                SettingsRepository.ENGINE_LORD_TTS,
-                currentRow.languageTag
             )
         }
         val unavail = currentRow.unavailableEngines.firstOrNull {
             it.enginePackage == enginePkg
         }
+        bindVoiceFor(enginePkg)
         if (unavail != null) {
             val reason = unavail.message ?: unavail.code ?: "المحرك غير جاهز"
-            tvSaved.text = "تنبيه: ${unavail.engineLabel} ($reason)"
-            tvSaved.announceCompat(tvSaved.text.toString())
+            val msg = "تنبيه: ${unavail.engineLabel} ($reason)"
+            tvSaved.text = if (tvSaved.text.isNullOrBlank()) {
+                msg
+            } else {
+                "$msg\n${tvSaved.text}"
+            }
+            tvSaved.announceCompat(msg)
             Toast.makeText(
                 context,
                 "${unavail.engineLabel}: $reason",
                 Toast.LENGTH_LONG
             ).show()
+        } else if (enginePkg == null &&
+            (currentRow.engines.isEmpty() &&
+                currentRow.unavailableEngines.isEmpty() ||
+                actvEngine.text?.toString().orEmpty()
+                    .startsWith(noOptionsLabel))
+        ) {
+            // بند 10: سبب الغياب مسموع.
+            val msg = "لا محرك متاح لهذه اللغة (غير جاهز أو فشل جلب الأصوات)"
+            tvSaved.text = msg
+            tvSaved.announceCompat(msg)
         }
-        bindVoiceFor(enginePkg)
         markPending()
     }
 
     private fun onVoiceSelected(position: Int) {
         val label = itemAt(actvVoice, position) ?: return
         actvVoice.setText(label, false)
-        btnPlay.isEnabled = true
+        val enginePkg = enginePackageForLabel(
+            currentRow, actvEngine.text?.toString(),
+            noEngineLabel, noOptionsLabel
+        )
+        val voice = voiceNameFromLabel(label, noOptionsLabel)
+        btnPlay.isEnabled = enginePkg != null && voice != null
+        tvSaved.text = fullSelectionLine(enginePkg, voice)
         markPending()
     }
 
-    /** يملأ قائمة الصوت للمحرك الحالي ويضبط تفعيلها وزر العيّنة. */
+    /** يملأ قائمة الصوت للمحرك الحالي ويضبط تفعيلها وزر العيّنة.
+     *  بند 9: عند غياب الصوت المحفوظ لا يُختار أول صوت بصمتاً ويُعرض
+     *  "الصوت المحفوظ غير متاح: <الاسم>". */
     private fun bindVoiceFor(enginePkg: String?) {
         val engine = currentRow.engines.firstOrNull {
             it.enginePackage == enginePkg
         }
         val names = engine?.let { engineVoiceNames(it) }.orEmpty()
         val vc = voiceChoice(names, noOptionsLabel, savedVoice)
-        bindDropdown(actvVoice, vc.labels, vc.resolvedIndex)
-        actvVoice.isEnabled = enginePkg != null && vc.labels.isNotEmpty()
-        btnPlay.isEnabled = enginePkg != null && vc.resolvedIndex != null
+        val resolvedName = vc.resolvedIndex?.let { names.getOrNull(it) }
+        val missingSaved = !savedVoice.isNullOrBlank() &&
+            names.isNotEmpty() &&
+            resolvedName == null
+        if (missingSaved) {
+            // لا اختيار صامت لأول صوت: نعرض القائمة بلا تحديد.
+            bindDropdown(actvVoice, vc.labels, null)
+            actvVoice.setText("", false)
+            val msg = "الصوت المحفوظ غير متاح: $savedVoice"
+            val full = fullSelectionLine(enginePkg, null)
+            tvSaved.text = "$msg\n$full"
+            tvSaved.announceCompat(tvSaved.text.toString())
+            btnPlay.isEnabled = false
+        } else {
+            // توافق قديم (بند 4): إن حُلّت القيمة المحفوظة إلى اسم مختلف
+            // (بديل/جودة وحيدة) اعتمد الاسم المحلول للعرض والاختيار.
+            if (resolvedName != null && savedVoice != null &&
+                resolvedName != savedVoice
+            ) {
+                savedVoice = resolvedName
+            }
+            bindDropdown(actvVoice, vc.labels, vc.resolvedIndex)
+            actvVoice.isEnabled =
+                enginePkg != null && vc.labels.isNotEmpty()
+            btnPlay.isEnabled =
+                enginePkg != null && vc.resolvedIndex != null
+            // بند 9: عرض السطر الكامل (اللغة، المحرك، اسم الصوت).
+            val voiceLabel = voiceNameFromLabel(
+                actvVoice.text?.toString(), noOptionsLabel
+            )
+            if (enginePkg != null || !savedVoice.isNullOrBlank()) {
+                tvSaved.text = fullSelectionLine(enginePkg, voiceLabel)
+            }
+        }
+        actvVoice.isEnabled = enginePkg != null && names.isNotEmpty()
+    }
+
+    private fun fullSelectionLine(
+        enginePkg: String?,
+        voiceName: String?
+    ): String {
+        val engineLabel = currentRow.engines.firstOrNull {
+            it.enginePackage == enginePkg
+        }?.engineLabel ?: enginePkg ?: "بدون محرك"
+        val voice = voiceName?.takeIf { it.isNotBlank() } ?: "—"
+        return "اللغة: ${currentRow.displayName}، " +
+            "المحرك: $engineLabel، الصوت: $voice"
     }
 
     private val adapters = HashMap<Int, ArrayAdapter<String>>()
@@ -415,7 +560,7 @@ internal class LanguageConvertDialogController(
 
     /** حفظ صريح: يكتب إعدادات اللغة المختارة حالياً. */
     private fun saveCurrent() {
-        val enginePkg = enginePackageForLabel(
+        var enginePkg = enginePackageForLabel(
             currentRow,
             actvEngine.text?.toString(),
             noEngineLabel,
@@ -436,34 +581,68 @@ internal class LanguageConvertDialogController(
             return
         }
 
+        // بند 11: حفظ صوت بدون محرك — طلب اختيار المحرك أو اختياره
+        // تلقائياً ولا ترك التحويل مغلقاً بصمتاً.
+        val selectedVoice = voiceNameFromLabel(
+            actvVoice.text?.toString(), noOptionsLabel
+        )
+        if (enginePkg == null && selectedVoice != null) {
+            val autoEngine = currentRow.engines.firstOrNull()
+            if (autoEngine == null) {
+                val msg = "اختر محركاً قبل حفظ الصوت"
+                tvSaved.text = msg
+                tvSaved.announceCompat(msg)
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                return
+            }
+            enginePkg = autoEngine.enginePackage
+            // تحديث واجهة المحرك ليعكس الاختيار التلقائي.
+            val labels = adapters[actvEngine.id]
+            val idx = labels?.let { ad ->
+                (0 until ad.count).firstOrNull { i ->
+                    ad.getItem(i) == autoEngine.engineLabel
+                }
+            } ?: -1
+            if (idx >= 0) {
+                actvEngine.setText(autoEngine.engineLabel, false)
+            }
+        }
+
         val params = convertSaveValues(
             currentRow,
-            actvEngine.text?.toString(),
-            actvVoice.text?.toString(),
+            actvEngine.text?.toString().takeIf { enginePkg != null }
+                ?: currentRow.engines.firstOrNull {
+                    it.enginePackage == enginePkg
+                }?.engineLabel,
+            selectedVoice ?: actvVoice.text?.toString(),
             seekVol.progress,
             seekPitch.progress,
             seekRate.progress,
             noEngineLabel,
             noOptionsLabel
         )
+        // إن اخترنا محركاً تلقائياً يجب أن ينعكس في القيم المحفوظة.
+        val saveEngine = enginePkg ?: params.engine
+        val saveVoice = if (saveEngine == null) null else
+            (params.voice ?: selectedVoice)
         fun performSave() {
             settings.setEnginePreferenceForLanguage(
                 currentRow.languageTag,
-                params.engine,
-                params.voice,
+                saveEngine,
+                saveVoice,
                 params.rate,
                 params.pitch,
                 params.volume
             )
-            if (params.engine != null && !settings.isAutoConvertEnabled()) {
+            if (saveEngine != null && !settings.isAutoConvertEnabled()) {
                 settings.setAutoConvertEnabled(true)
             }
         }
 
         performSave()
 
-        val isDefault = params.engine == null &&
-            params.voice == null &&
+        val isDefault = saveEngine == null &&
+            saveVoice == null &&
             params.rate == 1.0f &&
             params.pitch == 1.0f &&
             params.volume == 1.0f
@@ -475,8 +654,8 @@ internal class LanguageConvertDialogController(
             return if (isDefault) {
                 !saved.hasAdjustment
             } else {
-                saved.engine == params.engine &&
-                    saved.voiceName == params.voice &&
+                saved.engine == saveEngine &&
+                    saved.voiceName == saveVoice &&
                     kotlin.math.abs(saved.rate - params.rate) < 0.05f &&
                     kotlin.math.abs(saved.pitch - params.pitch) < 0.05f &&
                     kotlin.math.abs(saved.volume - params.volume) < 0.05f
@@ -497,7 +676,8 @@ internal class LanguageConvertDialogController(
             val msg = if (isDefault) {
                 "أُعيدت اللغة إلى الإعداد الافتراضي"
             } else {
-                context.getString(R.string.auto_convert_saved)
+                context.getString(R.string.auto_convert_saved) +
+                    "\n" + fullSelectionLine(saveEngine, saveVoice)
             }
             tvSaved.text = msg
             tvSaved.announceCompat(msg)

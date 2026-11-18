@@ -144,38 +144,53 @@ data class VocalizerVoiceManifest(
         /**
          * أسماء قواعد الأصوات المكتملة داخل مجلد واحد.
          *
-         * ع٣٢-2: **لا يُشترط تطابق اسم الرأس مع اسم البيانات** لأن
-         * حزم Vocalizer المدمجة تُسمّي الرأس `ve_pipeline_..._x-y-z.hdr`
-         * بينما بيانات الصوت `..._embedded-<نوع>_x-y-z.dat` (اسمان
-         * مختلفان)؛ لذا يُشتقّ اسم `.dat` المتوقع من الرأس، ويُقبل
-         * أي `.dat` غير مشترك بحجم كافٍ كاحتياط للرؤوس غير النمطية.
-         * بلا هذا التبديل كان المحرّك يبقى غير مهيّأ والصوت لا يُنطق.
+         * بند 3: الصوت مكتمل فقط إذا وُجد ملف `.dat` الذي يشير إليه
+         * ملف `.hdr` نفسه (المراجع داخل الترويسة أو الاسم المشتق منها).
+         * المسح متكرر ليشمل المجلدات الفرعية (توحيداً مع عمق المسح).
          */
         fun completeVoiceBases(dir: File): List<String> {
             if (!dir.exists() || !dir.isDirectory) return emptyList()
-            // البند ٢١/١٣: حزم Tarik وMariam تضع الملفات في مجلد فرعي،
-            // فالفحص المتكرر ضروري وإلا بدت الحزمة المكتملة ناقصة.
+            // مسح متكرر (مجلدات فرعية) — بند 3/21.
             val files = dir.walkTopDown().filter { it.isFile }.toList()
             val hdrs = files.filter {
-                it.isFile && it.name.endsWith(".hdr", true) &&
-                    it.length() > 0L
+                it.name.endsWith(".hdr", true) && it.length() > 0L
             }
             if (hdrs.isEmpty()) return emptyList()
-            val bigDats = files.filter {
-                it.isFile && it.name.endsWith(".dat", true) &&
-                    it.length() >= MIN_VOICE_DAT_BYTES
-            }
-            val voiceDats = bigDats.filter { !isSharedFile(it.name) }
-            if (voiceDats.isEmpty()) return emptyList()
+            val datByLowerName = files.filter {
+                it.name.endsWith(".dat", true) && it.length() > 0L
+            }.associateBy { it.name.lowercase() }
 
-            // وجود رأس + بيانات صوت بحجم كافٍ دليل الاكتمال؛
-            // ويُقبل احتياطاً أي .dat صوتي للرؤوس غير النمطية أو
-            // ذات إصدار مخالف (لا يُشترط تطابق الأسماء الحرفي).
-            return hdrs.map { it.nameWithoutExtension }
+            return hdrs.filter { hdr ->
+                hdrHasReferencedDat(hdr, datByLowerName)
+            }.map { it.nameWithoutExtension }
         }
 
         /**
-         * هل يحتوي المجلد على صوت Vocalizer مكتمل (رأس + بيانات)؟
+         * هل يملك الرأس ملف `.dat` صوتياً مُشاراً إليه فعلياً وموجوداً؟
+         * المرجع يُقرأ من داخل الـ .hdr نفسه، مع احتياط للاسم المشتق
+         * من اسم الرأس عند غياب مراجع صريحة (بند 3).
+         */
+        fun hdrHasReferencedDat(
+            hdrFile: File,
+            datByLowerName: Map<String, File>
+        ): Boolean {
+            val refs = extractDatReferencesFromHdr(hdrFile).toMutableList()
+            extractExpectedDatFromHdrName(hdrFile.name)?.let { refs.add(it) }
+            refs.add("${hdrFile.nameWithoutExtension}.dat")
+            val distinct = refs.map { it.lowercase() }.distinct()
+            // إن وُجدت مراجع صريحة نتحقق منها؛ ملف dat صوتي (غير مشترك)
+            // بحجم كافٍ يُثبت اكتمال الصوت.
+            for (ref in distinct) {
+                val dat = datByLowerName[ref] ?: continue
+                if (isSharedFile(dat.name)) continue
+                if (dat.length() >= MIN_VOICE_DAT_BYTES) return true
+            }
+            return false
+        }
+
+        /**
+         * هل يحتوي المجلد على صوت Vocalizer مكتمل (رأس + بيانات مُشار إليها)؟
+         * بند 3: اكتمال الصوت مرهون بوجود `.dat` الذي يشير إليه `.hdr` نفسه.
          */
         fun hasCompleteVoice(dir: File): Boolean =
             completeVoiceBases(dir).isNotEmpty()

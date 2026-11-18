@@ -1,12 +1,18 @@
 package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.speech.tts.TextToSpeech
 import android.util.Log
+import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.announcement.LoudnessStage
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.VoiceIdContract
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -46,6 +52,47 @@ class VocalizerEmbeddedVoiceProvider(
 
         fun resolveDataDir(context: Context): File? =
             VocalizerEmbeddedVoiceProvider(context).resolveDataDir()
+
+        /**
+         * بند 12: إعلان مسموع فعلي (أفضل جهد) لفشل الصوت مع الحفاظ على
+         * سبب الخطأ، عبر تنبيه مرئي ومحاولة نطق بنظام TTS الافتراضي.
+         */
+        internal fun announceVoiceFailureAudibly(
+            context: Context,
+            message: String
+        ) {
+            val appCtx = context.applicationContext ?: context
+            Handler(Looper.getMainLooper()).post {
+                runCatching {
+                    Toast.makeText(
+                        appCtx, message, Toast.LENGTH_LONG
+                    ).show()
+                }
+                runCatching {
+                    var tts: TextToSpeech? = null
+                    tts = TextToSpeech(appCtx) { status ->
+                        if (status == TextToSpeech.SUCCESS) {
+                            runCatching {
+                                tts?.language =
+                                    Locale.forLanguageTag("ar")
+                                tts?.speak(
+                                    message,
+                                    TextToSpeech.QUEUE_FLUSH,
+                                    null,
+                                    "nateq_voice_fail"
+                                )
+                            }
+                        } else {
+                            runCatching { tts?.shutdown() }
+                        }
+                    }
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        runCatching { tts?.stop() }
+                        runCatching { tts?.shutdown() }
+                    }, 6000L)
+                }
+            }
+        }
     }
 
     /**
@@ -184,45 +231,85 @@ class VocalizerEmbeddedVoiceProvider(
 
     override suspend fun listVoices(locale: Locale): List<VoiceDescriptor> {
         return withContext(Dispatchers.IO) {
-            if (!ensureInitialized()) return@withContext emptyList()
+            if (!ensureInitialized()) {
+                // بند 5: عدم إرجاع قائمة فارغة بلا سبب واضح للواجهة.
+                val st = EngineStatusRegistry.statusOf(context, PROVIDER_ID)
+                val reason = st.lastError ?: st.code
+                if (reason.isNullOrBlank()) {
+                    val msg = "تعذّرت تهيئة محرك Vocalizer أو لم يُعثر على بيانات أصوات"
+                    EngineStatusRegistry.noteFailure(
+                        PROVIDER_ID, "NOT_INITIALIZED", msg
+                    )
+                    Log.w(TAG, "listVoices: غير مهيّأ — $msg")
+                } else {
+                    Log.w(TAG, "listVoices: غير مهيّأ — $reason")
+                }
+                return@withContext emptyList()
+            }
             val result = EngineHostClient.listVoices(
                 context,
                 HostProtocol.ENGINE_VOCALIZER
             )
             result.failure?.let { failure ->
+                val msg = failure.message
+                    ?: "فشل جلب أصوات Vocalizer"
                 Log.e(
                     TAG,
                     "قائمة أصوات المضيف فشلت " +
-                        "[${failure.code}]: ${failure.message}"
+                        "[${failure.code}]: $msg"
                 )
                 EngineStatusRegistry.noteFailure(
                     PROVIDER_ID,
                     failure.code,
-                    failure.message
+                    msg
                 )
+                // بند 5: تمرير سبب الفشل للواجهة عبر سجل الحالة.
                 return@withContext emptyList()
             }
             result.voices.mapNotNull { voice ->
                 val name = voice.name.ifBlank { return@mapNotNull null }
-                
+                val rawLang = voice.langTag
+                // بند 6: تسجيل اسم الصوت واللغة الخام لكل صوت.
+                Log.i(
+                    TAG,
+                    "listVoices voice: name=$name rawLang=$rawLang"
+                )
+
                 // ع٣١-10 (4): langTag القادم من المضيف هو مصدر اللغة؛
-                // الكتالوج الثابت لا يشارك في قرار الاسم ولا في لغته.
-                val voiceLocale = if (voice.langTag.isBlank()) {
-                    locale
+                // تطبيع الوسم إلى BCP-47 صحيح (بند 6).
+                val normalizedTag = LocaleUtils.toBcp47Tag(rawLang)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: rawLang.takeIf { it.isNotBlank() }
+                val voiceLocale = if (!normalizedTag.isNullOrBlank()) {
+                    runCatching {
+                        Locale.forLanguageTag(normalizedTag)
+                    }.getOrDefault(locale)
                 } else {
-                    Locale.forLanguageTag(voice.langTag)
+                    // بند 5: اشتقاق اللغة عند فراغها وتسجيل ذلك.
+                    val derived = LocaleUtils.toBcp47Tag(name)
+                        ?: locale.toLanguageTag()
+                    Log.w(
+                        TAG,
+                        "listVoices: لغة فارغة للصوت $name، " +
+                            "اشتُقّت: $derived"
+                    )
+                    runCatching {
+                        Locale.forLanguageTag(derived)
+                    }.getOrDefault(locale)
                 }
 
-                // البند ٦: طَبِّع رمز اللغة قبل المقارنة كي تُقبل
+                // البند 6: طَبِّع رمز اللغة قبل المقارنة كي تُقبل
                 // الصيغ الثلاثية (ara/enu/…) والثنائية (ar/en) معاً.
                 val requestedLang = locale.language.takeIf {
                     it.isNotBlank()
                 }?.let { LocaleUtils.normalizeLanguageCode(it) }
+                val voiceLangCode = LocaleUtils.normalizeLanguageCode(
+                    voiceLocale.toLanguageTag().ifBlank { rawLang }
+                )
                 val matchesLang = requestedLang == null ||
-                    LocaleUtils.normalizeLanguageCode(voice.langTag)
-                        .equals(requestedLang, ignoreCase = true)
+                    voiceLangCode.equals(requestedLang, ignoreCase = true)
                 if (!matchesLang) return@mapNotNull null
-                
+
                 VoiceDescriptor(
                     id = voice.id,
                     providerId = PROVIDER_ID,
@@ -251,26 +338,57 @@ class VocalizerEmbeddedVoiceProvider(
                 Log.e(TAG, "Cannot synthesize: host not initialized")
                 return@withContext
             }
-            val rawName = (desiredVoiceName ?: voice.displayName)
-                .removePrefix("vocalizer_")
-                .trim()
             val requestedLocale = voiceLocale ?: voice.locale
-            // المضيف (`listVoices`) هو مصدر الأصوات المثبتة فعلياً؛ كتالوج
-            // التنزيل لا يُستشار في قرار الاسم، ولا يُستبدل الاسم بثابت.
-            val installed = runCatching {
+            // بند 2/4: مرّر هوية الصوت المثبت المحدد للمستخدم (معرّف
+            // المتغيّر/الهيدر) إن وُجدت، ولا تعتمد على معرّف لغة فقط.
+            val requestedId = desiredVoiceName?.takeIf { it.isNotBlank() }
+                ?: voice.id.takeIf { it.isNotBlank() }
+                ?: voice.displayName
+            val rawName = requestedId.removePrefix("vocalizer_").trim()
+            // المضيف (`listVoices`) مصدر الأصوات المثبتة فعلياً.
+            val installedDescriptors = runCatching {
                 listVoices(requestedLocale)
-            }.getOrDefault(emptyList()).map {
+            }.getOrDefault(emptyList())
+            val installed = installedDescriptors.map {
                 InstalledVocalizerVoice(
                     name = it.displayName,
                     language = it.locale.language
                 )
             }
-            val targetVoiceName = resolveInstalledVocalizerVoice(
+            val resolution = resolveInstalledVocalizerVoice(
                 context = context,
                 requestedName = rawName,
                 requestedLanguage = requestedLocale.language,
                 installed = installed
-            ).name
+            )
+            // إن لم يُطابق المطلوب ولم يكن اسم الصوت محدداً من المستخدم
+            // (معرّف لغة فقط) فلا نختار بديلاً بصمتاً (بند 2).
+            val targetVoiceId = when {
+                resolution.matched -> {
+                    // فضّل المعرّف الثابت للمتغيّر المطابق إن وُجد.
+                    installedDescriptors.firstOrNull {
+                        it.id.equals(resolution.name, true) ||
+                            it.displayName.equals(resolution.name, true)
+                    }?.id ?: installedDescriptors.firstOrNull {
+                        VoiceIdContract.sameVoiceName(
+                            it.displayName, resolution.name
+                        )
+                    }?.id ?: resolution.name
+                }
+                com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
+                    .isLanguageOnlyVoiceId(rawName) ||
+                    com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
+                    .isLanguageOnlyVoiceId(requestedId) -> {
+                    val msg = "معرّف لغة فقط بلا صوت محدد: $requestedId"
+                    Log.e(TAG, msg)
+                    EngineStatusRegistry.noteFailure(
+                        PROVIDER_ID, "VOICE_NOT_FOUND", msg
+                    )
+                    announceVoiceFailureAudibly(context, msg)
+                    return@withContext
+                }
+                else -> resolution.name.ifBlank { requestedId }
+            }
             val isEvent = LoudnessStage.isEventCategory(category)
             val chunkConsumer: (ByteArray, Int) -> Unit = if (isEvent) {
                 val gainDb = runCatching {
@@ -291,10 +409,10 @@ class VocalizerEmbeddedVoiceProvider(
             } else {
                 onAudioChunk
             }
-            val result = EngineHostClient.synthesize(
+            val synthResult = EngineHostClient.synthesize(
                 context = context,
                 engineId = HostProtocol.ENGINE_VOCALIZER,
-                voiceId = targetVoiceName,
+                voiceId = targetVoiceId,
                 text = text,
                 rate = speechRate,
                 pitch = pitch,
@@ -302,16 +420,24 @@ class VocalizerEmbeddedVoiceProvider(
                 onFormatInfo = onFormatInfo,
                 onAudioChunk = chunkConsumer
             )
-            if (!result.ok) {
+            if (!synthResult.ok) {
+                val msg = synthResult.message
+                    ?: "فشل تخليق صوت Vocalizer"
                 Log.e(
                     TAG,
-                    "نطق المضيف فشل [${result.code}]: ${result.message}"
+                    "نطق المضيف فشل [${synthResult.code}]: $msg"
                 )
                 EngineStatusRegistry.noteFailure(
                     PROVIDER_ID,
-                    result.code,
-                    result.message
+                    synthResult.code,
+                    msg
                 )
+                // بند 12: إعلان مسموع فعلي عند فشل تحميل/وجود الصوت.
+                if (synthResult.code == "VOICE_NOT_FOUND" ||
+                    synthResult.code == "LOAD_VOICE_FAILED"
+                ) {
+                    announceVoiceFailureAudibly(context, msg)
+                }
             }
         }
     }

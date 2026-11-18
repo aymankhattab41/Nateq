@@ -1,5 +1,7 @@
 package com.aymankhattab.nateq.core.data
 
+import com.aymankhattab.nateq.util.VoiceIdContract
+
 /**
  * نتيجة حسم إعدادات الفئة الصوتية (ع٢٧-A2).
  *
@@ -54,24 +56,37 @@ object CategoryResolver {
                 lower.startsWith("com.samsung.smt:") ->
                 "com.samsung.SMT"
 
-            // Vocalizer voices
+            // Vocalizer voices (بند 1: توحيد الأسماء البديلة).
             lower.contains("-x-laila") || lower.contains("-x-maged") ||
                 lower.contains("-x-mariam") || lower.contains("-x-tarek") ||
+                lower.contains("-x-tariq") || lower.contains("-x-tarik") ||
                 lower.contains("maged") || lower.contains("mariam") ||
-                lower.contains("tarek") ||
+                lower.contains("tarek") || lower.contains("tariq") ||
+                lower.contains("tarik") || lower.contains("tarick") ||
+                lower.contains("layla") ||
+                VoiceIdContract.sameVoiceName(
+                    VoiceIdContract.canonicalVoiceName(voiceName), "Tarik"
+                ) ||
+                VoiceIdContract.sameVoiceName(
+                    VoiceIdContract.canonicalVoiceName(voiceName), "Laila"
+                ) ||
                 lower.startsWith("com.vocalizer.") ||
                 lower.startsWith("com.nuance.") ->
                 "com.vocalizer.tts"
 
-            // Acapela embedded
+            // Acapela embedded (بند 1: توحيد الأسماء البديلة).
             lower.startsWith("acapela_embedded:") ||
                 lower.startsWith("acapela:") ||
                 lower == "mehdi" || lower == "salma" || lower == "nizar" ||
-                lower == "youssef" || lower == "leila" || lower == "tarik" ||
+                lower == "youssef" || lower == "leila" || lower == "layla" ||
+                lower == "tarik" || lower == "tarek" || lower == "tariq" ||
+                lower == "tarick" ||
                 (lower.contains("(") && lower.contains(")") &&
                     (lower.contains("mehdi") || lower.contains("salma") ||
                         lower.contains("nizar") || lower.contains("youssef") ||
-                        lower.contains("leila") || lower.contains("tarik"))) ->
+                        lower.contains("leila") || lower.contains("layla") ||
+                        lower.contains("tarik") || lower.contains("tarek") ||
+                        lower.contains("tariq") || lower.contains("tarick"))) ->
                 "acapela_embedded"
 
             // Acapela external system engines

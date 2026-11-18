@@ -1476,12 +1476,9 @@ class NateqTtsService : TextToSpeechService() {
         // النص نفسه.
         val convertLang = convertTarget?.convertLocale?.language
         val normLanguage = normalizeLanguageCode(languageTag)
-        val matchesRequest = convertLang == null
-            || normLanguage == convertLang
-            || (normLanguage == LanguageCode.AR.tag
-            && convertLang == "ara")
-            || (normLanguage == LanguageCode.EN.tag
-            && convertLang == "eng")
+        val normConvertLang = convertLang?.let { normalizeLanguageCode(it) }
+        val matchesRequest = normConvertLang == null
+            || normLanguage == normConvertLang
 
         val basePitch = convertTarget?.convertPitch?.takeIf { it != 1.0f }
             ?: pitch
@@ -2117,9 +2114,10 @@ class NateqTtsService : TextToSpeechService() {
         val convert = emojiCategoryTarget(segment)
             ?: numbersCategoryTarget(segment)
             ?: resolveConvertTarget(segTag)
-        val segLang = segTag.takeWhile { it.isLetter() }
+        val segLang = normalizeLanguageCode(segTag)
         val convertLang = convert?.convertLocale?.language
-        val matches = convertLang == null || segLang == convertLang
+        val normConvertLang = convertLang?.let { normalizeLanguageCode(it) }
+        val matches = normConvertLang == null || segLang == normConvertLang
         // **سرعة النطق في المسار المختلط — نموذج الضرب مطابق للمسار الأحادي:**
         // readerRate (معامل القارئ المنقول كوسيط من onSynthesizeText) أساسٌ
         // يُضرب في معامل LORD؛ وعند تفعيل «اتبع سرعة القارئ» المعامل = 1.0.

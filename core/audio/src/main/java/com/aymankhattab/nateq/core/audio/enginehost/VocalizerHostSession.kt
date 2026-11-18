@@ -5,6 +5,9 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.SystemClock
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
+import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.VoiceIdContract
+import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
 import com.nuance.android.vocalizer.VocalizerAudioOutputListener
 import com.nuance.android.vocalizer.VocalizerAudioSettings
 import com.nuance.android.vocalizer.VocalizerEngine
@@ -12,6 +15,7 @@ import com.nuance.android.vocalizer.VocalizerVoice
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -110,23 +114,90 @@ internal class VocalizerHostSession(
             return (capped / 2) * 2
         }
 
+        private fun stripVocalizerPrefix(id: String): String =
+            id.removePrefix("vocalizer_")
+                .removePrefix("vocalizer-")
+                .trim()
+
         /**
-         * مطابقة اسم الصوت المطلوب باسم صوت المحرك (ع٢٩-10):
-         * تُرفع بادئة vocalizer_ عن الطرفين وتُدعم
-         * معرّفات الكتالوج.
+         * مطابقة اسم الصوت المطلوب باسم صوت المحرك:
+         * مطابقة صارمة (تساوٍ تام بعد رفع بادئة vocalizer) مع توحيد
+         * الأسماء البديلة المعروفة (Tarek/Tariq/Tarik، Leila/Layla)،
+         * ودعم معرّفات الكتالوج المركّبة عبر مطابقة رمز الصوت في
+         * الطلب لا عبر تطابق جزئي حرّ (يحفظ عقد rejectsPartialNames).
          */
         internal fun matchesVoiceName(
             engineName: String?,
             requestedId: String
         ): Boolean {
-            if (engineName.isNullOrBlank()) return false
-            val engine = engineName.removePrefix("vocalizer_")
-                .removePrefix("vocalizer-").trim()
-            val requested = requestedId.removePrefix("vocalizer_")
-                .removePrefix("vocalizer-").trim()
+            if (engineName.isNullOrBlank() ||
+                requestedId.isBlank()
+            ) return false
+            val engine = stripVocalizerPrefix(engineName).trim()
+            val requested = stripVocalizerPrefix(requestedId).trim()
+            if (engine.isEmpty() || requested.isEmpty()) return false
             if (engine.equals(requested, ignoreCase = true)) return true
-            val tokens = requested.split('-', '_', ' ')
-            return tokens.any { it.equals(engine, ignoreCase = true) }
+
+            // توحيد بدائل تهجئة الاسم الكامل (بدون تقليص أجزاء الاسم).
+            val canonEngine = canonicalVoiceAlias(engine)
+            val canonReq = canonicalVoiceAlias(requested)
+            if (canonEngine.isNotEmpty() && canonReq.isNotEmpty() &&
+                canonEngine.equals(canonReq, ignoreCase = true)
+            ) return true
+
+            // معرّفات كتالوج مركّبة (vocalizer-ara-sau-laila-compact):
+            // طابق اسم المحرك (أو بديله القانوني) برمز/رموز الطلب فقط.
+            val tokens = requested.split('-', '_')
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+            if (tokens.size <= 1) return false
+            return tokens.any { token ->
+                val ct = canonicalVoiceAlias(token)
+                token.equals(engine, ignoreCase = true) ||
+                    token.equals(canonEngine, ignoreCase = true) ||
+                    (ct.isNotEmpty() &&
+                        ct.equals(canonEngine, ignoreCase = true))
+            }
+        }
+
+        /** بديل تهجئة معتمد للاسم كاملاً (دون اقتطاع لاحقات العرض). */
+        private fun canonicalVoiceAlias(name: String): String {
+            val n = name.trim()
+            if (n.isEmpty()) return ""
+            // جرّب الاسم كاملاً ثم الأساس قبل قوس العرض مثل "Tarik (High)".
+            val baseParen = n.substringBefore('(').trim().ifEmpty { n }
+            val cFull = VoiceIdContract.canonicalVoiceName(n)
+            val cBase = VoiceIdContract.canonicalVoiceName(baseParen)
+            return when {
+                !cFull.equals(n, ignoreCase = true) -> cFull
+                !cBase.equals(baseParen, ignoreCase = true) -> cBase
+                else -> cFull.ifEmpty { n }
+            }
+        }
+
+        /**
+         * هل المعرّف لغة/محلي فقط (مثل ar-EG/ara/ara-SAU) وليس اسم صوت محدد؟
+         * بند 2.
+         */
+        internal fun isLanguageOnlyVoiceId(id: String?): Boolean {
+            val core = stripVocalizerPrefix(id.orEmpty())
+            if (core.isBlank()) return false
+            val tag = LocaleUtils.toBcp47Tag(core, false) ?: return false
+            val parts = core.replace('_', '-').split('-')
+                .filter { it.isNotBlank() }
+            if (parts.isEmpty() || parts.size > 3) return false
+            // أسماء أصوات قصيرة معروفة (Tom/Ava) لا تُعدّ وسماً لغوياً.
+            val canon = VoiceIdContract.canonicalVoiceName(core)
+            if (canon.equals("Tom", true) ||
+                canon.equals("Ava", true)
+            ) return false
+            // وسم لغوي/محلي: 1-2 (وأحياناً 3) أجزاء رمزية قصيرة.
+            val langLike = parts.all { p ->
+                p.length in 2..3 && p.all { it.isLetterOrDigit() }
+            }
+            if (!langLike) return false
+            // إن كان يطابق صوتاً معرّفاً بالاسم (اسم شخص) فلا نعدّه لغة.
+            return LocaleUtils.normalizeLanguageCode(tag).isNotBlank()
         }
 
         /**
@@ -145,25 +216,37 @@ internal class VocalizerHostSession(
             dataDir != loadedDataDir ||
             headersText != loadedHeadersText
 
+        private fun normalizedVoiceLang(raw: String?): String? {
+            val t = raw?.trim().orEmpty()
+            if (t.isEmpty()) return null
+            val tag = LocaleUtils.toBcp47Tag(t, false) ?: t
+            val code = LocaleUtils.normalizeLanguageCode(tag)
+                .lowercase(Locale.ROOT)
+            return code.takeIf { it.isNotBlank() }
+        }
+
+        /**
+         * مطابقة رمز اللغة بعد التطبيع (بند 8) — بلا contains/startsWith مفتوحة.
+         */
         internal fun matchesLanguage(
             voice: VocalizerVoice,
             requestedId: String
         ): Boolean {
-            val req = requestedId.trim().lowercase(java.util.Locale.ROOT)
-            // البند ١٠: المعرّف الفارغ لا يطابق أي صوت — كان «يحتوي على
-            // سلسلة فارغة» فيطابق كل صوت فيسقط التحقق من الغياب.
-            if (req.isEmpty()) return false
-            val lang = voice.language
-                ?.lowercase(java.util.Locale.ROOT).orEmpty()
-            val tlw = voice.languageTLW
-                ?.lowercase(java.util.Locale.ROOT).orEmpty()
-            val isArabic = req.startsWith("ar") || req == "ara"
-            val isEnglish = req.startsWith("en") || req == "eng"
-            return when {
-                isArabic -> lang.startsWith("ar") || tlw.startsWith("ar")
-                isEnglish -> lang.startsWith("en") || tlw.startsWith("en")
-                else -> lang.contains(req) || tlw.contains(req)
-            }
+            val reqCore = stripVocalizerPrefix(requestedId)
+            if (reqCore.isBlank()) return false
+            val reqLang = normalizedVoiceLang(reqCore)
+                ?: return false
+            val candidates = listOfNotNull(
+                normalizedVoiceLang(voice.language),
+                normalizedVoiceLang(voice.languageTLW),
+                normalizedVoiceLang(
+                    LocaleUtils.toBcp47Tag(voice.language, false)
+                ),
+                normalizedVoiceLang(
+                    LocaleUtils.toBcp47Tag(voice.languageTLW, false)
+                )
+            ).distinct()
+            return candidates.any { it == reqLang }
         }
 
         /** الحد الأقصى لطول مقطع النطق لـ Vocalizer (ع٤٢-7). */
@@ -251,9 +334,17 @@ internal class VocalizerHostSession(
     @Volatile
     private var engine: VocalizerEngine? = null
 
-    /** اسم الصوت المحمَّل حالياً لتفادي إعادة loadVoice في كل مقطع (ع٤٢-7). */
+    /**
+     * مفتاح الصوت المحمَّل حالياً (هوية متغيّر/هيدر، بند 4) لتفادي
+     * إعادة loadVoice في كل مقطع (ع٤٢-7). قد يختلف عن اسم صوت المحرك
+     * عند تمييز نسختي Tarik بالجودة/الهيدر.
+     */
     @Volatile
-    private var loadedVoiceName: String? = null
+    private var loadedVoiceKey: String? = null
+
+    /** اسم صوت المحرك المحمَّل فعلياً (لـ loadVoice). */
+    @Volatile
+    private var loadedEngineVoiceName: String? = null
 
     @Volatile
     private var stopRequested = false
@@ -317,7 +408,8 @@ internal class VocalizerHostSession(
     private fun releaseEngineBeforeRebuild() {
         val old = engine
         engine = null
-        loadedVoiceName = null
+        loadedVoiceKey = null
+        loadedEngineVoiceName = null
         loadedDataDir = null
         loadedHeadersText = null
         if (old != null) {
@@ -447,24 +539,225 @@ internal class VocalizerHostSession(
         return HostProtocol.success()
     }
 
-    /** أصوات المحرك من المكتبة (يستلزم [init] ناجحاً أولاً). */
+    /** نتيجة حلّ طلب صوت: الصوت الفعلي في المحرك + مفتاح الهوية (بند 4). */
+    private data class ResolvedEngineVoice(
+        val engineVoice: VocalizerVoice,
+        val variantKey: String,
+        val engineVoiceName: String
+    )
+
+    /**
+     * يبني قائمة أصوات المضيف مع تمييز المتغيّرات (جودة/هيدر، بند 4).
+     * تُرجع إدخالاً لكل متغيّر كتالوج مثبّت فعلياً في مجلد البيانات وله
+     * صوتٌ مطابق في المحرك؛ وإن تعذّر الربط بالكتالوج تُعاد أصوات المحرك
+     * كما هي. الهوية (`id`) تشمل مفتاح المتغيّر (معرّف الكتالوج/الهيدر)
+     * والاسم يميّز الجودة للعرض.
+     */
     fun listVoices(): List<HostVoice> {
         val eng = engine ?: return emptyList()
+        val dataDirPath = loadedDataDir
         return try {
             engineThread.submit(INIT_TIMEOUT_MS, "listVoices") {
-                val voices = eng.voiceList
-                voices?.mapNotNull { v ->
-                    val name = v.voiceName ?: return@mapNotNull null
-                    HostVoice(
-                        id = "vocalizer_${name.lowercase()}",
-                        name = name,
-                        langTag = v.language ?: ""
-                    )
-                } ?: emptyList()
+                val engineVoices = eng.voiceList?.toList().orEmpty()
+                buildVariantVoices(engineVoices, dataDirPath)
             }
         } catch (t: Throwable) {
             HostLog.e(ENGINE_ID, "voiceList فشل: ${t.message}", t)
             emptyList()
+        }
+    }
+
+    private fun buildVariantVoices(
+        engineVoices: List<VocalizerVoice>,
+        dataDirPath: String?
+    ): List<HostVoice> {
+        val dataDir = dataDirPath?.let { File(it) }
+        val result = mutableListOf<HostVoice>()
+        val coveredEngineNames = mutableSetOf<String>()
+
+        // بند 4/6: لكل صوت محرك، أدرج متغيّرات الكتالوج المثبتة فعلياً
+        // (تمييز Tarik Compact/High بالهيدر/الجودة) مع تسجيل اللغة.
+        for (ev in engineVoices) {
+            val eName = ev.voiceName ?: continue
+            val eCanon = VoiceIdContract.canonicalVoiceName(eName)
+            val langTag = LocaleUtils.toBcp47Tag(ev.language)
+                ?: LocaleUtils.toBcp47Tag(ev.languageTLW)
+                ?: ev.language.orEmpty()
+            val installedVariants = if (dataDir != null) {
+                VocalizerModelCatalog.ITEMS.filter { item ->
+                    VoiceIdContract.sameVoiceName(
+                        item.voiceName, eName
+                    ) || VoiceIdContract.sameVoiceName(
+                        item.voiceName, eCanon
+                    ) || item.voiceName.equals(eCanon, true)
+                }.filter { item ->
+                    VocalizerModelCatalog.installedHeaderFile(
+                        dataDir, item
+                    ) != null
+                }
+            } else {
+                emptyList()
+            }
+            if (installedVariants.isNotEmpty()) {
+                for (item in installedVariants) {
+                    val variantLang = LocaleUtils.toBcp47Tag(
+                        item.locale.toLanguageTag()
+                    ) ?: langTag
+                    val hv = HostVoice(
+                        id = item.id,
+                        name = "${item.voiceName} ${item.quality}",
+                        langTag = variantLang
+                    )
+                    result.add(hv)
+                    HostLog.d(
+                        ENGINE_ID,
+                        "listVoices: name=${hv.name} rawLang=$langTag " +
+                            "id=${hv.id} hdr=${item.headerFileName}"
+                    )
+                }
+                coveredEngineNames.add(eName.lowercase(Locale.ROOT))
+            }
+        }
+
+        // أصوات المحرك غير المغطاة بمتغيّرات كتالوج مثبتة (احتياط).
+        for (ev in engineVoices) {
+            val eName = ev.voiceName ?: continue
+            if (eName.lowercase(Locale.ROOT) in coveredEngineNames) continue
+            val langTag = LocaleUtils.toBcp47Tag(ev.language)
+                ?: LocaleUtils.toBcp47Tag(ev.languageTLW)
+                ?: ev.language.orEmpty()
+            val hv = HostVoice(
+                id = "vocalizer_${eName.lowercase(Locale.ROOT)}",
+                name = eName,
+                langTag = langTag
+            )
+            result.add(hv)
+            HostLog.d(
+                ENGINE_ID,
+                "listVoices: name=${hv.name} rawLang=${ev.language} " +
+                    "id=${hv.id}"
+            )
+        }
+
+        if (result.isEmpty()) {
+            // احتياط أخير: لو لم نتمكن من البناء، أعد أسماء المحرك كما هي.
+            for (ev in engineVoices) {
+                val eName = ev.voiceName ?: continue
+                result.add(
+                    HostVoice(
+                        id = "vocalizer_${eName.lowercase(Locale.ROOT)}",
+                        name = eName,
+                        langTag = ev.language ?: ""
+                    )
+                )
+            }
+        }
+        return result.distinctBy { it.id }
+    }
+
+    private fun findCatalogItemForRequest(
+        requestedId: String
+    ): com.aymankhattab.nateq.core.audio.providers.VocalizerCatalogItem? {
+        val req = requestedId.trim()
+        if (req.isEmpty()) return null
+        return VocalizerModelCatalog.ITEMS.firstOrNull {
+            it.id.equals(req, ignoreCase = true)
+        } ?: VocalizerModelCatalog.ITEMS.firstOrNull {
+            it.headerFileName.equals(req, ignoreCase = true)
+        }
+    }
+
+    private fun resolveVoiceRequest(
+        voices: List<VocalizerVoice>,
+        requestedId: String
+    ): ResolvedEngineVoice? {
+        val dataDir = loadedDataDir?.let { File(it) }
+        val catalogItem = findCatalogItemForRequest(requestedId)
+
+        // 1) طلب متغيّر كتالوج محدد (بند 4): يجب أن يكون مثبتاً فعلياً.
+        if (catalogItem != null) {
+            val installed = dataDir != null &&
+                VocalizerModelCatalog.installedHeaderFile(
+                    dataDir, catalogItem
+                ) != null
+            val ev = voices.firstOrNull { v ->
+                matchesVoiceName(v.voiceName, catalogItem.voiceName) ||
+                    VoiceIdContract.sameVoiceName(
+                        v.voiceName, catalogItem.voiceName
+                    )
+            }
+            if (installed && ev != null) {
+                return ResolvedEngineVoice(
+                    ev,
+                    catalogItem.id,
+                    ev.voiceName ?: catalogItem.voiceName
+                )
+            }
+            // متغيّر كتالوج مطلوب لكنه غير مثبت/غير متاح -> غياب صريح.
+            return null
+        }
+
+        // 2) مطابقة مباشرة باسم/معرّف الصوت.
+        val direct = voices.firstOrNull {
+            matchesVoiceName(it.voiceName, requestedId)
+        }
+        if (direct != null) {
+            val key = variantKeyForEngineVoice(direct, dataDir, requestedId)
+            return ResolvedEngineVoice(
+                direct, key, direct.voiceName ?: requestedId
+            )
+        }
+
+        // 3) معرّف لغة فقط (بند 2): لا اختيار صامت.
+        if (isLanguageOnlyVoiceId(requestedId)) {
+            return null
+        }
+
+        // 4) افتراضي الجهاز.
+        if (requestedId.isBlank() ||
+            requestedId.equals("Device Default", ignoreCase = true)
+        ) {
+            val first = voices.firstOrNull() ?: return null
+            val key = variantKeyForEngineVoice(first, dataDir, requestedId)
+            return ResolvedEngineVoice(
+                first, key, first.voiceName ?: ""
+            )
+        }
+
+        return null
+    }
+
+    /**
+     * مفتاح متغيّر لصوت محرك: إن وُجد متغيّر كتالوج مثبت وحيد يطابقه
+     * استُخدم معرّف الكتالوج (تمييز الهيدر/الجودة)، وإلا اسم المحرك.
+     */
+    private fun variantKeyForEngineVoice(
+        voice: VocalizerVoice,
+        dataDir: File?,
+        requestedId: String
+    ): String {
+        val eName = voice.voiceName.orEmpty()
+        val req = requestedId.trim()
+        // إن كان الطلب يحمل تمييز جودة/هيدر صريحاً طابقه.
+        val reqItem = findCatalogItemForRequest(req)
+        if (reqItem != null) return reqItem.id
+        if (dataDir == null) return req.ifBlank { eName }
+        val installedMatches = VocalizerModelCatalog.ITEMS.filter { item ->
+            (VoiceIdContract.sameVoiceName(item.voiceName, eName) ||
+                matchesVoiceName(eName, item.voiceName)) &&
+                VocalizerModelCatalog.installedHeaderFile(dataDir, item) != null
+        }
+        return when {
+            installedMatches.size == 1 -> installedMatches.first().id
+            // متغيّران مثبتان بنفس الاسم: لا نختار بصمتاً إن لم يحدد الطلب.
+            installedMatches.size > 1 -> {
+                // حاول مطابقة الجودة من الطلب إن ذُكرت.
+                val byQuality = installedMatches.firstOrNull { item ->
+                    req.contains(item.quality, ignoreCase = true)
+                }
+                byQuality?.id ?: eName
+            }
+            else -> req.ifBlank { eName }
         }
     }
 
@@ -531,8 +824,8 @@ internal class VocalizerHostSession(
             return HostProtocol.success()
         }
 
-        val voices: Array<VocalizerVoice> = try {
-            eng.voiceList ?: emptyArray()
+        val voices: List<VocalizerVoice> = try {
+            eng.voiceList?.toList().orEmpty()
         } catch (t: Throwable) {
             HostLog.e(ENGINE_ID, "voiceList فشل: ${t.message}", t)
             return HostResult.failure(
@@ -541,28 +834,30 @@ internal class VocalizerHostSession(
             )
         }
 
-        val matched = voices.firstOrNull {
-            matchesVoiceName(it.voiceName, req.voiceId)
-        } ?: voices.firstOrNull { voice ->
-            matchesLanguage(voice, req.voiceId)
-        } ?: if (req.voiceId.isBlank() ||
-            req.voiceId.equals("Device Default", ignoreCase = true)
+        val resolved = resolveVoiceRequest(voices, req.voiceId)
+            ?: return HostResult.failure(
+                "VOICE_NOT_FOUND",
+                if (isLanguageOnlyVoiceId(req.voiceId)) {
+                    "معرّف لغة فقط بلا صوت محدد: ${req.voiceId}"
+                } else if (findCatalogItemForRequest(req.voiceId) != null) {
+                    "الصوت المحدد غير مثبت/غير متاح: ${req.voiceId}"
+                } else {
+                    "صوت Vocalizer غير موجود: ${req.voiceId}"
+                }
+            )
+        val matched = resolved.engineVoice
+        val targetVoiceName = resolved.engineVoiceName
+        val targetVoiceKey = resolved.variantKey
+        if (loadedVoiceKey != targetVoiceKey ||
+            loadedEngineVoiceName != targetVoiceName
         ) {
-            voices.firstOrNull()
-        } else {
-            null
-        } ?: return HostResult.failure(
-            "VOICE_NOT_FOUND",
-            "صوت Vocalizer غير موجود: ${req.voiceId}"
-        )
-        val targetVoiceName = matched.voiceName
-        if (loadedVoiceName != targetVoiceName) {
             if (!eng.loadVoice(matched)) {
                 HostLog.e(
                     ENGINE_ID,
                     "loadVoice فشل: name='${matched.voiceName}' " +
                         "lang='${matched.language}' " +
                         "requested='${req.voiceId}' " +
+                        "variant='$targetVoiceKey' " +
                         "lastError='${eng.lastError}'"
                 )
                 return HostResult.failure(
@@ -570,10 +865,12 @@ internal class VocalizerHostSession(
                     "تعذّر تحميل الصوت المطلوب: ${req.voiceId}"
                 )
             }
-            loadedVoiceName = targetVoiceName
+            loadedVoiceKey = targetVoiceKey
+            loadedEngineVoiceName = targetVoiceName
             HostLog.i(
                 ENGINE_ID,
                 "حُمّل الصوت: ${matched.voiceName} " +
+                    "variant=$targetVoiceKey " +
                     "lang=${matched.language} " +
                     "rate=${matched.sampleRate}"
             )
@@ -707,7 +1004,8 @@ internal class VocalizerHostSession(
 
     override fun shutdown() {
         synchronized(engineLock) {
-            loadedVoiceName = null
+            loadedVoiceKey = null
+            loadedEngineVoiceName = null
             val eng = engine
             engine = null
             if (eng != null) {

@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import com.aymankhattab.nateq.util.VoiceIdContract
 import java.io.File
 import java.util.Locale
 
@@ -551,5 +552,84 @@ object VocalizerModelCatalog {
             if (isVoiceInstalled(dir, item)) return true
         }
         return false
+    }
+
+    /** البحث عن عنصر كتالوج بالمعرّف أو ملف الهيدر (بند 1/4). */
+    fun findByIdOrHeader(requested: String?): VocalizerCatalogItem? {
+        val req = requested?.trim().orEmpty()
+        if (req.isEmpty()) return null
+        return ITEMS.firstOrNull { it.id.equals(req, ignoreCase = true) }
+            ?: ITEMS.firstOrNull {
+                it.headerFileName.equals(req, ignoreCase = true)
+            }
+    }
+
+    /**
+     * مطابقة عنصر كتالوج لاسم صوت/طلب مع توحيد البدائل (بند 1).
+     * يدعم الأسماء البديلة (Tarek/Tariq/Tarik) وجودة المتغيّر إن ذُكرت.
+     */
+    fun matchesItemName(
+        item: VocalizerCatalogItem,
+        requested: String?
+    ): Boolean {
+        val req = requested?.trim().orEmpty()
+        if (req.isEmpty()) return false
+        if (item.id.equals(req, ignoreCase = true)) return true
+        if (item.headerFileName.equals(req, ignoreCase = true)) return true
+        if (VoiceIdContract.sameVoiceName(req, item.voiceName)) return true
+        val canonReq = VoiceIdContract.canonicalVoiceName(req)
+        val canonItem = VoiceIdContract.canonicalVoiceName(item.voiceName)
+        if (canonReq.isNotEmpty() &&
+            canonReq.equals(canonItem, ignoreCase = true)
+        ) return true
+        return req.contains(item.voiceName, ignoreCase = true) ||
+            req.contains(canonItem, ignoreCase = true)
+    }
+
+    /**
+     * عناصر الكتالوج المطابقة للاسم مع احترام الجودة المذكورة إن وُجدت
+     * (تمييز Tarik Compact/High، بند 4).
+     */
+    fun findItemsForVoiceName(
+        requested: String?,
+        preferQuality: String? = null
+    ): List<VocalizerCatalogItem> {
+        val req = requested?.trim().orEmpty()
+        if (req.isEmpty()) return emptyList()
+        val byId = findByIdOrHeader(req)
+        if (byId != null) return listOf(byId)
+        val nameMatches = ITEMS.filter { matchesItemName(it, req) }
+        if (nameMatches.isEmpty()) return emptyList()
+        val quality = preferQuality?.trim()?.takeIf { it.isNotEmpty() }
+            ?: nameMatches.firstOrNull {
+                req.contains(it.quality, ignoreCase = true)
+            }?.quality
+        return if (quality != null) {
+            nameMatches.filter {
+                it.quality.equals(quality, ignoreCase = true)
+            }.ifEmpty { nameMatches }
+        } else {
+            nameMatches
+        }
+    }
+
+    /**
+     * عنصر مثبّت وحيد مطابق لطلب صوت في مجلد (أو null عند غياب/تعدد
+     * بلا تمييز). يُستخدم للتوافق مع القيم المحفوظة القديمة (بند 4).
+     */
+    fun findInstalledItemForRequest(
+        targetDir: File,
+        requested: String?
+    ): VocalizerCatalogItem? {
+        val matches = findItemsForVoiceName(requested)
+            .filter { isVoiceInstalled(targetDir, it) }
+        return when {
+            matches.size == 1 -> matches.first()
+            matches.size > 1 -> {
+                // إن ذُكرت الجودة في الطلب استُخدمت أعلاه؛ تعدد بلا تمييز.
+                null
+            }
+            else -> null
+        }
     }
 }

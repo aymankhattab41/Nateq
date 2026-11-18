@@ -6,84 +6,107 @@ import java.util.Locale
 
 /** أدوات توحيد رموز اللغات والبلدان بين شكلَي ISO-2 وISO-3. */
 object LocaleUtils {
+
+    private val ISO3_TO_ISO2 = mapOf(
+        "ara" to "ar", "eng" to "en", "fra" to "fr", "deu" to "de",
+        "spa" to "es", "ita" to "it", "rus" to "ru", "zho" to "zh",
+        "jpn" to "ja", "kor" to "ko", "tur" to "tr", "urd" to "ur",
+        "hin" to "hi", "ben" to "bn", "fas" to "fa", "por" to "pt",
+        "nld" to "nl", "pol" to "pl", "swe" to "sv", "dan" to "da",
+        "nor" to "no", "fin" to "fi", "ces" to "cs", "ell" to "el",
+        "heb" to "he", "vie" to "vi", "tha" to "th", "ind" to "id",
+        "msa" to "ms", "ukr" to "uk", "tam" to "ta", "tel" to "te",
+        "swa" to "sw", "amh" to "am", "som" to "so", "azj" to "az",
+        "kur" to "ku", "pus" to "ps", "tgk" to "tg", "uzb" to "uz",
+        "kaz" to "kk", "mon" to "mn", "lao" to "lo", "khm" to "km",
+        "mya" to "my", "glg" to "gl", "cat" to "ca", "eus" to "eu",
+        "ron" to "ro", "bul" to "bg", "srp" to "sr", "hrv" to "hr",
+        "slv" to "sl", "lit" to "lt", "lav" to "lv", "est" to "et",
+        "isl" to "is", "mkd" to "mk", "geo" to "ka", "arm" to "hy"
+    )
+
+    private val ISO3_COUNTRY_TO_ISO2 = mapOf(
+        "EGY" to "EG", "USA" to "US", "GBR" to "GB", "SAU" to "SA",
+        "ARE" to "AE", "AUS" to "AU", "CAN" to "CA", "FRA" to "FR",
+        "DEU" to "DE", "ESP" to "ES", "ITA" to "IT", "RUS" to "RU",
+        "TUR" to "TR", "IND" to "IN", "PAK" to "PK", "JOR" to "JO",
+        "IRQ" to "IQ", "SYR" to "SY", "LBN" to "LB", "MAR" to "MA",
+        "DZA" to "DZ", "TUN" to "TN", "KWT" to "KW", "QAT" to "QA",
+        "BHR" to "BH", "OMN" to "OM", "YEM" to "YE", "SDN" to "SD"
+    )
+
+    /** صيغ لغوية نصية شائعة (من المحركات) → وسم BCP-47. */
+    private val DISPLAY_NAME_TO_BCP47 = mapOf(
+        "arabic" to "ar", "arabic (saudi arabia)" to "ar-SA",
+        "arabic (egypt)" to "ar-EG", "arabic (uae)" to "ar-AE",
+        "english" to "en", "english (united states)" to "en-US",
+        "english (us)" to "en-US", "english (united kingdom)" to "en-GB",
+        "english (uk)" to "en-GB", "french" to "fr",
+        "french (france)" to "fr-FR", "german" to "de",
+        "german (germany)" to "de-DE", "spanish" to "es",
+        "spanish (spain)" to "es-ES", "italian" to "it",
+        "italian (italy)" to "it-IT", "russian" to "ru",
+        "turkish" to "tr", "portuguese" to "pt",
+        "dutch" to "nl", "chinese" to "zh", "japanese" to "ja",
+        "korean" to "ko", "hindi" to "hi", "urdu" to "ur",
+        "persian" to "fa", "hebrew" to "he", "thai" to "th"
+    )
+
+    /**
+     * تحويل صيغة لغة واردة من المحرك (وسم مركب مثل ara-SAU، اسم نصي مثل
+     * "Arabic (Saudi Arabia)"، أو رمز ثلاثي) إلى وسم BCP-47 صحيح.
+     * بند 6.
+     */
+    fun toBcp47Tag(raw: String?, fallbackToRaw: Boolean = true): String? {
+        val trimmed = raw?.trim().orEmpty()
+        if (trimmed.isEmpty()) return null
+        val lower = trimmed.lowercase(Locale.ROOT)
+        DISPLAY_NAME_TO_BCP47[lower]?.let { return it }
+        // وسوم مركبة أو رموز مفصولة.
+        val parts = trimmed.replace('_', '-').split('-')
+            .map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return if (fallbackToRaw) trimmed else null
+        val langRaw = parts[0].lowercase(Locale.ROOT)
+        val lang = ISO3_TO_ISO2[langRaw] ?: langRaw
+        if (lang.isEmpty()) return if (fallbackToRaw) trimmed else null
+        // رمز لغة صالح عادة 2-3 أحرف؛ وإلا قد يكون اسماً غير معروف.
+        val langLooksCode = lang.length in 2..3 && lang.all { it.isLetter() }
+        if (!langLooksCode) {
+            // جرّب كاسم عرضي جزئي/بديل أخير.
+            val fromName = DISPLAY_NAME_TO_BCP47[lower]
+            return fromName ?: if (fallbackToRaw) trimmed else null
+        }
+        if (parts.size == 1) return lang
+        val regionRaw = parts[1]
+        val region = normalizeRegionSubtag(regionRaw)
+        return if (region != null) "$lang-$region" else lang
+    }
+
+    private fun normalizeRegionSubtag(raw: String): String? {
+        val up = raw.uppercase(Locale.ROOT)
+        if (up.length == 2 && up.all { it.isLetter() }) return up
+        if (up.length == 3 && up.all { it.isLetter() }) {
+            return ISO3_COUNTRY_TO_ISO2[up] ?: up
+        }
+        if (up.length == 3 && up.all { it.isDigit() }) return up
+        return null
+    }
+
     /**
      * توحيد رمز اللغة من الشكل ISO-3 (ara, eng) إلى ISO-2 (ar, en).
-     * يُستخدم مع أصوات المتحدثين (مثل سماعات بلوتوث) التي ترسل رموزاً
-     * موسّعة، ولا نريد أن يضيع التعرف عليها في النطق التلقائي.
-     * @return رمز ISO-2 مثل "ar" أو null عند عدم معرفة الرمز.
+     * يقبل أيضاً وسوم مركبة مثل ara-SAU/ar_EG ويستخرج الجزء اللغوي.
+     * @return رمز ISO-2 مثل "ar" (افتراضياً "ar" عند الفراغ/العدم).
      */
-    fun normalizeLanguageCode(code: String?): String =
-        // **بند 6.2:** Locale.ROOT صراحةً في التحويل الأحرفي — رموز ISO
-        // أسماءٌ ثابتة لا تخضع لقواعد المحلي الحالي (مثل التركية التي
-        // تحوّل I بلا نقطة فتكسر "IND"→"ınd" ولا تُطابق أي مدخل).
-        code?.takeIf { it.isNotBlank() }
-            ?.lowercase(Locale.ROOT)?.let {
-        when (it) {
-            "ara" -> LanguageCode.AR.tag
-            "eng" -> LanguageCode.EN.tag
-            "fra" -> "fr"
-            "deu" -> "de"
-            "spa" -> "es"
-            "ita" -> "it"
-            "rus" -> "ru"
-            "zho" -> "zh"
-            "jpn" -> "ja"
-            "kor" -> "ko"
-            // بند 5.4: توسعة الخريطة — الرموز غير الممطوبة كانت تُعاد
-            // كما هي (ISO-3) فتُفقد مطابقة كتالوج الأصوات لتلك اللغات.
-            "tur" -> "tr"
-            "urd" -> "ur"
-            "hin" -> "hi"
-            "ben" -> "bn"
-            "fas" -> "fa"
-            "por" -> "pt"
-            "nld" -> "nl"
-            "pol" -> "pl"
-            "swe" -> "sv"
-            "dan" -> "da"
-            "nor" -> "no"
-            "fin" -> "fi"
-            "ces" -> "cs"
-            "ell" -> "el"
-            "heb" -> "he"
-            "vie" -> "vi"
-            "tha" -> "th"
-            "ind" -> "id"
-            "msa" -> "ms"
-            "ukr" -> "uk"
-            "tam" -> "ta"
-            "tel" -> "te"
-            "swa" -> "sw"
-            "amh" -> "am"
-            "som" -> "so"
-            "azj" -> "az"
-            "kur" -> "ku"
-            "pus" -> "ps"
-            "tgk" -> "tg"
-            "uzb" -> "uz"
-            "kaz" -> "kk"
-            "mon" -> "mn"
-            "lao" -> "lo"
-            "khm" -> "km"
-            "mya" -> "my"
-            "glg" -> "gl"
-            "cat" -> "ca"
-            "eus" -> "eu"
-            "ron" -> "ro"
-            "bul" -> "bg"
-            "srp" -> "sr"
-            "hrv" -> "hr"
-            "slv" -> "sl"
-            "lit" -> "lt"
-            "lav" -> "lv"
-            "est" -> "et"
-            "isl" -> "is"
-            "mkd" -> "mk"
-            "geo" -> "ka"
-            "arm" -> "hy"
-            else -> it
-        }
-    } ?: LanguageCode.AR.tag
+    fun normalizeLanguageCode(code: String?): String {
+        val raw = code?.trim().orEmpty()
+        if (raw.isEmpty()) return LanguageCode.AR.tag
+        // بند 6: قبول صيغ المحرك المتنوعة (وسوم، أسماء نصية، رموز ثلاثية).
+        val tag = toBcp47Tag(raw, fallbackToRaw = false)
+        val langPart = (tag ?: raw)
+            .substringBefore('-').substringBefore('_')
+            .lowercase(Locale.ROOT)
+        return ISO3_TO_ISO2[langPart] ?: langPart
+    }
 
     /** توحيد رمز البلد من الشكل ISO-3 (EGY, USA) إلى ISO-2 (EG, US). */
     fun normalizeCountryCode(code: String?): String? =

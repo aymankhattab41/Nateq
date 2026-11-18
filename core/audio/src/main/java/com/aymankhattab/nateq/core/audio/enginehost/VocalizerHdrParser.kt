@@ -105,12 +105,13 @@ object VocalizerHdrParser {
 
     /**
      * فحص وتسجيل تفاصيل ترويسات HDR وملفات XML في مجلد البيانات (ع٣٦-1).
+     * المسح متكرر بلا حد عمق ليتوافق مع الماسح والبيان (بند 3).
      */
     fun logHdrAndXmlDetails(engineId: String, dataDir: File) {
         if (!dataDir.exists() || !dataDir.isDirectory) return
 
-        // 1. فحص ملفات .hdr
-        val allFiles = dataDir.walkTopDown().maxDepth(2).toList()
+        // 1. فحص ملفات .hdr (متكرر، بلا حد عمق).
+        val allFiles = dataDir.walkTopDown().toList()
         val hdrFiles = allFiles.filter {
             it.isFile && it.extension.equals("hdr", ignoreCase = true)
         }
