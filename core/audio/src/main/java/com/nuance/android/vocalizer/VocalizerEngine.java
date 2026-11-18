@@ -489,7 +489,7 @@ public class VocalizerEngine {
                 length = cached.length();
             }
         } catch (IOException e) {
-            HostLog.d(ENGINE_ID,
+            HostLog.w(ENGINE_ID,
                 "openAssetFile [FAILED] path='" + path +
                 "' asset='" + assetPath + "' flat='" + flat + "'",
                 e);
