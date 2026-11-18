@@ -123,6 +123,9 @@ class FeatureFlagsUsageGuardTest {
                 "NateqAccessibilityService.onServiceConnected ✅",
                 "A11ySmartPauseController.getInstance ✅",
             ),
+            FeatureFlags.FEATURE_YOUTUBE_AD_SKIP to listOf(
+                "NateqAccessibilityService (YouTube ad skip polling) \u2713.",
+            )
         )
 
         val usages = knownUsages[feature] ?: emptyList()

@@ -50,15 +50,15 @@ class RepeatSpellControllerTest {
     }
 
     @Test
-    fun ringBuffer_keepsOnlyLastTwentyEntries() {
+    fun ringBuffer_keepsOnlyLastTenEntries() {
         for (i in 1..25) {
             RepeatSpellController.updateLastSpokenText("نص $i")
         }
-        assertEquals(20, RepeatSpellController.size())
+        assertEquals(10, RepeatSpellController.size())
         assertEquals("نص 25", RepeatSpellController.getLastSpokenText())
         val history = RepeatSpellController.history()
         assertEquals("نص 25", history.first().text)
-        assertEquals("نص 6", history.last().text)
+        assertEquals("نص 16", history.last().text)
     }
 
     @Test
