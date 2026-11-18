@@ -714,6 +714,9 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Leila is the original reference: Path_Original_Leila_Verbatim copies the complete leila22k_hq tree from the archive with no flattening and no generated ini, with hashes for all 27 files and a per-file hash test.
+• License parity: documented the param to registration to idfunction flow before nInit and the nSetLicense position, and removed userId, password and license values from every log and report: only the length and last 4 masked characters are shown.
+• Comparison report: every voice is compared with its archive counterpart by name, with a measured summary line; the production path stays unchanged because PCM>0 was not proven.
 • Unified Vocalizer voice selection across speech, preview, announcements, the category panel and the embedded provider: one source matching names against voices actually installed on the device, with no static catalog or header check, plus an explicit notice when the saved voice is missing without ever rewriting it.
 • Category voice panel: flexible matching by name, family and compact/high quality, keeping the saved voice when no clear replacement exists instead of writing the first listed voice.
 • Category preferences: unified engine/category key for reads and writes with migration of legacy values, and no silent clearing of the saved voice on engine conflicts.

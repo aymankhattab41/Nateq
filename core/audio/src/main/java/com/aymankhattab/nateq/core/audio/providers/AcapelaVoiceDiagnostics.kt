@@ -255,6 +255,22 @@ object AcapelaVoiceDiagnostics {
             "  - nlpInitError=-34 من BBNLP_init عند غياب PRO، ثم eb=-27، " +
                 "ثم nSpeak=-2 بلا عيّنات PCM."
         )
+        appendLine("")
+        appendLine(
+            "المرجع الحرفي للتجربة الجديدة: " +
+                "leila22k_hq (ليلى) لا سلمى."
+        )
+        appendLine(AcapelaLeilaOriginalTree.licenseFlowReport())
+        appendLine("")
+        appendLine(
+            "الخلاصة: الملفات المرجعية متطابقة حرفياً مع جدول البصمات " +
+                "(${AcapelaLeilaOriginalTree.originalFiles.size} " +
+                    "ملفاً مقيساً) | " +
+                "الخطأ بقي في آخر قياس على جهاز | " +
+                "الكود المتبقي=-34 (E_BABILE_LICENSE) | " +
+                "تجربة Path_Original_Leila_Verbatim لم تُشغَّل على جهاز " +
+                "في هذه البيئة فلا توجد عيّنات PCM جديدة."
+        )
     }.trimEnd()
 
     /**
@@ -436,6 +452,46 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
+     * قناع القيم الحساسة: الطول وآخر ٤ أحرف فقط، بلا أي قيمة كاملة.
+     * القيم القصيرة (٤ أحرف أو أقل) تُخفى بالكامل كي لا تظهر قيمة ما.
+     */
+    fun redactSensitive(value: String?): String {
+        if (value.isNullOrEmpty()) return "(فارغ)"
+        val tail = if (value.length > 4) value.takeLast(4) else "****"
+        return "الطول=${value.length} | ...$tail"
+    }
+
+    /** مفاتيح الأسطر التي قد تحوي قيماً حساسة في سجل المكتبة. */
+    private val sensitiveLogKeys = listOf(
+        "babParam.uid.passwd",
+        "babParam.uid.userId",
+        "babParam.license",
+        "registration",
+        "param"
+    )
+
+    /**
+     * إخفاء قيمة أي سطر يحوي أحد المفاتيح الحساسة قبل إدراجه في تقرير
+     * أو ملف تشخيص. يُحتفظ بالمفتاح وحده مع الطول وآخر ٤ أحرف مقنّعة.
+     */
+    fun redactSensitiveLine(line: String): String {
+        val key = sensitiveLogKeys.firstOrNull {
+            line.contains(it, ignoreCase = true)
+        } ?: return line
+        val start = line.indexOf(key, ignoreCase = true)
+        val raw = line.substring(start + key.length)
+            .trimStart()
+            .removePrefix("=")
+            .removePrefix(":")
+            .trimStart()
+            .trimStart('"', '\'')
+        val value = raw.substringBefore('"')
+            .substringBefore('\'')
+            .trim()
+        return "$key: ${redactSensitive(value)}"
+    }
+
+    /**
      * استخراج بصمة توقيع التطبيق (SHA-256 فقط) كما يراها النظام.
      */
     fun getAppSignatureSha256(context: Context?): String {
@@ -606,13 +662,10 @@ object AcapelaVoiceDiagnostics {
         } else {
             ""
         }
-        val maskedReg = if (regVal.length > 8) {
-            regVal.take(4) + "*".repeat(regVal.length - 8) +
-                regVal.takeLast(4)
-        } else if (regVal.isNotEmpty()) {
-            "****"
-        } else {
+        val maskedReg = if (regVal.isEmpty()) {
             "(لا يوجد)"
+        } else {
+            redactSensitive(regVal)
         }
 
         val sb = StringBuilder()
@@ -682,7 +735,9 @@ object AcapelaVoiceDiagnostics {
         }
         val nativeTail = readNativeLogcatLines(30)
         sb.appendLine("- أحدث 30 سطر من سجل acattsandroid-extended-native:")
-        nativeTail.forEach { sb.appendLine("  $it") }
+        nativeTail.forEach {
+            sb.appendLine("  ${redactSensitiveLine(it)}")
+        }
         return sb.toString().trimEnd()
     }
 
@@ -2337,7 +2392,7 @@ object AcapelaVoiceDiagnostics {
                         val p = line.substringAfter("param:").trim()
                         val m = AcapelaVoiceManifest
                             .extractRegistrationFromParam(p)
-                            .let { maskMiddle(it, 4, 4) }
+                            .let { redactSensitive(it) }
                         "param: $m"
                     } else line
                 }
@@ -2687,10 +2742,9 @@ object AcapelaVoiceDiagnostics {
             context = context
         )
         val sha1ComparisonMsg = if (decoded.sha1Matches7e88) {
-            "مطابق تماماً للقيمة المسجلة 7e88"
+            "مطابق للقيمة المسجلة (القيمة محذوفة عمداً)"
         } else {
-            "مختلف عن 7e88 (المحسوب=${decoded.sha1First4Hex}، " +
-                "المسجل=7e88) — فهذا هو الخطأ"
+            "مختلف عن القيمة المسجلة (كلتا القيمتين محذوفتان عمداً)"
         }
         sb.appendLine("=== [البندان 1 و 2 من 10717] فك وتحليل param ===")
         sb.appendLine(
@@ -2701,8 +2755,7 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine("- طول email: ${decoded.emailLength}")
         sb.appendLine("- طول hexCode: ${decoded.hexCodeLength}")
         sb.appendLine(
-            "- أول 4 خانات hex من SHA1: ${decoded.sha1First4Hex} " +
-                "($sha1ComparisonMsg)"
+            "- بصمة SHA1 مخفية؛ الحكم: $sha1ComparisonMsg"
         )
         sb.appendLine("")
 
@@ -2997,7 +3050,7 @@ object AcapelaVoiceDiagnostics {
             }
         }.getOrElse { t ->
             listOf("(تعذر قراءة logcat للمكتبة الأصلية: ${t.message})")
-        }
+        }.map(::redactSensitiveLine)
     }
 
     /**
@@ -3025,7 +3078,7 @@ object AcapelaVoiceDiagnostics {
             }
         }.getOrElse { t ->
             listOf("(تعذر قراءة logcat :engine_host: ${t.message})")
-        }
+        }.map(::redactSensitiveLine)
     }
 
     /**
@@ -3107,7 +3160,7 @@ object AcapelaVoiceDiagnostics {
             }
         }.getOrElse { t ->
             listOf("(تعذر قراءة logcat للمحاولة: ${t.message})")
-        }
+        }.map(::redactSensitiveLine)
     }
 
     /**
@@ -3773,36 +3826,26 @@ object AcapelaVoiceDiagnostics {
 
     fun getSha1Mismatch7e88Analysis(): String = buildString {
         appendLine(
-            "=== [البند 5 من 10717] مطابقة أول 4 خانات Hex من SHA1 ==="
+            "=== [البند 5 من 10717] مطابقة بصمة التسجيل ==="
         )
-        appendLine("1. القيمة المسجلة في الترخيص:")
-        appendLine("   - سطر الترخيص في ملف 0x00169729 وسجل المكتبة:")
-        appendLine("     babParam.license \"2662 0 7e88 #COMMERCIAL#\"")
-        appendLine("   - الحقل الثالث \"7e88\" يمثل المعرف المتوقع userId.")
-        appendLine(
-            "   - كلمة المرور: babParam.uid.passwd = 1480489 (0x00169729)."
-        )
-        appendLine("2. آلية المكتبة في idfunction():")
+        appendLine("1. القيمة المسجلة: مطابقة للحالة المشخَّصة (القيمة مخفية).")
+        appendLine("2. آلية المكتبة:")
         appendLine(
             "   - تستدعي idfunction() لجلب سلسلة التسجيل registration."
         )
         appendLine(
-            "   - تحسب SHA1 للسلسلة وتأخذ أول 4 خانات Hex من H0 وتخزنها"
-        )
-        appendLine("     في mUserid (babParam.uid.userId).")
-        appendLine(
-            "   - إن اختلفت أول 4 خانات عن 7e88، تفشل دالة BBNLP_init بـ"
+            "   - تحسب SHA1 للسلسلة وتأخذ بصمة التسجيل المتوقعة داخلياً."
         )
         appendLine(
-            "     nlpInitError = -34 (E_BABILE_LICENSE)، وتفشل " +
-                "load_voice بـ"
+            "   - عند عدم التطابق يفشل BBNLP_init بـ nlpInitError=-34"
         )
         appendLine(
-            "     eb = -27 (E_BABILE_NLPINITERROR)، ويرجع nSpeak الرمز -2."
+            "     ثم load_voice بـ eb=-27 ثم nSpeak=-2."
         )
         appendLine(
-            "   - لذا فإن أي اختلاف بين الناتج المحسوب و7e88 هو الخطأ يقيناً."
+            "   - تفاصيل القيم الحساسة (userId/passwd/registration/"
         )
+        appendLine("     license) لا تُعرض في هذا التقرير أبداً.")
     }.trimEnd()
 
     fun calcFileMd5(file: File?): String {
@@ -3843,25 +3886,15 @@ object AcapelaVoiceDiagnostics {
             val contentIso = runCatching {
                 targetFile.readText(StandardCharsets.ISO_8859_1)
             }.getOrDefault("")
-            val contentUtf8 = runCatching {
-                targetFile.readText(StandardCharsets.UTF_8)
-            }.getOrDefault("")
-            val hexDump = runCatching {
-                val bytes = targetFile.readBytes()
-                bytes.joinToString(" ") { "%02x".format(it) }
-            }.getOrDefault("")
 
             appendLine("1. مسار الملف: ${targetFile.absolutePath}")
             appendLine("2. حجم الملف الفعلي: $size بايت")
             appendLine("3. هاش MD5: $md5")
-            appendLine("4. محتوى الملف الحرفي:")
-            appendLine("--- بداية محتوى 0x00169729 ---")
-            appendLine(contentIso.ifBlank { contentUtf8 })
-            appendLine("--- نهاية محتوى 0x00169729 ---")
+            appendLine("4. المحتوى مقنّعاً: ${redactSensitive(contentIso)}")
             appendLine(
-                "5. التفريغ الست عشري (Hex Dump) للملف ($size بايت):"
+                "5. محتوى الملف وتفريغه الست عشري محذوفان عمداً؛"
             )
-            appendLine(hexDump)
+            appendLine("   لا يُعرض أي سطر ترخيص أو معرّف أو كلمة مرور.")
         } else {
             appendLine(
                 "1. مسار الملف: لم يتم العثور على ملف 0x00169729 على القرص."
@@ -4807,9 +4840,9 @@ object AcapelaVoiceDiagnostics {
                 "(0x1dc268-0x1dc2f8) للتحقق من"
         )
         appendLine(
-            "     سلسلة الترخيص 2662 0 7e88 #COMMERCIAL# ومطابقة " +
-                "userId و passwd."
+            "     سلسلة الترخيص مقنّعة (الطول وآخر ٤ أحرف فقط) ومطابقة "
         )
+        appendLine("     userId و passwd بلا عرض أي قيمة.")
     }.trimEnd()
 
     fun getLogcatMultiTtsComparisonDetails(): String = buildString {
@@ -4819,9 +4852,9 @@ object AcapelaVoiceDiagnostics {
         )
         appendLine("1. أسطر السجل في Nateq عند محاولة التحميل:")
         appendLine("   - Default voice - license")
-        appendLine("   - babParam.license 2662 0 7e88 #COMMERCIAL#")
-        appendLine("   - babParam.uid.userId 7e88")
-        appendLine("   - babParam.uid.passwd 1480489")
+        appendLine("   - babParam.license <مقنّع>")
+        appendLine("   - babParam.uid.userId <مقنّع>")
+        appendLine("   - babParam.uid.passwd <مقنّع>")
         appendLine("   - tts_function_load_voice : Salma - error - eb -27")
         appendLine("   - nSpeak -> -2 (عينات PCM: 0)")
         appendLine("2. أسطر السجل في MultiTTS للصوت نفسه:")
@@ -4830,8 +4863,8 @@ object AcapelaVoiceDiagnostics {
                 "عبر AcapelaMetadataCodec."
         )
         appendLine(
-            "   - babParam.license و babParam.uid.userId (7e88) و " +
-                "babParam.uid.passwd (1480489)"
+            "   - babParam.license و babParam.uid.userId و " +
+                "babParam.uid.passwd مقنّعة في كلا الجانبين."
         )
         appendLine(
             "     تتطابق حرفياً بين MultiTTS و Nateq لأن ملف 0x00169729 " +

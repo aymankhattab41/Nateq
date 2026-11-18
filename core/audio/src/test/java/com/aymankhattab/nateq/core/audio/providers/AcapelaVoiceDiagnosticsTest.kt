@@ -29,8 +29,17 @@ class AcapelaVoiceDiagnosticsTest {
         context = ApplicationProvider.getApplicationContext()
     }
 
+    /**
+     * مجلد مؤقت بآباء معزولين: [stageVoiceV2] و[stageFull] يمشيان أيضاً
+     * في parentFile وparentFile.parentFile بحثاً عن ملفات MultiTTS، فلو
+     * كان المجلد مباشرةً في مؤقت النظام لالتقط بقايا اختبارات سابقة
+     * (مثل شجرة ليلى المستخرجة) فأنتج ini بـ26 سطراً بدل سطرين.
+     */
     private fun tempDir(): File =
-        Files.createTempDirectory("acapela_diag").toFile()
+        File(
+            Files.createTempDirectory("acapela_diag").toFile(),
+            "a/b/source"
+        ).apply { mkdirs() }
 
     @Test
     fun expectedLicensePath_replacesLastThreeCharsWithLic() {
@@ -523,8 +532,9 @@ class AcapelaVoiceDiagnosticsTest {
         assertTrue(exp25.contains("-25"))
 
         val shaAnalysis = AcapelaVoiceDiagnostics.getSha1Mismatch7e88Analysis()
-        assertTrue(shaAnalysis.contains("7e88"))
+        assertTrue(shaAnalysis.contains("مخفية"))
         assertTrue(shaAnalysis.contains("-34"))
+        assertTrue(shaAnalysis.contains("لا تُعرض"))
     }
 
     @Test
@@ -647,8 +657,9 @@ class AcapelaVoiceDiagnosticsTest {
         val logDetails = AcapelaVoiceDiagnostics
             .getLogcatMultiTtsComparisonDetails()
         assertTrue(logDetails.contains("babParam.license"))
-        assertTrue(logDetails.contains("babParam.uid.userId 7e88"))
-        assertTrue(logDetails.contains("babParam.uid.passwd 1480489"))
+        assertTrue(logDetails.contains("babParam.uid.userId <مقنّع>"))
+        assertTrue(logDetails.contains("babParam.uid.passwd <مقنّع>"))
+        assertTrue(logDetails.contains("مقنّعة في كلا الجانبين"))
         assertTrue(logDetails.contains("tts_function_load_voice"))
     }
 

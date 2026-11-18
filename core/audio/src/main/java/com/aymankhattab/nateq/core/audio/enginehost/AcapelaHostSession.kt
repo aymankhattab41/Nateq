@@ -2378,10 +2378,9 @@ internal class AcapelaHostSession(
             }.getOrDefault(false)
 
             val sha1ComparisonMsg = if (decodedReg.sha1Matches7e88) {
-                "مطابق تماماً للقيمة المسجلة 7e88"
+                "مطابق للقيمة المسجلة (القيمة مخفية)"
             } else {
-                "مختلف عن 7e88 (المحسوب=${decodedReg.sha1First4Hex}، " +
-                    "المسجل=7e88) — فهذا هو الخطأ"
+                "مختلف عن القيمة المسجلة (القيمة مخفية)"
             }
 
             val keyDiskStatus = "[فحص ملف الترخيص 10719] 0x00169729: " +
@@ -2394,8 +2393,7 @@ internal class AcapelaHostSession(
                 "- طول email: $emailLen\n" +
                 "- طول hexCode: $hexCodeLen\n" +
                 "- طول registration: $effectiveRegLen\n" +
-                "- أول 4 خانات hex من SHA1: ${decodedReg.sha1First4Hex} " +
-                "($sha1ComparisonMsg)"
+                "- بصمة SHA1 مخفية؛ الحكم: $sha1ComparisonMsg"
             Log.i(TAG, keyDiskStatus)
             HostLog.i(HostProtocol.ENGINE_ACAPELA, keyDiskStatus)
             // [بناء 10729] فحص الرخصة يُدفَع فوراً أيضاً.
