@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 
 class AccessibilityBridgeTest {
@@ -88,4 +89,50 @@ class AccessibilityBridgeTest {
             200L < AccessibilityBridge.READ_MORE_INTERNAL_BUDGET_MS
         )
     }
+
+    @Test
+    fun `external read-more timeout is exactly 500 not legacy 200`() {
+        // بند ٧: لا يكفي أن يكون الخارجي «أكبر»؛ يجب أن يساوي الميزانية
+        // الداخلية + الهامش صراحةً (360 + 140 = 500) كي لا تعود 200ms.
+        assertEquals(
+            500L,
+            AccessibilityBridge.READ_MORE_EXTERNAL_TIMEOUT_MS
+        )
+        assertEquals(
+            AccessibilityBridge.READ_MORE_INTERNAL_BUDGET_MS +
+                AccessibilityBridge.READ_MORE_EXTERNAL_MARGIN_MS,
+            AccessibilityBridge.READ_MORE_EXTERNAL_TIMEOUT_MS
+        )
+    }
+
+    @Test
+    fun `expandReadMore_coversInternalPlusMargin_notLegacy200ms`() =
+        runBlocking {
+            // بند ٧: محاكاة مراحل expandReadMoreInternal الثلاث داخل
+            // expandReadMore نفسه. المهلة القديمة 200ms كانت تُلغي
+            // المسار بعد 50ms قبل ظهور النص الموسَّع.
+            AccessibilityBridge.setExpandInternalForTesting { prefix ->
+                delay(AccessibilityBridge.READ_MORE_FOCUS_RETRY_MS)
+                delay(AccessibilityBridge.READ_MORE_CONTENT_CHANGE_MS)
+                delay(AccessibilityBridge.READ_MORE_GRACE_MS)
+                "نص موسّع:$prefix"
+            }
+            try {
+                val expanded = AccessibilityBridge.expandReadMore(
+                    "رسالة مقتطعة..."
+                )
+                assertEquals("نص موسّع:رسالة مقتطعة...", expanded)
+
+                val legacy = AccessibilityBridge.expandReadMore(
+                    "رسالة مقتطعة...",
+                    timeoutMs = 200L
+                )
+                assertNull(
+                    "المهلة القديمة 200ms تُلغي المسار الداخلي",
+                    legacy
+                )
+            } finally {
+                AccessibilityBridge.setExpandInternalForTesting(null)
+            }
+        }
 }

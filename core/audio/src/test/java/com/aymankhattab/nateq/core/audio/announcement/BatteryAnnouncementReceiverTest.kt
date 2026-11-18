@@ -44,6 +44,11 @@ class BatteryAnnouncementReceiverTest {
         // إزالة أي مشترٍ وهمي للمؤثرات تسرّبَ من اختبار سابق (كائن مصاحب
         // ثابت يعيش ويكون بين الاختبارات في نفس عملية JVM).
         AudioCuePlayer.replaceSharedForTesting(null)
+        // عزل نغمة خطأ «لا محرك» عن اختبارات المؤثرات: في JVM الاختباري
+        // يفشل ربط TTS فتُشغَّل نغمة NO_ENGINE، وهي ليست مؤثر البطارية
+        // موضع الفحص هنا. ختمُ التخفيف يمنع تكرارها أثناء هذه الفئة.
+        AnnouncementSpeaker.lastNoEngineCueTime =
+            System.currentTimeMillis()
         // مسح ختوم نافذة منع التكرار بين الاختبارات حتى لا تتسرب.
         context.getSharedPreferences(
             "nateq_battery_state", Context.MODE_PRIVATE

@@ -204,19 +204,14 @@ class VocalizerEmbeddedVoiceProvider(
             result.voices.mapNotNull { voice ->
                 val name = voice.name.ifBlank { return@mapNotNull null }
                 
-                // ع٣١-10 (4): أصلح locale باستخدام الكتالوج الثابت لأن المضيف
-                // يرجع display name مثل "American English" وليس language tag.
-                val catalogItem =
-                    VocalizerModelCatalog.ITEMS.firstOrNull { item ->
-                    item.voiceName == name || item.id == voice.id
+                // ع٣١-10 (4): langTag القادم من المضيف هو مصدر اللغة؛
+                // الكتالوج الثابت لا يشارك في قرار الاسم ولا في لغته.
+                val voiceLocale = if (voice.langTag.isBlank()) {
+                    locale
+                } else {
+                    Locale.forLanguageTag(voice.langTag)
                 }
-                val voiceLocale = catalogItem?.locale
-                    ?: if (voice.langTag.isBlank()) {
-                        locale
-                    } else {
-                        Locale.forLanguageTag(voice.langTag)
-                    }
-                
+
                 val matchesLang = locale.language.isEmpty() ||
                     voiceLocale.language.equals(
                         locale.language,
@@ -255,35 +250,23 @@ class VocalizerEmbeddedVoiceProvider(
             val rawName = (desiredVoiceName ?: voice.displayName)
                 .removePrefix("vocalizer_")
                 .trim()
-            val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull { item ->
-                item.voiceName.equals(rawName, ignoreCase = true) ||
-                    item.id.equals(rawName, ignoreCase = true) ||
-                    rawName.contains(item.voiceName, ignoreCase = true) ||
-                    (item.voiceName.equals("Laila", true) &&
-                        rawName.contains("leila", true)) ||
-                    (item.voiceName.equals("Tarik", true) &&
-                        rawName.contains("tariq", true))
-            }
             val requestedLocale = voiceLocale ?: voice.locale
-            val targetVoiceName = if (matchedItem != null) {
-                matchedItem.voiceName
-            } else {
-                // لا سقوط على اسمٍ ثابت (Laila/Samantha) قد لا يكون منزّلاً:
-                // يُختار من الأصوات المثبَّتة فعلياً للغة المطلوبة.
-                val installed = runCatching {
-                    listVoices(requestedLocale)
-                }.getOrDefault(emptyList()).map {
-                    InstalledVocalizerVoice(
-                        name = it.displayName,
-                        language = it.locale.language
-                    )
-                }
-                chooseVocalizerVoiceName(
-                    requestedName = rawName,
-                    requestedLanguage = requestedLocale.language,
-                    installed = installed
+            // المضيف (`listVoices`) هو مصدر الأصوات المثبتة فعلياً؛ كتالوج
+            // التنزيل لا يُستشار في قرار الاسم، ولا يُستبدل الاسم بثابت.
+            val installed = runCatching {
+                listVoices(requestedLocale)
+            }.getOrDefault(emptyList()).map {
+                InstalledVocalizerVoice(
+                    name = it.displayName,
+                    language = it.locale.language
                 )
             }
+            val targetVoiceName = resolveInstalledVocalizerVoice(
+                context = context,
+                requestedName = rawName,
+                requestedLanguage = requestedLocale.language,
+                installed = installed
+            ).name
             val isEvent = LoudnessStage.isEventCategory(category)
             val chunkConsumer: (ByteArray, Int) -> Unit = if (isEvent) {
                 val gainDb = runCatching {

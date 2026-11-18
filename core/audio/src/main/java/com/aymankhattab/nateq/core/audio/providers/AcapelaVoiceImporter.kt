@@ -78,6 +78,119 @@ object AcapelaVoiceImporter {
     }
 
     /**
+     * نسخ حرفي لشجرة كاملة مع الحفاظ على كل مسار نسبي.
+     *
+     * **لماذا حرفي:** حزمة MultiTTS الأصلية تضع `PRO "NLP/ar_sa.oso"` داخل
+     * `leila22k_hq/ar_sa_hd_leila_22k_lf.bvcu.ini` وتضع ملفات NLP تحت
+     * `NLP/`. أي تسطيح أو توليد `.ini` يفقد هذه التوجيهات فيظهر
+     * `nlpInitError=-34` ثم `eb=-27` ثم `nSpeak=-2` و`PCM=0`.
+     * لا يُستبعد هنا إلا `logfile.txt` (7.98 جيجابايت في المصدر المرجعي).
+     *
+     * الدالة نقية: لا تولّد تهيئة، لا تُطبع امتدادات، لا تُسطّح مجلدات،
+     * ولا تضيف أي ملف غير موجود في المصدر.
+     */
+    internal fun copyVoiceTreeVerbatim(source: File, target: File): Int {
+        if (!source.isDirectory) return 0
+        var copied = 0
+        source.walkTopDown().forEach { file ->
+            val relative = file.relativeTo(source).path
+                .replace(File.separatorChar, '/')
+            if (relative.isEmpty() ||
+                relative.substringAfterLast('/').equals(
+                    AcapelaVoiceDiagnostics.LOG_FILE_NAME,
+                    ignoreCase = true
+                )
+            ) {
+                return@forEach
+            }
+            val out = File(target, relative)
+            if (file.isDirectory) {
+                out.mkdirs()
+            } else if (file.isFile) {
+                out.parentFile?.mkdirs()
+                file.inputStream().use { input ->
+                    FileOutputStream(out).use { output ->
+                        input.copyTo(output, BUFFER_SIZE)
+                    }
+                }
+                copied++
+            }
+        }
+        return copied
+    }
+
+    /**
+     * إيجاد جذر `voice/` الذي يحوي `acapela/` داخل شجرة مُستخرَجة.
+     * يُفضَّل الفرع `files/voice` على `voice` لأنه المصدر المرجعي
+     * المستخدم في القياس.
+     */
+    private fun findVerbatimVoiceRoot(root: File): File? {
+        if (File(root, "acapela").isDirectory) return root
+        val direct = File(root, "voice")
+        if (File(direct, "acapela").isDirectory) return direct
+        return root.walkTopDown().maxDepth(5).firstOrNull { dir ->
+            dir.isDirectory &&
+                dir.name.equals("voice", ignoreCase = true) &&
+                File(dir, "acapela").isDirectory
+        }?.let { found ->
+            root.walkTopDown().maxDepth(5).firstOrNull { dir ->
+                dir.isDirectory &&
+                    dir.name.equals("voice", ignoreCase = true) &&
+                    File(dir, "acapela").isDirectory &&
+                    dir.parentFile?.name.equals("files", ignoreCase = true)
+            } ?: found
+        }
+    }
+
+    /** نسخ شجرة SAF مع الحفاظ على المسارات النسبية واستبعاد السجل. */
+    private fun copyDocTreeVerbatim(
+        context: Context,
+        doc: DocumentFile,
+        targetDir: File,
+        relative: String = ""
+    ): Int {
+        var copied = 0
+        for (child in doc.listFiles()) {
+            val name = child.name ?: continue
+            val rel = if (relative.isEmpty()) name else "$relative/$name"
+            if (child.isFile &&
+                name.equals(AcapelaVoiceDiagnostics.LOG_FILE_NAME, true)
+            ) {
+                continue
+            }
+            if (child.isDirectory) {
+                File(targetDir, rel).mkdirs()
+                copied += copyDocTreeVerbatim(context, child, targetDir, rel)
+            } else if (child.isFile) {
+                val out = File(targetDir, rel)
+                out.parentFile?.mkdirs()
+                context.contentResolver.openInputStream(child.uri)?.use {
+                    input ->
+                    FileOutputStream(out).use { output ->
+                        input.copyTo(output, BUFFER_SIZE)
+                    }
+                }
+                copied++
+            }
+        }
+        return copied
+    }
+
+    /** إبطال الكاش وإظهار محرك Acapela بعد أي نسخ فعلي للملفات. */
+    private fun notifyStorageChanged(context: Context) {
+        EmbeddedStorage.bumpVersion()
+        EnginePicker.invalidateAfterStorageChange()
+        val settings = SettingsRepository.create(context)
+        if (settings.isFilterEnginesEnabled()) {
+            val cur = settings.getFilterEngines().toMutableSet()
+            cur.add(AcapelaEmbeddedVoiceProvider.PROVIDER_ID)
+            cur.add("acapela")
+            settings.setFilterEngines(cur)
+            VisibleEngines.setFilter(true, cur)
+        }
+    }
+
+    /**
      * استيراد صوت Acapela من ملف ZIP عبر [Uri].
      */
     suspend fun importFromZip(
@@ -127,6 +240,17 @@ object AcapelaVoiceImporter {
                 while (entry != null) {
                     val entryName = entry.name.replace('\\', '/')
                     guard.onEntry(entry)
+                    // سجل المحرك 7.98 جيجابايت في المصدر المرجعي؛ لا يُقرأ
+                    // ولا يُفكّ، فهو ناتج تشغيل لا جزء من بيانات الصوت.
+                    if (entryName.substringAfterLast('/').equals(
+                            AcapelaVoiceDiagnostics.LOG_FILE_NAME,
+                            ignoreCase = true
+                        )
+                    ) {
+                        zis.closeEntry()
+                        entry = zis.nextEntry
+                        continue
+                    }
                     val outFile = guard.resolve(entryName)
 
                     if (entry.isDirectory) {
@@ -139,6 +263,31 @@ object AcapelaVoiceImporter {
                     }
                     zis.closeEntry()
                     entry = zis.nextEntry
+                }
+            }
+
+            // المسار الحرفي: حزمة MultiTTS تحمل voice/acapela كاملة.
+            // يُنسخ كل شيء كما هو (بما فيه NLP/ والمجلد المشفّر) بلا
+            // تسطيح ولا ini مولّد — هذا هو الإصلاح الجذري للانقطاع.
+            val verbatimRoot = findVerbatimVoiceRoot(tempUnpack)
+            if (verbatimRoot != null) {
+                val copied = copyVoiceTreeVerbatim(
+                    verbatimRoot,
+                    File(baseDir, "voice")
+                )
+                if (copied > 0) {
+                    Log.i(
+                        TAG,
+                        "نسخ MultiTTS حرفي: $copied ملفاً تحت " +
+                            "${File(baseDir, "voice").absolutePath}"
+                    )
+                    notifyStorageChanged(context)
+                    return@withContext finishImport(
+                        context = context,
+                        baseDir = baseDir,
+                        emptyMessage =
+                            "لم يُعثر على أصوات Acapela بعد النسخ الحرفي"
+                    )
                 }
             }
 
@@ -305,17 +454,7 @@ object AcapelaVoiceImporter {
             }
 
             // إبطال كاش التخزين والمحركات لتحديث الواجهة فوراً
-            EmbeddedStorage.bumpVersion()
-            EnginePicker.invalidateAfterStorageChange()
-
-            val settings = SettingsRepository.create(context)
-            if (settings.isFilterEnginesEnabled()) {
-                val cur = settings.getFilterEngines().toMutableSet()
-                cur.add(AcapelaEmbeddedVoiceProvider.PROVIDER_ID)
-                cur.add("acapela")
-                settings.setFilterEngines(cur)
-                VisibleEngines.setFilter(true, cur)
-            }
+            notifyStorageChanged(context)
 
             finishImport(
                 context = context,
@@ -359,6 +498,27 @@ object AcapelaVoiceImporter {
 
             val children = rootDoc.listFiles()
             var copiedFilesCount = 0
+            var verbatimCopied = false
+
+            // حزمة MultiTTS عبر SAF: انسخ voice/acapela كما هي بلا توليد.
+            val voiceDoc = children.firstOrNull { doc ->
+                doc.isDirectory &&
+                    doc.name.equals("voice", ignoreCase = true) &&
+                    doc.listFiles().any { sub ->
+                        sub.isDirectory && sub.name.equals(
+                            "acapela",
+                            ignoreCase = true
+                        )
+                    }
+            }
+            if (voiceDoc != null) {
+                copiedFilesCount += copyDocTreeVerbatim(
+                    context,
+                    voiceDoc,
+                    File(baseDir, "voice")
+                )
+                verbatimCopied = copiedFilesCount > 0
+            }
 
             val hasDirectConfig = children.any { f ->
                 val name = f.name?.lowercase(Locale.ROOT).orEmpty()
@@ -369,12 +529,12 @@ object AcapelaVoiceImporter {
                 name.endsWith(".bvcu") || name.endsWith(".dat")
             }
 
-            if (hasDirectConfig || hasDirectData) {
+            if (!verbatimCopied && (hasDirectConfig || hasDirectData)) {
                 val voiceDirName = rootDoc.name?.ifBlank { "voice" } ?: "voice"
                 val targetDir = File(baseDir, voiceDirName).apply { mkdirs() }
                 copiedFilesCount += copyDocFiles(context, children, targetDir)
                 AcapelaVoiceManifest.normalizeExtensionsCase(targetDir)
-            } else {
+            } else if (!verbatimCopied) {
                 for (subDoc in children) {
                     if (subDoc.isDirectory) {
                         val subFiles = subDoc.listFiles()
@@ -407,39 +567,36 @@ object AcapelaVoiceImporter {
                 )
             }
 
-            val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(baseDir)
-            val baseYaml = File(baseDir, "config.yaml").takeIf { it.isFile }
-            for (vd in AcapelaVoiceManifest.completeVoiceDirs(baseDir)) {
-                File(vd, "userdicos").mkdirs()
-                if (hexFile != null && hexFile.parentFile != vd) {
-                    runCatching {
-                        hexFile.copyTo(
-                            File(vd, hexFile.name),
-                            overwrite = true
-                        )
-                    }
+            if (!verbatimCopied) {
+                val hexFile =
+                    AcapelaVoiceManifest.findHexRegistrationFile(baseDir)
+                val baseYaml = File(baseDir, "config.yaml").takeIf {
+                    it.isFile
                 }
-                if (baseYaml != null && !File(vd, "config.yaml").isFile) {
-                    runCatching {
-                        baseYaml.copyTo(
-                            File(vd, "config.yaml"),
-                            overwrite = true
-                        )
+                for (vd in AcapelaVoiceManifest.completeVoiceDirs(baseDir)) {
+                    File(vd, "userdicos").mkdirs()
+                    if (hexFile != null && hexFile.parentFile != vd) {
+                        runCatching {
+                            hexFile.copyTo(
+                                File(vd, hexFile.name),
+                                overwrite = true
+                            )
+                        }
+                    }
+                    if (baseYaml != null &&
+                        !File(vd, "config.yaml").isFile
+                    ) {
+                        runCatching {
+                            baseYaml.copyTo(
+                                File(vd, "config.yaml"),
+                                overwrite = true
+                            )
+                        }
                     }
                 }
             }
 
-            EmbeddedStorage.bumpVersion()
-            EnginePicker.invalidateAfterStorageChange()
-
-            val settings = SettingsRepository.create(context)
-            if (settings.isFilterEnginesEnabled()) {
-                val cur = settings.getFilterEngines().toMutableSet()
-                cur.add(AcapelaEmbeddedVoiceProvider.PROVIDER_ID)
-                cur.add("acapela")
-                settings.setFilterEngines(cur)
-                VisibleEngines.setFilter(true, cur)
-            }
+            notifyStorageChanged(context)
 
             finishImport(
                 context = context,
@@ -647,6 +804,36 @@ object AcapelaVoiceImporter {
                 baseDir.mkdirs()
             }
 
+            // إن كان المجلد المختار هو voice/ أو حاوياً له فالنسخ حرفي.
+            val verbatimRoot = findVerbatimVoiceRoot(sourceDir)
+            if (verbatimRoot != null) {
+                val copied = copyVoiceTreeVerbatim(
+                    verbatimRoot,
+                    File(baseDir, "voice")
+                )
+                if (copied > 0) {
+                    notifyStorageChanged(context)
+                    return@withContext finishImport(
+                        context = context,
+                        baseDir = baseDir,
+                        emptyMessage = "فشل التعرف على الأصوات بعد النسخ الحرفي"
+                    )
+                }
+            } else if (sourceDir.name.equals("acapela", ignoreCase = true)) {
+                val copied = copyVoiceTreeVerbatim(
+                    sourceDir,
+                    File(baseDir, "voice/acapela")
+                )
+                if (copied > 0) {
+                    notifyStorageChanged(context)
+                    return@withContext finishImport(
+                        context = context,
+                        baseDir = baseDir,
+                        emptyMessage = "فشل التعرف على الأصوات بعد النسخ الحرفي"
+                    )
+                }
+            }
+
             val voiceDirs = AcapelaVoiceManifest.completeVoiceDirs(sourceDir)
             if (voiceDirs.isEmpty()) {
                 return@withContext ImportResult(
@@ -715,17 +902,7 @@ object AcapelaVoiceImporter {
                 }
             }
 
-            EmbeddedStorage.bumpVersion()
-            EnginePicker.invalidateAfterStorageChange()
-
-            val settings = SettingsRepository.create(context)
-            if (settings.isFilterEnginesEnabled()) {
-                val cur = settings.getFilterEngines().toMutableSet()
-                cur.add(AcapelaEmbeddedVoiceProvider.PROVIDER_ID)
-                cur.add("acapela")
-                settings.setFilterEngines(cur)
-                VisibleEngines.setFilter(true, cur)
-            }
+            notifyStorageChanged(context)
 
             finishImport(
                 context = context,

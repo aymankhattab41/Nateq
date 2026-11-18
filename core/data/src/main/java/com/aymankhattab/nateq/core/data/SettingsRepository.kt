@@ -225,6 +225,11 @@ class SettingsRepository(context: Context) :
          *  الديناميكية (مرة واحدة). */
         private const val KEY_CONVERT_SLOTS_MIGRATED = "_convert_slots_migrated"
 
+        /** وسم نقل أصوات الفئات من المفتاح القديم `preferred_voice_<cat>`
+         *  إلى مفتاح (المحرك، الفئة) مرة واحدة. */
+        private const val KEY_PREFERRED_VOICE_ENGINE_MIGRATED =
+            "_preferred_voice_engine_migrated"
+
         /** وسوم الترحيل الداخلية الثلاثة: تُستثنى من النسخ الاحتياطي/الاستيراد
          *  (تبدأ بـ «_») لكن لا يجوز أن يمسحها clear() في importSettings وإلا
          *  يتحرك الترحيل من جديد فوق نسخةٍ مكتملة.
@@ -234,7 +239,8 @@ class SettingsRepository(context: Context) :
             KEY_QUIET_MIGRATED,
             KEY_QUIET_BITMASK_MIGRATED,
             KEY_CONVERT_SLOTS_MIGRATED,
-            KEY_BATTERY_VOICE_MIGRATED
+            KEY_BATTERY_VOICE_MIGRATED,
+            KEY_PREFERRED_VOICE_ENGINE_MIGRATED
         )
 
         const val KEY_KEYBOARD_MODE = "keyboard_mode"
@@ -420,6 +426,7 @@ class SettingsRepository(context: Context) :
     private val rawPrefs: SharedPreferences = openSharedPrefs().also {
         migrateIfNeeded(it)
         migrateBatteryVoicePrefsIfNeeded(it)
+        migratePreferredVoiceEngineKeysIfNeeded(it)
         dropObsoleteCallerTemplateKey(it)
         migrateAppProfilesAndContactVoicesIfNeeded(it)
         migrateLanguageFilterRemoval(it)
@@ -903,6 +910,41 @@ class SettingsRepository(context: Context) :
         }
 
         edit.putBoolean(KEY_BATTERY_VOICE_MIGRATED, true).apply()
+    }
+
+    /**
+     * نقل القيم القديمة المخزّنة تحت `preferred_voice_<category>` إلى
+     * مفتاح (المحرك، الفئة) الذي يقرأه [getPreferredVoiceForEngine]،
+     * إن كان محرك الفئة معروفاً. المرآة القديمة تُبقى للقراءة القديمة.
+     */
+    internal fun migratePreferredVoiceEngineKeysIfNeeded(
+        targetPrefs: SharedPreferences
+    ) {
+        if (targetPrefs.getBoolean(
+                KEY_PREFERRED_VOICE_ENGINE_MIGRATED, false
+            )
+        ) {
+            return
+        }
+        val editor = targetPrefs.edit()
+        for (category in ALL_VOICE_CATEGORIES + VOICE_CATEGORY_EMOJI) {
+            val engine = targetPrefs.getString("engine_for_$category", null)
+            if (engine.isNullOrBlank() ||
+                !VisibleEngines.isVisible(engine)
+            ) {
+                continue
+            }
+            val legacy = targetPrefs.getString(
+                "preferred_voice_$category", null
+            )
+            if (legacy.isNullOrBlank()) continue
+            val norm = ConvertPreferencesCodec.normalizeLanguageTag(category)
+            val key = "preferred_voice_${engine}_$norm"
+            if (targetPrefs.getString(key, null).isNullOrBlank()) {
+                editor.putString(key, legacy)
+            }
+        }
+        editor.putBoolean(KEY_PREFERRED_VOICE_ENGINE_MIGRATED, true).apply()
     }
 
     /**
@@ -1732,40 +1774,59 @@ class SettingsRepository(context: Context) :
 
     // ============ إعدادات إعلان الوقت ============
 
-    /** الصوت المفضّل لكل فئة (category -> voiceId) */
-    override fun getPreferredVoiceIdForCategory(category: String): String? =
-        normalizeVoiceId(
-            prefs.getString("preferred_voice_$category", null)
-        )?.takeIf { it.isNotBlank() }
+    /**
+     * الصوت المفضّل لكل فئة (category -> voiceId). يُقرأ مفتاح
+     * (المحرك، الفئة) أولاً ثم المرآة القديمة بترتيب واحد ثابت.
+     */
+    override fun getPreferredVoiceIdForCategory(category: String): String? {
+        val norm = ConvertPreferencesCodec.normalizeLanguageTag(category)
+        val engine = getEngineForCategory(category)
+        val byEngine = if (engine.isNullOrBlank()) {
+            null
+        } else {
+            prefs.getString("preferred_voice_${engine}_$norm", null)
+        }
+        val mirrored = prefs.getString("preferred_voice_$category", null)
+        val raw = if (!byEngine.isNullOrBlank()) byEngine else mirrored
+        return normalizeVoiceId(raw)?.takeIf { it.isNotBlank() }
+    }
 
     override fun setPreferredVoiceIdForCategory(
         category: String,
         voiceId: String
     ) {
+        val engine = getEngineForCategory(category)
         if (voiceId.isBlank()) {
-            prefs.edit().remove("preferred_voice_$category").apply()
+            val editor = prefs.edit().remove("preferred_voice_$category")
+            if (!engine.isNullOrBlank()) {
+                val norm = ConvertPreferencesCodec
+                    .normalizeLanguageTag(category)
+                editor.remove("preferred_voice_${engine}_$norm")
+            }
+            editor.apply()
             return
         }
-        val engine = getEngineForCategory(category)
+        if (!engine.isNullOrBlank() &&
+            !VoiceIdContract.isVoiceBelongingToEngine(engine, voiceId)
+        ) {
+            // لا مسح صامت ولا كتابة فارغة: القيمة المحفوظة تبقى كما هي.
+            Log.w(
+                TAG,
+                "الصوت $voiceId لا يتبع المحرك $engine للفئة $category — " +
+                    "الإبقاء على القيمة المحفوظة بلا تعديل"
+            )
+            return
+        }
         if (!engine.isNullOrBlank()) {
-            if (!VoiceIdContract.isVoiceBelongingToEngine(engine, voiceId)) {
-                Log.w(
-                    TAG,
-                    "رفض حفظ الصوت $voiceId للفئة $category: " +
-                        "لا يتبع المحرك $engine"
-                )
-                prefs.edit().remove("preferred_voice_$category").apply()
-                return
-            }
             setPreferredVoiceForEngine(engine, category, voiceId)
         } else if (category == VOICE_CATEGORY_DEFAULT) {
             setPreferredVoiceForEngine(ENGINE_LORD_TTS, category, voiceId)
             prefs.edit().putString("primary_voice_$category", voiceId).apply()
         }
-        val editor = prefs.edit().putString(
+        // مرآة للقراءة القديمة؛ مفتاح المحرك/الفئة هو الأساس.
+        prefs.edit().putString(
             "preferred_voice_$category", voiceId
-        )
-        editor.apply()
+        ).apply()
     }
 
     /** يُحدّث اسم الصوت المحفوظ في كل الفئات التي تستخدم الاسم القديم */
@@ -1823,6 +1884,15 @@ class SettingsRepository(context: Context) :
                 !VoiceIdContract.isVoiceBelongingToEngine(engine, currentVoice)
             ) {
                 editor.remove("preferred_voice_$category")
+                // يُمسح مفتاح المحرك القديم أيضاً وإلا عادت القراءة
+                // لتجده بعد أن حُذفت المرآة فقط.
+                if (!oldEngine.isNullOrBlank()) {
+                    val oldNorm = ConvertPreferencesCodec
+                        .normalizeLanguageTag(category)
+                    editor.remove(
+                        "preferred_voice_${oldEngine}_$oldNorm"
+                    )
+                }
                 if (category == VOICE_CATEGORY_DEFAULT) {
                     editor.remove("primary_voice_$category")
                 }
@@ -3689,40 +3759,13 @@ class SettingsRepository(context: Context) :
     fun getProtectedApps(): List<ProtectedApp> {
         val raw = prefs.getString(KEY_PROTECTED_APPS, null)
             ?: return DEFAULT_PROTECTED_APPS
-        return try {
-            val arr = org.json.JSONArray(raw)
-            val list = mutableListOf<ProtectedApp>()
-            for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
-                list.add(
-                    ProtectedApp(
-                        packageName = obj.getString("packageName"),
-                        label = obj.optString(
-                            "label", obj.getString("packageName")
-                        ),
-                        mode = obj.optString(
-                            "mode", ProtectedApp.MODE_FULL_DISABLE
-                        )
-                    )
-                )
-            }
-            list
-        } catch (_: Exception) {
-            emptyList()
-        }
+        return decodeProtectedApps(raw)
     }
 
     fun setProtectedApps(apps: List<ProtectedApp>) {
-        val arr = org.json.JSONArray()
-        for (app in apps) {
-            val obj = org.json.JSONObject().apply {
-                put("packageName", app.packageName)
-                put("label", app.label)
-                put("mode", app.mode)
-            }
-            arr.put(obj)
-        }
-        prefs.edit().putString(KEY_PROTECTED_APPS, arr.toString()).apply()
+        prefs.edit()
+            .putString(KEY_PROTECTED_APPS, encodeProtectedApps(apps))
+            .apply()
     }
 
     fun addProtectedApp(app: ProtectedApp) {

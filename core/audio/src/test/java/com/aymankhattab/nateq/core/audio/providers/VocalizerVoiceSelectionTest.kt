@@ -53,9 +53,10 @@ class VocalizerVoiceSelectionTest {
     }
 
     @Test
-    fun unknownLanguageFallsBackToFirstInstalledVoice() {
+    fun noLanguageMatch_keepsRequestedName_noSilentFirstVoice_breakFix() {
+        // كان يعيد أول صوت مثبت (Ava) بصمت ولو كانت لغته لا تطابق الطلب.
         assertEquals(
-            "Ava",
+            "ar-EG",
             chooseVocalizerVoiceName(
                 requestedName = "ar-EG",
                 requestedLanguage = "ar",
@@ -63,6 +64,37 @@ class VocalizerVoiceSelectionTest {
             )
         )
     }
+
+    @Test
+    fun aliasesMatchInstalledCanonicalNames() {
+        assertEquals(
+            "Laila",
+            chooseVocalizerVoiceName(
+                requestedName = "Leila",
+                requestedLanguage = "ar",
+                installed = listOf(laila, maged)
+            )
+        )
+        assertEquals(
+            "Tarik",
+            chooseVocalizerVoiceName(
+                requestedName = "Tariq",
+                requestedLanguage = "ar",
+                installed = listOf(maged, InstalledVocalizerVoice(
+                    "Tarik", "ar"
+                ))
+            )
+        )
+        assertEquals(
+            "Tarik",
+            chooseVocalizerVoiceName(
+                requestedName = "Tarek",
+                requestedLanguage = "ar",
+                installed = listOf(InstalledVocalizerVoice("Tarik", "ar"))
+            )
+        )
+    }
+
 
     @Test
     fun emptyInstalledListKeepsRequestedName() {

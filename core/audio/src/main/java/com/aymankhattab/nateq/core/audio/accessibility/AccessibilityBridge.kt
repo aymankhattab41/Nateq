@@ -281,12 +281,30 @@ object AccessibilityBridge {
     }
 
     /**
+     * بند ٧: منفذ اختبار فقط لمحاكاة المسار الداخلي وقياس المهلة
+     * الخارجية عليه. لا يُستخدم في التشغيل العادي ويُصفَّر بعد الاختبار.
+     */
+    @Volatile
+    private var expandInternalForTesting: (suspend (String) -> String?)? = null
+
+    @androidx.annotation.VisibleForTesting
+    fun setExpandInternalForTesting(
+        override: (suspend (String) -> String?)?
+    ) {
+        expandInternalForTesting = override
+    }
+
+    /**
      * توسيع الرسالة المقتطعة تلقائياً بمهلة سريعة (ع٢٧-20، ع٤٣-1، ع٤٣-3)
      */
     suspend fun expandReadMore(
         prefix: String,
         timeoutMs: Long = READ_MORE_EXTERNAL_TIMEOUT_MS
     ): String? {
+        val override = expandInternalForTesting
+        if (override != null) {
+            return withTimeoutOrNull(timeoutMs) { override(prefix) }
+        }
         val service = activeServiceRef.get() ?: return null
         return withTimeoutOrNull(timeoutMs) {
             service.expandReadMoreInternal(prefix)

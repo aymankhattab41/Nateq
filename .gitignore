@@ -50,3 +50,12 @@ temp_backup_untracked/
 *.zip
 *.rar
 /multitts_export/
+
+# أرشيف MultiTTS المرجعي والتفريض الانتقائي منه — بيانات محلية ضخمة لا ترفع
+/multitts_files.zip
+/multitts_selective/
+
+# مكتبات وبيانات الموردين التجارية — تبقى محلياً فقط ولا تُرفع أبداً
+/core/audio/src/main/jniLibs/
+/core/audio/src/main/assets/acapela/
+/core/audio/src/main/assets/vocalizer/

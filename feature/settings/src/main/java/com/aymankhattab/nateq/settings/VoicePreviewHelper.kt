@@ -26,7 +26,7 @@ import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
-import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
+import com.aymankhattab.nateq.core.audio.providers.isKnownVocalizerVoiceName
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.core.data.CategoryLoudnessConfig
@@ -276,19 +276,10 @@ internal fun chimeSoundNameAt(position: Int): String = when (position) {
 internal fun chimeVolumeFromProgress(progress: Int): Float =
     (0.1f + progress / 100f * 0.9f).coerceIn(0.1f, 1f)
 
-/** أسماء كل أصوات Vocalizer في الكتالوج (الاسم والمعرّف) — تُبنى مرة. */
-private val VOCALIZER_VOICE_KEYS: Set<String> by lazy {
-    VocalizerModelCatalog.ITEMS
-        .flatMap { listOf(it.voiceName, it.id, it.modelId) }
-        .map { it.lowercase() }
-        .toSet()
-}
-
 /**
- * هل الاسم صوتٌ من أصوات Vocalizer المدمجة؟ يُعرف بالكتالوج كاملاً لا
- * بقائمة أسماء محصورة (كانت Laila/Maged/Tariq/Samantha فقط، فيُوجَّه
- * غيرها خطأً إلى المسار النظامي). مطابقة كاملة (غير جزئية) مع الاسم أو
- * المعرّف، أو بادئة معرّف `vocalizer`.
+ * هل الاسم صوتٌ من أصوات Vocalizer المدمجة؟ التصنيف موحّد في مصدر
+ * قرار الاسم (بلا كتالوج التنزيل) فلا يُوجَّه صوتٌ معروف خطأً للمسار
+ * النظامي، ولا يُستخدم الملف الثابت لاستبدال اسم صوتٍ مطلوب.
  */
 private var microsoftVoiceKeys: Set<String>? = null
 
@@ -320,12 +311,8 @@ internal fun isMicrosoftVoiceName(
     return name in keys
 }
 
-internal fun isVocalizerVoiceName(voiceName: String?): Boolean {
-    val name = voiceName?.trim()?.lowercase() ?: return false
-    if (name.isEmpty()) return false
-    if (name.startsWith("vocalizer")) return true
-    return name in VOCALIZER_VOICE_KEYS
-}
+internal fun isVocalizerVoiceName(voiceName: String?): Boolean =
+    isKnownVocalizerVoiceName(voiceName)
 
 internal fun isAcapelaVoiceName(voiceName: String?): Boolean {
     val name = voiceName?.trim()?.lowercase() ?: return false

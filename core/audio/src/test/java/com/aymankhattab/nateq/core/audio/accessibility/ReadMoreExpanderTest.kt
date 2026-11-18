@@ -328,4 +328,55 @@ class ReadMoreExpanderTest {
             SafeNodeWalker.safeRecycle(node)
         }
     }
+
+    @Test
+    fun tryExpand_failedNodeExplicitPkg_recoversAfterTtlExpiry() {
+        // بند ٧: المسار الحقيقي في expandReadMoreInternal يستخدم الحمولة
+        // الصريحة onExpandAttemptResult(pkg=...) عند تسجيل النتيجة.
+        val pkg = "com.whatsapp"
+        val node = AccessibilityNodeInfo.obtain().apply {
+            text = "قراءة المزيد"
+            viewIdResourceName = "read_more_ttl_explicit"
+            isClickable = true
+            packageName = pkg
+        }.also { allowAction(it) }
+        try {
+            assertTrue(ReadMoreExpander.tryExpand(node))
+            ReadMoreExpander.onExpandAttemptResult(
+                pkg = pkg,
+                increased = false,
+                oldLength = 20,
+                newLength = 20
+            )
+            assertFalse(
+                "الفشل الطازج عبر الحمولة الصريحة يحجب العقدة",
+                ReadMoreExpander.tryExpand(node)
+            )
+            ShadowSystemClock.advanceBy(61, TimeUnit.SECONDS)
+            assertTrue(
+                "انتهاء TTL يسمح بإعادة المحاولة",
+                ReadMoreExpander.tryExpand(node)
+            )
+        } finally {
+            SafeNodeWalker.safeRecycle(node)
+        }
+    }
+
+    @Test
+    fun tryExpand_deniedExpandAction_isNotSuccessEvenWhenClickable() {
+        // بند ٧: بند ١٦ يشمل performActionOnNode لا performClickOnNode
+        // وحده؛ رفض ACTION_EXPAND لا يُعدّ نجاحاً ولو كانت العقدة قابلة
+        // للضغط.
+        val node = AccessibilityNodeInfo.obtain().apply {
+            text = "رسالة طويلة مقتطعة..."
+            isClickable = true
+            packageName = "com.example.messenger"
+            addAction(AccessibilityNodeInfo.ACTION_EXPAND)
+        }.also { denyAction(it) }
+        try {
+            assertFalse(ReadMoreExpander.tryExpand(node))
+        } finally {
+            SafeNodeWalker.safeRecycle(node)
+        }
+    }
 }

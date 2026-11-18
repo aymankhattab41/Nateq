@@ -51,6 +51,212 @@ object AcapelaVoiceDiagnostics {
     /** السقف الأقصى لأحرف التقرير المنسوخ/المُشارَك (بناء 10729). */
     const val MAX_SHARED_REPORT_CHARS = 60_000
 
+    /** ملف مقيس من أرشيف MultiTTS: مساره النسبي وبصمته كما وردت. */
+    data class MeasuredArchiveFile(
+        val relativePath: String,
+        val size: Long,
+        val md5: String,
+        val sha256: String
+    )
+
+    /** مجلد الرمز المشفّر داخل `voice/acapela/` في الأرشيف المرجعي. */
+    private const val MULTITTS_TOKEN_DIR =
+        "88GqqbfobVqqleus52QYWilZ0Nc0DtPaQztCeFMhsGg="
+
+    /** مسار صوت Heather كما ورد في الأرشيف المرجعي. */
+    private const val MULTITTS_HEATHER_DIR =
+        "voicedream/hqm-ref-USEnglish-Heather-22khz/" +
+            "hqm-ref-USEnglish-Heather-22khz/enu"
+
+    /**
+     * القيم المقيسة فعلياً من `multitts_files/files/voice/` داخل الأرشيف.
+     * الأحجام من central directory، وMD5/SHA-256 من قراءة الأعضاء
+     * المحددين فقط (بلا تفكيك كامل، وبلا لمس `logfile.txt`).
+     */
+    private val multiTtsFilesMeasured = listOf(
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/0x00294994",
+            139L,
+            "e4a2e71d6658ac1519c625928575055e",
+            "2f46c283262990c95245ec2fd77eacab" +
+                "4206121eb599e2472ec2e0b2f3ed4e1d"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/voicelist",
+            14L,
+            "675c7f830278b1bc3b2c1dff6e1a71e5",
+            "6fed4eb8e8bc51b66039e8c6a1e8baee4" +
+                "007350bc1f4064c847e5af31c935f66"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/leila22k_hq/" +
+                "ar_sa_hd_leila_22k_lf.bvcu.ini",
+            1047L,
+            "7f28c7e3c123b6dd952e583509d77293",
+            "5f2b80e9fab385aa9096aaf91a6135afcd" +
+                "c3a91e0f249101ffc164c44ceaed66"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_HEATHER_DIR/enu_heather_22k_ns.bvcu.ini",
+            699L,
+            "e0e491d16413b97194af63dbcb42766f",
+            "542ac3bc6f9c4f2be5478da01540785db3" +
+                "a6c83d676698d3fd841f2a5ca35169"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/leila22k_hq/NLP/ar_sa.dca",
+            3455285L,
+            "4150f26046e681c41ee7a97ead4d9bbe",
+            "43492f7e3c1018c7f46b5871eb0dd2d30" +
+                "27e281ea59012e934a1c28f725ca821"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/leila22k_hq/NLP/ar_sa_unplugged.dca",
+            3455005L,
+            "56b550b6663dc6dbf6a7cd719167afa7",
+            "6e15add05d4f0afdcd58df12e6aa37cc98" +
+                "ebf1c44467ead561076ef96ac2ecd2"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/leila22k_hq/NLP/ar_sa_e_arq.dca",
+            2947221L,
+            "d673c77227d1c30c31267b0a32c45c51",
+            "f560a4950b185850f988ff464791dbc14d" +
+                "91aa8b4d9168d37c6bb96d281fd980"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/leila22k_hq/NLP/ar_sa_hde_arq.dca",
+            1538609L,
+            "6801b0761888ee0dba4d0cde185deeb3",
+            "4abe134f87331455e2007bfe2a9fecccf1" +
+                "5150f17bb77771afea2255959218c49"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/leila22k_hq/NLP/ar_sa_utf8.dca",
+            11501L,
+            "f7f5a112bd877cf6b2b283a1fbdf0444",
+            "09a42b8e7448d51039b7443db80a4e8369" +
+                "63494b708149cefe6050bba22a6"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_HEATHER_DIR/NLP/enu.dca",
+            398790L,
+            "a4d8d34f5a2cd7dbb301a96deae7d342",
+            "a37ac887efd17c307e7eef83f70019962e" +
+                "cc93acb01064d65c93f4eaabbad03a"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/leila22k_hq/" +
+                "ar_sa_hd_leila_22k_lf.bvcu.inf",
+            489L,
+            "c56b7fb07106a67641ff0af6faa64d82",
+            "c312dda29c7d4e39601814384249c0559" +
+                "67f9f879f8c4d174044aece72804ec0"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_HEATHER_DIR/enu_heather_22k_ns.bvcu.inf",
+            473L,
+            "5aaacf5a1b67332534742eace7ce177c",
+            "b6c7bb7e30324bd44c72074b7c4671501" +
+                "030f5e63f193c5754f1d2466f647294"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/leila22k_hq/leila_lf/" +
+                "leila_22k_lf.bvcu",
+            25857167L,
+            "825bf78a56562c87cbf91045b1d8d9e1",
+            "58950b4d599e6cf11aac0b08713837e29a" +
+                "4b87524907231adb01893019425f21"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/leila22k_hq/leila_lf/" +
+                "leila_22k_lf.bvcu.nuul216vqfp",
+            1160796L,
+            "88f1d2627e87c34dffbd8d2b02fa1f13",
+            "61bc68a325463e6f045b1e33da4f0e46f" +
+                "f471d8a28abfdfea8d9d35f65a6cab9"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_HEATHER_DIR/heather_ns/heather_22k_ns.bvcu",
+            50123426L,
+            "c64e839ea8de655dfe66a0303bcb6157",
+            "3dddafa3d0c9b26d954191d79f9d0f26fe" +
+                "1b4918bef0b98c2a6dc0dd27875dde"
+        ),
+        MeasuredArchiveFile(
+            "$MULTITTS_TOKEN_DIR/userdicos/ara-sau.userdico",
+            41036L,
+            "e8a78aeb3b2ec8bdeac093ee2b4a446e",
+            "bdfae391c55a4dc5c8830762174adbf507" +
+                "b624aec822a1e09a893a5b396b9e45"
+        ),
+        MeasuredArchiveFile(
+            "config.yaml",
+            613L,
+            "d0282db5d675b38ee4ee311e70e4421a",
+            "cd0af3894f97bbb9a5b127166535318df0" +
+                "8ff1cf69a2e198b58f1bff5db65c22"
+        ),
+        MeasuredArchiveFile(
+            "engines.yaml",
+            112L,
+            "d77e2d2bcd5e20ff1548a5b9bf7677eb",
+            "b119ba49fce8a14744a8d15333178af6bc" +
+                "efd40ddbb88fa69fc9a4842ebcebfc"
+        )
+    )
+
+    /**
+     * جدول المقارنة المقيسة بين أصل MultiTTS ومسار Nateq.
+     * كل رقم في الجدول مقيس من الأرشيف؛ وسلوك Nateq المذكور بعده
+     * مُشتق من الكود ومُوسوم بذلك، لا رواية تقديرية.
+     */
+    fun getMultiTtsFilesMeasuredTable(): String = buildString {
+        appendLine("=== مقارنة Acapela: أصل MultiTTS مقابل نسخ Nateq ===")
+        appendLine("المصدر: multitts_files/files/voice/ داخل الأرشيف.")
+        appendLine(
+            "الأحجام من central directory، وMD5/SHA-256 من قراءة " +
+                "الأعضاء المحددين فقط بلا تفكيك كامل."
+        )
+        appendLine("| المسار النسبي | الحجم | MD5 | SHA-256 |")
+        for (item in multiTtsFilesMeasured) {
+            appendLine(
+                "| ${item.relativePath} | ${item.size} | " +
+                    "${item.md5} | ${item.sha256} |"
+            )
+        }
+        appendLine("")
+        appendLine(
+            "مستبعد قاطعًا: acapela/$MULTITTS_TOKEN_DIR/logfile.txt" +
+                " — 7982015625 بايت (الحجم من central directory؛ لم يُقرأ)."
+        )
+        appendLine("")
+        appendLine("مطابعة مسار Nateq قبل الإصلاح (سلوك مقروء من الكود):")
+        appendLine(
+            "  - NLP/*.dca و*.bnx و*.ldi: flattenNestedVoiceFiles " +
+                "ينقلها إلى جذر الصوت فيُفقد بادئ NLP/."
+        )
+        appendLine(
+            "  - leila_lf/*.bvcu: يُسطَّح إلى جذر الصوت " +
+                "فلا يعود SLV \"leila_lf/...\" صالحاً."
+        )
+        appendLine(
+            "  - ini الأصلي (1047/699 بايت): ensureIniFor يعيد كتابته " +
+                "بـMODE=prep_hd (109 بايت) فيُفقد PRO \"NLP/ar_sa.oso\"."
+        )
+        appendLine(
+            "  - بعد الإصلاح: copyVoiceTreeVerbatim يحفظ كل مسار نسبي " +
+                "ويمنع توليد أي ini حين توجد تهيئة أصلية غنية."
+        )
+        appendLine("")
+        appendLine("سلسلة الأعراض المقيسة عند فقدان توجيهات NLP:")
+        appendLine("  - ${observedRoot109Codes.asLine()}")
+        appendLine(
+            "  - nlpInitError=-34 من BBNLP_init عند غياب PRO، ثم eb=-27، " +
+                "ثم nSpeak=-2 بلا عيّنات PCM."
+        )
+    }.trimEnd()
+
     /**
      * اقتطاع التقرير المنسوخ/المُشارَك إلى [maxChars] حرفاً بلا تجاوز.
      * يُبقى على الصدارة (تشخيص Acapela أولاً) ويُحذف الذيل (أسطر
@@ -108,31 +314,46 @@ object AcapelaVoiceDiagnostics {
             ?: findFileRecursively(context, ORIGINAL_INI_NAME)
 
     /**
-     * يكتب محتوى ini الأصلي حرفياً (بايتاً ببايت) في كل الأهداف إن وُجد
-     * وبحجمه المتوقع، وإلا يكتب المحتوى الاحتياطي المصحح (بلا MODE= مكررة).
+     * إيجاد تهيئة أصلية غنية مقيسة على القرص. الملف المولّد ذو
+     * الـ109 بايت لا يمرّ من [AcapelaVoiceManifest.isOriginalRichIni]،
+     * فلا يُعامل كأصل ولا يُكتب فوق تهيئة حقيقية.
+     */
+    private fun findOriginalRichIni(context: Context): File? =
+        listOf(
+            "ar_sa_hd_leila_22k_lf.bvcu.ini",
+            "enu_heather_22k_ns.bvcu.ini",
+            ORIGINAL_INI_NAME
+        ).firstNotNullOfOrNull { name ->
+            findFileRecursively(context, name)?.takeIf {
+                AcapelaVoiceManifest.isOriginalRichIni(it)
+            }
+        }
+
+    /**
+     * يكتب محتوى ini الأصلي حرفياً (بايتاً ببايت) في كل الأهداف.
+     * لا يكتب أي محتوى متخيّل تلقائياً: [fallback] يُستخدم صراحةً في
+     * تجارب التجهيز فقط، ولا يُسمح له بالحلول محل تهيئة أصلية غنية.
+     *
+     * @return عدد الأهداف التي كُتبت فعلاً.
      */
     fun writeIniTargets(
         context: Context?,
         targets: List<File>,
-        fallback: String = originalIniFallbackContent()
-    ) {
-        val original = context?.let(::findOriginalSalmaIni)
-        val bytes = if (
-            original != null && original.length() == ORIGINAL_INI_EXPECTED_SIZE
-        ) {
-            runCatching { original.readBytes() }.getOrNull()
-        } else {
-            null
-        }
+        fallback: String? = null
+    ): Int {
+        val original = context?.let(::findOriginalRichIni)
+        val bytes = original?.let { src ->
+            runCatching { src.readBytes() }.getOrNull()
+        } ?: fallback?.toByteArray(StandardCharsets.ISO_8859_1)
+        if (bytes == null) return 0
+        var written = 0
         for (target in targets) {
             runCatching {
-                if (bytes != null) {
-                    target.writeBytes(bytes)
-                } else {
-                    target.writeText(fallback, StandardCharsets.ISO_8859_1)
-                }
+                target.writeBytes(bytes)
+                written++
             }
         }
+        return written
     }
 
     /** اسم ملف تهيئة الصوت الأصلي ذي الـ 109 بايت. */
@@ -938,14 +1159,17 @@ object AcapelaVoiceDiagnostics {
             runCatching { infSrc.copyTo(destInf2, overwrite = true) }
         }
 
-        // 3. كتابة ملفات .ini بمحتوى الأصل 109 بايت حرفياً إن وُجد
+        // 3. كتابة ملفات .ini: الأصل الغني أولاً، والبديل للتجربة فقط
         writeIniTargets(
             context = context,
             targets = listOf(
                 File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.ini"),
                 File(stageDir, "ar_sa_hd_salma_22k_lf.ini"),
                 File(stageDir, "bvcu.ini")
-            )
+            ),
+            // تجربة قديمة مسطّحة: المحتوى المتخيّل مسموح هنا صراحةً فقط،
+            // ولا يُستخدم أبداً في مسار الاستيراد الحقيقي.
+            fallback = originalIniFallbackContent()
         )
 
         // 4. ملف 0x00169729
@@ -4103,6 +4327,8 @@ object AcapelaVoiceDiagnostics {
             "كل حجم وبصمة أدناه مقيسان من الملف على القرص الآن " +
                 "(لا قيم مكتوبة يدوياً)."
         )
+        sb.appendLine("")
+        sb.appendLine(getMultiTtsFilesMeasuredTable())
         sb.appendLine("")
 
         val declaredStageRoots = stageRootsOverride ?: listOfNotNull(

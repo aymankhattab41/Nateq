@@ -12,8 +12,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -597,24 +600,29 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun writeIniTargets_copiesOriginal109BytesVerbatim() {
+    fun writeIniTargets_copiesMeasuredOriginalIniVerbatim() {
         val original = File(
             context.filesDir,
-            "Acapela/Salma/salma_lf/" +
-                "ar_sa_hd_salma_22k_lf.ini"
+            "acapela/Leila/leila22k_hq/" +
+                "ar_sa_hd_leila_22k_lf.bvcu.ini"
         ).apply { parentFile?.mkdirs() }
-        val bytes = AcapelaVoiceDiagnostics
-            .originalIniFallbackContent()
-            .toByteArray(StandardCharsets.ISO_8859_1)
+        val richIni = "PRO\t\"NLP/ar_sa.oso\"\t\tPROSODY\n" +
+            "DIC\t\"NLP/ar_sa.dca\"\t\tDICO\n" +
+            "SLV\t\"leila_lf/leila_22k_lf.bvcu\"\t[FILE]\n" +
+            "SLL\t\"leila_lf/leila_22k_lf.bvcu.nuul216vqfp\"\t[FILE]\n" +
+            "END\t\"\"\n" +
+            "#".repeat(320) + "\n"
+        val bytes = richIni.toByteArray(StandardCharsets.ISO_8859_1)
         val target = File(tempDir(), "bvcu.ini")
         try {
             original.writeBytes(bytes)
-            assertEquals(109L, original.length())
+            assertTrue(bytes.size > 300)
 
-            AcapelaVoiceDiagnostics.writeIniTargets(
+            val written = AcapelaVoiceDiagnostics.writeIniTargets(
                 context, listOf(target)
             )
 
+            assertEquals(1, written)
             org.junit.Assert.assertArrayEquals(
                 bytes, target.readBytes()
             )
@@ -1507,5 +1515,144 @@ class AcapelaVoiceDiagnosticsTest {
         assertEquals(null, experiment.staged)
         assertTrue(report.contains("تعذّرت قراءة مجلد MultiTTS"))
         assertTrue(report.contains("لا نسخة ولا nInit"))
+    }
+
+    private fun findMultiTtsZipForTest(): File? {
+        var current: File? = File(".").absoluteFile
+        repeat(6) {
+            val candidate = File(current, "multitts_files.zip")
+            if (candidate.isFile) return candidate
+            current = current?.parentFile
+        }
+        return null
+    }
+
+    private fun relativePath(root: File, file: File): String =
+        file.relativeTo(root).path.replace(File.separatorChar, '/')
+
+    private fun md5Of(file: File): String {
+        val md = MessageDigest.getInstance("MD5")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                md.update(buffer, 0, read)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun writeFakeMultiTtsVoiceTree(voiceRoot: File) {
+        val tokenDir = File(
+            voiceRoot,
+            "acapela/88GqqbfobVqqleus52QYWilZ0Nc0DtPaQztCeFMhsGg=" +
+                "/leila22k_hq"
+        ).apply { mkdirs() }
+        val nlp = File(tokenDir, "NLP").apply { mkdirs() }
+        val leila = File(tokenDir, "leila_lf").apply { mkdirs() }
+        File(nlp, "ar_sa.dca").writeBytes(ByteArray(4096) { it.toByte() })
+        File(tokenDir, "ar_sa_hd_leila_22k_lf.bvcu.ini").writeText(
+            "PRO\t\"NLP/ar_sa.oso\"\n" +
+                "DIC\t\"NLP/ar_sa.dca\"\n" +
+                "SLV\t\"leila_lf/leila_22k_lf.bvcu\"\t[FILE]\n"
+        )
+        File(tokenDir, "ar_sa_hd_leila_22k_lf.bvcu.inf").writeText(
+            "speaker = \"Leila\"\nISOCode = \"ara-SAU\"\n"
+        )
+        File(leila, "leila_22k_lf.bvcu")
+            .writeBytes(ByteArray(2048) { it.toByte() })
+        File(tokenDir.parentFile, "logfile.txt").writeText("forbidden")
+        File(voiceRoot, "config.yaml").writeText("acapela: []\n")
+    }
+
+    @Test
+    fun `verbatim copy drops no original bytes nor adds generated ini`() {
+        val root = tempDir()
+        val source = File(root, "source/voice").apply { mkdirs() }
+        val target = File(root, "target/voice")
+        val zip = findMultiTtsZipForTest()
+        if (zip != null) {
+            ZipFile(zip).use { zf ->
+                val prefix = "multitts_files/files/"
+                val entries = zf.entries().toList().filter { e ->
+                    val name = e.name.replace('\\', '/')
+                    name.startsWith(prefix + "voice/") && !e.isDirectory &&
+                        !name.substringAfterLast('/').equals(
+                            AcapelaVoiceDiagnostics.LOG_FILE_NAME,
+                            ignoreCase = true
+                        )
+                }
+                assertTrue(entries.size >= 40)
+                for (e in entries) {
+                    val rel = e.name.substring(prefix.length)
+                    val out = File(source, rel)
+                    out.parentFile?.mkdirs()
+                    zf.getInputStream(e).use { input ->
+                        FileOutputStream(out).use { output ->
+                            input.copyTo(output, 64 * 1024)
+                        }
+                    }
+                }
+            }
+        } else {
+            writeFakeMultiTtsVoiceTree(source)
+        }
+
+        val copied = AcapelaVoiceImporter.copyVoiceTreeVerbatim(
+            source, target
+        )
+        assertTrue(copied > 0)
+
+        val sourceFiles = source.walkTopDown().filter { it.isFile }
+            .associate { relativePath(source, it) to it }
+        val targetFiles = target.walkTopDown().filter { it.isFile }
+            .associate { relativePath(target, it) to it }
+        assertEquals(sourceFiles.keys, targetFiles.keys)
+        assertFalse(targetFiles.keys.any {
+            it.substringAfterLast('/').equals(
+                AcapelaVoiceDiagnostics.LOG_FILE_NAME,
+                ignoreCase = true
+            )
+        })
+
+        val sourceInis = sourceFiles.keys.filter {
+            it.endsWith(".ini", ignoreCase = true)
+        }.sorted()
+        val targetInis = targetFiles.keys.filter {
+            it.endsWith(".ini", ignoreCase = true)
+        }.sorted()
+        assertEquals(sourceInis, targetInis)
+
+        for ((rel, src) in sourceFiles) {
+            val dst = targetFiles.getValue(rel)
+            when {
+                rel.endsWith(".ini", ignoreCase = true) ->
+                    org.junit.Assert.assertArrayEquals(
+                        src.readBytes(), dst.readBytes()
+                    )
+                rel.endsWith(".dca", ignoreCase = true) ||
+                    src.length() > 1_000_000L -> {
+                    assertEquals(src.length(), dst.length())
+                    assertEquals(md5Of(src), md5Of(dst))
+                }
+                else -> org.junit.Assert.assertArrayEquals(
+                    src.readBytes(), dst.readBytes()
+                )
+            }
+        }
+
+        if (zip != null) {
+            val leilaRel = "voice/acapela/" +
+                "88GqqbfobVqqleus52QYWilZ0Nc0DtPaQztCeFMhsGg=" +
+                "/leila22k_hq/ar_sa_hd_leila_22k_lf.bvcu.ini"
+            val leila = targetFiles[leilaRel]
+            assertNotNull(leila)
+            assertEquals(1047L, leila?.length())
+            assertEquals(
+                "7f28c7e3c123b6dd952e583509d77293",
+                leila?.let(::md5Of)
+            )
+        }
     }
 }

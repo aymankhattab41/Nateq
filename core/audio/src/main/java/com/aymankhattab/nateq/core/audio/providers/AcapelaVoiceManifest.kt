@@ -412,6 +412,31 @@ object AcapelaVoiceManifest {
         }
     }
 
+    /**
+     * هل هذا `.ini` تهيئة أصلية غنية لا يجوز لمسها؟
+     *
+     * المعيار مقيس من حزم MultiTTS الأصلية: ملف Leila 1047 بايت وملف
+     * Heather 699 بايت، وكلاهما يحمل `PRO "NLP/..."` و`SLV ... [FILE]`.
+     * أما التهيئة المولّدة (109 بايت من `MODE=prep_hd`) فلا تحوي
+     * `NLP/` ولا `PRO`، فتُترك بلا حماية ويمكن إكمالها أو تجديدها.
+     */
+    internal fun isOriginalRichIni(file: File): Boolean {
+        if (!file.isFile || file.length() < 300L) return false
+        val text = runCatching {
+            file.readText(StandardCharsets.ISO_8859_1)
+        }.getOrNull() ?: return false
+        return text.contains("NLP/", ignoreCase = true) &&
+            text.contains("PRO", ignoreCase = true) &&
+            text.contains("SLV", ignoreCase = true)
+    }
+
+    /** وجود تهيئة أصلية غنية في مجلد الصوت يمنع أي توليد أو تسطيح. */
+    fun hasVerbatimOriginalConfig(dir: File): Boolean =
+        dir.listFiles { f ->
+            f.isFile && f.extension.equals("ini", ignoreCase = true) &&
+                isOriginalRichIni(f)
+        }?.isNotEmpty() == true
+
     fun normalizeExtensionsCase(dir: File) {
         val files = dir.listFiles() ?: return
         for (f in files) {
@@ -454,6 +479,7 @@ object AcapelaVoiceManifest {
         if (!baseDir.exists() || !baseDir.isDirectory) return
         for (dir in completeVoiceDirs(baseDir)) {
             runCatching {
+                if (hasVerbatimOriginalConfig(dir)) return@runCatching
                 val infFiles = dir.listFiles { f ->
                     f.isFile && f.extension.equals("inf", ignoreCase = true)
                 } ?: emptyArray()
@@ -517,6 +543,17 @@ object AcapelaVoiceManifest {
         if (!baseDir.exists() || !baseDir.isDirectory) return
         for (dir in completeVoiceDirs(baseDir)) {
             runCatching {
+                // حارس النسخ الحرفي: التهيئة الأصلية الغنية هي مصدر
+                // الحقيقة. تسطيحها أو إعادة كتابة `.inf`/`.ini` لها
+                // يُفقد `PRO "NLP/ar_sa.oso"` فيؤدي إلى -34 ثم -27
+                // ثم nSpeak -2 بلا عيّنات PCM. لا نلمسها إطلاقاً.
+                if (hasVerbatimOriginalConfig(dir)) {
+                    diagLog(
+                        "تهيئة أصلية غنية في ${dir.name}: " +
+                            "لا تسطيح ولا توليد ini"
+                    )
+                    return@runCatching
+                }
                 flattenNestedVoiceFiles(dir)
                 normalizeExtensionsCase(dir)
                 File(dir, "userdicos").mkdirs()

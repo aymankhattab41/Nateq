@@ -50,7 +50,9 @@ import com.aymankhattab.nateq.core.audio.providers.MicrosoftDownloader
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftModelCatalog
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
-import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
+import com.aymankhattab.nateq.core.audio.providers.VocalizerInstallationCache
+import com.aymankhattab.nateq.core.audio.providers.hasInstalledVoiceForLanguage
+import com.aymankhattab.nateq.core.audio.providers.resolveInstalledVocalizerVoice
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.EffectiveVoice
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -84,43 +86,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
-/**
- * يحوّل نسبةَ سرعةِ قارئ الشاشة (100 = طبيعي) إلى معامل (1.0 = طبيعي) —
- * TextToSpeech.setSpeechRate يتوقع 1.0 عند الطبيعي لا النسبةَ المئوية نفسها.
- * أي نسبة غير موجبة (0/سلبية) تُعتبر 100 (طبيعي محايد).
- */
-internal fun readerRateFromPercent(reqRate: Float): Float {
-    val safe = if (reqRate > 0f) reqRate else 100f
-    return safe / 100f
-}
-
-/**
- * السرعة النهائية للنطق — نموذج الضرب: سرعةُ القارئ معاملٌ أَساسٌ يُضرب
- * في معامل LORD (تفضيل التطبيق) ثم مضاعف السرعة العام (إن فعّله المستخدم)،
- * ثم يُقصّ على نطاقٍ آمن (0.1..6.0). عند اتباع سرعة القارئ يكون
- * المعامل = 1.0 فيُبقى الخرج = سرعة القارئ × المضاعف.
- *
- * **حدود السرعة — فرق موثّق (بند ١١):** هذا القصّ (0.1..6.0) هو حدّ
- * التخطيط في هذه الخدمة. ثم يأتي [SystemVoiceProvider] ليقصّ القيمة
- * مجدداً بحدٍّ خاصّ بكل محرك (`EngineQuirks.maxSafeSpeechRate`،
- * افتراضياً 2.5) لأن بعض المحركات يتجاهل الأوامر أو يشوّه الصوت فوق
- * حدّه — حدّ أدنى من هنا عمداً، وليس تعارضاً بين المسارات.
- */
-internal fun computeFinalSpeechRate(
-    readerRate: Float,
-    nateqMultiplier: Float,
-    boost: Float = 1.0f
-): Float = (readerRate * nateqMultiplier * boost).coerceIn(0.1f, 6.0f)
-
-/**
- * مستوى الصوت النهائي لمقطع القراءة: مستوى الصوت الأساسي (تفضيل التطبيق)
- * مضروباً في مضاعف الصوت العام (إن فعّله المستخدم)، ثم يُقصّ على النطاق
- * الكامل (0.0..1.0) — أعلى مستوى متاح للنظام بلا تشويه (كسب >1 يُقصف).
- */
-internal fun computeFinalVolume(
-    volume: Float,
-    boost: Float = 1.0f
-): Float = (volume * boost).coerceIn(0f, 1f)
 
 
 /**
@@ -1653,88 +1618,35 @@ class NateqTtsService : TextToSpeechService() {
                 finalVoiceName.equals("en-US", true) ||
                 finalVoiceName.equals("ar", true) ||
                 finalVoiceName.equals("en", true)
-            val isVocVoice = if (isVoc && !finalVoiceName.isNullOrBlank()) {
-                VocalizerModelCatalog.ITEMS.any { item ->
-                    item.voiceName.equals(finalVoiceName, ignoreCase = true) ||
-                        item.id.equals(finalVoiceName, ignoreCase = true) ||
-                        finalVoiceName.contains(
-                            item.voiceName,
-                            ignoreCase = true
-                        ) ||
-                        (item.voiceName.equals("Laila", true) &&
-                            finalVoiceName.contains("leila", true)) ||
-                        (item.voiceName.equals("Tarik", true) &&
-                            finalVoiceName.contains("tariq", true))
-                }
-            } else false
             var activeEngine = finalEngine
             var activeTargetProvider = targetProvider
 
+            // قرار اسم صوت Vocalizer موحّد: الأصوات المثبتة تُقرأ من
+            // كاش الفحص الموثوق، ولا يُستشار كتالوج التنزيل ولا رأس
+            // الصوت في مسار القرار (الكتالوج للتحديث/التنزيل فقط).
             val resolvedVoiceName = if (isVoc) {
-                val installedAr = VocalizerModelCatalog.ITEMS.firstOrNull {
-                    LanguageCode.isArabic(it.languageCategory) &&
-                        VocalizerModelCatalog.isVoiceInstalled(
-                            applicationContext, it
-                        )
-                }?.voiceName
-                val installedEn = VocalizerModelCatalog.ITEMS.firstOrNull {
-                    LanguageCode.isEnglish(it.languageCategory) &&
-                        VocalizerModelCatalog.isVoiceInstalled(
-                            applicationContext, it
-                        )
-                }?.voiceName
-                val hasVocVoice = if (LanguageCode.isArabic(languageTag)) {
-                    installedAr != null
-                } else if (LanguageCode.isEnglish(languageTag)) {
-                    installedEn != null
-                } else false
-                if (!hasVocVoice) {
+                val installedVoc = VocalizerInstallationCache
+                    .installedVoices(applicationContext)
+                if (!hasInstalledVoiceForLanguage(
+                        languageTag, installedVoc
+                    )) {
+                    Log.w(
+                        TAG,
+                        "لا أصوات Vocalizer مثبتة للغة $languageTag — " +
+                            "سقوط صريح إلى المحرك النظامي"
+                    )
                     activeEngine = null
                     activeTargetProvider = provider
                     finalVoiceName
                 } else {
-                    val fallbackVoice = if (LanguageCode.isArabic(
-                            languageTag
-                        )
-                    ) {
-                        installedAr ?: "Tarik"
-                    } else {
-                        installedEn ?: "Samantha"
-                    }
-                    if (isGeneric || !isVocVoice) {
-                        fallbackVoice
-                    } else {
-                        val matchedItem = VocalizerModelCatalog.ITEMS
-                            .firstOrNull {
-                                it.voiceName.equals(
-                                    finalVoiceName, ignoreCase = true
-                                ) ||
-                                    it.id.equals(
-                                        finalVoiceName, ignoreCase = true
-                                    ) ||
-                                    finalVoiceName.contains(
-                                        it.voiceName,
-                                        ignoreCase = true
-                                    ) ||
-                                    (it.voiceName.equals("Laila", true) &&
-                                        finalVoiceName.contains(
-                                            "leila", true
-                                        )) ||
-                                    (it.voiceName.equals("Tarik", true) &&
-                                        finalVoiceName.contains(
-                                            "tariq", true
-                                        ))
-                            }
-                        val isInstalled = matchedItem != null &&
-                            VocalizerModelCatalog.isVoiceInstalled(
-                                applicationContext, matchedItem
-                            )
-                        if (isInstalled) {
-                            matchedItem?.voiceName ?: fallbackVoice
-                        } else {
-                            fallbackVoice
-                        }
-                    }
+                    val requested = if (isGeneric) "" else
+                        finalVoiceName.orEmpty()
+                    resolveInstalledVocalizerVoice(
+                        applicationContext,
+                        requested,
+                        languageTag,
+                        installedVoc
+                    ).name
                 }
             } else if (isMs) {
                 val msBase = MicrosoftDownloader.getMicrosoftBaseDir(
@@ -2269,79 +2181,33 @@ class NateqTtsService : TextToSpeechService() {
             targetVoiceName.equals("en-US", true) ||
             targetVoiceName.equals("ar", true) ||
             targetVoiceName.equals("en", true)
-        val isVocVoice = if (isVoc && !targetVoiceName.isNullOrBlank()) {
-            VocalizerModelCatalog.ITEMS.any { item ->
-                item.voiceName.equals(targetVoiceName, ignoreCase = true) ||
-                    item.id.equals(targetVoiceName, ignoreCase = true) ||
-                    targetVoiceName.contains(
-                        item.voiceName,
-                        ignoreCase = true
-                    ) ||
-                    (item.voiceName.equals("Laila", true) &&
-                        targetVoiceName.contains("leila", true)) ||
-                    (item.voiceName.equals("Tarik", true) &&
-                        targetVoiceName.contains("tariq", true))
-            }
-        } else false
         var finalUsedEngine = targetEngine
         var finalProvider: VoiceProvider = provider
+        var vocVoiceMatched = false
 
         val resolvedVoiceName = if (isVoc) {
-            val installedAr = VocalizerModelCatalog.ITEMS.firstOrNull {
-                LanguageCode.isArabic(it.languageCategory) &&
-                    VocalizerModelCatalog.isVoiceInstalled(
-                        applicationContext, it
-                    )
-            }?.voiceName
-            val installedEn = VocalizerModelCatalog.ITEMS.firstOrNull {
-                LanguageCode.isEnglish(it.languageCategory) &&
-                    VocalizerModelCatalog.isVoiceInstalled(
-                        applicationContext, it
-                    )
-            }?.voiceName
-            val hasVocVoice = if (LanguageCode.isArabic(segTag)) {
-                installedAr != null
-            } else if (LanguageCode.isEnglish(segTag)) {
-                installedEn != null
-            } else false
+            val installedVoc = VocalizerInstallationCache
+                .installedVoices(applicationContext)
+            val hasVocVoice = hasInstalledVoiceForLanguage(
+                segTag, installedVoc
+            )
             if (!hasVocVoice) {
+                Log.w(
+                    TAG,
+                    "لا أصوات Vocalizer مثبتة للغة $segTag — " +
+                        "سقوط صريح إلى المحرك النظامي"
+                )
                 finalUsedEngine = null
                 finalProvider = foundProvider ?: provider
                 targetVoiceName
             } else {
-                val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
-                    installedAr ?: "Tarik"
-                } else {
-                    installedEn ?: "Samantha"
-                }
-                if (isGeneric || !isVocVoice) {
-                    fallbackVoice
-                } else {
-                    val matchedItem = VocalizerModelCatalog.ITEMS
-                        .firstOrNull {
-                            it.voiceName.equals(
-                                targetVoiceName, ignoreCase = true
-                            ) ||
-                            it.id.equals(targetVoiceName, ignoreCase = true) ||
-                            targetVoiceName.contains(
-                                it.voiceName,
-                                ignoreCase = true
-                            ) ||
-                            (it.voiceName.equals("Laila", true) &&
-                                targetVoiceName.contains("leila", true)) ||
-                            (it.voiceName.equals("Tarik", true) &&
-                                targetVoiceName.contains("tariq", true))
-                    }
-                    val isInstalled = matchedItem != null &&
-                        VocalizerModelCatalog.isVoiceInstalled(
-                            applicationContext, matchedItem
-                        )
-                    if (isInstalled) {
-                        matchedItem?.voiceName ?: fallbackVoice
-                    } else {
-                        fallbackVoice
-                    }
-                }
+                val requested = if (isGeneric) "" else
+                    targetVoiceName.orEmpty()
+                val decision = resolveInstalledVocalizerVoice(
+                    applicationContext, requested, segTag, installedVoc
+                )
+                vocVoiceMatched = decision.matched
+                decision.name
             }
         } else if (isMs) {
             val msBase = MicrosoftDownloader.getMicrosoftBaseDir(
@@ -2455,7 +2321,7 @@ class NateqTtsService : TextToSpeechService() {
         var finalUsedVoiceName = resolvedVoiceName
 
         if (isNumericRole) {
-            if (isVoc && !isVocVoice && !isGeneric) {
+            if (isVoc && !vocVoiceMatched && !isGeneric) {
                 fallbackReason = "voice_missing"
             } else if (
                 targetEngine != null &&

@@ -807,7 +807,24 @@ if (!dirtyPanel) {
         }
     }
 
-    /** مقارنة الاسم المحفوظ بالأسماء المتاحة وتحديثه بالتسامح إن لزم. */
+    /** لاحقة إصدار الرأس أو الجودة — تُجرَّد قبل مقارنة عائلة الصوت. */
+    private val voiceSuffixRegex = Regex(
+        """(_\d+-\d+-\d+|-(compact|high|standard|enhanced|premium))$""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private fun voiceFamily(name: String): String =
+        name.replace(voiceSuffixRegex, "").trim()
+
+    private fun voiceQuality(name: String): String? =
+        Regex("""-(compact|high|standard|enhanced|premium)$""")
+            .find(name)?.groupValues?.get(1)?.lowercase()
+
+    /**
+     * مقارنة الاسم المحفوظ بالأسماء المتاحة وتحديثه عند وجود بديل واضح
+     * فقط. لا يُسقط المحفوظ لمصلحة `available.first()` عند غياب التطابق،
+     * ولا يُمسح إلا الاسم الوهمي الموثّق (ع٤٠-4) لمحرك مدمج بلا أصوات.
+     */
     private fun reconcileSavedVoiceName(
         categoryKey: String,
         available: List<VoiceOption>,
@@ -815,53 +832,51 @@ if (!dirtyPanel) {
     ) {
         val savedName = settings.getPreferredVoiceIdForCategory(categoryKey)
             ?: return
-
-        // تطابق تام — لا حاجة لتحديث
-        if (available.any { it.name == savedName }) return
-
-        // تطابق متسامح
-        val suffixRegex = Regex(
-            "-(compact|standard|enhanced|premium)$",
-            RegexOption.IGNORE_CASE
-        )
-        val savedBase = savedName.replace(suffixRegex, "")
-        val match = available.firstOrNull { v ->
-            v.name.equals(savedName, ignoreCase = true) ||
-                v.name.replace(suffixRegex, "")
-                    .equals(savedBase, ignoreCase = true)
+        if (available.any { it.name.equals(savedName, ignoreCase = true) }) {
+            return
         }
+
+        val sameFamily = available.filter { voice ->
+            voiceFamily(voice.name).equals(
+                voiceFamily(savedName), ignoreCase = true
+            )
+        }
+        val savedQuality = voiceQuality(savedName)
+        val match = savedQuality?.let { quality ->
+            sameFamily.firstOrNull {
+                voiceQuality(it.name)?.equals(quality, ignoreCase = true) ==
+                    true
+            }
+        } ?: sameFamily.firstOrNull()
         if (match != null) {
             Log.i(TAG, "Reconciling voice name: $savedName → ${match.name}")
             settings.setPreferredVoiceIdForCategory(categoryKey, match.name)
             return
         }
 
+        // ع٤٠-4 (سلوك مقصود موثّق): الاسم الوهمي ar-EG/en-US لمحرك مدمج
+        // بلا أصوات متاحة يُمسح لتفشل المعاينة بوضوح بدل نطقٍ صامت.
         val isEmbedded = isEmbeddedEngine(enginePkg)
-        if (isEmbedded && available.isNotEmpty()) {
-            val fallback = available.first().name
-            Log.i(
-                TAG,
-                "Reconciling missing embedded voice $savedName → $fallback " +
-                    "for $categoryKey"
-            )
-            settings.setPreferredVoiceIdForCategory(categoryKey, fallback)
-            return
-        }
-
-        // ع٤٠-4: إذا لم تُعثر على مطابقة، والأصوات المتاحة فارغة لمحرك مدمج،
-        // أزل الصوت المحفوظ الوهمي (مثل ar-EG) لتفشل المعاينة بوضوح بدل
-        // استخدام صوت غير موجود.
         if (isEmbedded &&
             (savedName == "ar-EG" || savedName == "en-US") &&
             available.isEmpty()
         ) {
-            Log.i(
+            Log.w(
                 TAG,
                 "Clearing legacy dummy voice $savedName " +
                     "for $categoryKey (engine=$enginePkg)"
             )
             settings.setPreferredVoiceIdForCategory(categoryKey, "")
+            return
         }
+
+        // لا بديل واضح: الإبقاء على القيمة المحفوظة أفضل من كتابة اسم
+        // عشوائي أو مسحها بصمت (كان يُكتب available.first().name).
+        Log.w(
+            TAG,
+            "لا مطابقة واضحة للصوت $savedName في $categoryKey " +
+                "(engine=$enginePkg) — الإبقاء على القيمة المحفوظة"
+        )
     }
 
     /** يعيد بناء سبnner الأصوات للغة/محرك الفئة الحالية: أصوات (اللغة،

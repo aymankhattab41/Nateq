@@ -4414,46 +4414,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         refreshToolsShortcuts()
     }
 
-    // ===== مساعدات التشخيص (ع٢٩-8 بند 5) =====
-
-    private data class EmbeddedEngineDiag(
-        val id: String,
-        val name: String,
-        val storageEngine:
-            com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage.Engine
-    )
-
-    private fun dirSize(dir: File): Long {
-        if (!dir.exists()) return 0L
-        var size = 0L
-        dir.walk().forEach { file ->
-            if (file.isFile) size += file.length()
-        }
-        return size
-    }
-
-    private fun formatSize(bytes: Long): String {
-        if (bytes < 1024) return "$bytes B"
-        val kb = bytes / 1024
-        if (kb < 1024) return "${kb} KB"
-        val mb = kb / 1024
-        if (mb < 1024) return "${mb} MB"
-        val gb = mb / 1024
-        return "${gb} GB"
-    }
-
-    private fun maskRegistration(reg: String?): String {
-        if (reg.isNullOrBlank()) return "(لا يوجد)"
-        val trimmed = reg.trim()
-        return if (trimmed.length > 8) {
-            val first4 = trimmed.take(4)
-            val last4 = trimmed.takeLast(4)
-            val maskedMiddle = "*".repeat(trimmed.length - 8)
-            "$first4$maskedMiddle$last4"
-        } else {
-            "****"
-        }
-    }
+    // مساعدات التشخيص (dirSize/formatSize/maskRegistration ووصف المحرك)
+    // فُصلت إلى VoiceSelectionDiagnostics.kt في الحزمة نفسها، فتبقى
+    // الاستدعاءات القديمة هنا تعمل بلا تغيير سلوك.
 }
 
 /**

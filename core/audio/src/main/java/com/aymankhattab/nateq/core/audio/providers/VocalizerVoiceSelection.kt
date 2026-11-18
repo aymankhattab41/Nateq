@@ -1,62 +1,196 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.widget.Toast
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
-/** صوتٌ مثبَّت فعلياً في محرك Vocalizer المدمج، مقروءاً من قائمة المضيف. */
+private const val TAG = "VocalizerVoiceSelection"
+
+/** صوتٌ مثبَّت فعلياً في محرك Vocalizer المدمج، مقروءاً من المضيف أو من
+ *  واجهة فحص التثبيت الموثوقة (لا من كتالوج التنزيل الثابت). */
 internal data class InstalledVocalizerVoice(
     val name: String,
     val language: String?
 )
 
-/**
- * يختار اسم الصوت الذي يُطلب من المضيف فعلاً بدل السقوط على اسمٍ ثابت
- * (كان «Laila»/«Samantha») قد لا يكون منزّلاً أصلاً.
- *
- * كان الصوتُ المطلوب إن لم يكن من كتالوج النماذج الثابت يُستبدل باسمٍ
- * ثابت، فإن لم يكن ذلك الاسم منزّلاً لم يخرج صوتٌ إطلاقاً رغم أن للمحرك
- * أصواتاً أخرى منزّلة وصالحة. الاختيار هنا من **المثبَّت** لا من الثابت:
- * 1. الاسم المطلوب نفسه إن كان مثبتاً (تطابق تام غير حسّاس لحالة الأحرف).
- * 2. أول صوت مثبت يطابق لغة الطلب.
- * 3. أول صوت مثبت (لئلا يُسقَط النطق).
- * 4. الاسم المطلوب كما هو إن لم تُعرَف أي أصوات (يقرر المضيف بنفسه).
- */
+/** نتيجة قرار الاسم: أطابقنا صوتاً مثبتاً أم أعدنا المطلوب كما هو؟ */
+internal data class VocalizerVoiceResolution(
+    val name: String,
+    val matched: Boolean,
+    val reason: String
+)
+
+/** الأسماء المستعارة التي يكتبها المستخدم أو المضيف بصيغ مختلفة. */
+private val VOICE_ALIASES = mapOf(
+    "leila" to "Laila",
+    "layla" to "Laila",
+    "tariq" to "Tarik",
+    "tarek" to "Tarik",
+    "tarick" to "Tarik"
+)
+
+/** أسماء أصوات Vocalizer المعروفة — للتصنيف فقط، لا لاختيار صوت مثبت. */
+private val KNOWN_VOICE_NAMES = setOf(
+    "laila", "maged", "tarik", "mariam", "ava", "samantha",
+    "tom", "serena", "daniel", "oliver", "thomas", "audrey",
+    "anna", "yannick", "jorge", "monica", "yelda", "milena"
+)
+
+private val warnedNames = ConcurrentHashMap.newKeySet<String>()
+
+/** كسولاً: اختبارات JVM النقية لا تملك Looper principal. */
+private val mainHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
+
+private fun primaryLanguage(tag: String?): String =
+    tag?.trim()?.lowercase(Locale.ROOT)
+        ?.substringBefore('-').orEmpty()
+
+/** تطابق لغة الطلب مع لغة الصوت المثبت (ar مع ar-SA، en مع en-US...). */
+internal fun languagesMatch(left: String?, right: String?): Boolean {
+    val first = primaryLanguage(left)
+    val second = primaryLanguage(right)
+    return first.isNotEmpty() && first == second
+}
+
+/** هل ثمة صوت مثبت يصلح للغة المطلوبة؟ */
+internal fun hasInstalledVoiceForLanguage(
+    languageTag: String?,
+    installed: List<InstalledVocalizerVoice>
+): Boolean = installed.any { languagesMatch(it.language, languageTag) }
+
+/** توحيد الاسم المستعار والاتجاهين قبل أي مقارنة. */
+private fun canonicalVoiceName(name: String): String {
+    val trimmed = name.trim()
+    return VOICE_ALIASES[trimmed.lowercase(Locale.ROOT)] ?: trimmed
+}
+
+/** هل الاسم معروف كصوت Vocalizer (بلا كتالوج التنزيل)؟ */
+fun isKnownVocalizerVoiceName(voiceName: String?): Boolean {
+    val name = voiceName?.trim()?.lowercase(Locale.ROOT) ?: return false
+    if (name.isEmpty()) return false
+    if (name.startsWith("vocalizer")) return true
+    if (name in VOICE_ALIASES) return true
+    return name in KNOWN_VOICE_NAMES
+}
+
+private fun decideVoice(
+    requestedName: String,
+    requestedLanguage: String?,
+    installed: List<InstalledVocalizerVoice>
+): VocalizerVoiceResolution {
+    val request = canonicalVoiceName(requestedName)
+    if (installed.isEmpty()) {
+        return VocalizerVoiceResolution(
+            requestedName.trim(), false, "لا أصوات Vocalizer مثبتة"
+        )
+    }
+    if (request.isEmpty()) {
+        // لا اسم مطلوب (إعداد عام): لا يُطبَّق تطابق جزئي على سلسلة
+        // فارغة، بل يُختار صوت مثبت للغة الطلب فقط.
+        val byLanguage = installed.firstOrNull {
+            languagesMatch(it.language, requestedLanguage)
+        }
+        return if (byLanguage != null) {
+            VocalizerVoiceResolution(
+                byLanguage.name, true, "صوت مثبت للغة الطلب"
+            )
+        } else {
+            VocalizerVoiceResolution(
+                "", false, "لا صوت مثبت للغة الطلب"
+            )
+        }
+    }
+    val exact = installed.firstOrNull {
+        canonicalVoiceName(it.name).equals(request, ignoreCase = true)
+    }
+    if (exact != null) {
+        return VocalizerVoiceResolution(
+            exact.name, true, "تطابق تام مع صوت مثبت"
+        )
+    }
+    val partial = installed.firstOrNull { voice ->
+        val known = canonicalVoiceName(voice.name)
+        known.contains(request, ignoreCase = true) ||
+            request.contains(known, ignoreCase = true)
+    }
+    if (partial != null) {
+        return VocalizerVoiceResolution(
+            partial.name, true, "تطابق جزئي أو اسم مستعار"
+        )
+    }
+    val sameLanguage = installed.firstOrNull {
+        languagesMatch(it.language, requestedLanguage)
+    }
+    if (sameLanguage != null) {
+        return VocalizerVoiceResolution(
+            sameLanguage.name, true, "تحويل إلى صوت مثبت للغة الطلب"
+        )
+    }
+    // لا رجوع صامت إلى أول صوت عربي ولا إلى اسم ثابت: يُعاد المطلوب
+    // كما هو ليظهر خطأ المضيف صراحةً، ولا تُمسّ القيمة المحفوظة.
+    return VocalizerVoiceResolution(
+        requestedName.trim(), false, "لا تطابق مع الأصوات المثبتة"
+    )
+}
+
+/** المقرِّر الوحيد لاسم صوت Vocalizer في كل مسارات النطق. */
 internal fun chooseVocalizerVoiceName(
     requestedName: String,
     requestedLanguage: String?,
     installed: List<InstalledVocalizerVoice>
-): String {
-    val requested = requestedName.trim()
-    if (installed.isEmpty()) return requested
-    val exact = installed.firstOrNull {
-        it.name.equals(requested, ignoreCase = true)
-    }
-    if (exact != null) return exact.name
+): String = decideVoice(requestedName, requestedLanguage, installed).name
 
-    val containsMatch = installed.firstOrNull { voice ->
-        requested.contains(voice.name, ignoreCase = true) ||
-            voice.name.contains(requested, ignoreCase = true) ||
-            (voice.name.equals("Laila", true) &&
-                requested.contains("leila", true)) ||
-            (voice.name.equals("Tarik", true) &&
-                requested.contains("tariq", true)) ||
-            (voice.name.equals("Tarek", true) &&
-                requested.contains("tarik", true))
-    }
-    if (containsMatch != null) return containsMatch.name
-
-    val lang = requestedLanguage?.trim()?.lowercase(Locale.ROOT).orEmpty()
-    if (lang.isNotEmpty()) {
-        val sameLanguage = installed.firstOrNull { voice ->
-            val voiceLang = voice.language
-                ?.trim()
-                ?.lowercase(Locale.ROOT)
-                .orEmpty()
-            voiceLang.isNotEmpty() &&
-                (voiceLang == lang ||
-                    voiceLang.startsWith("$lang-") ||
-                    lang.startsWith("$voiceLang-"))
+/**
+ * نفس القرار مع إعلان صريح حين يغيب الاسم المطلوب عن المثبَّت.
+ *
+ * القرار الموثّق: نُبقي التحويل إلى صوتٍ مثبت (لئلا يُطلب اسمٌ فاشل)
+ * لكن نُعلنه سجلّاً وتنبيهاً مرة واحدة لكل اسم في الجلسة. وإن لم يوجد
+ * أي تطابق نُعيد الاسم المطلوب كما هو ليظهر خطأ المضيف صراحةً، دون
+ * كتابة أي شيء في SettingsRepository.
+ */
+internal fun resolveInstalledVocalizerVoice(
+    context: Context,
+    requestedName: String,
+    requestedLanguage: String?,
+    installed: List<InstalledVocalizerVoice>
+): VocalizerVoiceResolution {
+    val result = decideVoice(requestedName, requestedLanguage, installed)
+    val requestedText = requestedName.trim()
+    // أي اختلاف بين المحفوظ والمختار يُعلَن صراحةً: استبدالاً كان أو
+    // تمريراً كما هو. الصمت هنا بالضبط هو ما منع المستخدم من معرفة
+    // أن صوته المحفوظ غير مثبت على الجهاز.
+    val substituted = requestedText.isNotEmpty() &&
+        !result.name.equals(requestedText, ignoreCase = true)
+    if (!result.matched || substituted) {
+        val installedNames = installed.joinToString { it.name }
+        val valPassed = if (result.matched) {
+            "استُبدل بصوت مثبت [${result.name}]"
+        } else {
+            "يُمرَّر كما هو ليظهر خطأ المضيف صراحةً"
         }
-        if (sameLanguage != null) return sameLanguage.name
+        Log.w(
+            TAG,
+            "الصوت المطلوب [$requestedName] غير موجود بين المثبت " +
+                "[$installedNames]: ${result.reason}. $valPassed، " +
+                "ولا تُغيَّر القيمة المحفوظة."
+        )
+        notifyMissingVoiceOnce(context, requestedName)
     }
-    return installed.first().name
+    return result
+}
+
+private fun notifyMissingVoiceOnce(context: Context, name: String) {
+    val key = name.trim().lowercase(Locale.ROOT)
+    if (key.isEmpty() || !warnedNames.add(key)) return
+    mainHandler.post {
+        Toast.makeText(
+            context.applicationContext,
+            "صوت Vocalizer المطلوب ($name) غير مثبت على الجهاز",
+            Toast.LENGTH_LONG
+        ).show()
+    }
 }

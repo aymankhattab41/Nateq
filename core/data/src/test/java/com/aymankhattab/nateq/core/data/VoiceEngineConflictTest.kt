@@ -34,20 +34,82 @@ class VoiceEngineConflictTest {
     }
 
     @Test
-    fun testSavingVoiceFromAnotherEngine_isRejectedOrCleared() {
+    fun mismatchedEngineVoice_keepsSavedValueWithoutSilentWipe_breakFix() {
         repository.setEngineForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS,
             "com.acapelagroup.android.tts"
         )
-        // صوت Tarik يتبع فوكلايزر ولا يتبع أكابيلا
+        repository.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            "ara-SAU-Leila"
+        )
+        // صوت Tarik يتبع فوكلايزر ولا يتبع أكابيلا: يُرفض بلا مسح
         repository.setPreferredVoiceIdForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS,
             "Tarik"
         )
-        val voice = repository.getPreferredVoiceIdForCategory(
-            SettingsRepository.VOICE_CATEGORY_NUMBERS
+        assertEquals(
+            "القيمة المحفوظة يجب أن تبقى بعد محاولة غير مطابقة",
+            "ara-SAU-Leila",
+            repository.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
         )
-        assertNull("يجب رفض أو مسح الصوت غير التابع للمحرك", voice)
+    }
+
+    @Test
+    fun categoryVoiceWrite_isReadableFromEngineKey_breakFix() {
+        repository.setEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            "vocalizer_embedded"
+        )
+        repository.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            "Maged"
+        )
+        assertEquals(
+            "الكتابة يجب أن تصل إلى مفتاح (المحرك، الفئة)",
+            "Maged",
+            repository.getPreferredVoiceForEngine(
+                "vocalizer_embedded",
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        )
+    }
+
+    @Test
+    fun legacyPreferredVoice_isMigratedToEngineKey_breakFix() {
+        context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+            .edit()
+            .putString(
+                "engine_for_${SettingsRepository.VOICE_CATEGORY_NUMBERS}",
+                "vocalizer_embedded"
+            )
+            .putString(
+                "preferred_voice_${SettingsRepository.VOICE_CATEGORY_NUMBERS}",
+                "Maged"
+            )
+            // مُنشئ المستودع في setUp سبق وكتب الوسم على مخزنٍ فارغ؛
+            // نُزيله لنحاكي ترقيةً حقيقية من إصدارٍ قبل هذا الترحيل.
+            .remove("_preferred_voice_engine_migrated")
+            .commit()
+
+        val reopened = SettingsRepository(context)
+        assertEquals(
+            "الترحيل يجب أن يكتب القيمة تحت مفتاح المحرك/الفئة",
+            "Maged",
+            reopened.getPreferredVoiceForEngine(
+                "vocalizer_embedded",
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        )
+        assertEquals(
+            "المرآة القديمة تبقى للقراءة القديمة",
+            "Maged",
+            reopened.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        )
     }
 
     @Test

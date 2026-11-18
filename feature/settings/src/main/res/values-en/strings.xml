@@ -714,6 +714,14 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Unified Vocalizer voice selection across speech, preview, announcements, the category panel and the embedded provider: one source matching names against voices actually installed on the device, with no static catalog or header check, plus an explicit notice when the saved voice is missing without ever rewriting it.
+• Category voice panel: flexible matching by name, family and compact/high quality, keeping the saved voice when no clear replacement exists instead of writing the first listed voice.
+• Category preferences: unified engine/category key for reads and writes with migration of legacy values, and no silent clearing of the saved voice on engine conflicts.
+• Speech performance: cached installed Vocalizer voices tied to the storage version, removing repeated disk scans from the hot speech path while refreshing on install or removal.
+• Verbatim Acapela copy: compared the original archive audio, ini files and licenses by size and hash, and fixed the copy path to carry the original tree byte-for-byte with no generated ini, guarded by a test against dropped bytes.
+• Read more: verified the internal/external timeout contract and the circuit breaker, failed-node TTL and rejected unperformed actions, with guarding tests.
+• Code structure: split logical blocks out of the giant files into smaller units with identical behaviour, in a safe incremental way.
+• Extra test coverage for saving and reading a Vocalizer voice, missing voice, header mismatch and cache cases.
 • Read more: the focused-message identity guard no longer drops out when text is truncated — prefix continuity and node identity are checked before and after the click, so another message is never opened or read.
 • Read more: trust only the actual performAction result instead of treating a declared-clickable node as success; failed nodes now expire after one minute and the key carries a finer identity to avoid collisions.
 • Notifications: pick the longest, most complete body text (EXTRA_TEXT, BIG_TEXT, TEXT_LINES or MessagingStyle content) instead of preferring the short truncated one.
@@ -790,23 +798,23 @@ Version %1$s
 • Fixed Microsoft Neural embedded voice double-speaking in event announcements and cleared stale resumed units in AnnouncementSpeaker.
 • Added Microsoft Neural embedded speech rate adjustment via SSML prosody rate tags and eliminated background rate drop by forcing settings reload on change.
 • Excluded unused speech recognition and keyword spotting native libraries from APK packaging to optimize app size.
-• Integrated embedded Acapela TTS engine running completely offline alongside Vocalizer and Microsoft Neural.
-• Added direct Acapela voice package import from ZIP archives with automated unpacking into shared embedded storage.
-• Enabled voice preview, testing, and deletion for imported Acapela voices, with immediate integration into all speech categories, TalkBack reader, and All Languages Setup.
-• Comprehensive overhaul of time announcement phrasing: completely eliminated "صباحاً" (morning) and "مساءً" (evening) in favor of natural Arabic day periods ("نهاراً", "ظهراً", "عصراً", "ليلاً", "فجراً"), and streamlined 12:00 to announce exclusively as "منتصف النهار" (noon) and "منتصف الليل" (midnight) without prefixes or additions, while preserving standard natural phrasing for other minutes of the hour.
-• Multi-layer fortification of speech rate retention in background: automatic inheritance of default category rate across all uncustomized categories (Time, Battery, Caller, Numbers, Emoji) preventing sudden drops to 1.0x, re-asserting speech rate and pitch immediately prior to speech invocation to protect against engine reset on voice/language switch, injecting IPC rate/pitch parameters into engine request bundles, and ensuring TalkBack reading speed never decelerates on numbers and emojis.
-• Fixed caller announcement on the lock screen by extracting caller identity from CallStyle and Person notification extras, ensuring caller names are spoken when the screen is locked.
-• Added caller announcement test/preview button directly inside the Caller Name Announcement section, routing preview audio through media stream to ensure audibility in silent/vibrate modes.
-• Fixed sudden background speech rate drop by enforcing speech rate and pitch right before audio synthesis, synchronizing default category rate with system and language rates, and elevating synthesis thread priority to real-time audio.
-• Enabled engine and voice selection for the general "Default Voice" category directly within the voice categories panel.
-• Restricted category languages to only those supported by the selected engine, dynamically emerging upon engine change.
-• Guaranteed Arabic and English are permanently visible and immune to legacy filters, ensuring seamless English reading on all devices.
-• Enhanced Microsoft Neural synthesis resilience with automatic fallback to direct text synthesis if SSML is canceled.
-• Fixed Microsoft Embedded Neural voice preview across all dialogs by switching to in-memory synthesis, eliminating unsupported prosody tags, and streaming valid PCM frames.
-• Guaranteed embedded engines (Microsoft and Vocalizer) are always visible and exempt from external engine filters in event categories (Time, Battery, Notifications, Caller, Numbers, Default).
-• Fixed Microsoft voice discovery in VoiceCatalog and unified voice descriptor naming between catalog and on-demand fetch.
-• Fixed appearance of Microsoft Embedded engine in event category selectors (Time, Battery, Caller, Notifications, Default) immediately upon voice download.
-• Fixed Microsoft voice preview playback in the embedded downloader card with model name extraction, proper neural license configuration, and clean PCM initialization.
+• Added embedded Acapela engine for offline speech alongside Vocalizer and Microsoft.
+• Added ZIP import of Acapela voice packages into shared embedded storage.
+• Enabled preview, testing and deletion of imported Acapela voices in all categories.
+• Natural Arabic time periods and exact noon/midnight announcements.
+• Kept background speech rate stable and prevented 1.0x drops.
+• Announced caller names on the lock screen from call notifications.
+• Added a caller announcement preview button using the media stream.
+• Fixed sudden background speech rate drops.
+• Enabled engine and voice choice for the Default Voice category.
+• Limited category languages to those of the chosen engine.
+• Kept Arabic and English immune to language filters.
+• Microsoft Neural falls back to plain text when SSML fails.
+• Fixed preview of embedded Microsoft neural voices.
+• Kept embedded engines visible in event categories.
+• Unified Microsoft voice names between discovery and requests.
+• Embedded Microsoft engine appears in event categories after download.
+• Fixed Microsoft voice preview in the embedded downloader card.
 • Fixed Microsoft voice preview in "All Languages Setup" dialog by correctly passing the voice language tag instead of defaulting to English.
 • Integrated Microsoft Neural Embedded TTS engine for high-quality, completely offline speech synthesis.
 • Added 336 offline neural voices across 146 languages and locales (including 32 Arabic voices) with full name and country localization.
@@ -824,7 +832,7 @@ Version %1$s
 • Applied engine filtering to default event voices (clock, battery, notifications, caller).
 • Added Emergency Voice fallback system and Crash Guard for automatic recovery.
 • Protected number category and Vocalizer / Acapela engines against voice reset or drift deletion.
-</string>
+    </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
     <string name="diagnostics_copy">Copy</string>
