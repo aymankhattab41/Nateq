@@ -8,12 +8,10 @@ import java.util.concurrent.atomic.AtomicReference
  * يمنع إنشاء نسخ متعددة لكل محرك طوال عمر العملية.
  */
 object EmbeddedProviders {
-    private val vocalizerRef = AtomicReference<VocalizerEmbeddedVoiceProvider?>(
-        null
-    )
-    private val microsoftRef = AtomicReference<MicrosoftEmbeddedVoiceProvider?>(
-        null
-    )
+    private val vocalizerRef =
+        AtomicReference<VocalizerEmbeddedVoiceProvider?>(null)
+    private val microsoftRef =
+        AtomicReference<MicrosoftEmbeddedVoiceProvider?>(null)
     private val acapelaRef = AtomicReference<AcapelaEmbeddedVoiceProvider?>(
         null
     )

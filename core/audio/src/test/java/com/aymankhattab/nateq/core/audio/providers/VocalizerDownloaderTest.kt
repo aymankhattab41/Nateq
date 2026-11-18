@@ -70,16 +70,18 @@ class VocalizerDownloaderTest {
     }
 
     @Test
-    fun catalog_arabicVoicesFollowUaeRegionConvention() {
-        // معيار التطبيق للعربية الناطقية الجهوية هو ar-AE (كما في
-        // AnnouncementSpeaker.resolveFallbackLocale) لا ar-SA.
+    fun catalog_arabicVoicesFollowSaudiRegionConvention() {
+        // معرّفات الكتالوج كلها ara-sau (روابط ve_ara_sau_...)؛ فLocale
+        // يجب أن يطابقها ar-SA بدل ar-AE كي لا يتعارض معرف الصوت مع
+        // لغته في الواجهة والسجلات.
         val arabic = VocalizerModelCatalog.ITEMS.filter {
             it.languageCategory == "ar"
         }
         assertTrue(arabic.isNotEmpty())
         for (item in arabic) {
             assertEquals("ar", item.locale.language)
-            assertEquals("AE", item.locale.country)
+            assertEquals("SA", item.locale.country)
+            assertTrue(item.id.contains("ara-sau"))
         }
     }
 
@@ -221,6 +223,83 @@ class VocalizerDownloaderTest {
         } finally {
             zipFile.delete()
             target.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun unzipToDirectory_preservesRelativeSubdirectories() {
+        // البند ١٣: حزم Tarik/Mariam تضع الرأس والبيانات في مجلد فرعي؛
+        // تسطيح المسارات كان يكسر بنية الحزمة فيبدو الصوت ناقصاً.
+        val zipFile = File(context.cacheDir, "test_nested.zip")
+        createTestZip(
+            zipFile,
+            mapOf(
+                "package/voice.hdr" to "HEADER".toByteArray(),
+                "package/data/voice.dat" to "DATA".toByteArray()
+            )
+        )
+
+        val target = File(context.cacheDir, "out_nested")
+        target.mkdirs()
+        try {
+            val res = VocalizerDownloader.unzipToDirectory(zipFile, target)
+            assertEquals(2, res.count)
+            assertTrue(File(target, "package/voice.hdr").exists())
+            assertTrue(File(target, "package/data/voice.dat").exists())
+            assertFalse(File(target, "voice.hdr").exists())
+        } finally {
+            zipFile.delete()
+            target.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun deleteVoice_respectsNameBoundariesAndNestedFiles() {
+        // البند ١١: «Ava» يجب ألا تحذف "available.dat"، لكن تحذف
+        // ملفاتها داخل المجلدات الفرعية أيضاً.
+        val ava = VocalizerModelCatalog.ITEMS.first {
+            it.voiceName.equals("Ava", ignoreCase = true)
+        }
+        val hdr = File(testDir, ava.headerFileName)
+        hdr.writeText("HDR")
+        val nested = File(testDir, "sub/ava_voice.dat")
+        nested.parentFile?.mkdirs()
+        nested.writeText("DATA")
+        val unrelated = File(testDir, "available.dat")
+        unrelated.writeText("KEEP")
+
+        assertTrue(VocalizerDownloader.deleteVoice(context, ava))
+        assertFalse(hdr.exists())
+        assertFalse(nested.exists())
+        assertTrue(unrelated.exists())
+    }
+
+    @Test
+    fun verifyExtractedVoice_detectsIncompletePackages() {
+        // البند ١٤: الرأس وحده لا يكفي؛ ملفات البيانات الصفرية تجعل
+        // الصوت «مثبّتاً» بلا PCM فيبدو النطق صامتاً.
+        val item = VocalizerModelCatalog.ITEMS.first {
+            it.id == "vocalizer-ara-sau-laila-compact"
+        }
+        val dir = File(testDir, "verify_${item.id}")
+        dir.mkdirs()
+        try {
+            val hdr = File(dir, item.headerFileName)
+            hdr.writeText("HDR")
+            assertNotNull(
+                VocalizerDownloader.verifyExtractedVoice(dir, item)
+            )
+
+            val dat = File(dir, "laila_voice.dat")
+            dat.writeText("")
+            assertNotNull(
+                VocalizerDownloader.verifyExtractedVoice(dir, item)
+            )
+
+            dat.writeText("DATA")
+            assertNull(VocalizerDownloader.verifyExtractedVoice(dir, item))
+        } finally {
+            dir.deleteRecursively()
         }
     }
 }

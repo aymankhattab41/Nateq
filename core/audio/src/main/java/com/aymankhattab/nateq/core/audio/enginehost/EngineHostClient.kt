@@ -17,7 +17,6 @@ import com.aymankhattab.nateq.core.common.VisibleEngines
 import java.io.BufferedInputStream
 import java.io.DataInputStream
 import java.io.FileInputStream
-import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -235,10 +234,12 @@ object EngineHostClient {
         onAudioChunk: (ByteArray, Int) -> Unit
     ): HostResult {
         val id = HostProtocol.normalizeEngineId(engineId)
-        val textBytesLen = text.toByteArray(StandardCharsets.UTF_8).size
+        // البند ١٥: نصّ قارئ الشاشة لا يُكتب في السجلات ولا في تقارير
+        // الانهيار (كان يُحفظ في lastCallSent ثم يُعرض للمستخدم)؛ نكتفي
+        // بطول النص وبصمته المختصرة.
         recordCallSent(
             "synthesize(engineId=$id, voiceId=$voiceId, " +
-                "text='$text' (طول=${text.length} حرف، $textBytesLen بايت), " +
+                "text=<${SpeechTextRedactor.describe(text)}>, " +
                 "rate=$rate, pitch=$pitch, volume=$volume)"
         )
         runCatching {

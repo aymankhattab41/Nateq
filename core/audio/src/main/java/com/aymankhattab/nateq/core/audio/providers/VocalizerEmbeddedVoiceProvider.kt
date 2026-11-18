@@ -6,6 +6,7 @@ import com.aymankhattab.nateq.core.audio.announcement.LoudnessStage
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.util.LocaleUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -212,11 +213,14 @@ class VocalizerEmbeddedVoiceProvider(
                     Locale.forLanguageTag(voice.langTag)
                 }
 
-                val matchesLang = locale.language.isEmpty() ||
-                    voiceLocale.language.equals(
-                        locale.language,
-                        ignoreCase = true
-                    )
+                // البند ٦: طَبِّع رمز اللغة قبل المقارنة كي تُقبل
+                // الصيغ الثلاثية (ara/enu/…) والثنائية (ar/en) معاً.
+                val requestedLang = locale.language.takeIf {
+                    it.isNotBlank()
+                }?.let { LocaleUtils.normalizeLanguageCode(it) }
+                val matchesLang = requestedLang == null ||
+                    LocaleUtils.normalizeLanguageCode(voice.langTag)
+                        .equals(requestedLang, ignoreCase = true)
                 if (!matchesLang) return@mapNotNull null
                 
                 VoiceDescriptor(

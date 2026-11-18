@@ -1,5 +1,7 @@
 package com.aymankhattab.nateq.util
 
+import java.util.logging.Logger
+
 /**
  * عقد موحّد لمعرّفات الأصوات — المصدر الوحيد لصيغة معرّف صوت أي لغة،
  * تعتمده كل الجهات لتبقى متطابقة دوماً:
@@ -21,6 +23,12 @@ package com.aymankhattab.nateq.util
  * كـ Locale، مع ترقية القيم القديمة المخزنة في [normalize].
  */
 object VoiceIdContract {
+
+    /**
+     * تحذير JVM-safe (لا `android.util.Log`): هذه الوحدة نقيّة وتُختبر
+     * على JVM مباشرةً، فاستخدام Stub الأندرويد كان سيفشل الاختبار.
+     */
+    private val warnLog = Logger.getLogger(VoiceIdContract::class.java.name)
 
     private val LEGACY_LOCAL = Regex(
         "^nateq-(.+)-local$",
@@ -99,6 +107,34 @@ object VoiceIdContract {
     }
 
     /**
+     * البند ١٩: معرّفات الأصوات النظامية المُعلَنة في tts_engine.xml ليست
+     * أسماءً حقيقية لأصوات المحركات المدمجة. حفظُها تحت محرك مدمج يبدو
+     * صحيحاً ثم يسقط النطق صامتاً عند أول استخدام، لذا تُرفض صراحةً مع
+     * تحذيرٍ يسمّى المحرك والمعرّف المزيّف.
+     */
+    private val GENERIC_SYSTEM_VOICE_ID = Regex(
+        "^[a-zA-Z]{2}(-[a-zA-Z0-9]{2,4})?$"
+    )
+
+    private fun isGenericSystemVoiceId(voiceId: String): Boolean {
+        val v = voiceId.trim()
+        return GENERIC_SYSTEM_VOICE_ID.matches(v) ||
+            v.equals("Device Default", ignoreCase = true)
+    }
+
+    /** رفضٌ مع تحذير صريح — يُستخدم في فروع المحركات المدمجة فقط. */
+    private fun rejectFakeEmbeddedVoice(
+        engine: String,
+        voiceId: String
+    ): Boolean {
+        warnLog.warning(
+            "VoiceIdContract: معرّف صوت نظامي مزيّف [$voiceId] " +
+                "تحت محرك مدمج [$engine] — مرفوض"
+        )
+        return false
+    }
+
+    /**
      * التحقق مما إذا كان اسم الصوت ينتمي للمحرك المعين (الجولة 53 - الأمر 3).
      */
     fun isVoiceBelongingToEngine(
@@ -116,6 +152,9 @@ object VoiceIdContract {
             lowerEng.contains("vocalizer")
 
         if (isVocalizerEmbedded) {
+            if (isGenericSystemVoiceId(voiceId)) {
+                return rejectFakeEmbeddedVoice(engine, voiceId)
+            }
             val isGoogle = voiceId.contains("-x-") ||
                 voiceId.endsWith("-local")
             val isAcapela = voiceId.startsWith("ar_") ||
@@ -135,6 +174,9 @@ object VoiceIdContract {
             lowerEng.contains("microsoft")
 
         if (isMicrosoftEmbedded) {
+            if (isGenericSystemVoiceId(voiceId)) {
+                return rejectFakeEmbeddedVoice(engine, voiceId)
+            }
             val isGoogle = voiceId.contains("-x-") ||
                 voiceId.endsWith("-local")
             val isAcapela = voiceId.startsWith("ar_") ||
@@ -173,6 +215,9 @@ object VoiceIdContract {
             !isAcapelaEmbedded
 
         if (isAcapelaEmbedded || isAcapelaExternal) {
+            if (isAcapelaEmbedded && isGenericSystemVoiceId(voiceId)) {
+                return rejectFakeEmbeddedVoice(engine, voiceId)
+            }
             val isVocVoice = voiceId.startsWith("vocalizer") ||
                 voiceId.contains("vocalizer") ||
                 voiceId.contains("nuance") ||

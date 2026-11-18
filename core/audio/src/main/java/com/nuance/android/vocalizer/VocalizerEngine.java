@@ -150,7 +150,7 @@ public class VocalizerEngine {
                     ", jvmFree=" + freeMb + "MB/" + totalMb + "MB");
             }
         } catch (Throwable t) {
-            Log.w(TAG, "Could not read stat info: " + t.getMessage());
+            Log.d(TAG, "Could not read stat info: " + t.getMessage());
         }
     }
 
@@ -280,7 +280,7 @@ public class VocalizerEngine {
         if (!mIsInitialized || size <= 0) return false;
         try {
             boolean ok = setAudioBufferSize(size);
-            HostLog.w(ENGINE_ID,
+            HostLog.d(ENGINE_ID,
                 "configureAudioBuffer size=" + size + " ok=" + ok);
             if (!ok && mLastError == null) {
                 mLastError = "setAudioBufferSize returned false";
@@ -300,16 +300,32 @@ public class VocalizerEngine {
         this.mSpeechMarkListener = listener;
     }
 
-    public synchronized void speak(String text) {
-        if (!mIsInitialized || text == null || text.isEmpty()) return;
+    /**
+     * البند ٨: خطأ `speakNative` لا يُبتلع — يُسجَّل في [mLastError]
+     * ويُعاد `false` كي يفشل الطلب في الطبقة العليا صراحةً.
+     *
+     * @return true إن أكمل النداء الأصلي بلا استثناء.
+     */
+    public synchronized boolean speak(String text) {
+        if (!mIsInitialized || text == null || text.isEmpty()) {
+            mLastError = "speak skipped: not initialized or empty text";
+            return false;
+        }
+        mLastError = null;
         try {
             logMemoryStats("before_speak");
             speakNative(text);
+            return true;
         } catch (OutOfMemoryError oom) {
-            Log.e(TAG, "OOM in speakNative (32-bit address space)", oom);
+            mLastError = "OOM in speakNative (32-bit address space)";
+            Log.e(TAG, mLastError, oom);
             logMemoryStats("OOM_speak");
+            return false;
         } catch (Throwable t) {
-            Log.e(TAG, "Error in speakNative: " + t.getMessage());
+            mLastError = t.getClass().getSimpleName() + ": " +
+                t.getMessage();
+            Log.e(TAG, "Error in speakNative: " + mLastError);
+            return false;
         }
     }
 
@@ -434,7 +450,7 @@ public class VocalizerEngine {
         VocalizerFileInfo external = provider == null
             ? null : provider.openDataFile(path);
         if (external != null) {
-            HostLog.w(ENGINE_ID,
+            HostLog.d(ENGINE_ID,
                 "openAssetFile path='" + path +
                 "' source=external fd=" + external.descriptor +
                 " off=" + external.startOffset +
@@ -461,7 +477,7 @@ public class VocalizerEngine {
                             "openAssetFile optional userdct absent: '" +
                             path + "' flat='" + flat + "'");
                     } else {
-                        HostLog.w(ENGINE_ID,
+                        HostLog.d(ENGINE_ID,
                             "openAssetFile [MISSING] path='" + path +
                             "' asset='" + assetPath +
                             "' flat='" + flat + "' source=null");
@@ -473,7 +489,7 @@ public class VocalizerEngine {
                 length = cached.length();
             }
         } catch (IOException e) {
-            HostLog.w(ENGINE_ID,
+            HostLog.d(ENGINE_ID,
                 "openAssetFile [FAILED] path='" + path +
                 "' asset='" + assetPath + "' flat='" + flat + "'",
                 e);
@@ -484,7 +500,7 @@ public class VocalizerEngine {
         info.startOffset = start;
         info.length = length;
         mOpenFiles.put(info.descriptor, pfd);
-        HostLog.w(ENGINE_ID,
+        HostLog.d(ENGINE_ID,
             "openAssetFile path='" + path + "' asset='" + assetPath +
             "' flat='" + flat + "' source=asset fd=" + info.descriptor +
             " off=" + start + " len=" + length);
@@ -505,7 +521,7 @@ public class VocalizerEngine {
         VocalizerDataProvider provider = mDataProvider;
         if (provider != null && provider.hasOpenFile(descriptor)) {
             provider.closeAssetFile(descriptor);
-            HostLog.w(ENGINE_ID,
+            HostLog.d(ENGINE_ID,
                 "closeAssetFile #" + descriptor + " source=external");
             return;
         }
@@ -516,7 +532,7 @@ public class VocalizerEngine {
         }
         try {
             pfd.close();
-            HostLog.w(ENGINE_ID,
+            HostLog.d(ENGINE_ID,
                 "closeAssetFile #" + descriptor + " source=asset");
         } catch (IOException e) {
             Log.w(TAG, "closeAssetFile: " + descriptor + " - " + e);
@@ -558,13 +574,44 @@ public class VocalizerEngine {
     }
 
     /**
+     * رقم إصدار التطبيق يُضمَّن في اسم النسخة المخزّنة، فتُهمَل نسخة
+     * إصدارٍ سابق تلقائياً بعد التحديث حتى لو تساوت الأحجام.
+     */
+    private static String appVersionSuffix(Context ctx) {
+        try {
+            android.content.pm.PackageInfo pi =
+                ctx.getPackageManager().getPackageInfo(
+                    ctx.getPackageName(), 0);
+            long code = android.os.Build.VERSION.SDK_INT >= 28
+                ? pi.getLongVersionCode() : pi.versionCode;
+            return "v" + code;
+        } catch (Throwable t) {
+            return "v0";
+        }
+    }
+
+    /**
      * ينسخ أصلاً مضغوطاً إلى ذاكرة التخزين المؤقتة ثم يعيده.
-     * يعيد null إن لم يوجد الأصل.
+     * يعيد null إن لم يوجد الأصل. البند ١٢: يتحقق من إصدار التطبيق
+     * وحجم الأصل، ويستبدل النسخة القديمة إن اختلفت.
      */
     private File copyAssetToCache(String path) {
         File out = new File(mContext.getCacheDir(),
-            "voc_" + Integer.toHexString(path.hashCode()));
-        if (out.isFile() && out.length() > 0L) return out;
+            "voc_" + appVersionSuffix(mContext) + "_" +
+                Integer.toHexString(path.hashCode()));
+        long expected = -1L;
+        try (InputStream probe = mContext.getAssets().open(path)) {
+            expected = probe.available();
+        } catch (IOException ignored) {
+            // لا حجم متوقع: نعتمد على فصل الإصدار في الاسم وحده.
+        }
+        if (out.isFile() && out.length() > 0L &&
+            (expected < 0L || out.length() == expected)) {
+            return out;
+        }
+        if (out.isFile() && !out.delete()) {
+            Log.d(TAG, "copyAssetToCache: could not replace " + path);
+        }
         try (InputStream in = mContext.getAssets().open(path);
              FileOutputStream fos = new FileOutputStream(out)) {
             byte[] buf = new byte[8192];
@@ -574,7 +621,7 @@ public class VocalizerEngine {
             }
             return out;
         } catch (IOException e) {
-            Log.w(TAG, "copyAssetToCache: " + path + " - " + e);
+            Log.e(TAG, "copyAssetToCache: " + path + " - " + e);
             return null;
         }
     }

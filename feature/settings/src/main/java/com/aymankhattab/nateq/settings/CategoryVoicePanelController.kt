@@ -91,8 +91,14 @@ internal fun callerSubCategory(languageTag: String): String =
 internal fun categoryHasDedicatedEngine(categoryKey: String): Boolean = true
 
 /**
+ * مهلة جلب أصوات المحرك. أكبر من مهلة تهيئة المحرك (INIT_TIMEOUT_MS = 30s)
+ * كي لا ينقضي انتظار القائمة قبل أن يُجهِز المحرك نفسه.
+ */
+internal const val VOICE_FETCH_TIMEOUT_MS = 45_000L
+
+/**
  * ضابط لوحة فئات الأصوات في شاشة «الصوت الافتراضي» بعد إعادة التصميم:
- * سبnner فئة علوي واحد يختار الفئة فيُعرض تحكّمها فقط (لغة/محرك/صوت/
+ * spinner فئة علوي واحد يختار الفئة فيُعرض تحكّمها فقط (لغة/محرك/صوت/
  * أشرطة + معاينة) أو لوحة إعلان المتصل (عربي/إنجليزي عبر مُحدِّد لغة).
  *
  * التعديلات «قيد الانتظار» حتى زر الحفظ: علم «متسخ» يفرض تأكيداً عند
@@ -539,8 +545,22 @@ if (!dirtyPanel) {
             bindEntry(newEntry)
             return
         }
-        // المستخدم طلب تجاهل التعديلات غير المحفوظة — الانتقال مباشرة
-        bindEntry(newEntry)
+        // لا يُسقَط الاختيار بصمت: حفظ / تجاهل / إلغاء قبل التبديل.
+        val ctx = fragment.requireContext()
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.categories_unsaved_dialog_title)
+            .setMessage(R.string.categories_unsaved_dialog_message)
+            .setPositiveButton(R.string.save) { _, _ ->
+                // لا ننتقل إلا بعد نجاح الحفظ فعلاً.
+                if (saveCurrent()) bindEntry(newEntry)
+            }
+            .setNegativeButton(R.string.categories_unsaved_discard) { _, _ ->
+                dirtyPanel = false
+                bindEntry(newEntry)
+            }
+            .setNeutralButton(R.string.cancel, null)
+            .create()
+            .show()
     }
 
     /** يردّ سبnner الفئة لموضع الفئة الحالية دون إطلاق المستمع. */
@@ -731,7 +751,7 @@ if (!dirtyPanel) {
 
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             val voices = withContext(AppDispatchers.io) {
-                withTimeoutOrNull(15_000L) {
+                withTimeoutOrNull(VOICE_FETCH_TIMEOUT_MS) {
                     try {
                         val provider = when (norm) {
                             HostProtocol.ENGINE_VOCALIZER ->
@@ -1032,17 +1052,30 @@ if (!dirtyPanel) {
     /** حفظٌ صريح: يكتب الفئة المعروضة فقط. للمتصل يكتب فرعيَّ اللغة
      *  معاً (كلاهما محمّل في اللوحة ومحرَّر)، وللفئة الصوتية يكتب
      *  لغتها ومحركها وصوتها وأشرطتها. */
-    internal fun saveCurrent() {
+    internal fun saveCurrent(): Boolean {
         val entry = currentEntry
-        if (entry.isCaller) {
+        val saved = if (entry.isCaller) {
             saveCallerCategory()
         } else {
             saveVoiceCategory(entry.categoryKey)
         }
-        dirtyPanel = false
+        if (saved) dirtyPanel = false
+        return saved
     }
 
-    private fun saveVoiceCategory(key: String) {
+    /** فشل الحفظ يُعلَن بصرياً وسمعياً بسبب واضح — بلا إيهام بالنجاح. */
+    private fun announceSaveFailure(reason: String) {
+        Toast.makeText(
+            fragment.requireContext(), reason, Toast.LENGTH_LONG
+        ).show()
+        A11ySpeechCoordinator.speakAnnouncement(
+            context = fragment.requireContext(),
+            text = reason,
+            isInterruptAllowed = true,
+        )
+    }
+
+    private fun saveVoiceCategory(key: String): Boolean {
         val langIdx = spinnerLanguage?.selectedItemPosition ?: -1
         if (langIdx in languages.indices) {
             runCatching {
@@ -1051,12 +1084,10 @@ if (!dirtyPanel) {
         }
         val voiceIdx = spinnerVoice?.selectedItemPosition ?: -1
         if (voiceOptions.isEmpty() || voiceIdx !in voiceOptions.indices) {
-            Toast.makeText(
-                fragment.requireContext(),
-                R.string.voice_cannot_save_invalid,
-                Toast.LENGTH_SHORT
-            ).show()
-            return
+            announceSaveFailure(
+                fragment.getString(R.string.voice_cannot_save_invalid)
+            )
+            return false
         }
         val chosenVoice = voiceOptions[voiceIdx]
         if (categoryHasDedicatedEngine(key)) {
@@ -1080,11 +1111,12 @@ if (!dirtyPanel) {
                 ) {
                     val reason = status.lastError
                         ?: EngineStatusRegistry.labelAr(status.state)
-                    Toast.makeText(
-                        fragment.requireContext(),
-                        "لا يمكن حفظ $effectiveEngine: $reason",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    // المحرك غير الجاهز: فشل صريح مسموع، ولا نكمل الحفظ
+                    // كي لا تتعارض الرسالة مع الفعل (البند ٤).
+                    announceSaveFailure(
+                        "لا يمكن حفظ $effectiveEngine: $reason"
+                    )
+                    return false
                 }
             }
             if (effectiveEngine != null) {
@@ -1093,7 +1125,13 @@ if (!dirtyPanel) {
                     effectiveEngine
                 )
                 val belongs = if (validVoices.isNotEmpty()) {
-                    validVoices.any { it.name == chosenVoice.name }
+                    // البند ٣: المقارنة غير حساسة لحالة الأحرف منظّمة
+                    // من المسافات، كي لا يُرفض صوتٌ مطابق باختلاف الشكل.
+                    validVoices.any {
+                        it.name.trim().equals(
+                            chosenVoice.name.trim(), ignoreCase = true
+                        )
+                    }
                 } else {
                     VoiceIdContract.isVoiceBelongingToEngine(
                         effectiveEngine,
@@ -1101,17 +1139,10 @@ if (!dirtyPanel) {
                     )
                 }
                 if (!belongs) {
-                    Toast.makeText(
-                        fragment.requireContext(),
-                        "الصوت المختار لا يتبع هذا المحرك",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    A11ySpeechCoordinator.speakAnnouncement(
-                        context = fragment.requireContext(),
-                        text = "الصوت المختار لا يتبع هذا المحرك",
-                        isInterruptAllowed = true,
+                    announceSaveFailure(
+                        "الصوت المختار لا يتبع هذا المحرك"
                     )
-                    return
+                    return false
                 }
                 runCatching {
                     settings.setEngineForCategory(
@@ -1158,19 +1189,22 @@ if (!dirtyPanel) {
                 settings.setVolume("ar", chosenVol)
             }
         }
+        return true
     }
 
-    private fun saveCallerCategory() {
-        saveCallerSide(
+    private fun saveCallerCategory(): Boolean {
+        // ننفّذ الجانبين معاً ثم نجمع النتيجة كي لا يُلغى أحدهما.
+        val arSaved = saveCallerSide(
             spinnerCallerEngineArFor(),
             spinnerCallerVoiceArFor(),
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
         )
-        saveCallerSide(
+        val enSaved = saveCallerSide(
             spinnerCallerEngineEnFor(),
             spinnerCallerVoiceEnFor(),
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
         )
+        return arSaved && enSaved
     }
 
     /** يكتب محرك وصوت جانبٍ واحدٍ من المتصل (عربي أو إنجليزي) من مواضع
@@ -1179,7 +1213,7 @@ if (!dirtyPanel) {
         engineSpinner: Spinner?,
         voiceSpinner: Spinner?,
         categoryKey: String
-    ) {
+    ): Boolean {
         val engineIdx = engineSpinner?.selectedItemPosition ?: -1
         if (engineIdx in categoryEngines.indices) {
             val engine = categoryEngines[engineIdx]
@@ -1193,12 +1227,10 @@ if (!dirtyPanel) {
                 ) {
                     val reason = status.lastError
                         ?: EngineStatusRegistry.labelAr(status.state)
-                    Toast.makeText(
-                        fragment.requireContext(),
-                        "لا يمكن حفظ ${engine.label}: $reason",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    return
+                    announceSaveFailure(
+                        "لا يمكن حفظ ${engine.label}: $reason"
+                    )
+                    return false
                 }
             }
             runCatching {
@@ -1210,12 +1242,10 @@ if (!dirtyPanel) {
         val callerVoices = callerVoicesFor(categoryKey)
         val voiceIdx = voiceSpinner?.selectedItemPosition ?: -1
         if (callerVoices.isEmpty() || voiceIdx !in callerVoices.indices) {
-            Toast.makeText(
-                fragment.requireContext(),
-                R.string.voice_cannot_save_invalid,
-                Toast.LENGTH_SHORT
-            ).show()
-            return
+            announceSaveFailure(
+                fragment.getString(R.string.voice_cannot_save_invalid)
+            )
+            return false
         }
         val voice = callerVoices[voiceIdx]
         runCatching {
@@ -1223,6 +1253,7 @@ if (!dirtyPanel) {
                 categoryKey, voice.name
             )
         }
+        return true
     }
 
     private fun spinnerCallerEngineArFor(): Spinner? =

@@ -153,7 +153,9 @@ data class VocalizerVoiceManifest(
          */
         fun completeVoiceBases(dir: File): List<String> {
             if (!dir.exists() || !dir.isDirectory) return emptyList()
-            val files = dir.listFiles() ?: return emptyList()
+            // البند ٢١/١٣: حزم Tarik وMariam تضع الملفات في مجلد فرعي،
+            // فالفحص المتكرر ضروري وإلا بدت الحزمة المكتملة ناقصة.
+            val files = dir.walkTopDown().filter { it.isFile }.toList()
             val hdrs = files.filter {
                 it.isFile && it.name.endsWith(".hdr", true) &&
                     it.length() > 0L

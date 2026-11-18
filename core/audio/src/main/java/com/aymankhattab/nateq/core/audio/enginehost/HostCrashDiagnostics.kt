@@ -200,8 +200,12 @@ object HostCrashDiagnostics {
         synthResult: HostResult
     ): String {
         val exitInfo = collectExitInfo(context)
-        val stderrText = collectStderr(context, exitInfo.trace)
-        val logcatLines = collectCrashLogcat(300)
+        val stderrText = SpeechTextRedactor.redactQuotedText(
+            collectStderr(context, exitInfo.trace)
+        )
+        val logcatLines = collectCrashLogcat(300).map {
+            SpeechTextRedactor.redactQuotedText(it)
+        }
 
         val connectedWallMs = EngineHostClient.hostConnectedAtWallMs
         val connectedUptimeMs = EngineHostClient.hostConnectedAtUptimeMs
@@ -219,17 +223,23 @@ object HostCrashDiagnostics {
             "(غير محدد بدقة / أقل من 1ms)"
         }
 
-        val lastAcapelaCall = runCatching {
-            val f = File(context.cacheDir, "last_acapela_call.txt")
-            if (f.exists()) f.readText(StandardCharsets.UTF_8).trim()
-            else "(لا يوجد نداء داخلي مسجل)"
-        }.getOrNull() ?: "(تعذر قراءة نداء Acapela الداخلي)"
+        // البند ١٥: تقارير الانهيار تُعرض للمستخدم، فتُنظَّف من أي نص
+        // منطوق قبل إدراجها (كان breadcrumb يحتوي text='...' كاملاً).
+        val lastAcapelaCall = SpeechTextRedactor.redactQuotedText(
+            runCatching {
+                val f = File(context.cacheDir, "last_acapela_call.txt")
+                if (f.exists()) f.readText(StandardCharsets.UTF_8).trim()
+                else "(لا يوجد نداء داخلي مسجل)"
+            }.getOrNull() ?: "(تعذر قراءة نداء Acapela الداخلي)"
+        )
 
-        val trialsProgress = runCatching {
-            val f = File(context.cacheDir, "acapela_trials_progress.txt")
-            if (f.exists()) f.readText(StandardCharsets.UTF_8).trim()
-            else ""
-        }.getOrNull().orEmpty()
+        val trialsProgress = SpeechTextRedactor.redactQuotedText(
+            runCatching {
+                val f = File(context.cacheDir, "acapela_trials_progress.txt")
+                if (f.exists()) f.readText(StandardCharsets.UTF_8).trim()
+                else ""
+            }.getOrNull().orEmpty()
+        )
 
         val sb = StringBuilder()
         sb.appendLine(

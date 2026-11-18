@@ -150,6 +150,9 @@ internal class VocalizerHostSession(
             requestedId: String
         ): Boolean {
             val req = requestedId.trim().lowercase(java.util.Locale.ROOT)
+            // البند ١٠: المعرّف الفارغ لا يطابق أي صوت — كان «يحتوي على
+            // سلسلة فارغة» فيطابق كل صوت فيسقط التحقق من الغياب.
+            if (req.isEmpty()) return false
             val lang = voice.language
                 ?.lowercase(java.util.Locale.ROOT).orEmpty()
             val tlw = voice.languageTLW
@@ -238,7 +241,9 @@ internal class VocalizerHostSession(
      * خيط المحرك الواحد (ع٣٩-1): الإنشاء والتهيئة وتحميل الصوت والنطق
      * كلها عليه — ثبات خيط SDK شرطٌ لنجاح `loadVoice` بعد `initialize`.
      */
-    private val engineThread = EngineThread(ENGINE_ID, "voc-engine")
+    private val engineThread = EngineThread(
+        ENGINE_ID, "voc-engine", context.filesDir
+    )
 
     /** قفل توليد واحد: محرّك واحد لا يتولّى نطقين معاً. */
     private val speakLock = Any()
@@ -639,12 +644,17 @@ internal class VocalizerHostSession(
                 "textLen=${req.text.length} chunks=${chunks.size}"
         )
         val speakStart = SystemClock.uptimeMillis()
+        var nativeSpeakFailed = false
         try {
             for (chunk in chunks) {
                 if (cancelled.get() || stopRequested || pipeBroken.get()) {
                     break
                 }
-                eng.speak(chunk)
+                // البند ٨: خطأ speakNative يصل إلينا بدل أن يُبتلع.
+                if (!eng.speak(chunk)) {
+                    nativeSpeakFailed = true
+                    break
+                }
             }
         } finally {
             HostLog.w(
@@ -659,6 +669,16 @@ internal class VocalizerHostSession(
         }
 
         return when {
+            nativeSpeakFailed -> HostResult.failure(
+                "SPEAK_NATIVE_FAILED",
+                "فشل نطق Vocalizer: ${eng.lastError}"
+            )
+            // البند ٨: صفر عينات PCM يعني فشلاً، لا نجاحاً صامتاً
+            // يُعلَن للمتلقّي كأن النطق تمّ.
+            cbBytes.get() <= 0L -> HostResult.failure(
+                "NO_PCM_SAMPLES",
+                "لم يُنتج محرك Vocalizer أي عينات صوت"
+            )
             pipeBroken.get() -> HostResult.failure(
                 "PIPE_CLOSED",
                 "انغلق أنبوب الصوت"

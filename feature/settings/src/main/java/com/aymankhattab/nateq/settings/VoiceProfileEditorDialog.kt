@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.settings
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
 import android.widget.AdapterView
 import android.widget.Button
 import android.widget.LinearLayout
@@ -13,10 +14,17 @@ import androidx.core.view.isVisible
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.VoiceProfile
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -85,6 +93,11 @@ internal object VoiceProfileEditorDialog {
 
         var tts: TextToSpeech? = null
         var isApplyingInitial = false
+        // البند ١٨: قائمة أصوات المحرك المدمج تُقرأ من الأصوات المثبتة
+        // فعلياً، لا من الكتالوج الثابت الذي يعرض أصواتاً غير منزّلة.
+        val installedVoices = arrayOfNulls<List<Voice>>(1)
+        installedVoices[0] = emptyList()
+        val loadScope = CoroutineScope(SupervisorJob() + AppDispatchers.io)
 
         fun updateVoiceLangDisplay(
             chosenEngine: String?,
@@ -95,7 +108,7 @@ internal object VoiceProfileEditorDialog {
                 return
             }
             val loc = if (isEmbeddedEngine(chosenEngine)) {
-                VoiceCatalog.declaredVoices().firstOrNull {
+                installedVoices[0].orEmpty().firstOrNull {
                     it.name == chosenVoice
                 }?.locale
             } else {
@@ -123,19 +136,37 @@ internal object VoiceProfileEditorDialog {
             voiceSpinner.adapter = simpleAdapter(context, emptyList())
 
             if (isEmbeddedEngine(enginePkg)) {
-                val declared = VoiceCatalog.declaredVoices()
-                val names = declared.map { it.name }
-                voiceNames[0] = names
-                val labels = declared.map { v ->
-                    val disp = v.locale?.displayName.orEmpty()
-                    if (disp.isBlank()) v.name else "$disp — ${v.name}"
+                // البند ١٨: الأصوات المثبتة فقط. الكتالوج
+                // الثابت (declaredVoices) يعرض أصواتاً لم تُنزّل، فاختيارها
+                // هنا يُحفظ ثم يفشل النطق صامتاً عند الاستخدام.
+                val pkg = enginePkg.orEmpty()
+                loadScope.launch {
+                    val voices = withTimeoutOrNull(VOICE_FETCH_TIMEOUT_MS) {
+                        VoiceCatalog.getVoicesForEngine(context, pkg)
+                    }.orEmpty()
+                    withContext(AppDispatchers.main) {
+                        installedVoices[0] = voices
+                        val names = voices.map { it.name }
+                        voiceNames[0] = names
+                        val labels = voices.map { v ->
+                            val disp = v.locale?.displayName.orEmpty()
+                            if (disp.isBlank()) v.name else "$disp — ${v.name}"
+                        }
+                        voiceSpinner.adapter = simpleAdapter(context, labels)
+                        if (names.isEmpty()) {
+                            voiceStatus.setText(R.string.a11y_voice_no_voices)
+                        } else {
+                            voiceStatus.isVisible = false
+                        }
+                        val initialIdx = initial.voiceId?.let {
+                            names.indexOf(it)
+                        }?.takeIf { it >= 0 } ?: 0
+                        voiceSpinner.setSelection(initialIdx)
+                        updateVoiceLangDisplay(
+                            pkg, names.getOrNull(initialIdx)
+                        )
+                    }
                 }
-                voiceSpinner.adapter = simpleAdapter(context, labels)
-                voiceStatus.isVisible = false
-                val initialIdx = initial.voiceId?.let { names.indexOf(it) }
-                    ?.takeIf { it >= 0 } ?: 0
-                voiceSpinner.setSelection(initialIdx)
-                updateVoiceLangDisplay(enginePkg, names.getOrNull(initialIdx))
                 return
             }
 
@@ -290,6 +321,7 @@ internal object VoiceProfileEditorDialog {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .setOnDismissListener {
+                loadScope.cancel()
                 runCatching { tts?.shutdown() }
                 tts = null
                 previewHelper.release()
@@ -360,11 +392,8 @@ internal object VoiceProfileEditorDialog {
     private fun volumeToProgress(volume: Float?): Int =
         VoiceEditorProgress.volumeToProgress(volume)
 
-    private fun isEmbeddedEngine(pkg: String?): Boolean {
-        if (pkg.isNullOrBlank()) return false
-        val norm = HostProtocol.normalizeEngineId(pkg)
-        return norm == HostProtocol.ENGINE_VOCALIZER
-    }
+    private fun isEmbeddedEngine(pkg: String?): Boolean =
+        HostProtocol.isEmbeddedEngine(pkg)
 
     private fun matchWrap(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(

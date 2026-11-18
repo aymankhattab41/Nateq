@@ -52,6 +52,7 @@ import com.aymankhattab.nateq.core.audio.providers.MicrosoftModelCatalog
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerInstallationCache
 import com.aymankhattab.nateq.core.audio.providers.hasInstalledVoiceForLanguage
+import com.aymankhattab.nateq.core.audio.providers.InstalledVocalizerVoice
 import com.aymankhattab.nateq.core.audio.providers.resolveInstalledVocalizerVoice
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.EffectiveVoice
@@ -1328,6 +1329,39 @@ class NateqTtsService : TextToSpeechService() {
         )
     }
 
+    /**
+     * البند ٥: مصدر أسماء أصوات Vocalizer في مسار النطق هو `voiceList`
+     * الحقيقي الذي يعرضه المضيف في شاشة المعاينة — لا تحليل أسماء ملفات
+     * `.hdr` بالتعبير النمطي (كان ينتج أسماء مختلفة عن المعروضة في
+     * الواجهة، فيُختار صوتٌ غير موجود فعلاً). إن تعذّر قراءة المضيف نرجع
+     * إلى لقطة الفحص التوافقية كاحتياطي، مع إعلان صريح في السجل.
+     */
+    private suspend fun installedVocalizerVoicesForSpeech():
+        List<InstalledVocalizerVoice> {
+        val fromHost = runCatching {
+            EngineHostClient.listVoices(
+                applicationContext, HostProtocol.ENGINE_VOCALIZER
+            )
+        }.getOrNull()
+        val hostVoices = fromHost?.voices.orEmpty().mapNotNull { voice ->
+            val name = voice.name.trim().takeIf { it.isNotEmpty() }
+                ?: return@mapNotNull null
+            InstalledVocalizerVoice(name, voice.langTag)
+        }
+        if (hostVoices.isNotEmpty()) return hostVoices
+        if (fromHost?.failure != null) {
+            Log.w(
+                TAG,
+                "voiceList المضيف فشل " +
+                    "[${fromHost.failure?.code}]: " +
+                    "${fromHost.failure?.message} — " +
+                    "الرجوع إلى لقطة فحص التثبيت"
+            )
+        }
+        return VocalizerInstallationCache
+            .installedVoices(applicationContext)
+    }
+
     /** قيمة مضاعف السرعة الحالية (1.0 عند التعطيل) — مضاعف عام يضرب
      *  السرعة النهائية في مساري القارئ (الأحادي والمختلط) فوق معامل LORD. */
     private fun currentSpeechBoost(): Float {
@@ -1621,12 +1655,11 @@ class NateqTtsService : TextToSpeechService() {
             var activeEngine = finalEngine
             var activeTargetProvider = targetProvider
 
-            // قرار اسم صوت Vocalizer موحّد: الأصوات المثبتة تُقرأ من
-            // كاش الفحص الموثوق، ولا يُستشار كتالوج التنزيل ولا رأس
-            // الصوت في مسار القرار (الكتالوج للتحديث/التنزيل فقط).
+            // قرار اسم صوت Vocalizer موحّد: الأسماء تُقرأ من `voiceList`
+            // الحقيقي في المضيف (وهو ما تعرضه المعاينة)، ولا يُستشار
+            // كتالوج التنزيل ولا رأس الصوت في مسار القرار.
             val resolvedVoiceName = if (isVoc) {
-                val installedVoc = VocalizerInstallationCache
-                    .installedVoices(applicationContext)
+                val installedVoc = installedVocalizerVoicesForSpeech()
                 if (!hasInstalledVoiceForLanguage(
                         languageTag, installedVoc
                     )) {
@@ -1641,12 +1674,25 @@ class NateqTtsService : TextToSpeechService() {
                 } else {
                     val requested = if (isGeneric) "" else
                         finalVoiceName.orEmpty()
-                    resolveInstalledVocalizerVoice(
+                    val decision = resolveInstalledVocalizerVoice(
                         applicationContext,
                         requested,
                         languageTag,
                         installedVoc
-                    ).name
+                    )
+                    // البند ٥: التحويل يُعلَن صراحةً في سجل النطق، ولا
+                    // يبدو كأن الصوت المحفوظ هو الذي نُطق فعلاً.
+                    if (requested.isNotEmpty() &&
+                        !decision.name.equals(requested, true)
+                    ) {
+                        Log.w(
+                            TAG,
+                            "تحويل صوت Vocalizer: المطلوب [$requested] " +
+                                "-> المستخدم [${decision.name}] " +
+                                "(${decision.reason})"
+                        )
+                    }
+                    decision.name
                 }
             } else if (isMs) {
                 val msBase = MicrosoftDownloader.getMicrosoftBaseDir(
@@ -1841,16 +1887,31 @@ class NateqTtsService : TextToSpeechService() {
         // إذا فشل المحرك المختار تماماً ولم يبدأ، نحاول التحويل للمزود
         // الافتراضي كصوت بديل (Fallback) وتوثيق ذلك في سجل التشخيص (البند 7)
         if (!started && effEngine != null) {
-            val fallbackVoiceName = if (LanguageCode.isArabic(languageTag)) {
-                "Laila"
-            } else {
-                "Samantha"
+            // البند ١٧: الصوت المنطوق فعلاً هو صوت المزوّد البديل، لا
+            // الاسم الثابت المُفترَض، وحالة Acapela وحدها تُسجَّل
+            // كبديل Acapela (كان أي محرك يُسجَّل كانهيار Acapela).
+            val fallbackVoiceName = voice.id.ifBlank {
+                if (LanguageCode.isArabic(languageTag)) {
+                    "Laila"
+                } else {
+                    "Samantha"
+                }
             }
-            SpeechFallbackTracker.noteAcapelaFailure(
-                reason = "فشل تخليق الصوت في $effEngine",
-                substituteVoice = fallbackVoiceName,
-                substituteEngine = provider.providerId
-            )
+            val acapelaFailure = effEngine.contains("acapela", true) ||
+                effProvider?.providerId?.contains("acapela", true) == true
+            if (acapelaFailure) {
+                SpeechFallbackTracker.noteAcapelaFailure(
+                    reason = "فشل تخليق Acapela في $effEngine",
+                    substituteVoice = fallbackVoiceName,
+                    substituteEngine = provider.providerId
+                )
+            } else {
+                Log.w(
+                    TAG,
+                    "فشل تخليق $effEngine — تحويل إلى " +
+                        "${provider.providerId}/$fallbackVoiceName"
+                )
+            }
             runCatching {
                 provider.synthesize(
                     speechText, voice, effRate, effPitch, effVolume,
@@ -1888,6 +1949,12 @@ class NateqTtsService : TextToSpeechService() {
                     actualVoice = voice.id,
                     isFallback = true,
                     fallbackReason = "تعثر نطق $effEngine والانتقال للبديل"
+                )
+                // البند ١٧: يُسجَّل الصوت الفعلي المنطوق بعد التحويل.
+                Log.i(
+                    TAG,
+                    "الصوت المنطوق فعلياً بعد التحويل: " +
+                        "${provider.providerId}/$fallbackVoiceName"
                 )
             }
         }
@@ -2186,8 +2253,7 @@ class NateqTtsService : TextToSpeechService() {
         var vocVoiceMatched = false
 
         val resolvedVoiceName = if (isVoc) {
-            val installedVoc = VocalizerInstallationCache
-                .installedVoices(applicationContext)
+            val installedVoc = installedVocalizerVoicesForSpeech()
             val hasVocVoice = hasInstalledVoiceForLanguage(
                 segTag, installedVoc
             )
@@ -2207,6 +2273,16 @@ class NateqTtsService : TextToSpeechService() {
                     applicationContext, requested, segTag, installedVoc
                 )
                 vocVoiceMatched = decision.matched
+                if (requested.isNotEmpty() &&
+                    !decision.name.equals(requested, true)
+                ) {
+                    Log.w(
+                        TAG,
+                        "تحويل صوت Vocalizer: المطلوب [$requested] " +
+                            "-> المستخدم [${decision.name}] " +
+                            "(${decision.reason})"
+                    )
+                }
                 decision.name
             }
         } else if (isMs) {

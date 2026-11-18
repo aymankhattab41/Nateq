@@ -69,11 +69,12 @@ internal object VocalizerInstallationCache {
         )) {
             // الاكتمال دليل التثبيت الموثوق (رأس + بيانات صوت كافية).
             if (!VocalizerVoiceManifest.hasCompleteVoice(dir)) continue
-            val headers = dir.listFiles { file ->
+            // البند ٢١: الرأس قد يكون في مجلد فرعي داخل الحزمة.
+            val headers = dir.walkTopDown().filter { file ->
                 file.isFile &&
                     file.name.endsWith(".hdr", ignoreCase = true) &&
                     file.length() > 0L
-            } ?: continue
+            }.toList()
             for (header in headers) {
                 families.add(
                     VocalizerVoiceManifest.headerFamily(header.name)

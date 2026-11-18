@@ -179,4 +179,47 @@ class VoiceIdContractTest {
             )
         )
     }
+
+    @Test
+    fun isVoiceBelongingToEngine_rejectsGenericSystemIdsForEmbedded() {
+        // البند ١٩: معرّف النظام ar-EG ليس اسماً لصوت محرك مدمج؛ حفظه
+        // تحت محرك مدمج كان يبدو صحيحاً ثم يسقط النطق بصمت.
+        for (engine in listOf(
+            "vocalizer_embedded", "microsoft_embedded",
+            "acapela_embedded"
+        )) {
+            for (generic in listOf(
+                "ar-EG", "en-US", "ar", "en", "Device Default"
+            )) {
+                org.junit.Assert.assertFalse(
+                    "[$engine] يجب أن يرفض المعرّف النظامي [$generic]",
+                    VoiceIdContract.isVoiceBelongingToEngine(
+                        engine, generic
+                    )
+                )
+            }
+        }
+        // الأسماء الحقيقية للمحركات المدمجة تظل مقبولة.
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                "vocalizer_embedded", "Laila"
+            )
+        )
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                "microsoft_embedded", "Ava"
+            )
+        )
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                "acapela_embedded", "Salma"
+            )
+        )
+        // النظام نفسه يملك المعرّف النظامي — لا يُرفض هناك.
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                "system", "ar-EG"
+            )
+        )
+    }
 }

@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.engine
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.enginehost.HostLog
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.audio.enginehost.SpeechTextRedactor
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -119,7 +120,9 @@ object SpeechFallbackTracker {
         val record = UtteranceRecord(
             source = source,
             textSnippet = snippet,
-            fullText = text,
+            // البند ١٥: النص الكامل لا يُحفظ ولا يُسجَّل؛ نحتفظ ببصمة
+            // مختصرة تسمح بربط السجل بالطلب من دون كشف محتواه.
+            fullText = SpeechTextRedactor.describe(text),
             languageTag = languageTag,
             requestedEngine = reqEng,
             requestedVoice = reqV,

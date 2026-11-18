@@ -679,9 +679,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             com.google.android.material.button.MaterialButton =
             view.findViewById(R.id.btn_save_categories)
         btnSaveCategories.setOnClickListener {
-            categoryVoicePanel.saveCurrent()
-            view.announceCompat(getString(R.string.categories_saved))
-            accordion.updateSectionStatuses()
+            if (performExplicitVoiceSave()) {
+                view.announceCompat(getString(R.string.categories_saved))
+                accordion.updateSectionStatuses()
+            } else {
+                view.announceCompat(
+                    getString(R.string.settings_save_failed)
+                )
+            }
         }
 
         val btnRefreshVoices = view.findViewById<
@@ -4213,20 +4218,38 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     }
 
     // ===== زر الحفظ + زر استعادة الافتراضيات =====
+    /** الحفظ الصريح: يكتب لوحة الفئة المعروضة وكل ما عليها من تغييرات
+     *  معلّقة، ويعيد false إن رُفض الحفظ لأي سبب. */
+    private fun performExplicitVoiceSave(): Boolean =
+        runCatching { categoryVoicePanel.saveCurrent() }
+            .getOrDefault(false)
+
     private fun setupSaveAndResetButtons() {
         val btnSave = view?.findViewById<View>(R.id.btn_save_settings)
         val btnReset = view?.findViewById<View>(R.id.btn_reset_settings)
 
-        // الحفظ: الإعدادات تُخزَّن فورياً عند كل تغيير عبر setters، لكن نقدم
-        // للمستخدم تأكيداً واضحاً بأن إعداداته مأخوذة في مكانها.
+        // الحفظ: يُنفَّذ الحفظ الفعلي للوحة الفئات (كل تغيير معلّق فيها)
+        // ولا يظهر إعلان النجاح إلا بعد عودة الحفظ بنجاح.
         btnSave?.setOnClickListener {
-            Toast.makeText(
-                requireContext(),
-                getString(R.string.saved_successfully),
-                Toast.LENGTH_SHORT
-            ).show()
-            view?.findViewById<View>(R.id.btn_save_settings)
-                ?.announceCompat(getString(R.string.saved_successfully))
+            val saved = performExplicitVoiceSave()
+            if (saved) {
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.saved_successfully),
+                    Toast.LENGTH_SHORT
+                ).show()
+                view?.findViewById<View>(R.id.btn_save_settings)
+                    ?.announceCompat(
+                        getString(R.string.saved_successfully)
+                    )
+            } else {
+                val msg = getString(R.string.settings_save_failed)
+                Toast.makeText(
+                    requireContext(), msg, Toast.LENGTH_LONG
+                ).show()
+                view?.findViewById<View>(R.id.btn_save_settings)
+                    ?.announceCompat(msg)
+            }
         }
 
         // استعادة الافتراضيات: مسح كل الإعدادات ثم إعادة بناء الواجهة لتحميل

@@ -17,6 +17,23 @@ object VocalizerDownloader {
 
     private const val TAG = "VocalizerDownloader"
 
+    /** أقل عدد ملفات في حزمة صوت صالحة: رأس + ملف بيانات واحد. */
+    private const val MIN_VOICE_FILES = 2
+
+    /**
+     * أرضية حجم الأرشيف المنزّل مقارنة بالحجم المتوقع في الكتالوج.
+     * 10% فقط — تسمح بفروق الضغط والتقدير، لكنها تكشف التنزيل
+     * المبتسر الذي يبدو ناجحاً ثم يفشل في منتصف النطق (البند ١٤).
+     */
+    private const val MIN_DOWNLOAD_SIZE_RATIO = 0.10
+
+    /** خطأ معنون بمرحلة الفشل وسببه الحقيقي (البند ٢١). */
+    private fun stepError(
+        step: String,
+        code: String,
+        reason: String
+    ): DownloadError = DownloadError(code, "step=$step; $reason")
+
     /** نتيجة فك ضغط الأرشيف: عدد الملفات المستخرجة وقائمتها. */
     internal data class UnzipResult(
         val count: Int,
@@ -115,6 +132,26 @@ object VocalizerDownloader {
 
             val durationMs = System.currentTimeMillis() - startTime
 
+            // البند ١٤: الأرشيف المبتسر يُكتشف قبل فك الضغط، ويُذكر
+            // حجمه الفعلي والمتوقع كسبب حقيقي لا كخطأ شبكة مبهم.
+            val expectedBytes = item.sizeMb * 1024L * 1024L
+            val actualBytes = partZipFile.length()
+            if (expectedBytes > 0L &&
+                actualBytes < expectedBytes * MIN_DOWNLOAD_SIZE_RATIO
+            ) {
+                Log.e(
+                    TAG,
+                    "تنزيل مبتسر [STEP=SIZE]: $actualBytes B من " +
+                        "حوالي $expectedBytes B لـ ${item.id}"
+                )
+                partZipFile.delete()
+                throw stepError(
+                    "SIZE", DownloadError.MODEL_TOO_SMALL,
+                    "الحجم $actualBytes B أقل من المتوقع " +
+                        "حوالي $expectedBytes B"
+                )
+            }
+
             // ع٣٠-5 بند 4: توثيق القياسات في السجل
             Log.i(
                 TAG,
@@ -145,8 +182,8 @@ object VocalizerDownloader {
                     "الملف المنزّل ليس ZIP صالحاً [NOT_A_ZIP]: head=$headText"
                 )
                 partZipFile.delete()
-                throw DownloadError(
-                    DownloadError.NOT_A_ZIP,
+                throw stepError(
+                    "ZIP_MAGIC", DownloadError.NOT_A_ZIP,
                     "head=$headText"
                 )
             }
@@ -159,8 +196,8 @@ object VocalizerDownloader {
             if (unzipResult.count == 0) {
                 Log.e(TAG, "الأرشيف فارغ لم يستخرج أي ملف [EMPTY_ARCHIVE]")
                 partZipFile.delete()
-                throw DownloadError(
-                    DownloadError.EMPTY_ARCHIVE,
+                throw stepError(
+                    "UNZIP", DownloadError.EMPTY_ARCHIVE,
                     "لم يستخرج أي ملف من الأرشيف"
                 )
             }
@@ -180,9 +217,20 @@ object VocalizerDownloader {
                         "expected=${item.headerFileName}, " +
                         "extracted=[$extractedList]"
                 )
-                throw DownloadError(
-                    DownloadError.HEADER_MISSING,
+                throw stepError(
+                    "HEADER", DownloadError.HEADER_MISSING,
                     "متوقع ${item.headerFileName}، المستخرج: [$extractedList]"
+                )
+            }
+
+            // البند ١٤: الرأس وحده لا يكفي — ملفات البيانات الصفرية أو
+            // الناقصة تجعل الصوت «مثبّتاً» بلا PCM، فيبدو النطق صامتاً.
+            val integrityReason = verifyExtractedVoice(destination, item)
+            if (integrityReason != null) {
+                Log.e(TAG, "حزمة ناقصة [STEP=INTEGRITY]: $integrityReason")
+                throw stepError(
+                    "INTEGRITY", DownloadError.MODEL_TOO_SMALL,
+                    integrityReason
                 )
             }
 
@@ -214,6 +262,38 @@ object VocalizerDownloader {
         }
     }
 
+    /**
+     * البند ١٤: فحص سلامة الحزمة بعد فك الضغط؛ يعيد سبب الفشل أو null
+     * عند السلامة. البحث متكرر لأن حزم Tarik/Mariam تضع الرأس والبيانات
+     * داخل مجلد فرعي (البند ٢١)، فالفحص السطحي كان يرى الحزمة ناقصة.
+     */
+    internal fun verifyExtractedVoice(
+        destination: File,
+        item: VocalizerCatalogItem
+    ): String? {
+        val allFiles = destination.walkTopDown().filter { it.isFile }.toList()
+        if (allFiles.size < MIN_VOICE_FILES) {
+            return "عدد الملفات ${allFiles.size} أقل من $MIN_VOICE_FILES"
+        }
+        val header = VocalizerModelCatalog.installedHeaderFile(
+            destination, item
+        )
+        if (header == null || header.length() <= 0L) {
+            return "رأس الصوت مفقود أو فارغ"
+        }
+        val dataFiles = allFiles.filter { file ->
+            file.extension.equals("dat", ignoreCase = true) ||
+                file.extension.equals("bin", ignoreCase = true)
+        }
+        if (dataFiles.isEmpty()) {
+            return "لا توجد ملفات بيانات (.dat/.bin) للصوت"
+        }
+        if (dataFiles.none { it.length() > 0L }) {
+            return "كل ملفات البيانات بحجم صفر"
+        }
+        return null
+    }
+
     /** سقف حجم المحتوى المستخرج من أرشيف واحد (حماية zip bomb). */
     private const val MAX_EXTRACTION_BYTES = 1L * 1024 * 1024 * 1024
 
@@ -236,21 +316,28 @@ object VocalizerDownloader {
             var entry = zis.nextEntry
             val buffer = ByteArray(32 * 1024)
             while (entry != null) {
-                val cleanName = File(entry.name).name
-                val traversal = entry.name.contains("..")
-                val outFile = File(targetDir, cleanName)
+                // البند ١٣: احتفظ بالمسار النسبي داخل الأرشيف بدل تسطيحه،
+                // فحزم Tarik/Mariam تضع الرأس والبيانات في مجلدات فرعية،
+                // وتسطيحها كان يكسر بنية الحزمة ويُخفي ملفاتها.
+                val rawName = entry.name.replace('\\', '/')
+                val traversal = rawName.contains("..")
+                val segments = rawName.split('/').filter {
+                    it.isNotBlank() && it != "." && it != ".."
+                }
+                val relativeName = segments.joinToString("/")
+                val outFile = File(targetDir, relativeName)
                 val inside = try {
-                    outFile.canonicalFile.parentFile
-                        ?.startsWith(canonicalTarget) == true
+                    outFile.canonicalFile.startsWith(canonicalTarget)
                 } catch (_: Throwable) {
                     false
                 }
-                if (traversal || !inside) {
+                if (traversal || relativeName.isBlank() || !inside) {
                     Log.w(
                         TAG,
                         "Rejected unsafe zip entry: ${entry.name}"
                     )
-                } else if (cleanName.isNotBlank() && !entry.isDirectory) {
+                } else if (!entry.isDirectory) {
+                    outFile.parentFile?.mkdirs()
                     FileOutputStream(outFile).use { fos ->
                         var len: Int
                         while (zis.read(buffer).also { len = it } > 0) {
@@ -263,7 +350,7 @@ object VocalizerDownloader {
                             fos.write(buffer, 0, len)
                         }
                     }
-                    extractedNames.add(cleanName)
+                    extractedNames.add(relativeName)
                 }
                 zis.closeEntry()
                 entry = zis.nextEntry
@@ -283,7 +370,14 @@ object VocalizerDownloader {
         val dirs = if (targetDir != null) listOf(targetDir)
             else getAllSearchDirs(context)
         var deletedAny = false
-        val cleanPrefix = item.voiceName.lowercase()
+        // البند ١١: حدود الاسم صريحة — «Ava» لا تحذف "available.dat"،
+        // ولا تُحذف ملفات صوت أخرى لمجرد اشتراك جزء من الاسم.
+        val voiceNamePattern = Regex(
+            "(?<![\\p{L}\\p{N}])" +
+                Regex.escape(item.voiceName.trim()) +
+                "(?![\\p{L}\\p{N}])",
+            RegexOption.IGNORE_CASE
+        )
 
         for (dir in dirs) {
             if (!dir.exists() || !dir.isDirectory) continue
@@ -295,13 +389,10 @@ object VocalizerDownloader {
                 deletedAny = hdrFile.delete() || deletedAny
             }
 
-            // 2. فحص وحذف ملفات البيانات المرتبطة باسم الصوت
-            dir.listFiles()?.forEach { file ->
-                if (file.isFile && file.name.contains(
-                        cleanPrefix,
-                        ignoreCase = true
-                    )
-                ) {
+            // 2. فحص وحذف ملفات البيانات المرتبطة باسم الصوت — بشكل
+            // متكرر لأن الحزمة قد تكون داخل مجلد فرعي (البند ١٣).
+            dir.walkTopDown().filter { it.isFile }.forEach { file ->
+                if (voiceNamePattern.containsMatchIn(file.name)) {
                     deletedAny = file.delete() || deletedAny
                 }
             }
