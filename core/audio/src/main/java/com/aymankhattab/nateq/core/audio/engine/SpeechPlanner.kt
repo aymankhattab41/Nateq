@@ -485,6 +485,7 @@ object SpeechPlanner {
         "zero", "one", "two", "three", "four", "five",
         "six", "seven", "eight", "nine", "ten", "plus", "موجب"
     )
+    private val WHITESPACE_REGEX = Regex("\\s+")
 
     private fun isDigitWord(word: String): Boolean {
         val clean = word.trim().lowercase().removePrefix("+")
@@ -494,7 +495,7 @@ object SpeechPlanner {
 
     internal fun splitPhoneNumberWords(text: String): List<String> {
         if (text.length <= 40) return listOf(text)
-        val words = text.split("\\s+".toRegex()).filter { it.isNotBlank() }
+        val words = text.split(WHITESPACE_REGEX).filter { it.isNotBlank() }
         if (words.size < 6) return listOf(text)
         val digitWordCount = words.count { isDigitWord(it) }
         if (digitWordCount < words.size * 0.7) return listOf(text)

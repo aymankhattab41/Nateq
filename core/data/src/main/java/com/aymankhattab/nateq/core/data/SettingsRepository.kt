@@ -286,6 +286,9 @@ class SettingsRepository(context: Context) :
             "speed_dial_launcher_icon_enabled"
         const val KEY_APP_PROFILES = "app_profiles"
         const val KEY_CONTACT_VOICES = "contact_voices"
+        const val KEY_READ_LATER = "read_later_queue"
+        private const val MAX_READ_LATER_ITEMS = 50
+        private const val MAX_READ_LATER_TEXT_CHARS = 20_000
         const val BOOT_MIRROR_PREFS = "nateq_boot_mirror"
         const val KEY_EMERGENCY_ENGINE = "emergency_engine"
         const val KEY_EMERGENCY_VOICE = "emergency_voice"
@@ -4299,6 +4302,78 @@ class SettingsRepository(context: Context) :
 
     fun setContactVoicesRaw(raw: String): Boolean = synchronized(this) {
         prefs.edit().putString(KEY_CONTACT_VOICES, raw).commit()
+    }
+
+    // ============ اقرأ لاحقاً (بند 12) ============
+
+    data class ReadLaterItem(
+        val id: Long,
+        val text: String,
+        val timestampMs: Long
+    )
+
+    fun getReadLaterItems(): List<ReadLaterItem> = synchronized(this) {
+        val raw = prefs.getString(KEY_READ_LATER, null) ?: return emptyList()
+        runCatching {
+            val arr = org.json.JSONArray(raw)
+            val out = ArrayList<ReadLaterItem>(arr.length())
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val text = obj.optString("text", "").trim()
+                if (text.isEmpty()) continue
+                out.add(
+                    ReadLaterItem(
+                        id = obj.optLong("id", 0L),
+                        text = text,
+                        timestampMs = obj.optLong("ts", 0L)
+                    )
+                )
+            }
+            out
+        }.getOrDefault(emptyList())
+    }
+
+    fun addReadLaterText(text: String): Boolean = synchronized(this) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return false
+        val current = getReadLaterItems().toMutableList()
+        current.add(
+            0,
+            ReadLaterItem(
+                id = System.currentTimeMillis(),
+                text = trimmed.take(MAX_READ_LATER_TEXT_CHARS),
+                timestampMs = System.currentTimeMillis()
+            )
+        )
+        val capped = if (current.size > MAX_READ_LATER_ITEMS) {
+            current.take(MAX_READ_LATER_ITEMS)
+        } else {
+            current
+        }
+        saveReadLaterItems(capped)
+    }
+
+    fun removeReadLaterItem(id: Long): Boolean = synchronized(this) {
+        val current = getReadLaterItems().filterNot { it.id == id }
+        saveReadLaterItems(current)
+    }
+
+    fun clearReadLater(): Boolean = synchronized(this) {
+        prefs.edit().remove(KEY_READ_LATER).commit()
+    }
+
+    private fun saveReadLaterItems(
+        items: List<ReadLaterItem>
+    ): Boolean {
+        val arr = org.json.JSONArray()
+        for (item in items) {
+            val obj = org.json.JSONObject()
+            obj.put("id", item.id)
+            obj.put("text", item.text)
+            obj.put("ts", item.timestampMs)
+            arr.put(obj)
+        }
+        return prefs.edit().putString(KEY_READ_LATER, arr.toString()).commit()
     }
 }
 

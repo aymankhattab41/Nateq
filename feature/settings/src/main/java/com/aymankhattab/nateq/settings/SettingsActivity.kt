@@ -127,6 +127,29 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
             return
         }
 
+        // بند 12: استقبال نص مشارَك (اقرأ لاحقاً)
+        if (action == Intent.ACTION_SEND) {
+            val mime = intent.type ?: ""
+            if (mime.startsWith("text/")) {
+                val shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)
+                    ?.toString()
+                    ?: intent.getStringExtra(Intent.EXTRA_TEXT)
+                val textValue = shared?.trim().orEmpty()
+                if (textValue.isNotEmpty()) {
+                    intent.removeExtra(Intent.EXTRA_TEXT)
+                    val saved = settingsRepository.addReadLaterText(textValue)
+                    if (saved) {
+                        android.widget.Toast.makeText(
+                            this,
+                            getString(R.string.read_later_saved_toast),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+                return
+            }
+        }
+
         val uri: Uri? = if (action == Intent.ACTION_SEND) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 intent.getParcelableExtra(
@@ -164,7 +187,6 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
             return
         }
 
-        // مسح بيانات النية لمنع إعادة التنفيذ التلقائي عند استدارة الشاشة
         intent.data = null
         intent.removeExtra(Intent.EXTRA_STREAM)
 

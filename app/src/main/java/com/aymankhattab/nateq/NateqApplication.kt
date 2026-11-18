@@ -91,8 +91,9 @@ class NateqApplication : Application(), AnnouncementAppContext {
             Intent(ctx, SettingsActivity::class.java)
         }
 
-        // كاش محركات TTS يُلغى عند تثبيت/إزالة/استبدال أي حزمة حتى يلتقط
-        // المسحُ التالي محركاً جديداً فورياً (بلا انتظار انتهاء الخمس دقائق).
+        // كاش محركات TTS وكاش مشغّل الشاشة الرئيسية يُلغَيان عند
+        // تثبيت/إزالة/استبدال أي حزمة (بند 1: تفادي استعلام PackageManager
+        // مع كل نقرة في خدمة إمكانية الوصول).
         try {
             ContextCompat.registerReceiver(
                 this,
@@ -102,12 +103,14 @@ class NateqApplication : Application(), AnnouncementAppContext {
                         intent: Intent?
                     ) {
                         EnginePicker.invalidateCache()
+                        ProtectedAppManager.invalidateHomeLauncherCache()
                     }
                 },
                 IntentFilter().apply {
                     addAction(Intent.ACTION_PACKAGE_ADDED)
                     addAction(Intent.ACTION_PACKAGE_REMOVED)
                     addAction(Intent.ACTION_PACKAGE_REPLACED)
+                    addAction(Intent.ACTION_PACKAGE_CHANGED)
                     addDataScheme("package")
                 },
                 ContextCompat.RECEIVER_EXPORTED

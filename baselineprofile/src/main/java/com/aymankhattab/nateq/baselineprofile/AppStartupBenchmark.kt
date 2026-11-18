@@ -93,6 +93,28 @@ class AppStartupBenchmark {
                 scrollContainer.fling(Direction.UP)
                 device.waitForIdle()
             }
+
+            // بند 7: محاولة سيناريو «أول نطق» (معاينة/اختبار) بأفضل جهد
+            // دون إفشال القياس إن لم يُعثر على زر معاينة ظاهر.
+            val previewIds = listOf(
+                "btnPreviewTime",
+                "btnPreviewNotification",
+                "btnPreviewSms",
+                "btn_preview_caller",
+                "btnPreviewCaller",
+                "btnPreviewBattery"
+            )
+            for (id in previewIds) {
+                val preview = device.findObject(
+                    By.res(targetPackage, id)
+                )
+                if (preview != null) {
+                    runCatching { preview.click() }
+                    device.waitForIdle()
+                    Thread.sleep(1200)
+                    break
+                }
+            }
         }
     }
 }

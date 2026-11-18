@@ -192,6 +192,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // زر آخر التحديثات (يعرض ملخص الإصدار الحالي وتغييراته في حوار)
     private lateinit var btnChangelog:
         com.google.android.material.button.MaterialButton
+    private lateinit var btnReadLater:
+        com.google.android.material.button.MaterialButton
 
     // المفتاح الرئيسي لكل الإعلانات
     private lateinit var switchAllAnnouncements: SwitchMaterial
@@ -1005,6 +1007,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // زر آخر التحديثات: يعرض ملخص أحدث إصدار وتغييراته في حوار
         btnChangelog = view.findViewById(R.id.btn_changelog)
         btnChangelog.setOnClickListener { showChangelogDialog() }
+        btnReadLater = view.findViewById(R.id.btn_read_later)
+        btnReadLater.setOnClickListener { showReadLaterDialog() }
 
         // زر دليل الميزات والإيماءات (ع٤١-ب14.3): شرح مختصر يقرؤه TalkBack
         view.findViewById<View>(R.id.btn_a11y_guide).setOnClickListener {
@@ -2755,6 +2759,65 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             ).show()
             view?.announceCompat(getString(R.string.report_error_no_handler))
         }
+    }
+
+
+    // ===== اقرأ لاحقاً (بند 12) =====
+    private fun showReadLaterDialog() {
+        val repo = settings
+        val items = repo.getReadLaterItems()
+        if (items.isEmpty()) {
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.read_later_title)
+                .setMessage(R.string.read_later_empty)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            return
+        }
+        val labels = items.map { item ->
+            val preview = item.text.replace("\n", " ").trim()
+            if (preview.length > 80) preview.take(80) + "…" else preview
+        }.toTypedArray()
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.read_later_title)
+            .setItems(labels) { _, which ->
+                val item = items.getOrNull(which) ?: return@setItems
+                showReadLaterItemActions(item.id, item.text)
+            }
+            .setNeutralButton(R.string.read_later_clear_all) { _, _ ->
+                repo.clearReadLater()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showReadLaterItemActions(id: Long, text: String) {
+        val repo = settings
+        val options = arrayOf(
+            getString(R.string.read_later_play),
+            getString(R.string.read_later_delete)
+        )
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.read_later_title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        com.aymankhattab.nateq.core.audio.accessibility.A11ySpeechCoordinator
+                            .speakAnnouncement(
+                                context = requireContext(),
+                                text = text,
+                                isInterruptAllowed = true,
+                                source = com.aymankhattab.nateq.core.audio.engine
+                                    .SpeechEntryPoints.Source.SCREEN_READER
+                            )
+                    }
+                    1 -> {
+                        repo.removeReadLaterItem(id)
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     // ===== آخر التحديثات =====

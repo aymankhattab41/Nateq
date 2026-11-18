@@ -314,6 +314,18 @@ class NateqAccessibilityService : AccessibilityService() {
     // ع٤١-ب5: متتبّع ملخّصات المحادثات (ذاكرة فقط)
     private val chatSummaryTracker = ChatSummaryTracker()
 
+    // بند 13: تخطي إعلانات يوتيوب (يوتيوب فقط، تحقق دوري خفيف)
+    @Volatile
+    private var lastYoutubeAdSkipAt = 0L
+    private val youtubeAdSkipRunnable = object : Runnable {
+        override fun run() {
+            trySkipYoutubeAdIfActive()
+            if (shouldRunYoutubeAdSkipLoop()) {
+                emergencyHandler.postDelayed(this, YOUTUBE_AD_SKIP_POLL_MS)
+            }
+        }
+    }
+
     // ع٤١-ب8: كاشف أوامر المكالمة بالمفاتيح وبوّابة تنفيذها
     private val callKeyDetector = CallKeyDetector()
     private val callGateway: CallGateway by lazy {
@@ -629,14 +641,33 @@ class NateqAccessibilityService : AccessibilityService() {
             settings = repo,
             stateStore = store
         )
-        val fastRequired = liveReading || readMore
-        info.notificationTimeout = if (fastRequired) 50L else 150L
+        val youtubeAdSkip = FeatureFlags.isActive(
+            FeatureFlags.FEATURE_YOUTUBE_AD_SKIP,
+            context = this,
+            settings = repo,
+            stateStore = store
+        )
+        if (youtubeAdSkip) {
+            types = types or AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            types = types or AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        }
 
-        info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+        val fastRequired = liveReading || readMore
+        // بند 3: رفع مهلة الإشعار في وضع القراءة الحية/اقرأ المزيد إلى 100ms
+        // مع الحفاظ على سلوك الخنق الحالي (CONTENT_CHANGE_THROTTLE_MS).
+        info.notificationTimeout = if (fastRequired) 100L else 150L
+
+        // بند 2: تقييد إدراج العروض غير المهمة بالحالات التي تحتاج اجتيازاً
+        // أوسع (القراءة الحية/اقرأ المزيد) لتقليل الحمل مع بقاء عمل الميزات.
+        var flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
             AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
             AccessibilityServiceInfo.FLAG_REQUEST_ACCESSIBILITY_BUTTON or
-            AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
-            AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+            AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+        if (fastRequired) {
+            flags = flags or
+                AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+        }
+        info.flags = flags
 
         val allowAll = repo.isA11yAllowAllApps()
         if (!allowAll) {
@@ -827,6 +858,9 @@ class NateqAccessibilityService : AccessibilityService() {
                     ContinuousReader.onWindowChanged(pkg)
             }
         }
+
+        // بند 13: تخطي إعلانات يوتيوب (يوتيوب فقط)
+        maybeScheduleYoutubeAdSkip(eventPkg, event.eventType)
     }
 
     override fun onInterrupt() {
@@ -1531,6 +1565,7 @@ class NateqAccessibilityService : AccessibilityService() {
         unregisterProtectedDisableReceiver()
         unregisterBluetoothReceiver()
         unregisterAudioRouteCallback()
+        emergencyHandler.removeCallbacks(youtubeAdSkipRunnable)
         deviceEventGate.clear()
         chatSummaryTracker.clear()
         callKeyDetector.reset()
@@ -1571,6 +1606,157 @@ class NateqAccessibilityService : AccessibilityService() {
         stateStore = null
     }
 
+    private fun maybeScheduleYoutubeAdSkip(pkg: String?, eventType: Int) {
+        if (pkg != YOUTUBE_PACKAGE) {
+            emergencyHandler.removeCallbacks(youtubeAdSkipRunnable)
+            return
+        }
+        if (!FeatureFlags.isActive(
+                FeatureFlags.FEATURE_YOUTUBE_AD_SKIP,
+                packageName = pkg,
+                context = this,
+                settings = SettingsRepository.create(this),
+                stateStore = stateStore
+            )
+        ) {
+            emergencyHandler.removeCallbacks(youtubeAdSkipRunnable)
+            return
+        }
+        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        ) {
+            trySkipYoutubeAdIfActive()
+            if (shouldRunYoutubeAdSkipLoop()) {
+                emergencyHandler.removeCallbacks(youtubeAdSkipRunnable)
+                emergencyHandler.postDelayed(
+                    youtubeAdSkipRunnable, YOUTUBE_AD_SKIP_POLL_MS
+                )
+            }
+        }
+    }
+
+    private fun shouldRunYoutubeAdSkipLoop(): Boolean {
+        if (!FeatureFlags.isActive(
+                FeatureFlags.FEATURE_YOUTUBE_AD_SKIP,
+                packageName = YOUTUBE_PACKAGE,
+                context = this,
+                settings = SettingsRepository.create(this),
+                stateStore = stateStore
+            )
+        ) return false
+        val rootPkg = runCatching {
+            rootInActiveWindow?.packageName?.toString()
+        }.getOrNull()
+        val focusedPkg = lastFocusedPackage
+        return rootPkg == YOUTUBE_PACKAGE || focusedPkg == YOUTUBE_PACKAGE
+    }
+
+    private fun trySkipYoutubeAdIfActive() {
+        if (!shouldRunYoutubeAdSkipLoop()) return
+        val now = SystemClock.uptimeMillis()
+        if (now - lastYoutubeAdSkipAt < YOUTUBE_AD_SKIP_DEBOUNCE_MS) return
+        val clicked = trySkipYoutubeAdOnce()
+        if (clicked) {
+            lastYoutubeAdSkipAt = now
+            val announcement = if (
+                Locale.getDefault().language.startsWith("ar")
+            ) {
+                "تم تخطي الإعلان"
+            } else {
+                "Ad skipped"
+            }
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = this,
+                text = announcement,
+                isInterruptAllowed = true
+            )
+        }
+    }
+
+    private fun trySkipYoutubeAdOnce(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val pending = ArrayDeque<AccessibilityNodeInfo>()
+        return try {
+            pending.add(root)
+            var visited = 0
+            while (pending.isNotEmpty() && visited < 250) {
+                val node = pending.removeFirst()
+                visited++
+                val isRoot = node === root
+                val text = node.text?.toString().orEmpty()
+                val desc = node.contentDescription?.toString().orEmpty()
+                val vid = runCatching { node.viewIdResourceName }.getOrNull()
+                    .orEmpty()
+                val matched = isYoutubeSkipLabel(text) ||
+                    isYoutubeSkipLabel(desc) ||
+                    vid.contains("skip_ad", ignoreCase = true) ||
+                    vid.contains("skipAd", ignoreCase = true)
+                if (matched) {
+                    val ok = clickNodeOrClickableAncestor(node)
+                    if (ok) {
+                        if (!isRoot) {
+                            SafeNodeWalker.safeRecycle(node)
+                        }
+                        return true
+                    }
+                }
+                for (i in 0 until node.childCount) {
+                    val child = runCatching { node.getChild(i) }.getOrNull()
+                        ?: continue
+                    pending.addLast(child)
+                }
+                if (!isRoot) {
+                    SafeNodeWalker.safeRecycle(node)
+                }
+            }
+            false
+        } finally {
+            while (pending.isNotEmpty()) {
+                val n = pending.removeFirst()
+                if (n !== root) SafeNodeWalker.safeRecycle(n)
+            }
+            SafeNodeWalker.safeRecycle(root)
+        }
+    }
+
+    private fun isYoutubeSkipLabel(value: String): Boolean {
+        if (value.isBlank()) return false
+        val v = value.lowercase(Locale.getDefault())
+        return v == "skip ad" || v == "skip ads" ||
+            v == "تخطي الإعلان" || v == "تخطي الإعلانات" ||
+            (v.startsWith("تخطي") && v.contains("إعلان")) ||
+            v.contains("skip ad")
+    }
+
+    private fun clickNodeOrClickableAncestor(
+        node: AccessibilityNodeInfo
+    ): Boolean {
+        var current: AccessibilityNodeInfo? = node
+        var depth = 0
+        while (current != null && depth < 6) {
+            if (current.isClickable) {
+                val ok = runCatching {
+                    current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }.getOrDefault(false)
+                if (current !== node) {
+                    SafeNodeWalker.safeRecycle(current)
+                }
+                return ok
+            }
+            val parent = runCatching { current.parent }.getOrNull()
+            if (current !== node) {
+                SafeNodeWalker.safeRecycle(current)
+            }
+            current = parent
+            depth++
+        }
+        if (current != null && current !== node) {
+            SafeNodeWalker.safeRecycle(current)
+        }
+        return false
+    }
+
+
     companion object {
         private const val TAG = "NATEQ_A11Y"
 
@@ -1579,5 +1765,9 @@ class NateqAccessibilityService : AccessibilityService() {
 
         /** مفتاح جهاز البلوتوث عند تعذّر قراءة العنوان (ع٤١-ب9). */
         private const val UNKNOWN_DEVICE_KEY = "unknown"
+
+        private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
+        private const val YOUTUBE_AD_SKIP_POLL_MS = 1500L
+        private const val YOUTUBE_AD_SKIP_DEBOUNCE_MS = 2500L
     }
 }

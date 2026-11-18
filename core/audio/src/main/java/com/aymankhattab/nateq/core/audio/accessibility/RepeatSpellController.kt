@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 object RepeatSpellController {
 
-    const val MAX_ENTRIES = 20
+    const val MAX_ENTRIES = 10
 
     /** من أين جاء النص المسجَّل. */
     enum class Source { READER, ANNOUNCEMENT }

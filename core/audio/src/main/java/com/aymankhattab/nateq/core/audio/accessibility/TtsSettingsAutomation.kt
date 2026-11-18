@@ -150,6 +150,15 @@ object TtsSettingsAutomation {
         run(context, target)
     }
 
+    private val INVISIBLE_CHARS_REGEX =
+        Regex("[\u200B-\u200F\u202A-\u202E\uFEFF\u00AD]")
+    private val TASHKEEL_REGEX = Regex("[\u064B-\u065F\u0670\u0640]")
+    private val ALEF_REGEX = Regex("[أإآٱ]")
+    private val YAA_REGEX = Regex("[ىي]")
+    private val TAA_MARBUTA_REGEX = Regex("[ة]")
+    private val DASHES_REGEX = Regex("[-‐–—]")
+    private val WHITESPACE_REGEX = Regex("\\s+")
+
     /**
      * تطبيع شامل للنصوص لمطابقة أسماء المحركات وعناوين الإعدادات بدقة تامة.
      */
@@ -157,24 +166,21 @@ object TtsSettingsAutomation {
         if (s.isEmpty()) return ""
         var str = s
         // حذف علامات الاتجاه والمحارف غير المرئية
-        str = str.replace(
-            Regex("[\u200B-\u200F\u202A-\u202E\uFEFF\u00AD]"),
-            ""
-        )
+        str = str.replace(INVISIBLE_CHARS_REGEX, "")
         // حذف التشكيل والتطويل
-        str = str.replace(Regex("[\u064B-\u065F\u0670\u0640]"), "")
+        str = str.replace(TASHKEEL_REGEX, "")
         // توحيد الألف
-        str = str.replace(Regex("[أإآٱ]"), "ا")
+        str = str.replace(ALEF_REGEX, "ا")
         // توحيد الياء والألف المقصورة
-        str = str.replace(Regex("[ىي]"), "ي")
+        str = str.replace(YAA_REGEX, "ي")
         // توحيد التاء المربوطة والهاء
-        str = str.replace(Regex("[ة]"), "ه")
+        str = str.replace(TAA_MARBUTA_REGEX, "ه")
         // تصغير الأحرف اللاتينية
         str = str.lowercase(Locale.ROOT)
         // توحيد الشرطات
-        str = str.replace(Regex("[-‐–—]"), "-")
+        str = str.replace(DASHES_REGEX, "-")
         // توحيد المسافات
-        str = str.replace(Regex("\\s+"), " ")
+        str = str.replace(WHITESPACE_REGEX, " ")
         return str.trim()
     }
 

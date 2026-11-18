@@ -82,6 +82,10 @@
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_bluetooth_announcement_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
+            <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_a11y_youtube_ad_skip" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_youtube_ad_skip_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_youtube_ad_skip_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
+
             <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_a11y_continuous_reading" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_continuous_reading_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_continuous_reading_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
@@ -1238,6 +1242,8 @@
 
             
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_changelog" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/changelog_title" android:importantForAccessibility="yes" app:icon="@drawable/ic_history" app:iconGravity="textStart" />
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/btn_read_later" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/read_later_title" android:importantForAccessibility="yes" app:icon="@drawable/ic_history" app:iconGravity="textStart" />
 
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_a11y_guide" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_guide_title" android:importantForAccessibility="yes" app:icon="@drawable/ic_history" app:iconGravity="textStart" />
 

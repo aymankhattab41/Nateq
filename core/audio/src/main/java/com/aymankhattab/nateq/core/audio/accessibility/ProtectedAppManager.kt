@@ -335,34 +335,63 @@ object ProtectedAppManager {
         private set
 
     /**
-     * حزمة مشغّل الشاشة الرئيسية الافتراضية إن وُجدت.
+     * كاش حزمة/حزم مشغّل الشاشة الرئيسية لتفادي استعلام PackageManager
+     * مع كل نقرة (بند 1). يُبطَل عبر [invalidateHomeLauncherCache].
      */
-    fun homeLauncherPackage(context: Context): String? {
+    @Volatile
+    private var homeLauncherCache: HomeLauncherCache? = null
+
+    private data class HomeLauncherCache(
+        val defaultHome: String?,
+        val allHomes: Set<String>
+    )
+
+    fun invalidateHomeLauncherCache() {
+        homeLauncherCache = null
+    }
+
+    private fun computeHomeLauncherCache(
+        context: Context
+    ): HomeLauncherCache {
+        val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_HOME)
-        return runCatching {
-            context.packageManager
-                .resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        val defaultHome = runCatching {
+            pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
                 ?.activityInfo?.packageName
         }.getOrNull()
+        val allHomes = runCatching {
+            pm.queryIntentActivities(intent, 0)
+                .mapNotNull { it.activityInfo?.packageName }
+                .toSet()
+        }.getOrDefault(emptySet())
+        return HomeLauncherCache(defaultHome, allHomes)
     }
+
+    private fun getHomeLauncherCache(context: Context): HomeLauncherCache {
+        homeLauncherCache?.let { return it }
+        return synchronized(this) {
+            homeLauncherCache?.let { return it }
+            val computed = computeHomeLauncherCache(context)
+            homeLauncherCache = computed
+            computed
+        }
+    }
+
+    /**
+     * حزمة مشغّل الشاشة الرئيسية الافتراضية إن وُجدت.
+     */
+    fun homeLauncherPackage(context: Context): String? =
+        getHomeLauncherCache(context).defaultHome
 
     /**
      * هل الحزمة تنتمي لمشغل الشاشة الرئيسية (Launcher / Home)؟
      */
     fun isHomeLauncher(context: Context, pkg: String?): Boolean {
         if (pkg.isNullOrBlank()) return false
-        val pm = context.packageManager
-        val intent = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_HOME)
-        if (pkg == homeLauncherPackage(context)) return true
-
-        val allHomes = runCatching {
-            pm.queryIntentActivities(intent, 0)
-                .map { it.activityInfo.packageName }
-        }.getOrDefault(emptyList())
-        if (allHomes.contains(pkg)) return true
-
+        val cache = getHomeLauncherCache(context)
+        if (pkg == cache.defaultHome) return true
+        if (cache.allHomes.contains(pkg)) return true
         val lower = pkg.lowercase()
         return lower.contains("launcher") || lower.contains("home")
     }

@@ -172,6 +172,11 @@ object SelectorPacks {
         "\u200C\u200D\uFEFF\u202A\u202B\u202C\u202D" +
         "\u202E\u2066\u2067\u2068\u2069"
 
+    private val TIME_SUFFIX_REGEX =
+        Regex("""[0-9٠-٩]+[:/][0-9٠-٩]+$""")
+    private val NUM_SUFFIX_REGEX = Regex("""\b[0-9٠-٩]+$""")
+    private val WHITESPACE_REGEX = Regex("\\s+")
+
     /** تنظيف النص من محارف التوجيه والمسافات الصفرية في يونيكود (ع٤٣-1). */
     fun cleanBidi(text: CharSequence?): String {
         if (text == null) return ""
@@ -300,7 +305,7 @@ object SelectorPacks {
             if (stripped) continue
 
             // 3. أرقام الوقت والتاريخ في النهاية (مثل 1:46 أو ١:٤٦)
-            val timeMatch = Regex("""[0-9٠-٩]+[:/][0-9٠-٩]+$""").find(clean)
+            val timeMatch = TIME_SUFFIX_REGEX.find(clean)
             if (timeMatch != null) {
                 clean = clean.substring(0, timeMatch.range.first)
                     .trim { it in BIDI_AND_SPACES || it in ",،;؛•-_| " }
@@ -309,7 +314,7 @@ object SelectorPacks {
             }
 
             // 4. أرقام منفردة في النهاية
-            val numMatch = Regex("""\b[0-9٠-٩]+$""").find(clean)
+            val numMatch = NUM_SUFFIX_REGEX.find(clean)
             if (numMatch != null && clean.length - numMatch.range.first <= 5) {
                 clean = clean.substring(0, numMatch.range.first)
                     .trim { it in BIDI_AND_SPACES || it in ",،;؛•-_| " }
@@ -372,10 +377,10 @@ object SelectorPacks {
         }
 
         // تقسيم إلى كلمات وتصفية الكلمات القصيرة
-        val sWords = sClean.split("\\s+".toRegex())
+        val sWords = sClean.split(WHITESPACE_REGEX)
             .map { it.trim { c -> !c.isLetterOrDigit() } }
             .filter { it.length >= 3 }
-        val nWords = nClean.split("\\s+".toRegex())
+        val nWords = nClean.split(WHITESPACE_REGEX)
             .map { it.trim { c -> !c.isLetterOrDigit() } }
             .filter { it.length >= 3 }
 
@@ -436,7 +441,7 @@ object SelectorPacks {
 
     private fun meaningfulWords(text: String): List<String> =
         cleanBidi(text).trim().lowercase()
-            .split("\\s+".toRegex())
+            .split(WHITESPACE_REGEX)
             .map { it.trim { c -> !c.isLetterOrDigit() } }
             .filter { it.length >= 3 }
 }

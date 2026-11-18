@@ -129,11 +129,11 @@ class LordSpeedDialActivity : AppCompatActivity() {
     private fun setupTabs() {
         btnTabDialpad?.setOnClickListener {
             selectSection(0)
-            speak("لوحة الموقع")
+            speak(getString(R.string.speed_dial_tab_dialpad))
         }
         btnTabSavedList?.setOnClickListener {
             selectSection(1)
-            speak("قائمة المحفوظات")
+            speak(getString(R.string.speed_dial_tab_saved))
         }
     }
 

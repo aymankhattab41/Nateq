@@ -1,7 +1,11 @@
 package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.speech.tts.TextToSpeech
 import android.util.Log
+import android.widget.Toast
 import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -9,6 +13,7 @@ import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 import java.util.zip.ZipInputStream
 
 /**
@@ -36,6 +41,38 @@ object MicrosoftDownloader {
         )
         if (!base.exists()) base.mkdirs()
         return base
+    }
+
+    private fun announceHashMismatch(context: Context) {
+        val appCtx = context.applicationContext
+        val msg = "فشل تنزيل حزمة الصوت: بصمة التحقق غير متطابقة"
+        try {
+            Handler(Looper.getMainLooper()).post {
+                runCatching {
+                    Toast.makeText(appCtx, msg, Toast.LENGTH_LONG).show()
+                }
+            }
+        } catch (_: Throwable) {
+        }
+        try {
+            var tts: TextToSpeech? = null
+            tts = TextToSpeech(appCtx) { status ->
+                try {
+                    if (status == TextToSpeech.SUCCESS) {
+                        tts?.language = Locale.forLanguageTag("ar")
+                        @Suppress("DEPRECATION")
+                        tts?.speak(
+                            msg,
+                            TextToSpeech.QUEUE_FLUSH,
+                            null,
+                            "hash_mismatch"
+                        )
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+        } catch (_: Throwable) {
+        }
     }
 
     suspend fun downloadVoice(
@@ -107,6 +144,22 @@ object MicrosoftDownloader {
                     DownloadError.NOT_A_ZIP,
                     "Not a valid zip"
                 )
+            }
+
+            val expectedSha = item.archiveSha256.trim()
+            if (expectedSha.isNotEmpty()) {
+                val ok = runCatching {
+                    DownloadHttpHelper.verifySha256(partZipFile, expectedSha)
+                }.getOrDefault(false)
+                if (!ok) {
+                    Log.e(TAG, "بصمة SHA-256 غير متطابقة للصوت ${item.id}")
+                    partZipFile.delete()
+                    announceHashMismatch(context)
+                    throw DownloadError(
+                        DownloadError.HASH_MISMATCH,
+                        "بصمة التحقق غير متطابقة"
+                    )
+                }
             }
 
             onProgress(96)

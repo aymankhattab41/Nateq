@@ -21,6 +21,7 @@ internal class NumberStep(
 
     companion object : TextProcessingStep {
         private val defaultInstance = NumberStep()
+        private val COMMA_REGEX = Regex("""[,،]""")
         override fun apply(input: String): String =
             defaultInstance.apply(input)
         override fun applyEnglish(input: String): String =
@@ -123,7 +124,7 @@ internal class NumberStep(
             ) {
                 " "
             } else {
-                pre.replace(Regex("""[,،]"""), " ")
+                pre.replace(COMMA_REGEX, " ")
             }
             sb.append(cleanedPre)
             sb.append(if (minus) minusWord(english) else "")
@@ -134,7 +135,7 @@ internal class NumberStep(
             cursor = end
         }
         val tail = input.substring(cursor)
-        sb.append(tail.replace(Regex("""[,،]"""), " "))
+        sb.append(tail.replace(COMMA_REGEX, " "))
         return sb.toString()
     }
 

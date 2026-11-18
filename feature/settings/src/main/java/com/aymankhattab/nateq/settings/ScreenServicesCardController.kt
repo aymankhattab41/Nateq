@@ -186,6 +186,11 @@ class ScreenServicesCardController(
         )
         bindSwitch(
             root,
+            "switch_a11y_youtube_ad_skip",
+            FeatureFlags.FEATURE_YOUTUBE_AD_SKIP
+        )
+        bindSwitch(
+            root,
             "switch_a11y_continuous_reading",
             FeatureFlags.FEATURE_CONTINUOUS_READING
         )
