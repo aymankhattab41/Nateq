@@ -222,17 +222,16 @@ object ProtectedAppManager {
             val speaker = AnnouncementSpeaker.getInstance(context)
             val settings = SettingsRepository.create(context)
             val cat = SettingsRepository.VOICE_CATEGORY_LORD_SYSTEM
+            val locale = java.util.Locale.getDefault()
+            val lang = locale.language.ifBlank { "ar" }
             val voiceId = settings.getPreferredVoiceIdForCategory(cat)
-                ?: settings.getPreferredVoiceIdForCategory(
-                    SettingsRepository.VOICE_CATEGORY_DEFAULT
-                )
+                ?: settings.getVoiceForLanguage(lang)
+                ?: settings.getPreferredVoiceId(lang)
             val rate = settings.getSpeechRateForCategory(cat)
             val pitch = settings.getPitchForCategory(cat)
             val volume = settings.getVolumeForCategory(cat)
             val engine = settings.getEngineForCategory(cat)
-                ?: settings.getEngineForCategory(
-                    SettingsRepository.VOICE_CATEGORY_DEFAULT
-                )
+                ?: settings.getEngineForLanguage(lang)
             if (voiceId != null) {
                 speaker.resetVoice(voiceId)
             }

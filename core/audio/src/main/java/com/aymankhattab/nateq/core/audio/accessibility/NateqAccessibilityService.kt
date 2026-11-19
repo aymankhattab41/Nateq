@@ -1362,171 +1362,500 @@ class NateqAccessibilityService : AccessibilityService() {
      * - يوثّق كل مرحلة في سجلات [READMORE].
      */
     internal suspend fun expandReadMoreInternal(prefix: String): String? {
-        val focusSnapshot = findCurrentAccessibilityFocusSnapshot()
-        val appPkg = focusSnapshot?.packageName?.toString().orEmpty()
         val settings = SettingsRepository.create(this)
         val allowedApps = settings.getReadMoreAllowedPackages()
-        if (appPkg.isNotBlank() && !allowedApps.contains(appPkg)) {
-            Log.w(
-                TAG,
-                "[READMORE] App $appPkg is not in allowed packages"
-            )
-            return null
-        }
-
-        val focusedText = focusSnapshot?.readableText().orEmpty()
-        val prefixClean = prefix.trim()
-
-        // بند ١٥: هوية العقدة قبل أي نقرة — تُقارن بعدها كي لا تُقرأ
-        // رسالة أخرى إن تغيّر التركيز أثناء انتظار التوسيع.
-        val initialIdentity = stableNodeIdentity(focusSnapshot)
-
-        // ع٤٣-1: فحص تطابق مرن بين نص الطلب والعنصر المفوكس.
-        // بند ١٥: الاقتطاع لم يعد يُبطل الفحص؛ حين يكون أحد النصين
-        // مقتطعاً نتحقق من استمرارية البادئة بدل التطابق العام، وإلا
-        // سقط الحارس عملياً وفُتحت أي رسالة مفوكسة أخرى.
-        val isTruncatedPrefix = SelectorPacks.looksTruncated(prefixClean)
-        val isTruncatedFocus = SelectorPacks.looksTruncated(focusedText)
-        val identityMatches = prefixClean.isEmpty() ||
-            focusedText.isEmpty() ||
-            if (isTruncatedPrefix || isTruncatedFocus) {
-                SelectorPacks.hasPrefixContinuity(
-                    prefixClean, focusedText
-                )
-            } else {
-                SelectorPacks.isTextMatchingMessage(
-                    prefixClean, focusedText
-                )
-            }
-        if (!identityMatches) {
-            Log.w(
-                TAG,
-                "[READMORE] Focused node does not continue target prefix"
-            )
-            return null
-        }
 
         var focusedNode = findAccessibilityFocusAcrossWindows()
         if (focusedNode == null) {
-            delay(AccessibilityBridge.READ_MORE_FOCUS_RETRY_MS)
+            delay(READ_MORE_FOCUS_RETRY_MS)
             focusedNode = findAccessibilityFocusAcrossWindows()
         }
-
-        val oldLen = focusedText.length
-
-        // ع٤٣-3: تجهيز إشارة انتظار تغيّر المحتوى قبل تنفيذ التوسيع
-        // حتى لا يضيع حدث TYPE_WINDOW_CONTENT_CHANGED المتزامن مع النقر
-        val signal = AccessibilityBridge.prepareContentChangeSignal()
-
-        val expanded = if (focusedNode != null) {
-            try {
-                ReadMoreExpander.tryExpand(focusedNode)
-            } finally {
-                SafeNodeWalker.safeRecycle(focusedNode)
-            }
-        } else false
-
-        if (!expanded) {
-            AccessibilityBridge.cancelContentChangeSignal(signal)
-            Log.w(TAG, "[READMORE] tryExpand returned false")
+        if (focusedNode == null) {
+            Log.w(TAG, "[READMORE] لا يوجد عنصر مفوكس")
             return null
         }
 
-        // ع٤٣-3: انتظار استجابة إشارة التغير بمهلة سريعة (250ms كحد أقصى)
-        val signaled = AccessibilityBridge.awaitContentChange(
-            signal,
-            AccessibilityBridge.READ_MORE_CONTENT_CHANGE_MS
-        )
-
-        // التحقق من النص المحدّث — بند ١٥: لا نُعيد نصاً إلا إن كان
-        // مكمّلاً لنفس البادئة ومن نفس العقدة التي بدأنا منها.
-        val updatedSnapshot = findCurrentAccessibilityFocusSnapshot()
-        val updatedText = updatedSnapshot?.readableText().orEmpty()
-        val updatedTrusted = expandedTextMatchesIdentity(
-            updatedSnapshot, updatedText, prefixClean, initialIdentity
-        )
-        if (updatedText.length > oldLen && updatedTrusted) {
-            ReadMoreExpander.onExpandAttemptResult(
-                pkg = appPkg,
-                increased = true,
-                oldLength = oldLen,
-                newLength = updatedText.length
-            )
-            Log.w(
-                TAG,
-                "[READMORE] Expand successful: $oldLen -> " +
-                    "${updatedText.length} chars"
-            )
-            return updatedText
+        val appPkg = focusedNode.packageName?.toString().orEmpty()
+        if (appPkg.isNotBlank() && !allowedApps.contains(appPkg)) {
+            Log.w(TAG, "[READMORE] التطبيق غير مسموح")
+            SafeNodeWalker.safeRecycle(focusedNode)
+            return null
         }
 
-        // مهلة تعليق إضافية قصيرة جداً (60ms) فقط إن لم تكن الإشارة قد وصلت
-        if (!signaled) {
-            delay(AccessibilityBridge.READ_MORE_GRACE_MS)
-        }
-        val finalSnapshot = findCurrentAccessibilityFocusSnapshot()
-        val finalText = finalSnapshot?.readableText().orEmpty()
-        val finalTrusted = expandedTextMatchesIdentity(
-            finalSnapshot, finalText, prefixClean, initialIdentity
-        )
-        val didIncrease = finalText.length > oldLen && finalTrusted
-        ReadMoreExpander.onExpandAttemptResult(
-            pkg = appPkg,
-            increased = didIncrease,
-            oldLength = oldLen,
-            newLength = finalText.length
+        val prefixClean = SelectorPacks.cleanBidi(prefix).trim()
+        val snapshot = snapshotFromNode(focusedNode)
+        val containerNode = findMessageContainerNode(focusedNode)
+        val containerSnapshot = snapshotFromNode(containerNode)
+        val initialIdentity = messageIdentity(
+            containerSnapshot ?: snapshot, prefixClean
         )
 
-        return if (didIncrease) {
-            Log.w(
-                TAG,
-                "[READMORE] Expand successful after grace delay: " +
-                    "$oldLen -> ${finalText.length} chars"
-            )
-            finalText
-        } else if (finalTrusted && finalText.isNotEmpty() &&
-            (SelectorPacks.hasPrefixContinuity(prefixClean, finalText) ||
-                SelectorPacks.isTextMatchingMessage(
-                    prefixClean, finalText
-                ) || !SelectorPacks.looksTruncated(finalText))
+        if (!isSameTargetMessage(
+                snapshot, prefixClean, initialIdentity, requirePrefix = true
+            ) && prefixClean.isNotEmpty()
         ) {
-            finalText
+            Log.w(TAG, "[READMORE] العنصر المفوكس لا يطابق الرسالة المطلوبة")
+            recycleIfDifferent(containerNode, focusedNode)
+            SafeNodeWalker.safeRecycle(focusedNode)
+            return null
+        }
+
+        val initialFull = extractMessageBodyText(containerNode ?: focusedNode)
+            .ifBlank { snapshot?.readableText().orEmpty() }
+        val initialTrusted = isSameTargetMessage(
+            containerSnapshot ?: snapshot,
+            prefixClean,
+            initialIdentity,
+            requirePrefix = prefixClean.isNotEmpty()
+        )
+
+        // استخدام النص الكامل المتاح بلا نقرة بعد تحقق الهوية.
+        if (initialTrusted &&
+            shouldUseAvailableTextWithoutClick(prefixClean, initialFull)
+        ) {
+            Log.i(TAG, "[READMORE] استخدام النص الكامل المتاح دون نقرة")
+            recycleIfDifferent(containerNode, focusedNode)
+            SafeNodeWalker.safeRecycle(focusedNode)
+            return SelectorPacks.cleanBidi(initialFull).trim()
+        }
+
+        val hasExplicit = hasExplicitExpandControl(containerNode ?: focusedNode)
+        if (!hasExplicit) {
+            recycleIfDifferent(containerNode, focusedNode)
+            SafeNodeWalker.safeRecycle(focusedNode)
+            if (initialTrusted && isMeaningfulImprovement(prefixClean, initialFull)) {
+                return SelectorPacks.cleanBidi(initialFull).trim()
+            }
+            Log.w(TAG, "[READMORE] لا يوجد إجراء/زر توسيع صريح")
+            return null
+        }
+
+        if (!ReadMoreExpander.canAttempt(
+                appPkg, containerNode ?: focusedNode, initialIdentity
+            )
+        ) {
+            Log.w(TAG, "[READMORE] محاولة مكررة/مقيّدة مُتجاوزة")
+            recycleIfDifferent(containerNode, focusedNode)
+            SafeNodeWalker.safeRecycle(focusedNode)
+            return null
+        }
+
+        // تجهيز إشارة التغيّر قبل النقر لمنع فقدان حدث متزامن.
+        val signal = AccessibilityBridge.prepareContentChangeSignal()
+        val clicked = ReadMoreExpander.tryExpandConfined(
+            containerNode ?: focusedNode, focusedNode
+        )
+        if (!clicked) {
+            AccessibilityBridge.cancelContentChangeSignal(signal)
+            ReadMoreExpander.onAttemptFinished(
+                appPkg, initialIdentity, false, 0, 0
+            )
+            recycleIfDifferent(containerNode, focusedNode)
+            SafeNodeWalker.safeRecycle(focusedNode)
+            Log.w(TAG, "[READMORE] تعذّر تنفيذ نقرة توسيع صريحة")
+            return null
+        }
+        ReadMoreExpander.onClickIssued(appPkg, initialIdentity)
+
+        val oldLen = SelectorPacks.cleanBidi(initialFull).trim().length
+        val signaled = AccessibilityBridge.awaitContentChange(
+            signal, READ_MORE_WAIT_MS
+        )
+        if (!signaled) {
+            delay(READ_MORE_GRACE_MS)
+        }
+
+        // إلغاء عند تغير التركيز/الرسالة مع الاحتفاظ بالأصل (بإرجاع null).
+        val afterFocus = findAccessibilityFocusAcrossWindows()
+        val afterSnapshot = snapshotFromNode(afterFocus)
+        val afterContainer = if (afterFocus != null) {
+            findMessageContainerNode(afterFocus)
         } else {
-            Log.w(TAG, "[READMORE] Text did not grow after click")
             null
+        }
+        val afterText = extractMessageBodyText(
+            afterContainer ?: afterFocus ?: containerNode ?: focusedNode
+        ).ifBlank { afterSnapshot?.readableText().orEmpty() }
+        val afterIdentity = messageIdentity(
+            snapshotFromNode(afterContainer) ?: afterSnapshot, prefixClean
+        )
+        val sameMessage = afterFocus == null || isSameTargetMessage(
+            snapshotFromNode(afterContainer) ?: afterSnapshot,
+            prefixClean,
+            initialIdentity,
+            requirePrefix = false,
+            observedIdentity = afterIdentity
+        )
+        val cleanedAfter = SelectorPacks.cleanBidi(afterText).trim()
+        val increased = sameMessage && cleanedAfter.length > oldLen &&
+            isMeaningfulImprovement(prefixClean, cleanedAfter)
+
+        recycleIfDifferent(afterContainer, afterFocus)
+        SafeNodeWalker.safeRecycle(afterFocus)
+        recycleIfDifferent(containerNode, focusedNode)
+        SafeNodeWalker.safeRecycle(focusedNode)
+
+        ReadMoreExpander.onAttemptFinished(
+            appPkg, initialIdentity, increased, oldLen, cleanedAfter.length
+        )
+
+        if (!sameMessage) {
+            Log.w(TAG, "[READMORE] أُلغي التوسيع لتغيّر التركيز/الرسالة")
+            return null
+        }
+        if (increased) {
+            Log.i(TAG, "[READMORE] اكتمل التوسيع لنفس الرسالة")
+            return cleanedAfter
+        }
+        if (shouldUseAvailableTextWithoutClick(prefixClean, cleanedAfter)) {
+            return cleanedAfter
+        }
+        Log.w(TAG, "[READMORE] لم يتحقق تحديث ناتج للرسالة نفسها")
+        return null
+    }
+
+    private fun snapshotFromNode(node: AccessibilityNodeInfo?): NodeView? =
+        node?.let { SafeNodeWalker.extractNodeView(it) }
+
+    private fun recycleIfDifferent(
+        candidate: AccessibilityNodeInfo?,
+        other: AccessibilityNodeInfo?
+    ) {
+        if (candidate != null && candidate !== other) {
+            SafeNodeWalker.safeRecycle(candidate)
         }
     }
 
     /**
-     * بند ١٥: هوية مستقرة للعقدة لا تتغيّر بزيادة النص بعد التوسيع.
-     * تُقارن قبل وبعد النقر كي لا تُقرأ رسالة أخرى إن انتقل التركيز.
+     * هوية الرسالة: نافذة + موضع + حزمة/معرّف/نوع + بادئة منظفة.
      */
-    private fun stableNodeIdentity(snapshot: NodeView?): String {
+    fun messageIdentity(
+        snapshot: NodeView?,
+        prefix: String
+    ): String {
+        if (snapshot == null) return ""
+        val b = snapshot.boundsInScreen
+        val pos = "${b.left},${b.top},${b.right},${b.bottom}"
+        val pref = SelectorPacks.cleanBidi(prefix).trim()
+            .take(80).lowercase()
+        return listOf(
+            snapshot.windowId.toString(),
+            pos,
+            snapshot.packageName.orEmpty(),
+            snapshot.viewIdResourceName.orEmpty(),
+            snapshot.className.orEmpty(),
+            pref
+        ).joinToString("|")
+    }
+
+    /** توافق: هوية مستقرة أساسية للعقدة (بدون بادئة/موضع). */
+    fun stableNodeIdentity(snapshot: NodeView?): String {
         if (snapshot == null) return ""
         return "${snapshot.packageName.orEmpty()}|" +
             "${snapshot.viewIdResourceName.orEmpty()}|" +
             snapshot.className.orEmpty()
     }
 
-    /**
-     * بند ١٥: هل النص بعد التوسيع ما زال لنفس العقدة ومكمّلاً
-     * للبادئة المطلوبة؟ يمنع إعادة نص رسالة مختلفة بعد النقر.
-     */
-    private fun expandedTextMatchesIdentity(
+    private fun isSameTargetMessage(
+        snapshot: NodeView?,
+        prefix: String,
+        initialIdentity: String,
+        requirePrefix: Boolean,
+        observedIdentity: String? = null
+    ): Boolean {
+        val currentId = observedIdentity ?: messageIdentity(snapshot, prefix)
+        if (initialIdentity.isNotEmpty() && currentId.isNotEmpty() &&
+            currentId != initialIdentity
+        ) {
+            // السماح بتطابق الهوية دون البادئة حين تغيّر النص بعد التوسيع
+            val baseInit = initialIdentity.substringBeforeLast('|')
+            val baseCur = currentId.substringBeforeLast('|')
+            if (baseInit.isEmpty() || baseInit != baseCur) return false
+        }
+        val text = snapshot?.readableText().orEmpty()
+        val cleanedPrefix = SelectorPacks.cleanBidi(prefix).trim()
+        if (cleanedPrefix.isBlank()) return !requirePrefix || text.isNotBlank()
+        if (text.isBlank()) return false
+        return SelectorPacks.hasPrefixContinuity(cleanedPrefix, text) ||
+            SelectorPacks.isTextMatchingMessage(cleanedPrefix, text) ||
+            SelectorPacks.cleanBidi(text).trim()
+                .startsWith(cleanedPrefix, ignoreCase = true)
+    }
+
+    /** يتحقق أن النص الموسّع تابع لرسالة الهوية/البادئة نفسها. */
+    fun expandedTextMatchesIdentity(
         snapshot: NodeView?,
         text: String,
         prefix: String,
         initialIdentity: String
     ): Boolean {
         if (initialIdentity.isNotEmpty() &&
-            stableNodeIdentity(snapshot) != initialIdentity
+            messageIdentity(snapshot, prefix) != initialIdentity
         ) {
-            Log.w(TAG, "[READMORE] Focus changed during expansion")
+            // هوية الرسالة قد تحافظ على النافذة/الموضع/المعرّف وتتغير البادئة
+            val baseInit = initialIdentity.substringBeforeLast('|')
+            val baseCur = messageIdentity(snapshot, prefix)
+                .substringBeforeLast('|')
+            if (baseInit.isEmpty() || baseInit != baseCur) {
+                Log.w(TAG, "[READMORE] تغيّر هوية الرسالة أثناء التوسيع")
+                return false
+            }
+        }
+        val p = SelectorPacks.cleanBidi(prefix).trim()
+        val t = SelectorPacks.cleanBidi(text).trim()
+        if (p.isBlank() || t.isBlank()) return t.isNotBlank() || p.isBlank()
+        return SelectorPacks.hasPrefixContinuity(p, t) ||
+            SelectorPacks.isTextMatchingMessage(p, t) ||
+            t.startsWith(p, ignoreCase = true)
+    }
+
+    private fun shouldUseAvailableTextWithoutClick(
+        prefix: String,
+        text: String
+    ): Boolean {
+        val t = SelectorPacks.cleanBidi(text).trim()
+        if (t.isBlank()) return false
+        val p = SelectorPacks.cleanBidi(prefix).trim()
+        if (p.isNotBlank() && !isMeaningfulImprovement(p, t) &&
+            !SelectorPacks.hasPrefixContinuity(p, t) &&
+            !SelectorPacks.isTextMatchingMessage(p, t)
+        ) {
             return false
         }
-        if (prefix.isBlank() || text.isBlank()) return true
-        return SelectorPacks.hasPrefixContinuity(prefix, text) ||
-            SelectorPacks.isTextMatchingMessage(prefix, text)
+        // إذا لم يُعثر على مؤشر اقتطاع أو محفّز توسعة صريح في النص المتاح،
+        // فالنص كامل/قابل للاستخدام دون نقرة.
+        return !SelectorPacks.hasTruncationHint(t) &&
+            !SelectorPacks.hasExplicitExpandCue(t)
+    }
+
+    private fun isMeaningfulImprovement(prefix: String, text: String): Boolean {
+        val p = SelectorPacks.cleanBidi(prefix).trim()
+        val t = SelectorPacks.cleanBidi(text).trim()
+        if (t.isBlank()) return false
+        if (p.isBlank()) return true
+        if (t.length > p.length) return true
+        return !SelectorPacks.hasTruncationHint(t) &&
+            (SelectorPacks.hasPrefixContinuity(p, t) ||
+                SelectorPacks.isTextMatchingMessage(p, t))
+    }
+
+    /** بحث محدود عن إجراء/زر توسعة صريح داخل حاوية الرسالة. */
+    private fun hasExplicitExpandControl(
+        container: AccessibilityNodeInfo
+    ): Boolean {
+        return findExplicitExpandTarget(container, maxNodes = 40) != null
+    }
+
+    internal fun findExplicitExpandTarget(
+        root: AccessibilityNodeInfo,
+        maxNodes: Int
+    ): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
+        queue.add(root to 0)
+        var visited = 0
+        while (queue.isNotEmpty() && visited < maxNodes) {
+            val (node, depth) = queue.removeFirst()
+            visited++
+            if (isExplicitExpandNode(node)) return node
+            if (depth >= 4) continue
+            val childCount = runCatching { node.childCount }.getOrDefault(0)
+            for (i in 0 until childCount) {
+                if (visited + queue.size >= maxNodes) break
+                val child = runCatching { node.getChild(i) }.getOrNull()
+                    ?: continue
+                // حصر داخل الحاوية: نتجاهل الأبناء غير المرئيين بوضوح
+                if (runCatching { child.windowId }.getOrDefault(-1) > 0 &&
+                    !runCatching { child.isVisibleToUser }.getOrDefault(true)
+                ) {
+                    SafeNodeWalker.safeRecycle(child)
+                    continue
+                }
+                queue.add(child to depth + 1)
+            }
+        }
+        // لا نُعيد تدوير العقد هنا لأن المالك (المستدعي) يدير الشجرة؛
+        // children المضافة لم تُعاد كقيمة.
+        return null
+    }
+
+    private fun isExplicitExpandNode(node: AccessibilityNodeInfo): Boolean {
+        val actions = runCatching { node.actionList }.getOrNull().orEmpty()
+        val hasExpandAction =
+            (node.actions and AccessibilityNodeInfo.ACTION_EXPAND) != 0 ||
+                actions.any { it.id == AccessibilityNodeInfo.ACTION_EXPAND }
+        val labeledAction = actions.any { action ->
+            val label = action.label?.toString().orEmpty()
+            label.isNotBlank() && SelectorPacks.isReadMoreActionLabel(label)
+        }
+        val clickable = runCatching { node.isClickable }.getOrDefault(false)
+        val text = node.text?.toString().orEmpty()
+        val desc = node.contentDescription?.toString().orEmpty()
+        val explicitText = SelectorPacks.isExplicitExpandText(text) ||
+            SelectorPacks.isExplicitExpandText(desc)
+        val clickableSpanTarget = hasExplicitClickableSpan(node)
+        if (hasExpandAction || labeledAction) return true
+        if (clickable && explicitText) return true
+        if (clickableSpanTarget) return true
+        return false
+    }
+
+    private fun hasExplicitClickableSpan(
+        node: AccessibilityNodeInfo
+    ): Boolean {
+        val text = node.text
+        val sp = text as? android.text.Spanned ?: return false
+        val spans = runCatching {
+            sp.getSpans(
+                0, sp.length, android.text.style.ClickableSpan::class.java
+            )
+        }.getOrNull().orEmpty()
+        if (spans.isEmpty()) return false
+        return spans.any { span ->
+            val start = sp.getSpanStart(span).coerceAtLeast(0)
+            val end = sp.getSpanEnd(span).coerceAtMost(sp.length)
+            if (end <= start) return@any false
+            val spanText = sp.subSequence(start, end).toString()
+            SelectorPacks.isExplicitExpandText(spanText)
+        }
+    }
+
+    /** حاوية رسالة محصورة لتقليل استهداف عناصر مجاورة/عامة. */
+    private fun findMessageContainerNode(
+        focused: AccessibilityNodeInfo
+    ): AccessibilityNodeInfo {
+        // تفضيل عقدة نصية/قابلة للتركيز داخل الفقاعة؛ وإلا صعود محدود.
+        var current: AccessibilityNodeInfo = focused
+        var best: AccessibilityNodeInfo = focused
+        var depth = 0
+        while (depth < 4) {
+            val cls = current.className?.toString().orEmpty()
+            val id = runCatching { current.viewIdResourceName }
+                .getOrNull().orEmpty()
+            val likelyMessage = id.contains("message", true) ||
+                id.contains("conversation", true) ||
+                cls.contains("TextView", true) ||
+                cls.contains("ViewGroup", true)
+            if (likelyMessage) best = current
+            val parent = runCatching { current.parent }.getOrNull() ?: break
+            // لا نصعد إلى جذر نافذة عام جداً
+            val pCls = parent.className?.toString().orEmpty()
+            if (pCls.contains("RecyclerView", true) ||
+                pCls.contains("ListView", true) ||
+                pCls.contains("ScrollView", true)
+            ) {
+                SafeNodeWalker.safeRecycle(parent)
+                break
+            }
+            if (current !== focused && current !== best) {
+                SafeNodeWalker.safeRecycle(current)
+            }
+            current = parent
+            depth++
+        }
+        if (current !== focused && current !== best) {
+            SafeNodeWalker.safeRecycle(current)
+        }
+        return best
+    }
+
+    /**
+     * استخراج متن الرسالة الكامل داخل الحاوية مع استبعاد المرسل/الوقت/
+     * الاقتباس/وصف الحاوية قدر الإمكان، بتنظيف موحّد.
+     */
+    private fun extractMessageBodyText(
+        container: AccessibilityNodeInfo?
+    ): String {
+        if (container == null) return ""
+        val parts = mutableListOf<String>()
+        collectMessageTexts(container, parts, depth = 0)
+        if (parts.isEmpty()) {
+            val direct = container.text?.toString().orEmpty()
+            if (direct.isNotBlank()) parts.add(direct)
+        }
+        val joined = parts
+            .asSequence()
+            .map { SelectorPacks.cleanBidi(it).trim() }
+            .filter { it.isNotBlank() }
+            .filterNot { isLikelyMessageMeta(it) }
+            .distinct()
+            .joinToString(" ")
+            .trim()
+        return joined
+    }
+
+    private fun collectMessageTexts(
+        node: AccessibilityNodeInfo,
+        out: MutableList<String>,
+        depth: Int
+    ) {
+        if (depth > 6 || out.size > 30) return
+        val vis = runCatching { node.isVisibleToUser }.getOrDefault(true)
+        if (runCatching { node.windowId }.getOrDefault(-1) > 0 && !vis) return
+        val id = runCatching { node.viewIdResourceName }.getOrNull().orEmpty()
+        val cls = node.className?.toString().orEmpty()
+        if (isLikelyQuoteOrMetaContainer(id, cls)) return
+
+        val text = node.text?.toString().orEmpty().trim()
+        // نفضّل نص العقدة؛ نتجنب وصف الحاوية ونصوص أزرار التوسعة الصريحة.
+        if (text.isNotBlank() && !isLikelyUiLabel(text) &&
+            !SelectorPacks.isExplicitExpandText(text)
+        ) {
+            out.add(text)
+        } else if (text.isBlank()) {
+            val desc = node.contentDescription?.toString().orEmpty().trim()
+            if (desc.isNotBlank() && cls.contains("TextView", true) &&
+                !isLikelyUiLabel(desc) &&
+                !SelectorPacks.isExplicitExpandText(desc)
+            ) {
+                out.add(desc)
+            }
+        }
+        val count = runCatching { node.childCount }.getOrDefault(0)
+        for (i in 0 until count) {
+            val child = runCatching { node.getChild(i) }.getOrNull() ?: continue
+            try {
+                collectMessageTexts(child, out, depth + 1)
+            } finally {
+                SafeNodeWalker.safeRecycle(child)
+            }
+        }
+    }
+
+    private fun isLikelyQuoteOrMetaContainer(id: String, cls: String): Boolean {
+        val l = (id + " " + cls).lowercase()
+        return l.contains("quote") || l.contains("quoted") ||
+            l.contains("reply_bar") || l.contains("forward_bar") ||
+            l.contains("status_container") || l.contains("date_divider")
+    }
+
+    private fun isLikelyMessageMeta(text: String): Boolean {
+        val t = SelectorPacks.cleanBidi(text).trim()
+        if (t.isEmpty()) return true
+        if (isLikelyTimeOnly(t)) return true
+        val lower = t.lowercase()
+        return lower in setOf(
+            "sent", "delivered", "read", "seen",
+            "تم الإرسال", "تم التسليم", "تمت القراءة", "شوهد"
+        )
+    }
+
+    private fun isLikelyUiLabel(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty()) return true
+        // تسميات عامة قصيرة جداً ليست متن رسالة
+        return t.length <= 1
+    }
+
+    private fun isLikelyTimeOnly(text: String): Boolean {
+        val t = text.trim()
+        if (t.length > 12) return false
+        return t.matches(
+            Regex(
+                "^[\\d\\u0660-\\u0669]{1,2}:" +
+                    "[\\d\\u0660-\\u0669]{2}" +
+                    "(\\s*[AaPp][Mm]|\\s*[صم])?$"
+            )
+        )
     }
 
     /** ع٤٣-1: تنفيذ صريح لإيماءة قراءة المزيد من KeyShortcutRouter. */
@@ -1950,5 +2279,10 @@ class NateqAccessibilityService : AccessibilityService() {
         private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
         private const val YOUTUBE_AD_SKIP_POLL_MS = 1500L
         private const val YOUTUBE_AD_SKIP_DEBOUNCE_MS = 2500L
+
+        /** مهلة موحدة لانتظار تحديث الرسالة بعد نقرة توسعة صريحة. */
+        internal const val READ_MORE_WAIT_MS = 320L
+        internal const val READ_MORE_FOCUS_RETRY_MS = 50L
+        internal const val READ_MORE_GRACE_MS = 40L
     }
 }

@@ -265,6 +265,199 @@ object SelectorPacks {
     }
 
     /**
+     * هل النص/الوصف يُمثّل تحكّماً صريحاً للتوسعة/«قراءة المزيد»؟
+     * تسمية تحكّم قصيرة وصريحة فقط (زر/إجراء/ClickableSpan)، لا محتوى
+     * رسالة يضم العبارة ضمن نصه. يُحظر الاعتماد على الطول/الاقتطاع وحدهما.
+     */
+    fun isExplicitExpandText(text: CharSequence?): Boolean {
+        if (text.isNullOrBlank()) return false
+        val clean = cleanBidi(text).trim().lowercase()
+        if (clean.isEmpty()) return false
+        if (DISALLOWED_KEYWORDS.any { clean.contains(it) }) return false
+        if (clean.length > 60) return false
+
+        val stripped = clean.trim { it in STRIP_CHARS }
+
+        // مطابقة تامة للكلمة المفتاحية = تحكّم صريح.
+        if (matchesExactReadMore(clean, stripped)) return true
+
+        // مطابقة لكون النص تسمية تحكّم (الكلمة المفتاحية هي جوهر النص).
+        if (isControlLabelMatch(clean, stripped)) return true
+
+        return false
+    }
+
+    private fun matchesExactReadMore(clean: String, stripped: String): Boolean {
+        return READ_MORE_KEYWORDS.any { kw ->
+            clean == kw || stripped == kw
+        } || EXPAND_ACTION_KEYWORDS.any { kw ->
+            val k = cleanBidi(kw).trim().lowercase()
+            clean == k || stripped == k
+        }
+    }
+
+    private fun isControlLabelMatch(
+        clean: String,
+        stripped: String
+    ): Boolean {
+        // ابحث عن كلمة مفتاحية تشكّل جوهر التسمية (الباقي زخرفة فقط).
+        for (kw in READ_MORE_KEYWORDS) {
+            if (kw == "المزيد" || kw == "more") {
+                if (hasCoreKeyword(clean, stripped, kw, requireWordBoundary = true)) {
+                    return true
+                }
+            } else if (hasCoreKeyword(clean, stripped, kw, requireWordBoundary = false)) {
+                return true
+            }
+        }
+        for (kw in EXPAND_ACTION_KEYWORDS) {
+            val k = cleanBidi(kw).trim().lowercase()
+            if (k.isEmpty()) continue
+            if (hasCoreKeyword(clean, stripped, k, requireWordBoundary = false)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun hasCoreKeyword(
+        clean: String,
+        stripped: String,
+        keyword: String,
+        requireWordBoundary: Boolean
+    ): Boolean {
+        val candidates = linkedSetOf(clean, stripped)
+        for (text in candidates) {
+            if (!text.contains(keyword)) continue
+            if (requireWordBoundary && !hasWordBoundary(text, keyword)) continue
+            val remainder = text.replaceFirst(keyword, "")
+                .trim { it in STRIP_CHARS || it.isWhitespace() }
+            // الباقي بعد إزالة الكلمة المفتاحية يجب أن يكون زخرفة قصيرة فقط
+            // (أسهم/نقاط/رموز) حتى لا نطابق محتوى رسالة.
+            if (remainder.length <= 6) return true
+        }
+        return false
+    }
+
+    private fun hasWordBoundary(text: String, keyword: String): Boolean {
+        val idx = text.indexOf(keyword)
+        if (idx < 0) return false
+        val beforeOk = idx == 0 || text[idx - 1].isWhitespace() ||
+            text[idx - 1] in STRIP_CHARS
+        val afterIdx = idx + keyword.length
+        val afterOk = afterIdx >= text.length ||
+            text[afterIdx].isWhitespace() || text[afterIdx] in STRIP_CHARS
+        return beforeOk && afterOk
+    }
+
+    /**
+     * هل يحتوي النص على مؤشر اقتطاع بصري صريح (علامات حذف …/...)
+     * بعد تنظيف لاحقات TalkBack/البيانات الوصفية؟
+     */
+    fun hasTruncationHint(text: String?): Boolean {
+        if (text.isNullOrBlank()) return false
+        val tail = cleanedTailForInspection(text)
+        if (tail.endsWith("…") || tail.endsWith("...")) return true
+        // أنماط اقتطاع تنتهي بعلامات حذف صريحة
+        val ellipsisPatterns = listOf(
+            "… المزيد", "... المزيد"
+        )
+        return ellipsisPatterns.any {
+            tail.endsWith(it, ignoreCase = true)
+        }
+    }
+
+    /**
+     * هل يحتوي النص على محفّز/عبارة توسعة صريحة (مثل «قراءة المزيد»/
+     * «عرض المزيد»/show more) بعد تنظيف لاحقات TalkBack/البيانات؟
+     * لا يشمل علامات الحذف وحدها.
+     */
+    fun hasExplicitExpandCue(text: String?): Boolean {
+        if (text.isNullOrBlank()) return false
+        val tail = cleanedTailForInspection(text)
+        val lower = tail.lowercase()
+        if (DISALLOWED_KEYWORDS.any { lower.contains(it) }) return false
+
+        val explicitCuePatterns = listOf(
+            "قراءة المزيد", "عرض المزيد", "إظهار المزيد",
+            "تابع القراءة", "متابعة القراءة", "اقرأ المزيد",
+            "read more", "show more", "see more", "view more",
+            "lire la suite", "voir plus", "afficher plus",
+            "mehr anzeigen", "weiterlesen",
+            "leer más", "ver más", "mostrar más"
+        )
+        if (explicitCuePatterns.any { lower.endsWith(it) }) return true
+        if (explicitCuePatterns.any { lower.contains(it) }) return true
+
+        if (EXPAND_ACTION_KEYWORDS.any { kw ->
+                lower.contains(cleanBidi(kw).trim().lowercase())
+            }
+        ) {
+            return true
+        }
+
+        // كلمة «المزيد»/more كذيل صريح قصير (دون كلمات محظورة)
+        val tailWords = lower.takeLast(60)
+            .split(' ', '،', ',', '\n')
+            .map { it.trim { c -> c in STRIP_CHARS } }
+            .filter { it.isNotBlank() }
+        val last = tailWords.lastOrNull()
+        if (last == "المزيد" || last == "more") return true
+        if (tailWords.size >= 2) {
+            val lastTwo = "${tailWords[tailWords.size - 2]} ${tailWords.last()}"
+            if (explicitCuePatterns.any { lastTwo == it }) return true
+        }
+        return false
+    }
+
+    private fun cleanedTailForInspection(text: String): String {
+        var clean = cleanBidi(text).trim()
+        var stripped = true
+        while (stripped && clean.isNotEmpty()) {
+            stripped = false
+            for (suffix in TALKBACK_ROLE_SUFFIXES) {
+                val cleanSuffix = cleanBidi(suffix).trim()
+                if (clean.endsWith(cleanSuffix, ignoreCase = true)) {
+                    clean = clean.substring(
+                        0, clean.length - cleanSuffix.length
+                    ).trim { it in BIDI_AND_SPACES || it in ",،;؛•-_| " }
+                    stripped = true
+                    break
+                }
+            }
+            if (stripped) continue
+            for (meta in MESSAGE_METADATA_SUFFIXES) {
+                val cleanMeta = cleanBidi(meta).trim()
+                if (clean.endsWith(cleanMeta, ignoreCase = true)) {
+                    clean = clean.substring(
+                        0, clean.length - cleanMeta.length
+                    ).trim { it in BIDI_AND_SPACES || it in ",،;؛•-_| " }
+                    stripped = true
+                    break
+                }
+            }
+            if (stripped) continue
+            val timeMatch = TIME_SUFFIX_REGEX.find(clean)
+            if (timeMatch != null) {
+                clean = clean.substring(0, timeMatch.range.first)
+                    .trim { it in BIDI_AND_SPACES || it in ",،;؛•-_| " }
+                stripped = true
+                continue
+            }
+            val numMatch = NUM_SUFFIX_REGEX.find(clean)
+            if (numMatch != null &&
+                clean.length - numMatch.range.first <= 5
+            ) {
+                clean = clean.substring(0, numMatch.range.first)
+                    .trim { it in BIDI_AND_SPACES || it in ",،;؛•-_| " }
+                stripped = true
+                continue
+            }
+        }
+        return clean.trim { it in BIDI_AND_SPACES }
+    }
+
+    /**
      * هل النص ينتهي بنمط اقتطاع يدل على وجود «قراءة المزيد»؟ — ع٢٩-12، ع٤٣-1
      * يجرّد لواحق TalkBack والبيانات الوصفية للرسائل (الوقت والحالة) قبل الفحص.
      */

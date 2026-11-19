@@ -985,9 +985,7 @@ etCallerPrefix =
             settings.getEngineForCategory(
                 SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
             ) ?: settings.getEngineForLanguage("en")
-        } ?: settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        )
+        }
         val enginePkg = callerEngineOptions
             .getOrNull(engineIdx)?.packageName ?: fallbackEngine
         val voices = if (isArabic) {

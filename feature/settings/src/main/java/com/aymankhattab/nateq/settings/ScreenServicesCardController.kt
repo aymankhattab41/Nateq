@@ -1238,22 +1238,15 @@ class ScreenServicesCardController(
     }
 
     /** صوت الفئة الافتراضية الحالية يُنسخ إلى مدخلٍ جديد. */
+    /** ملف الصوت العام الافتراضي (بدون الاعتماد على فئة "الافتراضي" المحذوفة).
+     *  السرعة/النبرة/الصوت تتبع الأشرطة العامة؛ المحرك/الصوت يُتركان تلقائيين
+     *  ليُحسما حسب اللغة/السياق (صوت القراءة لكل لغة). */
     private fun currentDefaultVoiceProfile(): VoiceProfile = VoiceProfile(
-        engine = settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        ),
-        voiceId = settings.getPreferredVoiceIdForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        ),
-        speechRate = settings.getSpeechRateForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        ),
-        pitch = settings.getPitchForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        ),
-        volume = settings.getVolumeForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        )
+        engine = null,
+        voiceId = null,
+        speechRate = settings.getDefaultSpeechRate(),
+        pitch = settings.getDefaultPitch(),
+        volume = settings.getDefaultVolume()
     )
 
     /** التطبيقات القابلة للإطلاق (التسمية ← اسم الحزمة)، مرتّبة. */

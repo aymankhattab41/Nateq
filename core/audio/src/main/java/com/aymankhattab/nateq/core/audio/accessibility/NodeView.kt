@@ -13,6 +13,7 @@ data class NodeView(
     val viewIdResourceName: String? = null,
     val packageName: String? = null,
     val boundsInScreen: Rect = Rect(),
+    val windowId: Int = -1,
     val isVisibleToUser: Boolean = true,
     val isClickable: Boolean = false,
     val isFocusable: Boolean = false,

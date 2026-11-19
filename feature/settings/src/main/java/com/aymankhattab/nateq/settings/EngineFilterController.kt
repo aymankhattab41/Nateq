@@ -56,15 +56,16 @@ internal class EngineFilterController(
         }
         val set = settings.getFilterEngines()
         val configuredEngines = mutableSetOf<String>()
-        settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        )?.let { configuredEngines.add(it) }
-        settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_NUMBERS
-        )?.let { configuredEngines.add(it) }
-        settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_EMOJI
-        )?.let { configuredEngines.add(it) }
+        SettingsRepository.ALL_VOICE_CATEGORIES.forEach { cat ->
+            settings.getEngineForCategory(cat)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { configuredEngines.add(it) }
+        }
+        runCatching { settings.allConvertLanguagePreferences() }
+            .getOrDefault(emptyMap())
+            .values
+            .mapNotNull { it.engine?.takeIf { e -> e.isNotBlank() } }
+            .forEach { configuredEngines.add(it) }
 
         val hiddenConfigured = configuredEngines.firstOrNull {
             !set.contains(it)

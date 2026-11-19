@@ -133,6 +133,8 @@ internal class EngineSectionController(
         }
 
         btn.setOnClickListener { showConvertLanguagesDialog() }
+        view.findViewById<View?>(R.id.btn_reading_voice_per_language)
+            ?.setOnClickListener { showConvertLanguagesDialog() }
     }
 
     /** قائمة كل المحركات المتاحة عبر INTENT_ACTION_TTS_SERVICE (MATCH_ALL) */

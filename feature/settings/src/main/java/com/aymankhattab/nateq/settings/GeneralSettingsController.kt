@@ -175,7 +175,6 @@ internal class GeneralSettingsController(
                 // تعديل TalkBack لا يصل إلى onStopTrackingTouch أبداً.
                 runCatching {
                     settings.setDefaultSpeechRate(value)
-                    settings.setSpeechRate("ar", value)
                     if (settings.isFollowReaderRateEnabled()) {
                         settings.setFollowReaderRateEnabled(false)
                         switchFollowReaderRate?.isChecked = false
@@ -190,7 +189,6 @@ internal class GeneralSettingsController(
                 val value = seekBar.progress.speedFactor()
                 runCatching {
                     settings.setDefaultSpeechRate(value)
-                    settings.setSpeechRate("ar", value)
                     if (settings.isFollowReaderRateEnabled()) {
                         settings.setFollowReaderRateEnabled(false)
                         switchFollowReaderRate?.isChecked = false
@@ -224,7 +222,6 @@ internal class GeneralSettingsController(
                 // نهايته إلى onStopTrackingTouch أبداً.
                 runCatching {
                     settings.setDefaultPitch(value)
-                    settings.setPitch("ar", value)
                 }
                 onStatusChanged()
             }
@@ -235,7 +232,6 @@ internal class GeneralSettingsController(
                 val value = seekBar.progress.speedFactor()
                 runCatching {
                     settings.setDefaultPitch(value)
-                    settings.setPitch("ar", value)
                 }
                 seekBar.announceCompat(
                     RateLabel.of(fragment.requireContext(), value)

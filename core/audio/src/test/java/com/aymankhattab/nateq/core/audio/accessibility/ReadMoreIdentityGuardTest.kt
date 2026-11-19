@@ -10,9 +10,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * بند ٧: حارس هوية الرسالة المفوكسة بعد التوسيع (بند ١٥).
- * يستدعي الدالتين المساعدتين في NateqAccessibilityService بالانعكاس،
- * فلا يُعدَّل ملف الخدمة التي يعمل عليها وكلاء آخرون.
+ * حارس هوية الرسالة المفوكسة بعد التوسيع:
+ * النص الموسّع يُقبل فقط إن كان استمراراً لنفس الرسالة (هوية+بادئة)،
+ * ويُرفض عند تغيّر الرسالة/الهوية أو عند نص لا يطابق استمرار البادئة.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
@@ -27,11 +27,15 @@ class ReadMoreIdentityGuardTest {
         ).create().get()
     }
 
-    private fun identityOf(snapshot: NodeView): String {
+    private fun identityOf(snapshot: NodeView, prefix: String): String {
         val method = NateqAccessibilityService::class.java
-            .getDeclaredMethod("stableNodeIdentity", NodeView::class.java)
+            .getDeclaredMethod(
+                "messageIdentity",
+                NodeView::class.java,
+                String::class.java
+            )
         method.isAccessible = true
-        return method.invoke(service, snapshot) as String
+        return method.invoke(service, snapshot, prefix) as String
     }
 
     private fun isTrusted(
@@ -67,23 +71,25 @@ class ReadMoreIdentityGuardTest {
 
     @Test
     fun expandedTextMatchesIdentity_truncatedPrefix_rejectsOtherMessage() {
-        // بند ١٥: الاقتطاع كان يُسقط حارس الهوية فتُقرأ رسالة أخرى
-        // تشترك معها في كلمة «المزيد» فقط.
+        // نص رسالة مختلفة (لا يكمل البادئة) يُرفض ولو على نفس العقدة.
         val node = truncatedNode()
         val prefix = node.text.toString()
         val otherMessage = "اجتماع مجلس الإدارة غدا ... المزيد"
         assertFalse(
-            isTrusted(node, otherMessage, prefix, identityOf(node))
+            isTrusted(
+                node, otherMessage, prefix, identityOf(node, prefix)
+            )
         )
     }
 
     @Test
     fun expandedTextMatchesIdentity_focusChanged_rejectsSameExpandedText() {
-        // بند ١٥: حتى لو كان النص مكمّلاً للبادئة، تغيّر هوية العقدة
-        // يعني أننا نقرأ رسالة أخرى بعد النقر.
+        // تغيّر هوية الرسالة (موضع/معرّف مختلف) يعني رسالة أخرى حتى لو
+        // بدا النص مكمّلاً للبادئة.
         val before = truncatedNode()
         val after = before.copy(
-            viewIdResourceName = "another_message_body"
+            viewIdResourceName = "another_message_body",
+            boundsInScreen = android.graphics.Rect(0, 400, 300, 500)
         )
         val expandedText = "مرحبا كيف حالك اليوم بخير ... المزيد"
         assertFalse(
@@ -91,7 +97,7 @@ class ReadMoreIdentityGuardTest {
                 after,
                 expandedText,
                 before.text.toString(),
-                identityOf(before)
+                identityOf(before, before.text.toString())
             )
         )
     }
@@ -99,13 +105,14 @@ class ReadMoreIdentityGuardTest {
     @Test
     fun expandedTextMatchesIdentity_sameNodeAndContinuation_isTrusted() {
         val node = truncatedNode()
+        val prefix = node.text.toString()
         val expandedText = "مرحبا كيف حالك اليوم بخير ... المزيد"
         assertTrue(
             isTrusted(
                 node,
                 expandedText,
-                node.text.toString(),
-                identityOf(node)
+                prefix,
+                identityOf(node, prefix)
             )
         )
     }

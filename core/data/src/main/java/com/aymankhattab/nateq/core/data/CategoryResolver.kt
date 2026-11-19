@@ -3,10 +3,10 @@ package com.aymankhattab.nateq.core.data
 import com.aymankhattab.nateq.util.VoiceIdContract
 
 /**
- * نتيجة حسم إعدادات الفئة الصوتية (ع٢٧-A2).
+ * نتيجة حسم إعدادات الفئة الصوتية.
  *
- * عندما تكون فئة على «افتراضي» فإنها ترث من فئة default المحرك والصوت
- * والسرعة والنبرة والمستوى معاً، لا المحرك وحده.
+ * الفئة بلا تجاوز صريح تتبع الإعدادات العامة (عبر دوال القراءة)،
+ * ولا ترث من فئة «افتراضي» محذوفة.
  */
 data class ResolvedCategoryVoice(
     val category: String,
@@ -18,7 +18,7 @@ data class ResolvedCategoryVoice(
 )
 
 /**
- * حاسم إعدادات الفئات الصوتية (ع٢٧-A2).
+ * حاسم إعدادات الفئات الصوتية.
  * دالة نقية قابلة للاختبار المستقل بجدول حالات.
  */
 object CategoryResolver {
@@ -114,82 +114,42 @@ object CategoryResolver {
     }
 
     /**
-     * دالة نقية لحسم إعدادات الفئة (ع٢٧-A2).
+     * دالة نقية لحسم إعدادات الفئة.
+     * لا وراثة من فئة افتراضية؛ الفئة بلا تجاوز صريح تتبع العام
+     * عبر دوال القراءة في المستودع.
      */
     fun resolveCategory(
         category: String,
         prefs: CategoryVoicePrefs,
         customLookup: ((String) -> String?)? = null
     ): ResolvedCategoryVoice {
-        val defaultCategoryKey = SettingsRepository.VOICE_CATEGORY_DEFAULT
-        val isDefault = category == defaultCategoryKey
-
-        val defaultRawEngine = prefs.getEngineForCategory(defaultCategoryKey)
-        val defaultRawVoice =
-            prefs.getPreferredVoiceIdForCategory(defaultCategoryKey)
-        val defaultRate = prefs.getSpeechRateForCategory(defaultCategoryKey)
-        val defaultPitch = prefs.getPitchForCategory(defaultCategoryKey)
-        val defaultVolume = prefs.getVolumeForCategory(defaultCategoryKey)
-
-        val defaultResolvedEngine = defaultRawEngine
-            ?.takeIf { !it.isNullOrBlank() && it != "default" }
-            ?: inferEngineFromVoice(defaultRawVoice, customLookup)
-
-        val defaultResolvedVoice = defaultRawVoice
-            ?.takeIf { !it.isNullOrBlank() && it != "default" }
-
-        val defaultResolved = ResolvedCategoryVoice(
-            category = defaultCategoryKey,
-            engine = defaultResolvedEngine,
-            voiceId = defaultResolvedVoice,
-            speechRate = defaultRate,
-            pitch = defaultPitch,
-            volume = defaultVolume
-        )
-
-        if (isDefault) {
-            return defaultResolved
-        }
-
         val catRawEngine = prefs.getEngineForCategory(category)
         val catRawVoice = prefs.getPreferredVoiceIdForCategory(category)
         val catRate = prefs.getSpeechRateForCategory(category)
         val catPitch = prefs.getPitchForCategory(category)
         val catVolume = prefs.getVolumeForCategory(category)
 
-        val hasCustomRate = prefs.hasExplicitSpeechRateForCategory(category)
-        val hasCustomPitch = prefs.hasExplicitPitchForCategory(category)
-        val hasCustomVolume = prefs.hasExplicitVolumeForCategory(category)
-
         val resolvedEngine = when {
             !catRawEngine.isNullOrBlank() && catRawEngine != "default" ->
                 catRawEngine
             !catRawVoice.isNullOrBlank() && catRawVoice != "default" ->
                 inferEngineFromVoice(catRawVoice, customLookup)
-                    ?: defaultResolved.engine
-            else -> defaultResolved.engine
+            else -> null
         }
 
         val resolvedVoice = when {
             !catRawVoice.isNullOrBlank() && catRawVoice != "default" ->
                 catRawVoice
-            else -> defaultResolved.voiceId
+            else -> null
         }
-
-        val resolvedRate =
-            if (hasCustomRate) catRate else defaultResolved.speechRate
-        val resolvedPitch =
-            if (hasCustomPitch) catPitch else defaultResolved.pitch
-        val resolvedVolume =
-            if (hasCustomVolume) catVolume else defaultResolved.volume
 
         return ResolvedCategoryVoice(
             category = category,
             engine = resolvedEngine,
             voiceId = resolvedVoice,
-            speechRate = resolvedRate,
-            pitch = resolvedPitch,
-            volume = resolvedVolume
+            speechRate = catRate,
+            pitch = catPitch,
+            volume = catVolume
         )
     }
 }

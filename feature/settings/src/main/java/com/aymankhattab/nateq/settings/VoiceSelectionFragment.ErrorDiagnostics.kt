@@ -833,14 +833,13 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
         sb.appendLine(sfReport)
         sb.appendLine("")
 
-        // ── المحرك/الصوت المختار لكل فئة ─────────────────────────
-        sb.appendLine("--- الاختيار النشط لكل فئة ---")
-        val defaultEngine = runCatching {
-            settings.getEngineForCategory("default")
-        }.getOrNull()
-        val defaultVoice = runCatching {
-            settings.getPreferredVoiceIdForCategory("default")
-        }.getOrNull()
+        // ── المحرك/الصوت المختار لكل فئة (مع السرعة/النبرة/المستوى) ──
+        sb.appendLine("--- الاختيارات النشطة لكل فئة ---")
+        sb.appendLine(
+            "الأشرطة العامة: سرعة=${"%.1f".format(runCatching { settings.getDefaultSpeechRate() }.getOrDefault(1f))}  " +
+                "نبرة=${"%.1f".format(runCatching { settings.getDefaultPitch() }.getOrDefault(1f))}  " +
+                "صوت=${"%.1f".format(runCatching { settings.getDefaultVolume() }.getOrDefault(1f))}"
+        )
         val categories = listOf(
             "time" to "إعلان الوقت",
             "battery" to "إعلان البطارية",
@@ -850,7 +849,8 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
             "caller_en" to "إعلان المتصل (إنجليزي)",
             "sms" to "قراءة الرسائل",
             "numbers" to "الأرقام",
-            "default" to "الافتراضي",
+            "dialogue" to "الحوار",
+            "narration" to "السرد",
             "emoji" to "الإيموجي"
         )
         categories.forEach { (key, label) ->
@@ -867,18 +867,15 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
                 settings.getPitchForCategory(key)
             }.getOrNull()
 
-            val engineResolved = when {
-                !engine.isNullOrBlank() -> "صريح ($engine)"
-                key != "default" && !defaultEngine.isNullOrBlank() ->
-                    "موروث من الافتراضي ($defaultEngine)"
-                else -> "لا محرك"
+            val engineResolved = if (!engine.isNullOrBlank()) {
+                "صريح ($engine)"
+            } else {
+                "تلقائي/حسب اللغة"
             }
-
-            val voiceResolved = when {
-                !voice.isNullOrBlank() -> "صريح ($voice)"
-                key != "default" && !defaultVoice.isNullOrBlank() ->
-                    "موروث من الافتراضي ($defaultVoice)"
-                else -> "لا صوت"
+            val voiceResolved = if (!voice.isNullOrBlank()) {
+                "صريح ($voice)"
+            } else {
+                "تلقائي"
             }
 
             sb.appendLine(

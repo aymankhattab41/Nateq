@@ -87,6 +87,7 @@ object SafeNodeWalker {
             action.label?.let { customLabels.add(it) }
         }
 
+        val winId = runCatching { node.windowId }.getOrDefault(-1)
         return NodeView(
             text = node.text?.toString(),
             contentDescription = node.contentDescription?.toString(),
@@ -96,6 +97,7 @@ object SafeNodeWalker {
             }.getOrNull(),
             packageName = node.packageName?.toString(),
             boundsInScreen = rect,
+            windowId = winId,
             isVisibleToUser = node.isVisibleToUser,
             isClickable = node.isClickable,
             isFocusable = node.isFocusable,

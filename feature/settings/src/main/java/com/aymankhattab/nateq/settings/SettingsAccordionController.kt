@@ -431,7 +431,7 @@ internal class SettingsAccordionController(
         val tools = fragment.getString(R.string.tools_section)
         val help = fragment.getString(R.string.help_section)
         val emoji = fragment.getString(R.string.section_emoji_reading)
-        val cats = fragment.getString(R.string.voice_category_default)
+        val cats = fragment.getString(R.string.voice_categories_title)
         val time = fragment.getString(R.string.section_time_announcement)
         val num = fragment.getString(R.string.section_number_reading)
         val battery = fragment.getString(R.string.section_battery_announcement)
@@ -705,7 +705,7 @@ internal class SettingsAccordionController(
                 ?: fragment.getString(R.string.no_voices_available)
             else -> engineVoiceLabel(saved)
         }
-        return fragment.getString(R.string.voice_category_default) +
+        return fragment.getString(R.string.voice_categories_title) +
             ": " + label
     }
 

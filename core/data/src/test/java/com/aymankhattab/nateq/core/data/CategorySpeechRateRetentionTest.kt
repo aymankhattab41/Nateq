@@ -13,7 +13,7 @@ import org.robolectric.annotation.Config
 
 /**
  * اختبارات ضمان توريث واحتفاظ سرعة النطق والنبرة ومستوى الصوت
- * للفئات غير المخصصة صراحة من الفئة الافتراضية [VOICE_CATEGORY_DEFAULT].
+ * للفئات غير المخصصة صراحةً من الإعدادات العامة.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])

@@ -382,9 +382,6 @@ class NateqTtsService : TextToSpeechService() {
         settings.getEngineForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS
         ),
-        settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        ),
         settings.getEngineForLanguage(LanguageCode.AR.tag),
         settings.getEngineForLanguage(LanguageCode.EN.tag),
         settings.getPreferredVoiceIdForCategory(
@@ -397,7 +394,10 @@ class NateqTtsService : TextToSpeechService() {
         ).toString(),
         settings.getPitchForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS
-        ).toString()
+        ).toString(),
+        settings.getDefaultSpeechRate().toString(),
+        settings.getDefaultPitch().toString(),
+        settings.getDefaultVolume().toString()
     ).joinToString("\u001f")
 
     /** مراقب تغييرات الإعدادات لتسخين صوت الأرقام عند تعديلها فقط. */
@@ -1031,55 +1031,38 @@ class NateqTtsService : TextToSpeechService() {
                 val fgPkg = AccessibilityBridge.foregroundPackage()
                 val isPkgAllowed = fgPkg != null &&
                     settings.getReadMoreAllowedPackages().contains(fgPkg)
-                val isTruncated = SelectorPacks.looksTruncated(rawText)
-                if (isTruncated) {
-                    if (readMoreEnabled && isPkgAllowed) {
-                        Log.i(
-                            TAG,
-                            "[READMORE] Speech detected truncated text " +
-                                "(len=${rawText.length})"
-                        )
-                    } else {
-                        Log.d(
-                            TAG,
-                            "[READMORE] Text looks truncated but expansion " +
-                                "is inactive (enabled=$readMoreEnabled, " +
-                                "allowed=$isPkgAllowed, len=${rawText.length})"
-                        )
-                    }
-                }
-                if (readMoreEnabled && isPkgAllowed && isTruncated) {
+                if (readMoreEnabled && isPkgAllowed) {
+                    // فحص محدود داخل الرسالة المفوكسة حتى لو بلا لاحقة
+                    // اقتطاع مرئية، مع احترام ميزانية الوقت ومنع الحجب.
                     val expanded = AccessibilityBridge.expandReadMore(
                         rawText,
                         timeoutMs =
                             AccessibilityBridge.READ_MORE_EXTERNAL_TIMEOUT_MS
                     )
-                    val cleanRaw = SelectorPacks.cleanBidi(rawText).trim()
-                    val isValid = if (expanded != null) {
-                        val cleanExp = SelectorPacks.cleanBidi(expanded).trim()
-                        cleanExp.isNotEmpty() && (
+                    if (!expanded.isNullOrBlank()) {
+                        val cleanExp =
+                            SelectorPacks.cleanBidi(expanded).trim()
+                        val cleanRaw =
+                            SelectorPacks.cleanBidi(rawText).trim()
+                        val useExpanded = cleanExp.isNotEmpty() && (
                             cleanExp.length > cleanRaw.length ||
                             !SelectorPacks.looksTruncated(cleanExp) ||
                             SelectorPacks.isTextMatchingMessage(
-                                rawText,
-                                expanded
+                                rawText, cleanExp
+                            ) ||
+                            SelectorPacks.hasPrefixContinuity(
+                                rawText, cleanExp
                             )
                         )
-                    } else false
-
-                    if (expanded != null && isValid) {
-                        processedText = expanded
-                        Log.w(
-                            TAG,
-                            "[READMORE] Expanded: ${rawText.length} -> " +
-                                "${expanded.length} chars"
-                        )
-                    } else {
-                        Log.w(
-                            TAG,
-                            "[READMORE] Expansion result: expanded=" +
-                                "${expanded != null}, len=${expanded?.length}"
-                        )
+                        if (useExpanded) {
+                            processedText = expanded
+                            Log.i(
+                                TAG,
+                                "[READMORE] استخدام نص موسع/مكتمل " +
+                                    "(len=${cleanRaw.length}->" +
+                                    "${cleanExp.length})"
+                            )
+                        }
                     }
                 }
                 Log.d(TAG, "[DICT] Service before: $processedText")
@@ -1121,7 +1104,7 @@ class NateqTtsService : TextToSpeechService() {
                 }.getOrDefault(false)
 
                 val defaultLordRate = requestHandler.getSpeechRateFor(
-                    languageTag, SettingsRepository.VOICE_CATEGORY_DEFAULT
+                    languageTag, null
                 )
                 val effectiveDefaultRate = computeFinalSpeechRate(
                     readerRate, defaultLordRate, currentSpeechBoost()
@@ -1459,8 +1442,7 @@ class NateqTtsService : TextToSpeechService() {
                     SettingsRepository.VOICE_CATEGORY_DIALOGUE
                 SpeechRole.NARRATION ->
                     SettingsRepository.VOICE_CATEGORY_NARRATION
-                SpeechRole.TEXT ->
-                    SettingsRepository.VOICE_CATEGORY_DEFAULT
+                SpeechRole.TEXT -> null
             }
         val lordRate = requestHandler.getSpeechRateFor(
             languageTag, singleCategory
@@ -1534,16 +1516,13 @@ class NateqTtsService : TextToSpeechService() {
         // نفسه (سارٍ دائماً بلا ربط بحالة «التحويل التلقائي»). **يُجرى قبل
         // المعالجة** ليُمرَّر المحركُ المحسوم إلى [TextProcessor.process] —
         // فالمحركات التي تفهم التشكيل العربي تحتفظ به في الناتج (بند التشكيل).
-        val defaultCategoryEngine = settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        )
         val routed = LanguageSpeechRouter.route(
             matchesRequest = matchesRequest,
             convertEngine = convertTarget?.convertEngine,
             convertVoiceName = convertTarget?.convertVoiceName,
             perLanguageEngine = settings.getEngineForLanguage(languageTag),
             perLanguageVoiceName = settings.getVoiceForLanguage(languageTag),
-            defaultEngine = defaultCategoryEngine
+            defaultEngine = null
         )
         val applyVoice = if (
             role == SpeechRole.TEXT &&
@@ -1835,8 +1814,8 @@ class NateqTtsService : TextToSpeechService() {
             }
 
             val isSafe = CrashGuard.isSafeModeActive(applicationContext)
-            // `singleCategory` غير قابل للعدم: له احتياطيٌّ في `when` أعلاه.
-            val isCatEm =
+            // فئةٌ محددة قد تغيب (طلب عام بلا فئة) — عندها لا طوارئ فئوية.
+            val isCatEm = singleCategory != null &&
                 CategoryFailureTracker.isEmergencyActive(singleCategory)
             isEmergency = isSafe || isCatEm
 
@@ -2137,8 +2116,7 @@ class NateqTtsService : TextToSpeechService() {
                 SettingsRepository.VOICE_CATEGORY_NARRATION
             SpeechRole.TEXT -> effectCategory.takeIf { it.isNotEmpty() }
         }
-        val effCategory = segmentCategory ?:
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
+        val effCategory = segmentCategory
         val segRate = requestHandler.getSpeechRateFor(segTag, effCategory)
         val segPitch = requestHandler.getPitchFor(segTag, effCategory)
         val segVolume = requestHandler.getVolumeFor(segTag, effCategory)
@@ -2199,16 +2177,13 @@ class NateqTtsService : TextToSpeechService() {
         } else {
             computeFinalVolume(baseVolume, currentVolumeBoost())
         }
-        val defaultCategoryEngine = settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        )
         val routed = LanguageSpeechRouter.route(
             matchesRequest = matches,
             convertEngine = convert?.convertEngine,
             convertVoiceName = convert?.convertVoiceName,
             perLanguageEngine = settings.getEngineForLanguage(segTag),
             perLanguageVoiceName = settings.getVoiceForLanguage(segTag),
-            defaultEngine = defaultCategoryEngine
+            defaultEngine = null
         )
         val applyVoice = if (
             segment.role == SpeechRole.TEXT &&
@@ -2461,7 +2436,8 @@ class NateqTtsService : TextToSpeechService() {
             )
         }
         val isSafe = CrashGuard.isSafeModeActive(applicationContext)
-        val isCatEm = CategoryFailureTracker.isEmergencyActive(effCategory)
+        val isCatEm = effCategory != null &&
+            CategoryFailureTracker.isEmergencyActive(effCategory)
         val isEmergency = isSafe || isCatEm
 
         val effTargetEngine: String?
@@ -2863,7 +2839,7 @@ class NateqTtsService : TextToSpeechService() {
                 }
                 if (!producedHere) {
                     val cat = params.category ?: effectCategory.ifBlank {
-                        SettingsRepository.VOICE_CATEGORY_DEFAULT
+                        "default"
                     }
                     CategoryFailureTracker.recordFailure(cat)
                     skippedSegments++
@@ -2872,7 +2848,7 @@ class NateqTtsService : TextToSpeechService() {
                     }
                 } else {
                     val cat = params.category ?: effectCategory.ifBlank {
-                        SettingsRepository.VOICE_CATEGORY_DEFAULT
+                        "default"
                     }
                     CategoryFailureTracker.recordSuccess(cat)
                 }
@@ -2982,7 +2958,7 @@ class NateqTtsService : TextToSpeechService() {
                 SpeechRole.NARRATION ->
                     SettingsRepository.VOICE_CATEGORY_NARRATION
                 SpeechRole.TEXT -> effectCategory.ifBlank {
-                    SettingsRepository.VOICE_CATEGORY_DEFAULT
+                    "default"
                 }
             }
             val audio = deferred.await()
@@ -3071,9 +3047,6 @@ class NateqTtsService : TextToSpeechService() {
         val usesVoc = settings.getEngineForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS
         ) == VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            ) == VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
             settings.getEngineForLanguage(LanguageCode.AR.tag) ==
                 VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
             settings.getEngineForLanguage(LanguageCode.EN.tag) ==
@@ -3095,9 +3068,6 @@ class NateqTtsService : TextToSpeechService() {
         val usesMs = settings.getEngineForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS
         ) == MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            ) == MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ||
             settings.getEngineForLanguage(LanguageCode.AR.tag) ==
                 MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ||
             settings.getEngineForLanguage(LanguageCode.EN.tag) ==
@@ -3115,9 +3085,6 @@ class NateqTtsService : TextToSpeechService() {
         val usesAcapela = settings.getEngineForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS
         ) == AcapelaEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            ) == AcapelaEmbeddedVoiceProvider.PROVIDER_ID ||
             settings.getEngineForLanguage(LanguageCode.AR.tag) ==
                 AcapelaEmbeddedVoiceProvider.PROVIDER_ID ||
             settings.getEngineForLanguage(LanguageCode.EN.tag) ==
@@ -3143,9 +3110,6 @@ class NateqTtsService : TextToSpeechService() {
         ).toSet()
         val selected = LinkedHashSet<String>()
         listOf(
-            settings.getEngineForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            ),
             settings.getEngineForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             ),

@@ -65,23 +65,22 @@ class CategoryResolverTest {
     }
 
     @Test
-    fun `resolveCategory inherits everything from default when unset`() {
-        val defaultCat = SettingsRepository.VOICE_CATEGORY_DEFAULT
+    fun `resolveCategory uses category values without default inheritance`() {
         val prefs = FakeCategoryVoicePrefs(
             engines = mutableMapOf(
-                defaultCat to "org.nobody.multitts"
+                SettingsRepository.VOICE_CATEGORY_TIME to "org.nobody.multitts"
             ),
             voices = mutableMapOf(
-                defaultCat to "voice_global_1"
+                SettingsRepository.VOICE_CATEGORY_TIME to "voice_time_1"
             ),
             rates = mutableMapOf(
-                defaultCat to 1.3f
+                SettingsRepository.VOICE_CATEGORY_TIME to 1.3f
             ),
             pitches = mutableMapOf(
-                defaultCat to 0.9f
+                SettingsRepository.VOICE_CATEGORY_TIME to 0.9f
             ),
             volumes = mutableMapOf(
-                defaultCat to 0.8f
+                SettingsRepository.VOICE_CATEGORY_TIME to 0.8f
             )
         )
 
@@ -91,80 +90,56 @@ class CategoryResolverTest {
         )
 
         assertEquals("org.nobody.multitts", resolved.engine)
-        assertEquals("voice_global_1", resolved.voiceId)
+        assertEquals("voice_time_1", resolved.voiceId)
         assertEquals(1.3f, resolved.speechRate, 0.01f)
         assertEquals(0.9f, resolved.pitch, 0.01f)
         assertEquals(0.8f, resolved.volume, 0.01f)
     }
 
     @Test
-    fun `resolveCategory overrides specific parameters while inheriting`() {
+    fun `resolveCategory keeps unset category independent from legacy default`() {
         val defaultCat = SettingsRepository.VOICE_CATEGORY_DEFAULT
         val prefs = FakeCategoryVoicePrefs(
-            engines = mutableMapOf(
-                defaultCat to "com.acapela.tts"
-            ),
-            voices = mutableMapOf(
-                defaultCat to "ara-SAU-Mehdi"
-            ),
-            rates = mutableMapOf(
-                defaultCat to 1.0f,
-                SettingsRepository.VOICE_CATEGORY_BATTERY to 1.5f
-            ),
-            pitches = mutableMapOf(
-                defaultCat to 1.0f
-            ),
-            volumes = mutableMapOf(
-                defaultCat to 1.0f,
-                SettingsRepository.VOICE_CATEGORY_BATTERY to 0.7f
-            )
+            engines = mutableMapOf(defaultCat to "com.acapela.tts"),
+            voices = mutableMapOf(defaultCat to "ara-SAU-Mehdi"),
+            rates = mutableMapOf(defaultCat to 1.5f),
+            pitches = mutableMapOf(defaultCat to 0.7f),
+            volumes = mutableMapOf(defaultCat to 0.6f)
         )
 
         val resolved = CategoryResolver.resolveCategory(
-            SettingsRepository.VOICE_CATEGORY_BATTERY,
+            SettingsRepository.VOICE_CATEGORY_TIME,
             prefs
         )
 
-        assertEquals("com.acapela.tts", resolved.engine)
-        assertEquals("ara-SAU-Mehdi", resolved.voiceId)
+        assertNull(resolved.engine)
+        assertNull(resolved.voiceId)
+        assertEquals(1.0f, resolved.speechRate, 0.01f)
+        assertEquals(1.0f, resolved.pitch, 0.01f)
+        assertEquals(1.0f, resolved.volume, 0.01f)
+    }
+
+    @Test
+    fun `resolveCategory resolves explicit category and infers engine`() {
+        val notifCat = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+        val prefs = FakeCategoryVoicePrefs(
+            voices = mutableMapOf(notifCat to "ar-xa-x-laila"),
+            rates = mutableMapOf(notifCat to 1.5f),
+            volumes = mutableMapOf(notifCat to 0.7f)
+        )
+
+        val resolved = CategoryResolver.resolveCategory(notifCat, prefs)
+
+        assertEquals("com.vocalizer.tts", resolved.engine)
+        assertEquals("ar-xa-x-laila", resolved.voiceId)
         assertEquals(1.5f, resolved.speechRate, 0.01f)
         assertEquals(1.0f, resolved.pitch, 0.01f)
         assertEquals(0.7f, resolved.volume, 0.01f)
     }
 
     @Test
-    fun `resolveCategory infers engine from voice name when engine unset`() {
-        val defaultCat = SettingsRepository.VOICE_CATEGORY_DEFAULT
-        val notifCat = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-        val prefs = FakeCategoryVoicePrefs(
-            voices = mutableMapOf(
-                defaultCat to "ara-SAU-Mehdi",
-                notifCat to "ar-xa-x-laila"
-            )
-        )
-
-        val defaultResolved = CategoryResolver.resolveCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT,
-            prefs
-        )
-        val notifResolved = CategoryResolver.resolveCategory(
-            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
-            prefs
-        )
-
-        assertEquals("com.acapela.tts", defaultResolved.engine)
-        assertEquals("ara-SAU-Mehdi", defaultResolved.voiceId)
-        assertEquals("com.vocalizer.tts", notifResolved.engine)
-        assertEquals("ar-xa-x-laila", notifResolved.voiceId)
-    }
-
-    @Test
     fun `resolveCategory never resolves to Google unless explicitly chosen`() {
-        val prefs = FakeCategoryVoicePrefs(
-            voices = mutableMapOf(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT to null
-            )
-        )
+        val prefs = FakeCategoryVoicePrefs()
 
         val resolved = CategoryResolver.resolveCategory(
             SettingsRepository.VOICE_CATEGORY_TIME,

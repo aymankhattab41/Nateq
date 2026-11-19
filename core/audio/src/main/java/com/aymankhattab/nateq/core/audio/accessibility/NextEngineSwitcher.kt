@@ -44,10 +44,6 @@ object NextEngineSwitcher {
     internal fun currentEnginePackage(
         settings: SettingsRepository
     ): String? {
-        val defaultCategory = settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        )
-        if (!defaultCategory.isNullOrBlank()) return defaultCategory
         val ar = settings.getEngineForLanguage("ar")
         if (!ar.isNullOrBlank()) return ar
         val en = settings.getEngineForLanguage("en")

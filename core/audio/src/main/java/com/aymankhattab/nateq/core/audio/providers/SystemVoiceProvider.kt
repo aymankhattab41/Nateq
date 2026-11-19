@@ -395,9 +395,8 @@ class SystemVoiceProvider(
             } else {
                 null
             }
-            val defaultEngine = settings.getEngineForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            )
+            val defaultEngine = settings.getEngineForLanguage("ar")
+                ?: settings.getEngineForLanguage("en")
             val candidate = perLang ?: defaultEngine
             if (candidate != null && installed.contains(candidate)) {
                 candidate
@@ -520,11 +519,10 @@ class SystemVoiceProvider(
                                 .getEngineForLanguage(tag)
                         }.getOrNull()
                     } ?: runCatching {
-                        (injectedSettings
-                            ?: SettingsRepository.create(context))
-                            .getEngineForCategory(
-                                SettingsRepository.VOICE_CATEGORY_DEFAULT
-                            )
+                        val s = injectedSettings
+                            ?: SettingsRepository.create(context)
+                        s.getEngineForLanguage("ar")
+                            ?: s.getEngineForLanguage("en")
                     }.getOrNull()
                     if (configured == null) {
                         notifyNoEngineForLanguageOnce(langTag ?: "")
@@ -679,9 +677,8 @@ class SystemVoiceProvider(
         val installed = EnginePicker.installedEnginePackages(context)
         val settings = injectedSettings ?: SettingsRepository.create(context)
         val defaultEngine = runCatching {
-            settings.getEngineForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            )
+            settings.getEngineForLanguage("ar")
+                ?: settings.getEngineForLanguage("en")
         }.getOrNull()
         if (!defaultEngine.isNullOrBlank() &&
             defaultEngine !in attempted &&

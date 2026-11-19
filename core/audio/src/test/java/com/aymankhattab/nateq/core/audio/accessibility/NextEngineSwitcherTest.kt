@@ -72,7 +72,7 @@ class NextEngineSwitcherTest {
     }
 
     @Test
-    fun currentEnginePackage_fallsBackThroughCategoryAndLanguages() {
+    fun currentEnginePackage_fallsBackThroughLanguages() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val settings = SettingsRepository.create(context)
 
@@ -86,6 +86,7 @@ class NextEngineSwitcherTest {
             NextEngineSwitcher.currentEnginePackage(settings)
         )
 
+        // العربية لها أولوية على الإنجليزية في حسم المحرك الحالي.
         settings.setEnginePreferenceForLanguage(
             "ar", "com.vocalizer.tts", null, 1f, 1f, 1f
         )
@@ -94,12 +95,13 @@ class NextEngineSwitcherTest {
             NextEngineSwitcher.currentEnginePackage(settings)
         )
 
+        // فئة «الافتراضي» مُزالة من حل الفئات فلا تُستعمل كمصدر تراجع.
         settings.setEngineForCategory(
             SettingsRepository.VOICE_CATEGORY_DEFAULT,
             "com.reecedunn.espeak"
         )
         assertEquals(
-            "com.reecedunn.espeak",
+            "com.vocalizer.tts",
             NextEngineSwitcher.currentEnginePackage(settings)
         )
     }

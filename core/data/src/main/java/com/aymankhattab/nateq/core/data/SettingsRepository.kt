@@ -145,8 +145,11 @@ class SettingsRepository(context: Context) :
         /** فئة إعلان الرسائل النصية (محرك/نبرة مستقلان إن ضُبطا). */
         const val ANNOUNCE_CATEGORY_SMS = "sms"
 
+        /**
+         * فئات الصوت النشطة (بدون فئة "الافتراضي" المحذوفة). الثابت
+         * [VOICE_CATEGORY_DEFAULT] باقٍ للترحيل/التخزين القديم فقط.
+         */
         val ALL_VOICE_CATEGORIES = listOf(
-            VOICE_CATEGORY_DEFAULT,
             VOICE_CATEGORY_TIME,
             VOICE_CATEGORY_NUMBERS,
             VOICE_CATEGORY_NOTIFICATIONS,
@@ -234,6 +237,10 @@ class SettingsRepository(context: Context) :
         private const val KEY_PREFERRED_VOICE_ENGINE_MIGRATED =
             "_preferred_voice_engine_migrated"
 
+        /** وسم ترحيل صوت القراءة الافتراضي القديم إلى اختيار صوت اللغة. */
+        private const val KEY_DEFAULT_VOICE_MIGRATED =
+            "_default_voice_migrated"
+
         /** وسوم الترحيل الداخلية الثلاثة: تُستثنى من النسخ الاحتياطي/الاستيراد
          *  (تبدأ بـ «_») لكن لا يجوز أن يمسحها clear() في importSettings وإلا
          *  يتحرك الترحيل من جديد فوق نسخةٍ مكتملة.
@@ -244,7 +251,8 @@ class SettingsRepository(context: Context) :
             KEY_QUIET_BITMASK_MIGRATED,
             KEY_CONVERT_SLOTS_MIGRATED,
             KEY_BATTERY_VOICE_MIGRATED,
-            KEY_PREFERRED_VOICE_ENGINE_MIGRATED
+            KEY_PREFERRED_VOICE_ENGINE_MIGRATED,
+            KEY_DEFAULT_VOICE_MIGRATED
         )
 
         const val KEY_KEYBOARD_MODE = "keyboard_mode"
@@ -431,6 +439,7 @@ class SettingsRepository(context: Context) :
         migrateIfNeeded(it)
         migrateBatteryVoicePrefsIfNeeded(it)
         migratePreferredVoiceEngineKeysIfNeeded(it)
+        migrateDefaultVoiceToLanguageIfNeeded(it)
         dropObsoleteCallerTemplateKey(it)
         migrateAppProfilesAndContactVoicesIfNeeded(it)
         migrateLanguageFilterRemoval(it)
@@ -918,6 +927,277 @@ class SettingsRepository(context: Context) :
     }
 
     /**
+     * ترحيل آمن لصوت القراءة الافتراضي القديم («فئة الافتراضي» المحذوفة)
+     * إلى اختيار «صوت القراءة لكل لغة» بلغة مستنتَجة، دون افتراض العربية.
+     * يهاجر مفاتيح الصوت/المحرك/الفئة الافتراضية القديمة
+     * (`engine_for_default`/`preferred_voice_default`/`primary_voice_default`
+     * وما يقابلها) فقط إن لم يوجد اختيار لغة محفوظ للغة المستهدفة.
+     * العملية idempotent ولا تمسح الأصل قبل نجاح كتابة البديل.
+     */
+    internal fun migrateDefaultVoiceToLanguageIfNeeded(
+        targetPrefs: SharedPreferences
+    ) {
+        if (targetPrefs.getBoolean(KEY_DEFAULT_VOICE_MIGRATED, false)) {
+            return
+        }
+
+        // توحيد الأشرطة العامة: إن غاب المفتاح العام وُجدت قيمة قديمة
+        // (فئة/مفتاح تراثي) تُنسخ إلى default_* دون مسح الأصل.
+        val generalEditor = targetPrefs.edit()
+        copyLegacyGeneralIfMissing(
+            targetPrefs, generalEditor,
+            "default_speech_rate", "speech_rate_default"
+        )
+        copyLegacyGeneralIfMissing(
+            targetPrefs, generalEditor,
+            "default_pitch", "pitch_default"
+        )
+        copyLegacyGeneralIfMissing(
+            targetPrefs, generalEditor,
+            "default_volume", "volume_default"
+        )
+
+        val legacyVoice = firstNonBlankLegacyDefaultVoice(targetPrefs)
+        val legacyEngineRaw = targetPrefs.getString(
+            "engine_for_$VOICE_CATEGORY_DEFAULT", null
+        )?.takeIf { it.isNotBlank() }
+        val inferredLang = inferLanguageFromLegacyDefault(
+            legacyVoice, legacyEngineRaw
+        )
+
+        var migratedVoice = false
+        if (!inferredLang.isNullOrBlank() &&
+            !hasSavedLanguageChoiceForMigration(targetPrefs, inferredLang)
+        ) {
+            migratedVoice = migrateLegacyDefaultVoiceToLanguage(
+                targetPrefs, inferredLang, legacyVoice, legacyEngineRaw
+            )
+        }
+
+        // الوسم يجعل الترحيل idempotent؛ الأصل يُترك كما هو.
+        generalEditor.putBoolean(KEY_DEFAULT_VOICE_MIGRATED, true).apply()
+        if (migratedVoice) {
+            Log.i(
+                TAG,
+                "Migrated legacy default voice to language '$inferredLang'"
+            )
+        }
+    }
+
+    private fun copyLegacyGeneralIfMissing(
+        targetPrefs: SharedPreferences,
+        editor: SharedPreferences.Editor,
+        generalKey: String,
+        legacyKey: String
+    ) {
+        if (targetPrefs.contains(generalKey)) return
+        if (!targetPrefs.contains(legacyKey)) return
+        // المفاتيح قديمة عامة/لفئة افتراضية بنفس الاسم؛ نحافظ على القيمة.
+        if (legacyKey.endsWith("_volume") ||
+            generalKey.endsWith("_volume")
+        ) {
+            val v = targetPrefs.getFloat(legacyKey, 1.0f)
+            editor.putFloat(generalKey, v.coerceIn(0f, 1f))
+        } else {
+            val v = targetPrefs.getFloat(legacyKey, 1.0f)
+            editor.putFloat(generalKey, v.coerceIn(0f, 2f))
+        }
+    }
+
+    private fun firstNonBlankLegacyDefaultVoice(
+        targetPrefs: SharedPreferences
+    ): String? {
+        val keys = linkedSetOf(
+            "preferred_voice_$VOICE_CATEGORY_DEFAULT",
+            "primary_voice_$VOICE_CATEGORY_DEFAULT",
+            "primary_voice_default",
+            "preferred_voice_default"
+        )
+        val engine = targetPrefs.getString(
+            "engine_for_$VOICE_CATEGORY_DEFAULT", null
+        )
+        if (!engine.isNullOrBlank()) {
+            keys.add("preferred_voice_${engine}_$VOICE_CATEGORY_DEFAULT")
+            keys.add("preferred_voice_${engine}_default")
+        }
+        // أي مفتاح محركي قديم لفئة الافتراضي
+        for ((k, v) in targetPrefs.all) {
+            if (k.startsWith("preferred_voice_") &&
+                k.endsWith("_$VOICE_CATEGORY_DEFAULT") &&
+                v is String && v.isNotBlank()
+            ) {
+                keys.add(k)
+            }
+        }
+        return keys.asSequence()
+            .mapNotNull { targetPrefs.getString(it, null) }
+            .mapNotNull { normalizeVoiceId(it) }
+            .firstOrNull { it.isNotBlank() }
+    }
+
+    private fun inferLanguageFromLegacyDefault(
+        voiceId: String?,
+        engine: String?
+    ): String? {
+        val combined = listOfNotNull(voiceId, engine)
+            .joinToString(" ").lowercase()
+        if (combined.isBlank()) return null
+        val arHints = listOf(
+            "ar-", "ar_", "ara", "arab", "laila", "leila", "maged",
+            "majed", "tarik", "tariq", "mariam", "maryam", "mehdi",
+            "salma", "nizar", "youssef", "naayf", "naif", "hoda",
+            "zeina", "sara", "saudi", "egypt", "gulf"
+        )
+        val enHints = listOf(
+            "en-", "en_", "eng", "english", "samantha", "ava", "tom",
+            "serena", "daniel", "oliver", "karen", "alex",
+            "victoria", "allison", "joanna", "matthew", "joey",
+            "ivy", "justin", "kendra", "kimberly", "salli"
+        )
+        val ar = arHints.any { combined.contains(it) }
+        val en = enHints.any { combined.contains(it) }
+        return when {
+            ar && !en -> "ar"
+            en && !ar -> "en"
+            else -> null
+        }
+    }
+
+    private fun hasSavedLanguageChoiceForMigration(
+        targetPrefs: SharedPreferences,
+        languageTag: String
+    ): Boolean {
+        val norm = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        // اختيار محفوظ في تفضيلات التحويل/اللغة (JSON)
+        val json = targetPrefs.getString(KEY_CONVERT_PREFS_JSON, null)
+        if (!json.isNullOrBlank()) {
+            val map = ConvertPreferencesCodec.fromJson(json)
+            val entry = map[norm] ?: map[languageTag]
+            if (entry != null &&
+                (!entry.voiceName.isNullOrBlank() ||
+                    !entry.engine.isNullOrBlank())
+            ) {
+                return true
+            }
+        }
+        // مفاتيح لغة مباشرة
+        for (k in listOf(
+            "preferred_voice_$norm",
+            "preferred_voice_$languageTag",
+            "primary_voice_$norm",
+            "primary_voice_$languageTag"
+        )) {
+            if (!targetPrefs.getString(k, null).isNullOrBlank()) return true
+        }
+        // أي مفتاح محركي مرتبط بهذه اللغة
+        val suffixNorm = "_$norm"
+        val suffixTag = "_$languageTag"
+        for ((k, v) in targetPrefs.all) {
+            if (!k.startsWith("preferred_voice_")) continue
+            if (k == "preferred_voice_$norm" ||
+                k == "preferred_voice_$languageTag"
+            ) {
+                continue
+            }
+            if ((k.endsWith(suffixNorm) || k.endsWith(suffixTag)) &&
+                v is String && v.isNotBlank()
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun migrateLegacyDefaultVoiceToLanguage(
+        targetPrefs: SharedPreferences,
+        languageTag: String,
+        legacyVoice: String?,
+        legacyEngineRaw: String?
+    ): Boolean {
+        val norm = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        val engine = resolveLegacyDefaultEngineForStorage(legacyEngineRaw)
+        val voice = normalizeVoiceId(legacyVoice)
+        if (voice.isNullOrBlank() && legacyEngineRaw.isNullOrBlank()) {
+            return false
+        }
+
+        val editor = targetPrefs.edit()
+        var wrote = false
+
+        // كتابة اختيار لغة في JSON تفضيلات التحويل/اللغة إن لم يوجد
+        val json = targetPrefs.getString(KEY_CONVERT_PREFS_JSON, null)
+        val map = if (json.isNullOrBlank()) {
+            mutableMapOf()
+        } else {
+            ConvertPreferencesCodec.fromJson(json).toMutableMap()
+        }
+        val existing = map[norm] ?: map[languageTag]
+        if (existing == null ||
+            (existing.voiceName.isNullOrBlank() &&
+                existing.engine.isNullOrBlank())
+        ) {
+            val entry = ConvertPreferencesCodec.entryForSave(
+                engine = if (engine == ENGINE_LORD_TTS) null else engine,
+                voiceName = voice,
+                rate = existing?.rate ?: 1.0f,
+                pitch = existing?.pitch ?: 1.0f,
+                volume = existing?.volume ?: 1.0f
+            )
+            if (entry.hasAdjustment || !voice.isNullOrBlank()) {
+                map[norm] = entry
+                editor.putString(
+                    KEY_CONVERT_PREFS_JSON,
+                    ConvertPreferencesCodec.toJson(map)
+                )
+                wrote = true
+            }
+        }
+
+        if (!voice.isNullOrBlank()) {
+            // ربط الصوت بمحرك اللغة الفعلي (أو LORD_TTS)
+            val engineKey = "preferred_voice_${engine}_$norm"
+            if (targetPrefs.getString(engineKey, null).isNullOrBlank()) {
+                editor.putString(engineKey, voice)
+                wrote = true
+            }
+            if (targetPrefs.getString("preferred_voice_$norm", null)
+                    .isNullOrBlank()
+            ) {
+                editor.putString("preferred_voice_$norm", voice)
+                wrote = true
+            }
+            if (engine == ENGINE_LORD_TTS &&
+                targetPrefs.getString("primary_voice_$norm", null)
+                    .isNullOrBlank()
+            ) {
+                editor.putString("primary_voice_$norm", voice)
+                wrote = true
+            }
+        }
+
+        if (wrote) {
+            editor.apply()
+        }
+        return wrote
+    }
+
+    private fun resolveLegacyDefaultEngineForStorage(
+        legacyEngineRaw: String?
+    ): String {
+        val candidate = legacyEngineRaw?.takeIf {
+            it.isNotBlank() &&
+                it != VOICE_CATEGORY_DEFAULT &&
+                it != "default"
+        }
+        return when {
+            candidate.isNullOrBlank() -> ENGINE_LORD_TTS
+            candidate == ENGINE_LORD_TTS -> ENGINE_LORD_TTS
+            VisibleEngines.isVisible(candidate) -> candidate
+            else -> ENGINE_LORD_TTS
+        }
+    }
+
+    /**
      * نقل القيم القديمة المخزّنة تحت `preferred_voice_<category>` إلى
      * مفتاح (المحرك، الفئة) الذي يقرأه [getPreferredVoiceForEngine]،
      * إن كان محرك الفئة معروفاً. المرآة القديمة تُبقى للقراءة القديمة.
@@ -932,7 +1212,9 @@ class SettingsRepository(context: Context) :
             return
         }
         val editor = targetPrefs.edit()
-        for (category in ALL_VOICE_CATEGORIES + VOICE_CATEGORY_EMOJI) {
+        for (category in ALL_VOICE_CATEGORIES +
+            listOf(VOICE_CATEGORY_EMOJI, VOICE_CATEGORY_DEFAULT)
+        ) {
             val engine = targetPrefs.getString("engine_for_$category", null)
             if (engine.isNullOrBlank() ||
                 !VisibleEngines.isVisible(engine)
@@ -1132,37 +1414,42 @@ class SettingsRepository(context: Context) :
     /** الصوت المفضّل لكل لغة (languageTag -> voiceId) */
     override fun getPreferredVoiceId(languageTag: String): String? {
         val norm = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
-        val direct = prefs.getString("preferred_voice_$languageTag", null)
+        // تفضيل صوت القراءة المحفوظ للغة (بما فيه تفضيلات التحويل/اللغة)
+        val fromConvert = getVoiceForLanguage(languageTag)
+            ?: getVoiceForLanguage(norm)
+        val engine = resolveLanguageEngineForRead(languageTag)
+        val byEngine = getPreferredVoiceForEngine(engine, norm)
+            ?: getPreferredVoiceForEngine(engine, languageTag)
+        val direct = byEngine
+            ?: prefs.getString("preferred_voice_$languageTag", null)
             ?: prefs.getString("preferred_voice_$norm", null)
             ?: prefs.getString("primary_voice_$languageTag", null)
             ?: prefs.getString("primary_voice_$norm", null)
+            ?: fromConvert
         return normalizeVoiceId(direct)
     }
     override fun setPreferredVoiceId(languageTag: String, voiceId: String) {
         val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        val engine = resolveLanguageEngineForRead(languageTag)
+        val safeId = normalizeVoiceId(voiceId) ?: voiceId
         val editor = prefs.edit()
-        val engine = getEngineForLanguage(key)
-            ?: getEngineForCategory(VOICE_CATEGORY_DEFAULT)
-        if (!engine.isNullOrBlank()) {
-            if (voiceId.isNotBlank()) {
-                setPreferredVoiceForEngine(engine, key, voiceId)
-                editor.putString("preferred_voice_$key", voiceId)
-            }
-        } else {
-            if (voiceId.isNotBlank()) {
-                editor.putString("preferred_voice_$key", voiceId)
-                editor.putString("primary_voice_$key", voiceId)
-                setPreferredVoiceForEngine(ENGINE_LORD_TTS, key, voiceId)
-            }
+            .putString("preferred_voice_$key", safeId)
+            .putString("preferred_voice_${engine}_$key", safeId)
+        if (engine == ENGINE_LORD_TTS) {
+            editor.putString("primary_voice_$key", safeId)
         }
         editor.apply()
     }
-
     override fun clearPreferredVoiceId(languageTag: String) {
         val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
-        prefs.edit().remove("preferred_voice_$key").apply()
+        val engine = resolveLanguageEngineForRead(languageTag)
+        val editor = prefs.edit()
+            .remove("preferred_voice_$key")
+            .remove("primary_voice_$key")
+            .remove("preferred_voice_${engine}_$key")
+            .remove("preferred_voice_${ENGINE_LORD_TTS}_$key")
+        editor.apply()
     }
-
     /** سرعة النطق لكل لغة (languageTag -> speechRate) */
     override fun getSpeechRate(languageTag: String): Float =
         prefs.getFloat("speech_rate_$languageTag", 1.0f)
@@ -1781,6 +2068,17 @@ class SettingsRepository(context: Context) :
 
     // ============ إعدادات إعلان الوقت ============
 
+    /** محرك اللغة الفعلي للقراءة/الحفظ (أو LORD_TTS) دون السقوط لمحرك DEFAULT. */
+    private fun resolveLanguageEngineForRead(languageTag: String): String {
+        val engine = getEngineForLanguage(languageTag)
+            ?.takeIf {
+                it.isNotBlank() &&
+                    it != VOICE_CATEGORY_DEFAULT &&
+                    it != "default"
+            }
+        return if (engine.isNullOrBlank()) ENGINE_LORD_TTS else engine
+    }
+
     /**
      * الصوت المفضّل لكل فئة (category -> voiceId). يُقرأ مفتاح
      * (المحرك، الفئة) أولاً ثم المرآة القديمة بترتيب واحد ثابت.
@@ -1816,53 +2114,75 @@ class SettingsRepository(context: Context) :
         if (!engine.isNullOrBlank() &&
             !VoiceIdContract.isVoiceBelongingToEngine(engine, voiceId)
         ) {
-            // لا مسح صامت ولا كتابة فارغة: القيمة المحفوظة تبقى كما هي.
+            // لا مسح خام ولا كتابة خاطئة: القيمة المحفوظة تبقى كما هي.
             Log.w(
                 TAG,
                 "الصوت $voiceId لا يتبع المحرك $engine للفئة $category — " +
-                    "الإبقاء على القيمة المحفوظة بلا تعديل"
+                    "الامتناع عن الكتابة الخاطئة بلا تعديل"
             )
             return
         }
-        if (!engine.isNullOrBlank()) {
+        val isLegacyDefault = category == VOICE_CATEGORY_DEFAULT
+        if (!engine.isNullOrBlank() &&
+            engine != VOICE_CATEGORY_DEFAULT &&
+            engine != "default"
+        ) {
             setPreferredVoiceForEngine(engine, category, voiceId)
-        } else if (category == VOICE_CATEGORY_DEFAULT) {
-            setPreferredVoiceForEngine(ENGINE_LORD_TTS, category, voiceId)
-            prefs.edit().putString("primary_voice_$category", voiceId).apply()
+        } else if (isLegacyDefault) {
+            // مسار ترحيل/تخزين قديم فقط — بلا تأثير خفي على فئات نشطة.
+            setPreferredVoiceForEngine(
+                ENGINE_LORD_TTS, category, voiceId
+            )
         }
-        // مرآة للقراءة القديمة؛ مفتاح المحرك/الفئة هو الأساس.
+        // مرآة للفئات القديمة؛ مفتاح المحرك/الفئة هو الأساس.
         prefs.edit().putString(
             "preferred_voice_$category", voiceId
         ).apply()
     }
 
-    /** يُحدّث اسم الصوت المحفوظ في كل الفئات التي تستخدم الاسم القديم */
+    /** يُحدِّث اسم الصوت المحفوظ في كل الفئات التي تستخدم الاسم القديم */
     fun updateSavedVoiceNameIfNeeded(oldName: String, newName: String) {
         if (oldName == newName) return
-        val categories = ALL_VOICE_CATEGORIES + listOf(VOICE_CATEGORY_EMOJI)
+        val categories = ALL_VOICE_CATEGORIES +
+            listOf(VOICE_CATEGORY_EMOJI, VOICE_CATEGORY_DEFAULT)
         for (cat in categories) {
             val saved = getPreferredVoiceIdForCategory(cat)
             if (saved == oldName) {
                 setPreferredVoiceIdForCategory(cat, newName)
-                Log.i(
-                    TAG,
-                    "Updated voice name: $cat: $oldName → $newName"
-                )
             }
         }
-        // الأصوات المربوطة باللغة
-        for (lang in listOf("ar", "en", "ar-SA", "ar-EG", "ar-AE")) {
+        // الأصوات المربوطة باللغة وتفضيلات التحويل/اللغة
+        val langs = linkedSetOf(
+            "ar", "en", "ar-SA", "ar-EG", "ar-AE"
+        )
+        runCatching { allConvertLanguagePreferences().keys }
+            .getOrDefault(emptySet()).forEach { langs.add(it) }
+        for (lang in langs) {
             val saved = getPreferredVoiceId(lang)
             if (saved == oldName) {
                 setPreferredVoiceId(lang, newName)
-                Log.i(
-                    TAG,
-                    "Updated voice name for lang: $lang: $oldName → $newName"
-                )
+            }
+            val pref = runCatching {
+                getEnginePreferenceForLanguage(lang)
+            }.getOrNull()
+            if (pref?.voiceName == oldName) {
+                runCatching {
+                    setEnginePreferenceForLanguage(
+                        lang,
+                        pref.engine,
+                        newName,
+                        pref.rate,
+                        pref.pitch,
+                        pref.volume
+                    )
+                }
             }
         }
+        Log.i(
+            TAG,
+            "Updated voice name across prefs: $oldName → $newName"
+        )
     }
-
     /** لغة الصوت المختارة لكل فئة (category -> رمز ISO) — تقيّد قائمة
      *  الأصوات وتُحسم لغة النطق الفعلية لها. */
     fun getLanguageForCategory(category: String): String? =
@@ -1881,134 +2201,100 @@ class SettingsRepository(context: Context) :
         return engine
     }
     override fun setEngineForCategory(category: String, engine: String?) {
-        val oldEngine = getEngineForCategory(category)
-        val changed = !oldEngine.isNullOrBlank() && oldEngine != engine
-        val editor = prefs.edit().putString("engine_for_$category", engine)
+        val normalized = engine
+            ?.takeIf {
+                it.isNotBlank() &&
+                    it != VOICE_CATEGORY_DEFAULT &&
+                    it != "default"
+            }
+        val storedOld = prefs.getString("engine_for_$category", null)
+        val oldEngine = storedOld?.takeIf { VisibleEngines.isVisible(it) }
+        val changed = !storedOld.isNullOrBlank() &&
+            storedOld != normalized
+        val editor = prefs.edit()
+        if (normalized.isNullOrBlank()) {
+            editor.remove("engine_for_$category")
+        } else {
+            editor.putString("engine_for_$category", normalized)
+        }
         if (changed) {
-            // مسح الصوت المحفوظ للفئة تلقائياً عند تغيير المحرك (الأمر 3)
+            // مسح الصوت المحفوظ للفئة تلقائياً عند تغيير المحرك
             val currentVoice = getPreferredVoiceIdForCategory(category)
             if (!currentVoice.isNullOrBlank() &&
-                !VoiceIdContract.isVoiceBelongingToEngine(engine, currentVoice)
+                !VoiceIdContract.isVoiceBelongingToEngine(
+                    normalized, currentVoice
+                )
             ) {
                 editor.remove("preferred_voice_$category")
-                // يُمسح مفتاح المحرك القديم أيضاً وإلا عادت القراءة
-                // لتجده بعد أن حُذفت المرآة فقط.
-                if (!oldEngine.isNullOrBlank()) {
+                if (!storedOld.isNullOrBlank()) {
                     val oldNorm = ConvertPreferencesCodec
                         .normalizeLanguageTag(category)
                     editor.remove(
-                        "preferred_voice_${oldEngine}_$oldNorm"
+                        "preferred_voice_${storedOld}_$oldNorm"
                     )
                 }
-                if (category == VOICE_CATEGORY_DEFAULT) {
-                    editor.remove("primary_voice_$category")
-                }
             }
-        }
-        if (category == VOICE_CATEGORY_DEFAULT) {
-            val isLord = engine.isNullOrBlank()
-            if (!isLord) {
-                val curLordVoice = prefs.getString(
-                    "preferred_voice_$category", null
-                )
-                if (!curLordVoice.isNullOrBlank()) {
-                    editor.putString("primary_voice_$category", curLordVoice)
-                }
+            // محاولة استعادة صوت محفوظ للمحرك الجديد
+            if (!normalized.isNullOrBlank()) {
                 val savedVoice = getPreferredVoiceForEngine(
-                    engine!!, category
+                    normalized, category
                 )
                 if (!savedVoice.isNullOrBlank()) {
-                    editor.putString("preferred_voice_$category", savedVoice)
-                }
-            } else {
-                val lordVoice = prefs.getString(
-                    "primary_voice_$category", null
-                ) ?: getPreferredVoiceForEngine(ENGINE_LORD_TTS, category)
-                    ?: prefs.getString("preferred_voice_$category", null)
-                if (!lordVoice.isNullOrBlank()) {
-                    editor.putString("preferred_voice_$category", lordVoice)
+                    editor.putString(
+                        "preferred_voice_$category", savedVoice
+                    )
                 }
             }
         }
-        editor.commit()
+        editor.apply()
     }
-
     /** سرعة النطق لكل فئة */
     override fun getSpeechRateForCategory(category: String): Float =
-        if (category == VOICE_CATEGORY_DEFAULT ||
-            hasExplicitSpeechRateForCategory(category)
-        ) {
+        if (category == VOICE_CATEGORY_DEFAULT) {
+            // مسار ترحيل/تخزين قديم فقط: تتبع الأشرطة العامة.
+            getDefaultSpeechRate()
+        } else if (hasExplicitSpeechRateForCategory(category)) {
             prefs.getFloat(
-                "speech_rate_$category",
-                if (category == VOICE_CATEGORY_DEFAULT) {
-                    prefs.getFloat("default_speech_rate", 1.0f)
-                } else {
-                    1.0f
-                }
+                "speech_rate_$category", getDefaultSpeechRate()
             )
         } else {
-            getSpeechRateForCategory(VOICE_CATEGORY_DEFAULT)
+            // الفئات بلا تجاوز صريح تتبع العام.
+            getDefaultSpeechRate()
         }
 
     override fun setSpeechRateForCategory(category: String, rate: Float) {
         val clamped = rate.coerceIn(0f, 2f)
-        val editor = prefs.edit().putFloat("speech_rate_$category", clamped)
-        if (category == VOICE_CATEGORY_DEFAULT) {
-            editor.putFloat("default_speech_rate", clamped)
-        }
-        editor.apply()
+        prefs.edit().putFloat("speech_rate_$category", clamped).apply()
     }
 
     /** نبرة الصوت لكل فئة */
     override fun getPitchForCategory(category: String): Float =
-        if (category == VOICE_CATEGORY_DEFAULT ||
-            hasExplicitPitchForCategory(category)
-        ) {
-            prefs.getFloat(
-                "pitch_$category",
-                if (category == VOICE_CATEGORY_DEFAULT) {
-                    prefs.getFloat("default_pitch", 1.0f)
-                } else {
-                    1.0f
-                }
-            )
+        if (category == VOICE_CATEGORY_DEFAULT) {
+            getDefaultPitch()
+        } else if (hasExplicitPitchForCategory(category)) {
+            prefs.getFloat("pitch_$category", getDefaultPitch())
         } else {
-            getPitchForCategory(VOICE_CATEGORY_DEFAULT)
+            getDefaultPitch()
         }
 
     override fun setPitchForCategory(category: String, pitch: Float) {
         val clamped = pitch.coerceIn(0f, 2f)
-        val editor = prefs.edit().putFloat("pitch_$category", clamped)
-        if (category == VOICE_CATEGORY_DEFAULT) {
-            editor.putFloat("default_pitch", clamped)
-        }
-        editor.apply()
+        prefs.edit().putFloat("pitch_$category", clamped).apply()
     }
 
     /** مستوى الصوت لكل فئة */
     override fun getVolumeForCategory(category: String): Float =
-        if (category == VOICE_CATEGORY_DEFAULT ||
-            hasExplicitVolumeForCategory(category)
-        ) {
-            prefs.getFloat(
-                "volume_$category",
-                if (category == VOICE_CATEGORY_DEFAULT) {
-                    prefs.getFloat("default_volume", 1.0f)
-                } else {
-                    1.0f
-                }
-            )
+        if (category == VOICE_CATEGORY_DEFAULT) {
+            getDefaultVolume()
+        } else if (hasExplicitVolumeForCategory(category)) {
+            prefs.getFloat("volume_$category", getDefaultVolume())
         } else {
-            getVolumeForCategory(VOICE_CATEGORY_DEFAULT)
+            getDefaultVolume()
         }
 
     override fun setVolumeForCategory(category: String, volume: Float) {
         val clamped = volume.coerceIn(0f, 1f)
-        val editor = prefs.edit().putFloat("volume_$category", clamped)
-        if (category == VOICE_CATEGORY_DEFAULT) {
-            editor.putFloat("default_volume", clamped)
-        }
-        editor.apply()
+        prefs.edit().putFloat("volume_$category", clamped).apply()
     }
 
     override fun hasExplicitSpeechRateForCategory(category: String): Boolean =
@@ -3618,8 +3904,10 @@ class SettingsRepository(context: Context) :
         prefs.edit().putBoolean("a11y_call_keys_swapped", swapped).apply()
 
     private fun sanitizeLoudnessCategory(category: String?): String =
-        if (category.isNullOrBlank()) VOICE_CATEGORY_DEFAULT else category
-
+        when {
+            category.isNullOrBlank() -> VOICE_CATEGORY_DEFAULT
+            else -> category
+        }
     override fun getCategoryLoudnessConfig(
         category: String?
     ): CategoryLoudnessConfig {

@@ -59,9 +59,12 @@ class AnnouncementSpeakerFocusTest {
     @org.junit.Before
     fun setUp() {
         val repo = appSettings
-        repo.setEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT,
-            "com.google.android.tts"
+        // محرك اللغة الفعلي للقراءة/الإعلان (بدون الاعتماد على فئة "الافتراضي" المحذوفة).
+        repo.setEnginePreferenceForLanguage(
+            "ar", "com.google.android.tts", null, 1.0f, 1.0f, 1.0f
+        )
+        repo.setEnginePreferenceForLanguage(
+            "en", "com.google.android.tts", null, 1.0f, 1.0f, 1.0f
         )
         val componentName = android.content.ComponentName(
             "com.google.android.tts",

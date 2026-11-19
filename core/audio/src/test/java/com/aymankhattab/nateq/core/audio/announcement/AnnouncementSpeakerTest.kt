@@ -1285,20 +1285,21 @@ class AnnouncementSpeakerTest {
             }
             val original = am.getStreamVolume(AudioManager.STREAM_MUSIC)
 
-            // كل الفئات عند تفعيل forceMax
-            // ترفع القناة للقمة وتُستعاد بعدها.
+            // كل الفئات عند تفعيل forceMax ترفع القناة للقمة وتُستعاد بعدها.
+            // null يضبط دلْوَ الجهارة الافتراضي (حالة بلا فئة).
             listOf(
                 SettingsRepository.ANNOUNCE_CATEGORY_SMS,
                 SettingsRepository.VOICE_CATEGORY_BATTERY,
                 SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
                 SettingsRepository.VOICE_CATEGORY_NUMBERS,
-                SettingsRepository.VOICE_CATEGORY_DEFAULT,
+                SettingsRepository.VOICE_CATEGORY_DIALOGUE,
                 SettingsRepository.VOICE_CATEGORY_TIME,
                 null
             ).forEach { category ->
                 if (category != null) {
                     repo.setLoudnessForceMaxEnabled(category, true)
                 } else {
+                    // sanitizeLoudnessCategory(null) → دلْو الجهارة الافتراضي
                     repo.setLoudnessForceMaxEnabled(
                         SettingsRepository.VOICE_CATEGORY_DEFAULT,
                         true

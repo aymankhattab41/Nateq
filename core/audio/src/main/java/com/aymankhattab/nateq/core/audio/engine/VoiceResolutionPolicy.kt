@@ -344,16 +344,13 @@ object VoiceResolutionPolicy {
             )
             SpeechRole.TEXT -> null
         }?.takeIf { VisibleEngines.isVisible(it) }
-        val defaultCategoryEngine = settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        )?.takeIf { VisibleEngines.isVisible(it) }
         val routed = LanguageSpeechRouter.route(
             matchesRequest = true,
             convertEngine = null,
             convertVoiceName = null,
             perLanguageEngine = settings.getEngineForLanguage(languageTag),
             perLanguageVoiceName = settings.getVoiceForLanguage(languageTag),
-            defaultEngine = defaultCategoryEngine
+            defaultEngine = null
         )
         val resolvedVoice = resolve(
             role = role,
@@ -371,7 +368,7 @@ object VoiceResolutionPolicy {
             SOURCE_CATEGORY_NUMBER,
             SOURCE_CATEGORY_DIALOGUE,
             SOURCE_CATEGORY_NARRATION -> {
-                categoryEngine ?: defaultCategoryEngine ?: routed.engine
+                categoryEngine ?: routed.engine
             }
             SOURCE_APP -> {
                 appVoice?.engine ?: routed.engine

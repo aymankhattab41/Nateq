@@ -15,7 +15,6 @@ class CategoryPanelLogicTest {
     fun categoryEntries_haveExpectedOrderAndKeys() {
         assertEquals(
             listOf(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT,
                 SettingsRepository.VOICE_CATEGORY_TIME,
                 SettingsRepository.VOICE_CATEGORY_BATTERY,
                 SettingsRepository.VOICE_CATEGORY_NUMBERS,
@@ -62,48 +61,20 @@ class CategoryPanelLogicTest {
     }
 
     @Test
-    fun allCategoriesHaveDedicatedEngine() {
-        assertTrue(
-            categoryHasDedicatedEngine(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            )
-        )
-        assertTrue(
-            categoryHasDedicatedEngine(
-                SettingsRepository.VOICE_CATEGORY_TIME
-            )
-        )
-        assertTrue(
-            categoryHasDedicatedEngine(
-                SettingsRepository.VOICE_CATEGORY_NUMBERS
-            )
-        )
-        assertTrue(
-            categoryHasDedicatedEngine(
-                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-            )
-        )
-        assertTrue(
-            categoryHasDedicatedEngine(
-                SettingsRepository.VOICE_CATEGORY_EMOJI
-            )
-        )
-        assertTrue(
-            categoryHasDedicatedEngine(
-                SettingsRepository.VOICE_CATEGORY_BATTERY
-            )
-        )
-        // فئات المتصل الفرعية (عربي/إنجليزي) ليست «الفئة الافتراضية»
-        // فيحتفظ كل جانب بمحركه الخاص.
-        assertTrue(
-            categoryHasDedicatedEngine(
-                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
-            )
-        )
-        assertTrue(
-            categoryHasDedicatedEngine(
-                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
-            )
-        )
+    fun activeCategoriesHaveDedicatedEngine() {
+        listOf(
+            SettingsRepository.VOICE_CATEGORY_TIME,
+            SettingsRepository.VOICE_CATEGORY_BATTERY,
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            SettingsRepository.VOICE_CATEGORY_DIALOGUE,
+            SettingsRepository.VOICE_CATEGORY_NARRATION,
+            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
+            SettingsRepository.VOICE_CATEGORY_EMOJI,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+        ).forEach { key ->
+            assertTrue(categoryHasDedicatedEngine(key))
+        }
     }
 }

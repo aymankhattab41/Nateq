@@ -122,7 +122,7 @@ class ChangelogSpeechTest {
                     1f,
                     1f,
                     1f,
-                    category = SettingsRepository.VOICE_CATEGORY_DEFAULT
+                    category = null
                 )
             }
         } finally {

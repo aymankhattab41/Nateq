@@ -4,10 +4,8 @@ import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /**
- * يحدد أي صوت (من أي مزود) يجب استخدامه لطلب نطق معيّن،
- * بناءً على تفضيلات المستخدم المحفوظة لكل لغة على حدة.
- * هذا هو ما يسمح للمستخدم الكفيف بالتحكم في "الصوت الذي يقرأ به
- * قارئ الشاشة" لكل لغة بشكل مستقل (عربي/إنجليزي وغيرها).
+ * يحدّد صوت القراءة المناسب لطلب نطق معيّن،
+ * بناءً على تفضيلات المستخدم المحفوظة لكل لغة («صوت القراءة لكل لغة»).
  */
 class SynthesisRequestHandler(
     private val catalog: VoiceCatalog,
@@ -17,8 +15,9 @@ class SynthesisRequestHandler(
         val locale = java.util.Locale.forLanguageTag(languageTag)
         val voices = catalog.allAvailableVoices(locale)
 
-        // 1) الصوت المفضّل المحفوظ لهذه اللغة بالضبط
+        // 1) صوت القراءة المفضّل المحفوظ لهذه اللغة
         val preferredVoiceId = settings.getPreferredVoiceId(languageTag)
+            ?: settings.getVoiceForLanguage(languageTag)
         preferredVoiceId?.let { id ->
             voices.find { it.id == id }?.let { return it }
         }
@@ -35,94 +34,60 @@ class SynthesisRequestHandler(
 
     /**
      * سرعة النطق الفعّالة للغةٍ وفئةٍ معاً — الأولوية:
-     * 1) شريط الفئة الصريح (غير الافتراضية) إن عيّنه المستخدم.
+     * 1) تجاوز الفئة الصريح إن عيّنه المستخدم.
      * 2) شريط اللغة الصريح إن وُجد.
-     * 3) شريط الفئة (يرث الافتراضية عند عدم تعيينه).
-     * 4) السرعة العامة الافتراضية.
+     * 3) السرعة العامة.
      */
     fun getSpeechRateFor(languageTag: String, category: String?): Float {
         val cat = category?.takeIf { it.isNotBlank() }
-            ?: SettingsRepository.VOICE_CATEGORY_DEFAULT
-        if (cat != SettingsRepository.VOICE_CATEGORY_DEFAULT &&
-            settings.hasExplicitSpeechRateForCategory(cat)
-        ) {
+        if (cat != null && settings.hasExplicitSpeechRateForCategory(cat)) {
             return settings.getSpeechRateForCategory(cat)
         }
         return settings.getSpeechRateOrNull(languageTag)
-            ?: settings.getSpeechRateForCategory(cat)
-                .takeIf { it > 0f }
             ?: settings.getDefaultSpeechRate()
     }
 
-    /**
-     * نبرة النطق الفعّالة للغةٍ وفئةٍ معاً.
-     */
+    /** نبرة النطق الفعّالة للغةٍ وفئةٍ معاً. */
     fun getPitchFor(languageTag: String, category: String?): Float {
         val cat = category?.takeIf { it.isNotBlank() }
-            ?: SettingsRepository.VOICE_CATEGORY_DEFAULT
-        if (cat != SettingsRepository.VOICE_CATEGORY_DEFAULT &&
-            settings.hasExplicitPitchForCategory(cat)
-        ) {
+        if (cat != null && settings.hasExplicitPitchForCategory(cat)) {
             return settings.getPitchForCategory(cat)
         }
         return settings.getPitchOrNull(languageTag)
-            ?: settings.getPitchForCategory(cat)
-                .takeIf { it > 0f }
             ?: settings.getDefaultPitch()
     }
 
-    /**
-     * مستوى الصوت الفعّال للغةٍ وفئةٍ معاً.
-     */
+    /** مستوى الصوت الفعّال للغةٍ وفئةٍ معاً. */
     fun getVolumeFor(languageTag: String, category: String?): Float {
         val cat = category?.takeIf { it.isNotBlank() }
-            ?: SettingsRepository.VOICE_CATEGORY_DEFAULT
-        if (cat != SettingsRepository.VOICE_CATEGORY_DEFAULT &&
-            settings.hasExplicitVolumeForCategory(cat)
-        ) {
+        if (cat != null && settings.hasExplicitVolumeForCategory(cat)) {
             return settings.getVolumeForCategory(cat)
         }
         return settings.getVolumeOrNull(languageTag)
-            ?: settings.getVolumeForCategory(cat)
-                .takeIf { it > 0f }
             ?: settings.getDefaultVolume()
     }
 
     fun getSpeechRate(languageTag: String): Float =
-        getSpeechRateFor(
-            languageTag,
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        )
+        getSpeechRateFor(languageTag, null)
 
     fun getPitch(languageTag: String): Float =
-        getPitchFor(
-            languageTag,
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        )
+        getPitchFor(languageTag, null)
 
     fun getVolume(languageTag: String): Float =
-        getVolumeFor(
-            languageTag,
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        )
+        getVolumeFor(languageTag, null)
 
-    /** القيمة الصريحة لسرعة هذه اللغة إن عيّنها المستخدم — null إن لم يعيّن.
-     *  يسمح للمستدعي بالتمييز بين «1.0x صريح» (تفضيل حقيقي) و«بلا تفضيل» — وهو
-     *  ما يساويه الربط مع 1.0f بوَحدة في synthesizeSingle. */
+    /** القيمة الصريحة لسرعة هذه اللغة إن عيّنها المستخدم — null إن لم يعيّن. */
     fun getExplicitLanguageRate(languageTag: String): Float? =
         settings.getSpeechRateOrNull(languageTag)
 
-    fun getSpeechRateForCategory(category: String): Float {
-        return settings.getSpeechRateForCategory(category)
-    }
+    fun getSpeechRateForCategory(category: String): Float =
+        settings.getSpeechRateForCategory(category)
 
     fun isAutoConvertEnabled(): Boolean = settings.isAutoConvertEnabled()
 
-    fun getPitchForCategory(category: String): Float {
-        return settings.getPitchForCategory(category)
-    }
+    fun getPitchForCategory(category: String): Float =
+        settings.getPitchForCategory(category)
 
-    fun getVolumeForCategory(category: String): Float {
-        return settings.getVolumeForCategory(category)
-    }
+    fun getVolumeForCategory(category: String): Float =
+        settings.getVolumeForCategory(category)
 }

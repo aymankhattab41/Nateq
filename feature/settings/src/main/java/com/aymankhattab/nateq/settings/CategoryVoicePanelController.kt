@@ -43,10 +43,6 @@ internal enum class CategoryPanelEntry(
     val categoryKey: String,
     val labelRes: Int
 ) {
-    DEFAULT(
-        SettingsRepository.VOICE_CATEGORY_DEFAULT,
-        R.string.voice_category_default
-    ),
     TIME(
         SettingsRepository.VOICE_CATEGORY_TIME,
         R.string.voice_category_time
@@ -146,7 +142,7 @@ internal class CategoryVoicePanelController(
     private var btnTest: View? = null
 
     /** الفئة المعروضة حالياً. */
-    private var currentEntry: CategoryPanelEntry = CategoryPanelEntry.DEFAULT
+    private var currentEntry: CategoryPanelEntry = CategoryPanelEntry.TIME
 
     /** لغة اللوحة الصوتية الحالية (تُحدَّث من سبnner اللغة). */
     private var currentPanelLanguage: String = "ar"
@@ -205,7 +201,7 @@ internal class CategoryVoicePanelController(
         inflateVoicePanelRow()
         bindSelector(view)
         bindCallerPanel(view)
-        currentEntry = CategoryPanelEntry.DEFAULT
+        currentEntry = CategoryPanelEntry.TIME
         bindEntry(currentEntry)
     }
 
@@ -415,10 +411,6 @@ internal class CategoryVoicePanelController(
                 R.string.seek_category_speech_rate -> {
                     val factor = progress.speedFactor()
                     settings.setSpeechRateForCategory(catKey, factor)
-                    if (catKey == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
-                        settings.setDefaultSpeechRate(factor)
-                        settings.setSpeechRate("ar", factor)
-                    }
                     if (settings.isFollowReaderRateEnabled()) {
                         settings.setFollowReaderRateEnabled(false)
                     }
@@ -426,18 +418,10 @@ internal class CategoryVoicePanelController(
                 R.string.seek_category_pitch -> {
                     val factor = progress.speedFactor()
                     settings.setPitchForCategory(catKey, factor)
-                    if (catKey == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
-                        settings.setDefaultPitch(factor)
-                        settings.setPitch("ar", factor)
-                    }
                 }
                 R.string.seek_category_volume -> {
                     val vol = progress / 100f
                     settings.setVolumeForCategory(catKey, vol)
-                    if (catKey == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
-                        settings.setDefaultVolume(vol)
-                        settings.setVolume("ar", vol)
-                    }
                 }
             }
         }
@@ -709,8 +693,6 @@ if (!dirtyPanel) {
         key: String
     ): String =
         when (key) {
-            SettingsRepository.VOICE_CATEGORY_DEFAULT ->
-                context.getString(R.string.voice_category_default_summary)
             SettingsRepository.VOICE_CATEGORY_TIME ->
                 context.getString(R.string.voice_category_time_summary)
             SettingsRepository.VOICE_CATEGORY_NUMBERS ->
@@ -1173,29 +1155,19 @@ if (!dirtyPanel) {
         val chosenRate = seekRate?.progress?.speedFactor() ?: 1.0f
         runCatching {
             settings.setSpeechRateForCategory(key, chosenRate)
-            if (key == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
-                settings.setDefaultSpeechRate(chosenRate)
-                settings.setSpeechRate("ar", chosenRate)
-            }
-            if (chosenRate != 1.0f && settings.isFollowReaderRateEnabled()) {
+            if (chosenRate != 1.0f &&
+                settings.isFollowReaderRateEnabled()
+            ) {
                 settings.setFollowReaderRateEnabled(false)
             }
         }
         val chosenPitch = seekPitch?.progress?.speedFactor() ?: 1.0f
         runCatching {
             settings.setPitchForCategory(key, chosenPitch)
-            if (key == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
-                settings.setDefaultPitch(chosenPitch)
-                settings.setPitch("ar", chosenPitch)
-            }
         }
         val chosenVol = (seekVolume?.progress ?: 100) / 100f
         runCatching {
             settings.setVolumeForCategory(key, chosenVol)
-            if (key == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
-                settings.setDefaultVolume(chosenVol)
-                settings.setVolume("ar", chosenVol)
-            }
         }
         return true
     }

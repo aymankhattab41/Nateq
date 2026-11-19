@@ -970,15 +970,11 @@ class AnnouncementSpeaker(
         val fallbackEngine = runCatching {
             settings?.getAnnouncementFallbackEngine()
         }.getOrNull()
-        val defaultCategoryEngine = settings?.getEngineForCategory(
-            com.aymankhattab.nateq.core.data.SettingsRepository
-                .VOICE_CATEGORY_DEFAULT
-        )
-        // ع٢٧-A1 بند 2: قارن boundEngine بالمحرك المحسوم لا بالمطلوب
+        // صوت القراءة لكل لغة (محرك اللغة) كبديل عام بدلاً من فئة «الافتراضي» المحذوفة
         val resolved = safeEngineForAnnouncement(
             appContext,
             requested,
-            defaultCategoryEngine,
+            languageEngine,
             languageEngine,
             fallbackEngine
         )
@@ -1023,10 +1019,7 @@ class AnnouncementSpeaker(
         val engine = safeEngineForAnnouncement(
             appContext,
             finalEngine,
-            settings?.getEngineForCategory(
-                com.aymankhattab.nateq.core.data.SettingsRepository
-                    .VOICE_CATEGORY_DEFAULT
-            ),
+            languageEngine,
             languageEngine,
             fallbackEngine
         )
@@ -1397,18 +1390,15 @@ class AnnouncementSpeaker(
         var categoryVoice = if (category != null) {
             settings?.getPreferredVoiceIdForCategory(category)
                 ?: if (isLordSys) {
-                    settings?.getPreferredVoiceIdForCategory(
-                        SettingsRepository.VOICE_CATEGORY_DEFAULT
-                    )
+                    settings?.getVoiceForLanguage(locale.language)
+                        ?: settings?.getPreferredVoiceId(locale.language)
                 } else null
         } else null
         val originalCategoryVoice = categoryVoice
         val categoryEngine = if (category != null) {
             settings?.getEngineForCategory(category)
                 ?: if (isLordSys) {
-                    settings?.getEngineForCategory(
-                        SettingsRepository.VOICE_CATEGORY_DEFAULT
-                    )
+                    settings?.getEngineForLanguage(locale.language)
                 } else null
         } else null
 

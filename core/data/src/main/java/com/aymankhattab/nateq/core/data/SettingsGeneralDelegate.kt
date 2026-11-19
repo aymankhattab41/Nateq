@@ -2,69 +2,60 @@ package com.aymankhattab.nateq.core.data
 
 import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
 
-/** تفويض الإعدادات العامة (سرعة/نبرة/صوت افتراضية وتعزيزات الصوت). */
+/**
+ * تفويض الإعدادات العامة (سرعة/نبرة/صوت افتراضية وتعزيزات الصوت).
+ *
+ * المصدر الحاكم للأشرطة العامة هو `default_speech_rate/pitch/volume`.
+ * مفاتيح الفئة القديمة (`speech_rate_default` إلخ) تُقرأ فقط للتوافق
+ * ولا تُكتب بعد الآن؛ كي لا تتغلب على القيم العامة.
+ */
 internal class SettingsGeneralDelegate(
     private val repo: SettingsRepository
 ) {
     private val prefs get() = repo.prefs
 
-    fun getDefaultSpeechRate(): Float =
-        if (prefs.contains("default_speech_rate")) {
+    fun getDefaultSpeechRate(): Float = when {
+        prefs.contains("default_speech_rate") ->
             prefs.getFloat("default_speech_rate", 1.0f)
-        } else {
-            repo.getSpeechRateForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            )
-        }
+        prefs.contains("speech_rate_default") ->
+            prefs.getFloat("speech_rate_default", 1.0f)
+        else -> 1.0f
+    }
 
     fun setDefaultSpeechRate(rate: Float) {
         val clamped = rate.coerceIn(0f, 2f)
         prefs.edit()
             .putFloat("default_speech_rate", clamped)
-            .putFloat(
-                "speech_rate_${SettingsRepository.VOICE_CATEGORY_DEFAULT}",
-                clamped
-            )
             .apply()
     }
 
-    fun getDefaultPitch(): Float =
-        if (prefs.contains("default_pitch")) {
+    fun getDefaultPitch(): Float = when {
+        prefs.contains("default_pitch") ->
             prefs.getFloat("default_pitch", 1.0f)
-        } else {
-            repo.getPitchForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            )
-        }
+        prefs.contains("pitch_default") ->
+            prefs.getFloat("pitch_default", 1.0f)
+        else -> 1.0f
+    }
 
     fun setDefaultPitch(pitch: Float) {
         val clamped = pitch.coerceIn(0f, 2f)
         prefs.edit()
             .putFloat("default_pitch", clamped)
-            .putFloat(
-                "pitch_${SettingsRepository.VOICE_CATEGORY_DEFAULT}",
-                clamped
-            )
             .apply()
     }
 
-    fun getDefaultVolume(): Float =
-        if (prefs.contains("default_volume")) {
+    fun getDefaultVolume(): Float = when {
+        prefs.contains("default_volume") ->
             prefs.getFloat("default_volume", 1.0f)
-        } else {
-            repo.getVolumeForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            )
-        }
+        prefs.contains("volume_default") ->
+            prefs.getFloat("volume_default", 1.0f)
+        else -> 1.0f
+    }
 
     fun setDefaultVolume(volume: Float) {
         val clamped = volume.coerceIn(0f, 1f)
         prefs.edit()
             .putFloat("default_volume", clamped)
-            .putFloat(
-                "volume_${SettingsRepository.VOICE_CATEGORY_DEFAULT}",
-                clamped
-            )
             .apply()
     }
 
@@ -119,9 +110,8 @@ internal class SettingsGeneralDelegate(
         prefs.getFloat("speech_boost_value", 1.0f)
 
     fun setSpeechBoostValue(value: Float) {
-        prefs.edit()
-            .putFloat("speech_boost_value", value.coerceIn(1f, 2.5f))
-            .apply()
+        val clamped = value.coerceIn(1.0f, 2.5f)
+        prefs.edit().putFloat("speech_boost_value", clamped).apply()
     }
 
     fun isVolumeBoostEnabled(): Boolean =
@@ -135,8 +125,14 @@ internal class SettingsGeneralDelegate(
         prefs.getFloat("volume_boost_value", 1.0f)
 
     fun setVolumeBoostValue(value: Float) {
-        prefs.edit()
-            .putFloat("volume_boost_value", value.coerceIn(1f, 2.5f))
-            .apply()
+        val clamped = value.coerceIn(1.0f, 2.5f)
+        prefs.edit().putFloat("volume_boost_value", clamped).apply()
+    }
+
+    fun isSpeechBoostOnSpeaker(): Boolean =
+        prefs.getBoolean("speech_boost_on_speaker", false)
+
+    fun setSpeechBoostOnSpeaker(enabled: Boolean) {
+        prefs.edit().putBoolean("speech_boost_on_speaker", enabled).apply()
     }
 }
