@@ -52,6 +52,31 @@ class UnlabeledElementStore private constructor(context: Context) {
     fun getAllCustomLabels(): Map<String, String> =
         customLabels.toMap()
 
+    /**
+     * بند 3: حفظ آخر عنصر مركّز عليه لقارئ الشاشة (خارج تطبيق ناطق)
+     * ليتمكن زر «التقط العنصر المركّز عليه» في الإعدادات من ملء
+     * الحزمة ومعرّف العنصر تلقائياً عبر العمليات.
+     */
+    fun setLastFocusedElement(
+        packageName: String,
+        viewIdResourceName: String
+    ) {
+        if (packageName.isBlank() || viewIdResourceName.isBlank()) return
+        prefs.edit()
+            .putString(KEY_LAST_FOCUSED_PKG, packageName)
+            .putString(KEY_LAST_FOCUSED_VIEW_ID, viewIdResourceName)
+            .apply()
+    }
+
+    /** آخر عنصر مركّز عليه مُلتقط (اسم الحزمة، معرّف العنصر) أو null. */
+    fun getLastFocusedElement(): Pair<String, String>? {
+        val pkg = prefs.getString(KEY_LAST_FOCUSED_PKG, null)
+            ?.takeIf { it.isNotBlank() } ?: return null
+        val viewId = prefs.getString(KEY_LAST_FOCUSED_VIEW_ID, null)
+            ?.takeIf { it.isNotBlank() } ?: return null
+        return pkg to viewId
+    }
+
     private fun loadFromPrefs() {
         val json = prefs.getString(KEY_CUSTOM_LABELS, null) ?: return
         runCatching {
@@ -69,6 +94,8 @@ class UnlabeledElementStore private constructor(context: Context) {
     companion object {
         private const val PREFS_NAME = "nateq_unlabeled_elements"
         private const val KEY_CUSTOM_LABELS = "custom_labels_map"
+        private const val KEY_LAST_FOCUSED_PKG = "last_focused_pkg"
+        private const val KEY_LAST_FOCUSED_VIEW_ID = "last_focused_view_id"
 
         @Volatile
         private var instance: UnlabeledElementStore? = null

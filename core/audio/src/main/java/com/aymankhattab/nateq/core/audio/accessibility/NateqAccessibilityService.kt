@@ -625,6 +625,8 @@ class NateqAccessibilityService : AccessibilityService() {
             Handler(Looper.getMainLooper())
         ) {
             override fun onChange(selfChange: Boolean) {
+                // بند 2: تحديث اشتراك الأحداث فور تبديل الميزات.
+                applyServiceInfo()
                 keyShortcutRouter?.reloadBindings()
                 applyAccessibilityButton()
                 // ع٤١-ب9: إعادة محاولة تسجيل مستقبل البلوتوث بعد منح الإذن
@@ -737,6 +739,24 @@ class NateqAccessibilityService : AccessibilityService() {
             types = types or AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
         }
 
+        // بند 1: يلزم حدث التركيز أيضاً عند تفعيل التسميات المخصصة
+        // أو الوصف التلقائي منفردين، وإلا لا تصل الأحداث لمعالجاتهما.
+        if (FeatureFlags.isActive(
+                FeatureFlags.FEATURE_CUSTOM_UNLABELED,
+                context = this,
+                settings = repo,
+                stateStore = store
+            ) ||
+            FeatureFlags.isActive(
+                FeatureFlags.FEATURE_AUTO_DESCRIBE_UNLABELED,
+                context = this,
+                settings = repo,
+                stateStore = store
+            )
+        ) {
+            types = types or AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+        }
+
         if (FeatureFlags.isActive(
                 FeatureFlags.FEATURE_CHAT_LIVE_READING,
                 context = this,
@@ -765,9 +785,6 @@ class NateqAccessibilityService : AccessibilityService() {
             types = types or AccessibilityEvent.TYPE_VIEW_CLICKED
         }
 
-        info.eventTypes = types
-        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-
         val liveReading = FeatureFlags.isActive(
             FeatureFlags.FEATURE_CHAT_LIVE_READING,
             context = this,
@@ -790,6 +807,9 @@ class NateqAccessibilityService : AccessibilityService() {
             types = types or AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
             types = types or AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         }
+
+        info.eventTypes = types
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
 
         val fastRequired = liveReading || readMore
         // بند 3: رفع مهلة الإشعار في وضع القراءة الحية/اقرأ المزيد إلى 100ms
@@ -903,6 +923,22 @@ class NateqAccessibilityService : AccessibilityService() {
                 !AccessibilityBridge.isIgnoredPackage(focusedPkg)
             ) {
                 lastFocusedPackage = focusedPkg
+            }
+            // بند 3: حفظ آخر عنصر مركّز عليه (خارج التطبيق) لالتقاط
+            // الحزمة ومعرّف العنصر تلقائياً في إدارة التسميات المخصصة.
+            if (!focusedPkg.isNullOrBlank() && focusedPkg != packageName) {
+                val src = runCatching { event.source }.getOrNull()
+                if (src != null) {
+                    try {
+                        val viewId = src.viewIdResourceName
+                        if (!viewId.isNullOrBlank()) {
+                            UnlabeledElementStore.getInstance(this)
+                                .setLastFocusedElement(focusedPkg, viewId)
+                        }
+                    } finally {
+                        runCatching { src.recycle() }
+                    }
+                }
             }
         }
 

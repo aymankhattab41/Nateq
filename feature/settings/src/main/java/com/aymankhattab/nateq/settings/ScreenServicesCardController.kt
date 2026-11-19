@@ -1356,19 +1356,68 @@ class ScreenServicesCardController(
         }
         val etPkg = EditText(context).apply {
             hint = context.getString(R.string.unlabeled_labels_package_hint)
+            contentDescription = context.getString(
+                R.string.unlabeled_labels_field_package_desc
+            )
             setText(pkg.orEmpty())
             minHeight = (48 * resources.displayMetrics.density).toInt()
         }
         val etViewId = EditText(context).apply {
             hint = context.getString(R.string.unlabeled_labels_viewid_hint)
+            contentDescription = context.getString(
+                R.string.unlabeled_labels_field_viewid_desc
+            )
             setText(viewId.orEmpty())
             minHeight = (48 * resources.displayMetrics.density).toInt()
         }
         val etLabel = EditText(context).apply {
             hint = context.getString(R.string.unlabeled_labels_label_hint)
+            contentDescription = context.getString(
+                R.string.unlabeled_labels_field_label_desc
+            )
             setText(label.orEmpty())
             minHeight = (48 * resources.displayMetrics.density).toInt()
         }
+        val btnCapture = com.google.android.material.button.MaterialButton(
+            context,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = context.getString(R.string.unlabeled_labels_capture_focused)
+            contentDescription = context.getString(
+                R.string.unlabeled_labels_capture_focused_desc
+            )
+            minHeight = (48 * resources.displayMetrics.density).toInt()
+            setOnClickListener {
+                val focused = UnlabeledElementStore.getInstance(context)
+                    .getLastFocusedElement()
+                if (focused != null) {
+                    etPkg.setText(focused.first)
+                    etViewId.setText(focused.second)
+                    etViewId.requestFocus()
+                    val msg = context.getString(
+                        R.string.unlabeled_labels_captured
+                    )
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    A11ySpeechCoordinator.speakAnnouncement(
+                        context = context,
+                        text = msg,
+                        isInterruptAllowed = true
+                    )
+                } else {
+                    val msg = context.getString(
+                        R.string.unlabeled_labels_capture_none
+                    )
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                    A11ySpeechCoordinator.speakAnnouncement(
+                        context = context,
+                        text = msg,
+                        isInterruptAllowed = true
+                    )
+                }
+            }
+        }
+        container.addView(btnCapture)
         container.addView(etPkg)
         container.addView(etViewId)
         container.addView(etLabel)

@@ -176,11 +176,23 @@ class TextProcessor(
         return steps
     }
 
-    /** معالجة مصرية/تشكيل خفيف على النص العربي النهائي (قبل المحرك). */
-    private fun applyEgyptianProcessing(text: String): String {
+    /**
+     * معالجة مصرية/تشكيل خفيف على النص العربي النهائي (قبل المحرك).
+     * بند 5: تُضاف حركات التشكيل فقط للمحركات التي تنطقها صحيحاً
+     * (مثل Google)؛ وتُتخطّى لمحركات Vocalizer/مايكروسوفت أو غير
+     * المعروف منها.
+     */
+    private fun applyEgyptianProcessing(
+        text: String,
+        enginePackage: String?
+    ): String {
         val s = injectedSettings ?: return text
         if (!s.isEgyptianSpeechProcessingEnabled()) return text
-        return EgyptianSpeechProcessingStep { true }.apply(text)
+        val allowTashkeel = !stripTashkeelFor(enginePackage)
+        return EgyptianSpeechProcessingStep(
+            enabledProvider = { true },
+            allowTashkeelProvider = { allowTashkeel }
+        ).apply(text)
     }
 
     private fun buildBaseSteps(
@@ -439,7 +451,9 @@ class TextProcessor(
             out = unmaskUrls(out, urls)
             val cleaned = CleanupStep.apply(out)
             val finalized = finalizeArabic(voweledSource, cleaned)
-            val egyptian = applyEgyptianProcessing(finalized)
+            val egyptian = applyEgyptianProcessing(
+                finalized, enginePackage
+            )
             return stripNumberMarkersIfUnmarked(egyptian, markNumbers)
         }
 
@@ -455,7 +469,9 @@ class TextProcessor(
         }
         val cleaned = CleanupStep.apply(out)
         val finalized = finalizeArabic(voweledSource, cleaned)
-        val egyptian = applyEgyptianProcessing(finalized)
+        val egyptian = applyEgyptianProcessing(
+            finalized, enginePackage
+        )
         return stripNumberMarkersIfUnmarked(egyptian, markNumbers)
     }
 
@@ -522,9 +538,16 @@ class TextProcessor(
 
         current = unmaskUrls(current, urls)
         current = CleanupStep.apply(current)
-        val finalized = finalizeArabic(voweledSource, current)
-        trace.add("5. بعد تنظيف المسافات والتشكيل" to finalized)
-
+                val finalized = finalizeArabic(voweledSource, current)
+        val egyptian = applyEgyptianProcessing(
+            finalized, enginePackage
+        )
+        trace.add("5. تنقية المسافات والتشكيل" to finalized)
+        if (egyptian != finalized) {
+            trace.add(
+                "6. المعالجة المصرية/التشكيل الخفيف" to egyptian
+            )
+        }
         return trace
     }
 
@@ -615,7 +638,8 @@ class TextProcessor(
     fun processSemantics(
         text: String,
         languageTag: String = LanguageCode.AR.tag,
-        markNumbers: Boolean = false
+        markNumbers: Boolean = false,
+        enginePackage: String? = null
     ): String {
         if (text.isBlank()) return text
         // إزالة الفواصل بين الأرقام عربي أو إنجليزي
@@ -663,7 +687,7 @@ class TextProcessor(
             result = markRemainingDigits(result)
         }
         val cleanedAr = CleanupStep.apply(result)
-        return applyEgyptianProcessing(cleanedAr)
+        return applyEgyptianProcessing(cleanedAr, enginePackage)
     }
 
     /**

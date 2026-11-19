@@ -49,4 +49,54 @@ class EgyptianSpeechProcessingStepTest {
         // "ازايك" is a separate mapped key ("إِزَّيَّك") in our map
         assertFalse(out.isBlank())
     }
+
+    @Test
+    fun allowTashkeelProvider_false_stripsTashkeelFromOutput() {
+        // بند 5: عند منع التشكيل (محرك لا ينطقه صحيحاً) لا يُضاف أي تشكيل،
+        // ويُجرّد ما تحمله بدائل القاموس المصرية.
+        val step = EgyptianSpeechProcessingStep(
+            enabledProvider = { true },
+            allowTashkeelProvider = { false }
+        )
+        val out = step.apply("إزاي")
+        assertFalse(
+            "لا يجب أن يحتوي الناتج على تشكيل عند المنع",
+            out.any { it.code in 0x064B..0x0652 || it.code == 0x0670 }
+        )
+        assertTrue(out.isNotBlank())
+    }
+
+    @Test
+    fun allowTashkeelProvider_false_doesNotApplyLightTashkeelMap() {
+        val step = EgyptianSpeechProcessingStep(
+            enabledProvider = { true },
+            allowTashkeelProvider = { false }
+        )
+        val out = step.apply("مرحبا")
+        assertEquals("مرحبا", out)
+    }
+
+    @Test
+    fun allowTashkeelProvider_true_appliesLightTashkeelMap() {
+        val step = EgyptianSpeechProcessingStep(
+            enabledProvider = { true },
+            allowTashkeelProvider = { true }
+        )
+        val out = step.apply("مرحبا")
+        assertTrue(
+            "يُتوقع تشكيل خفيف مع السماح",
+            out.any { it.code in 0x064B..0x0652 || it.code == 0x0670 }
+        )
+    }
+
+    @Test
+    fun dictionaryEntryCount_matchesMaps() {
+        val total = EgyptianSpeechProcessingStep.dictionaryEntryCount()
+        val repl = EgyptianSpeechProcessingStep.egyptianReplacementsCount()
+        val tash = EgyptianSpeechProcessingStep.tashkeelWordsCount()
+        assertEquals(70, total)
+        assertEquals(40, repl)
+        assertEquals(30, tash)
+        assertEquals(total, repl + tash)
+    }
 }

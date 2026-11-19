@@ -8,10 +8,15 @@ import java.text.Normalizer
  * - يضيف تشكيلًا خفيفًا لكلمات عربية شائعة (معجم صغير) لتحسين النطق.
  * - يطبّق بدائل نطق مصرية لكلمات/عبارات شائعة.
  *
+ * بند 5: إضافة التشكيل تُطبَّق فقط مع المحركات التي تنطقه صحيحاً
+ * (مثل Google)؛ وتُتخطّى لمحركات Vocalizer المدمج ومايكروسوفت أو
+ * غير المعروف منها، مع تجريد أي تشكيل مُضاف حتى لا يُنطق خطأ.
+ *
  * لا تغيّر النص عند التعطيل. لا تمس نصًا غير عربي أو رموزًا محجوزة.
  */
 internal class EgyptianSpeechProcessingStep(
-    private val enabledProvider: () -> Boolean
+    private val enabledProvider: () -> Boolean,
+    private val allowTashkeelProvider: () -> Boolean = { true }
 ) : TextProcessingStep {
 
     override fun apply(input: String): String {
@@ -22,7 +27,15 @@ internal class EgyptianSpeechProcessingStep(
 
         var out = Normalizer.normalize(input, Normalizer.Form.NFC)
         out = applyWordMap(out, COMMON_EGYPTIAN_REPLACEMENTS)
-        out = applyWordMap(out, COMMON_TASHKEEL_WORDS)
+        val allowTashkeel = allowTashkeelProvider()
+        if (allowTashkeel) {
+            out = applyWordMap(out, COMMON_TASHKEEL_WORDS)
+        } else {
+            // بند 5: المحرك لا ينطق التشكيل صحيحاً (Vocalizer/مايكروسوفت
+            // أو غير معروف) — نتجنب إضافة أي تشكيل بإزالة الحركات
+            // (بما في ذلك ما تحمله بدائل القاموس المصرية).
+            out = TashkeelStripStep.apply(out)
+        }
         return out
     }
 
@@ -43,6 +56,17 @@ internal class EgyptianSpeechProcessingStep(
     }
 
     companion object {
+        /** إجمالي مدخلات القاموس (بدائل مصرية + تشكيل خفيف). */
+        fun dictionaryEntryCount(): Int =
+            COMMON_EGYPTIAN_REPLACEMENTS.size + COMMON_TASHKEEL_WORDS.size
+
+        /** عدد بدائل النطق/الصياغة المصرية. */
+        fun egyptianReplacementsCount(): Int =
+            COMMON_EGYPTIAN_REPLACEMENTS.size
+
+        /** عدد كلمات التشكيل الخفيف. */
+        fun tashkeelWordsCount(): Int = COMMON_TASHKEEL_WORDS.size
+
         private val ARABIC_CHAR_REGEX = Regex("[\\u0600-\\u06FF]")
 
         /**

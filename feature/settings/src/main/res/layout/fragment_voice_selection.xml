@@ -190,7 +190,7 @@
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_time_during_calls" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/time_announcement_during_calls" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/time_announcement_during_calls_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/time_announcement_during_calls_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
 
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="4dp" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
@@ -205,12 +205,12 @@
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_time_during_media" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/time_announcement_during_media" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/time_announcement_during_media_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/time_announcement_during_media_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_time_during_silent" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/time_announcement_during_silent" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/time_announcement_during_silent_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/time_announcement_during_silent_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.textfield.TextInputLayout android:id="@+id/til_time_interval" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:hint="@string/time_announcement_interval">
@@ -220,7 +220,7 @@
             
             <TextView android:id="@+id/tv_quiet_schedule_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="@string/time_quiet_schedule_title" android:textAppearance="?attr/textAppearanceBody2" android:importantForAccessibility="yes" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/time_quiet_schedule_summary" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/time_quiet_schedule_summary" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" />
 
             <LinearLayout android:id="@+id/ll_quiet_schedule" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="8dp" />
 
@@ -295,12 +295,12 @@
 
                 <TextView android:id="@+id/tv_exact_alarm_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/exact_alarm_permission_title" android:textAppearance="?attr/textAppearanceBody2" android:importantForAccessibility="no" />
 
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/exact_alarm_permission_summary" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/exact_alarm_permission_summary" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" />
 
                 <com.google.android.material.button.MaterialButton android:id="@+id/btn_exact_alarm_permission" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:minHeight="48dp" android:text="@string/exact_alarm_permission_grant" android:importantForAccessibility="no" />
 
                 
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="@string/exact_alarm_oem_hint" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="@string/exact_alarm_oem_hint" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" />
 
                 <com.google.android.material.button.MaterialButton android:id="@+id/btnOpenOemGuidance" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:minHeight="48dp" android:text="@string/exact_alarm_open_oem_guidance" />
             </LinearLayout>
@@ -308,7 +308,7 @@
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_time_alarm_max_precision" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/time_alarm_max_precision_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/time_alarm_max_precision_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/time_alarm_max_precision_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
         </LinearLayout>        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="16dp" android:layout_marginBottom="4dp" android:background="@color/divider_color" />
 <LinearLayout android:id="@+id/ll_notification_reading_header" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="48dp" android:padding="4dp" android:background="?attr/selectableItemBackground" android:focusable="true" android:accessibilityHeading="true" android:contentDescription="@string/section_notification_reading" android:importantForAccessibility="yes">
@@ -330,7 +330,7 @@
 
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/notification_listener_settings" android:textAppearance="?attr/textAppearanceBody2" android:importantForAccessibility="no" />
 
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/notification_listener_settings_summary" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/notification_listener_settings_summary" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" />
             </LinearLayout>
 
             
@@ -343,7 +343,7 @@
 
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/notification_apps_title" android:textAppearance="?attr/textAppearanceBody2" android:importantForAccessibility="no" />
 
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/notification_apps_summary" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/notification_apps_summary" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" />
             </LinearLayout>
 
             
@@ -366,12 +366,12 @@
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_shake_to_stop" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/shake_to_stop_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/shake_to_stop_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/shake_to_stop_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_proximity_silence" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/proximity_silence_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/proximity_silence_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/proximity_silence_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
         </LinearLayout>
 
@@ -721,7 +721,7 @@
             <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="12dp" android:text="@string/number_reading_mode" android:textAppearance="?attr/textAppearanceSubtitle1" android:importantForAccessibility="yes" />
         </LinearLayout>
 
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/number_reading_mode_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/number_reading_mode_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
         <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:hint="@string/number_reading_mode">
             <androidx.appcompat.widget.AppCompatSpinner android:id="@+id/spinner_number_reading_mode" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:contentDescription="@string/spinner_number_reading_mode_content" />
@@ -759,7 +759,7 @@
             
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/punctuation_reading_level" android:textAppearance="?attr/textAppearanceSubtitle1" android:importantForAccessibility="yes" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/punctuation_reading_level_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/punctuation_reading_level_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:hint="@string/punctuation_reading_level">
                 <androidx.appcompat.widget.AppCompatSpinner android:id="@+id/spinner_punctuation_level" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:contentDescription="@string/spinner_punctuation_level_content" />
@@ -769,60 +769,60 @@
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_tashkeel_preserved" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/tashkeel_preserved_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/tashkeel_preserved_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/tashkeel_preserved_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_egyptian_speech_processing" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/egyptian_speech_processing_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/egyptian_speech_processing_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/egyptian_speech_processing_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_dynamic_speed" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/dynamic_speed_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/dynamic_speed_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/dynamic_speed_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_multi_voice_reader" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/multi_voice_reader_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/multi_voice_reader_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/multi_voice_reader_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_time_conversion" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/time_conversion_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/time_conversion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/time_conversion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_currency_conversion" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/currency_conversion_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/currency_conversion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/currency_conversion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_unit_conversion" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/unit_conversion_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/unit_conversion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/unit_conversion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_symbol_conversion" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/symbol_conversion_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/symbol_conversion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/symbol_conversion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_phone_conversion" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/phone_conversion_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/phone_conversion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/phone_conversion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_arabic_normalization" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/arabic_normalization_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/arabic_normalization_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/arabic_normalization_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
 
             
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_secondary_language" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/secondary_language_title" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/secondary_language_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/secondary_language_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_number_reading_language" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/number_reading_language_title" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/number_reading_language_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/number_reading_language_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switch_language_diagnostics"
@@ -939,7 +939,7 @@
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_follow_reader_rate" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/follow_reader_rate_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/follow_reader_rate_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/follow_reader_rate_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <include android:id="@+id/segment_speech_boost" layout="@layout/segment_speech_boost" />
@@ -980,7 +980,7 @@
             
             <TextView android:id="@+id/tv_audio_expansion_label" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="@string/audio_expansion_label" android:textAppearance="?attr/textAppearanceBody2" android:labelFor="@id/spinner_audio_expansion" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/audio_expansion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/audio_expansion_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             <androidx.appcompat.widget.AppCompatSpinner android:id="@+id/spinner_audio_expansion" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:minHeight="48dp" android:contentDescription="@string/spinner_audio_expansion_content" />
 
@@ -993,12 +993,12 @@
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_audio_reverb" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:minHeight="48dp" android:text="@string/audio_reverb_label" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/audio_reverb_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/audio_reverb_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             
             <TextView android:id="@+id/tv_audio_effects_categories_label" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="@string/audio_effects_categories_label" android:textAppearance="?attr/textAppearanceBody2" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/audio_effects_categories_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/audio_effects_categories_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
             <LinearLayout android:id="@+id/ll_audio_effects_categories" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
 
@@ -1017,7 +1017,7 @@
         <LinearLayout android:id="@+id/ll_device_health_content" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="12dp" android:visibility="gone">
 
             
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/device_health_summary" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/device_health_summary" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" />
 
             
             <com.google.android.material.checkbox.MaterialCheckBox android:id="@+id/cb_device_health_battery" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/device_health_battery_label" android:importantForAccessibility="yes" />
