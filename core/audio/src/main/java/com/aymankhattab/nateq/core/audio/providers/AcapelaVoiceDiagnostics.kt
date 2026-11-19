@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.UUID
 
 /**
  * تشخيص فشل تحميل صوت Acapela من ملفات القرص (قراءة خالصة).
@@ -28,6 +29,21 @@ import java.util.Locale
 object AcapelaVoiceDiagnostics {
 
     private const val TAG = "AcapelaVoiceDiagnostics"
+
+    /** حجم المخزن المؤقت لقراءة الملفات لحساب البصمة. */
+    private const val DEFAULT_BUF = 16384
+
+    /** مميّزات أسماء الأصوات المعروفة، تُستخدم لمنع خلط التهيئة. */
+    private val KNOWN_SPEAKER_TOKENS = listOf(
+        "salma", "leila", "layla", "heather", "zahra", "kareem", "omar"
+    )
+
+    /** إضافة مميّزات الأصوات الظاهرة في [name] إلى [out]. */
+    private fun addKnownTokens(name: String, out: MutableSet<String>) {
+        KNOWN_SPEAKER_TOKENS.forEach { token ->
+            if (name.contains(token)) out += token
+        }
+    }
 
     /** حدّ الملفات المعروضة في الجرد (الباقي يُعدّ لا يُسرد). */
     const val MAX_FILES = 24
@@ -307,113 +323,65 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * المحتوى الاحتياطي لملف ini الأصلي حين لا يكون مقروءً على الجهاز.
-     * يُضبط على الحجم المتوقع (109 بايت) كي يمرّ حاجز الحجم، لكنه لا يُستخدم
-     * إلا عند غياب الملف الحقيقي — لا يُختلق محتوى الأصل أبداً.
+     * محظور توليد/حشو تهيئة ini بديلة (مثل MODE+FILEMAP فقط) أو الاعتماد
+     * على حجم ثابت كدليل صحة. أي غياب/عدم توافق للتهيئة الأصلية يُبلَّغ
+     * عنه صراحةً ولا يُعوَّض باختلاق محتوى.
      */
-    fun originalIniFallbackContent(): String {
-        val base = "MODE=prep_hd\n" +
-            "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]\n" +
-            "#2 FILEMAP \"salma_22k_lf.bvcu.nuul216vqfp\" [ RAM ]\n"
-        return base.padEnd(ORIGINAL_INI_EXPECTED_SIZE.toInt(), ' ')
-    }
-
-    /** ملف ini الأصلي لسلمى (109 بايت) إن كان مقروءً على الجهاز. */
-    fun findOriginalSalmaIni(context: Context): File? =
-        File(context.filesDir, "Acapela/Salma/salma_lf/$ORIGINAL_INI_NAME")
-            .takeIf { it.isFile }
-            ?: File(
-                context.filesDir,
-                "acapela/Salma/salma_lf/$ORIGINAL_INI_NAME"
-            ).takeIf { it.isFile }
-            ?: findFileRecursively(context, ORIGINAL_INI_NAME, "salma_lf")
-            ?: findFileRecursively(context, ORIGINAL_INI_NAME)
+    @Deprecated("لا يُولّد ini بديل؛ التهيئة الأصلية مطلوبة")
+    fun originalIniFallbackContent(): String = ""
 
     /**
-     * إيجاد تهيئة أصلية غنية مقيسة على القرص. الملف المولّد ذو
-     * الـ109 بايت لا يمرّ من [AcapelaVoiceManifest.isOriginalRichIni]،
-     * فلا يُعامل كأصل ولا يُكتب فوق تهيئة حقيقية.
+     * كتابة تهيئة ini في أهداف محددة محظورة ما لم تكن نسخاً حرفية من مصدر
+     * أصيل مُمرَّر صراحةً لنفس الصوت. لا fallback ولا توليد.
      */
-    private fun findOriginalRichIni(context: Context): File? =
-        listOf(
-            "ar_sa_hd_leila_22k_lf.bvcu.ini",
-            "enu_heather_22k_ns.bvcu.ini",
-            ORIGINAL_INI_NAME
-        ).firstNotNullOfOrNull { name ->
-            findFileRecursively(context, name)?.takeIf {
-                AcapelaVoiceManifest.isOriginalRichIni(it)
-            }
-        }
-
-    /**
-     * يكتب محتوى ini الأصلي حرفياً (بايتاً ببايت) في كل الأهداف.
-     * لا يكتب أي محتوى متخيّل تلقائياً: [fallback] يُستخدم صراحةً في
-     * تجارب التجهيز فقط، ولا يُسمح له بالحلول محل تهيئة أصلية غنية.
-     *
-     * @return عدد الأهداف التي كُتبت فعلاً.
-     */
+    @Deprecated("استخدم نسخاً حرفية صريحة من تهيئة أصلية")
     fun writeIniTargets(
-        context: Context?,
-        targets: List<File>,
-        fallback: String? = null
-    ): Int {
-        val original = context?.let(::findOriginalRichIni)
-        val bytes = original?.let { src ->
-            runCatching { src.readBytes() }.getOrNull()
-        } ?: fallback?.toByteArray(StandardCharsets.ISO_8859_1)
-        if (bytes == null) return 0
-        var written = 0
-        for (target in targets) {
-            runCatching {
-                target.writeBytes(bytes)
-                written++
-            }
-        }
-        return written
-    }
+        @Suppress("UNUSED_PARAMETER") context: Context?,
+        @Suppress("UNUSED_PARAMETER") targets: List<File>,
+        @Suppress("UNUSED_PARAMETER") fallback: String? = null
+    ): Int = 0
 
-    /** اسم ملف تهيئة الصوت الأصلي ذي الـ 109 بايت. */
+    /** اسم ملف تهيئة شائع (للاستكشاف فقط، بلا افتراض حجم/صحة). */
     private const val ORIGINAL_INI_NAME = "ar_sa_hd_salma_22k_lf.ini"
 
-    /** الحجم المتوقع لملف تهيئة جذر الصوت (بايت). */
-    const val ORIGINAL_INI_EXPECTED_SIZE = 109L
+    /** لم يعد حجم 109 بايت معياراً للصحة. */
+    @Deprecated("الحجم الثابت ليس دليلاً على صحة ini")
+    const val ORIGINAL_INI_EXPECTED_SIZE = 0L
 
     /**
-     * علامات تحيط بقسم Acapela في التقرير المُشارَك ليُقدَّم على الصدارة
-     * قبل تطبيق السقف — فيُقتطع ذيل أسطر logcat لا قسم Acapela.
+     * علامات تحيط بقسم Acapela في التقرير المُشارَك (توافق واجهة).
      */
     const val ACAPELA_REPORT_START = "<<<ACAPELA_REPORT_START>>>"
     const val ACAPELA_REPORT_END = "<<<ACAPELA_REPORT_END>>>"
 
-    /** نتيجة حاجز التحقق من ملفات ini قبل استدعاء nInit. */
+    /** نتيجة تحقق ما قبل التجربة. */
     data class StagedIniVerification(
         val passed: Boolean,
         val report: String
     )
 
     /**
-     * الأكواد المقيسة لتجربة تحميل صوت Acapela. تُحقن في باني التقرير
-     * كي لا تُكتب الأكواد كادعاءات يدوية، ويبقى المرصود منفصلاً عن
-     * الفرضي.
+     * أكواد/نتائج تجربة مقيسة. عند غياب القياس الفعلي تُترك null/«لم تُرصد»
+     * ولا تُحقن قيم حيّة ثابتة.
      */
     data class MeasuredNInitCodes(
-        val nlpInitError: Int,
-        val eb: Int,
-        val nSpeak: Int,
-        val pcmSamples: Long
+        val nlpInitError: Int? = null,
+        val eb: Int? = null,
+        val nSpeak: Int? = null,
+        val pcmSamples: Long? = null,
+        val note: String = "لم تُرصد"
     ) {
-        /** سطر واحد يطبع الأكواد الأربعة المقيسة فقط. */
         fun asLine(): String =
-            "nlpInitError=$nlpInitError | eb=$eb | " +
-                "nSpeak=$nSpeak | PCM=$pcmSamples"
+            "nlpInitError=${nlpInitError ?: "لم تُرصد"} | " +
+                "eb=${eb ?: "لم تُرصد"} | " +
+                "nSpeak=${nSpeak ?: "لم تُرصد"} | " +
+                "PCM=${pcmSamples ?: "لم تُرصد"}" +
+                if (note.isNotBlank()) " | ملاحظة=$note" else ""
     }
 
-    /** الأكواد المرصودة فعلياً على جهاز المستخدم في تجربة Root_109. */
+    /** لا قيم حيّة ثابتة افتراضية؛ أي قياس قديم يُعرض كـ«لم تُرصد». */
     val observedRoot109Codes = MeasuredNInitCodes(
-        nlpInitError = -34,
-        eb = -27,
-        nSpeak = -2,
-        pcmSamples = 0L
+        note = "غير مقيس (لا قياس حي حديث)"
     )
 
     /** ملف ini مقيس بمساره الكامل — يُحقن مع تسمية مصدره. */
@@ -439,6 +407,286 @@ object AcapelaVoiceDiagnostics {
     /** ملف الرخصة البديل في جذر البيانات (يقرأه `check_license`). */
     private const val TEMPORARY_FILE_NAME = ".temporary"
 
+    /** نتيجة تحقق تبعيات حزمة/تهيئة صوت أصلية. */
+    data class VoiceDependencyIssue(
+        val dependency: String,
+        val expectedPath: String,
+        val reason: String
+    )
+
+    data class VoiceDependencyVerification(
+        val ok: Boolean,
+        val voiceDir: File,
+        val iniFile: File?,
+        val issues: List<VoiceDependencyIssue>,
+        val checked: List<String>,
+        val report: String
+    )
+
+    /** بصمة غير سرية (حجم + SHA-256) لمقارنة المصدر بالمرحلي. */
+    fun fingerprintOf(file: File): String {
+        if (!file.isFile) return "missing"
+        val sha = runCatching {
+            val md = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buf = ByteArray(DEFAULT_BUF)
+                var r: Int
+                while (input.read(buf).also { r = it } != -1) {
+                    md.update(buf, 0, r)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        }.getOrDefault("unreadable")
+        return "size=${file.length()},sha256=$sha"
+    }
+
+    private fun isVoiceAssetFile(file: File): Boolean {
+        val n = file.name.lowercase(Locale.ROOT)
+        return n.endsWith(".bvcu") ||
+            n.endsWith(".dat") ||
+            n.endsWith(".dca") ||
+            n.endsWith(".pho") || n.endsWith(".oso") || n.endsWith(".bnf") ||
+            n.endsWith(".mdd") || n.endsWith(".pro") || n.endsWith(".slv") ||
+            n.endsWith(".inf") || n.endsWith(".ini") || n.endsWith(".f0f") ||
+            n.endsWith(".flm") || n.endsWith(".nnm") || n.endsWith(".dlm") ||
+            n.endsWith(".fvt") || n.endsWith(".lfx") || n.endsWith(".txt") ||
+            n.endsWith(".yaml") || n.endsWith(".yml") ||
+            n.matches(Regex("^0x[0-9a-f]+$", RegexOption.IGNORE_CASE))
+    }
+
+    /**
+     * تحقق هوية/تهيئة/تبعيات صوت Acapela أصيل من ini فعلي: PRO/SLV/NLP
+     * وكل المسارات المُعلنة تُفحص وجوداً/قراءةً/حجماً/بصمةً (لغير السري)
+     * مع احترام المجلد المرجعي وحالة الأحرف، ومقارنة مصدر↔مرحلي إن وُجد.
+     */
+    fun verifyAuthenticVoicePackage(
+        voiceDir: File,
+        stagedDir: File? = null,
+        expectedSpeakerHint: String? = null
+    ): VoiceDependencyVerification {
+        val issues = mutableListOf<VoiceDependencyIssue>()
+        val checked = mutableListOf<String>()
+        val ini = AcapelaVoiceManifest.findAuthenticIni(voiceDir)
+        if (ini == null) {
+            issues += VoiceDependencyIssue(
+                dependency = "ini",
+                expectedPath = voiceDir.absolutePath,
+                reason = "لا توجد تهيئة ini أصلية (غير مصطنعة/بديلة) " +
+                    "مطابقة للصوت"
+            )
+        } else {
+            checked += "ini=${ini.name}(${fingerprintOf(ini)})"
+            val deps = AcapelaVoiceManifest.parseIniDependencies(ini)
+            if (deps.isEmpty()) {
+                issues += VoiceDependencyIssue(
+                    dependency = "ini-dependencies",
+                    expectedPath = ini.absolutePath,
+                    reason = "التهيئة الأصلية لا تحتوي توجيهات تبعيات " +
+                        "قابلة للتحقق"
+                )
+            }
+            for (dep in deps) {
+                val resolved = AcapelaVoiceManifest.resolveRelativeFile(
+                    voiceDir,
+                    dep.relativePath
+                )
+                val expected = File(voiceDir, dep.relativePath).absolutePath
+                if (resolved == null || !resolved.exists()) {
+                    issues += VoiceDependencyIssue(
+                        dependency = dep.key,
+                        expectedPath = expected,
+                        reason = "تبعية مفقودة معلنة في ${ini.name}"
+                    )
+                    continue
+                }
+                if (!resolved.isFile) {
+                    issues += VoiceDependencyIssue(
+                        dependency = dep.key,
+                        expectedPath = resolved.absolutePath,
+                        reason = "المسار ليس ملفاً"
+                    )
+                    continue
+                }
+                val readable = runCatching {
+                    resolved.inputStream().use { it.read() }
+                }.isSuccess
+                if (!readable) {
+                    issues += VoiceDependencyIssue(
+                        dependency = dep.key,
+                        expectedPath = resolved.absolutePath,
+                        reason = "الملف غير قابل للقراءة"
+                    )
+                    continue
+                }
+                val fp = fingerprintOf(resolved)
+                checked += "${dep.key}:${dep.relativePath} -> " +
+                    "${resolved.name} ($fp)"
+                if (stagedDir != null) {
+                    val staged = AcapelaVoiceManifest.resolveRelativeFile(
+                        stagedDir,
+                        dep.relativePath
+                    )
+                    if (staged == null || !staged.exists()) {
+                        issues += VoiceDependencyIssue(
+                            dependency = dep.key,
+                            expectedPath = File(
+                                stagedDir,
+                                dep.relativePath
+                            ).absolutePath,
+                            reason = "الملف غير موجود في النسخة المرحلية"
+                        )
+                    } else {
+                        val sfp = fingerprintOf(staged)
+                        if (sfp != fp) {
+                            issues += VoiceDependencyIssue(
+                                dependency = dep.key,
+                                expectedPath = staged.absolutePath,
+                                reason = "اختلاف بصمة/حجم بين المصدر " +
+                                    "والنسخة المرحلية"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        val hint = expectedSpeakerHint?.trim().orEmpty()
+        if (hint.isNotBlank()) {
+            val matches = voiceDir.name.contains(hint, ignoreCase = true) ||
+                ini?.name?.contains(hint, ignoreCase = true) == true
+            if (!matches) {
+                issues += VoiceDependencyIssue(
+                    dependency = "voice-identity",
+                    expectedPath = voiceDir.absolutePath,
+                    reason = "هوية الصوت لا تطابق المطلوب ($hint) " +
+                        "— منع خلط الأصوات"
+                )
+            }
+        }
+        // منع خلط الأصوات: إذا حمل اسم مجلد الصوت أو الاسم المطلوب
+        // مميّز صوت معروف، فلا يجوز أن تحمل التهيئة مميّز صوت آخر.
+        val contextTokens = buildSet {
+            voiceDir.name.lowercase(Locale.ROOT).let { name ->
+                addKnownTokens(name, this)
+            }
+            if (hint.isNotBlank()) addKnownTokens(
+                hint.lowercase(Locale.ROOT),
+                this
+            )
+        }
+        val iniTokens = ini?.name?.lowercase(Locale.ROOT)?.let { name ->
+            buildSet { addKnownTokens(name, this) }
+        }.orEmpty()
+        val foreign = iniTokens - contextTokens
+        if (foreign.isNotEmpty()) {
+            issues += VoiceDependencyIssue(
+                dependency = "voice-mixing",
+                expectedPath = ini?.absolutePath ?: voiceDir.absolutePath,
+                reason = "تهيئة ini تحمل هوية صوت آخر (${foreign.sorted()}) " +
+                    "($hint) — يُمنع خلط الأصوات"
+            )
+        }
+        val hex = voiceDir.walkTopDown().maxDepth(4).firstOrNull { f ->
+            f.isFile && f.name.matches(Regex("^0x[0-9a-fA-F]+$"))
+        }
+        if (hex == null) {
+            issues += VoiceDependencyIssue(
+                dependency = "registration-key",
+                expectedPath = voiceDir.absolutePath,
+                reason = "ملف مفتاح الترخيص (0x...) غير موجود ضمن حزمة الصوت"
+            )
+        } else {
+            checked += "registration-key=${hex.name}(size=${hex.length()})"
+        }
+        val report = buildString {
+            appendLine("تحقق حزمة/تهيئة الصوت الأصلية:")
+            appendLine("- مجلد الصوت: ${voiceDir.absolutePath}")
+            appendLine("- ملف ini الأصلي: ${ini?.absolutePath ?: "غير موجود"}")
+            appendLine("- تبعيات/ملفات مفحوصة: ${checked.size}")
+            checked.take(60).forEach { appendLine("  • $it") }
+            if (checked.size > 60) {
+                appendLine("  • … (${checked.size - 60} إضافي)")
+            }
+            if (issues.isEmpty()) {
+                appendLine(
+                    "- النتيجة: تحقق مبدئي ناجح " +
+                        "(لا توجيهات/بيانات تخمينية)"
+                )
+            } else {
+                appendLine("- النتيجة: فشل التحقق (${issues.size} مشكلة)")
+                issues.forEach {
+                    appendLine("  ! [${it.dependency}] ${it.reason}")
+                    appendLine(
+                        "    المسار المتوقع: " +
+                            "${redactSensitiveLine(it.expectedPath)}"
+                    )
+                }
+            }
+            if (stagedDir != null) {
+                appendLine("- مقارنة مصدر↔مرحلي: ${stagedDir.absolutePath}")
+            }
+        }.trimEnd()
+        return VoiceDependencyVerification(
+            ok = issues.isEmpty(),
+            voiceDir = voiceDir,
+            iniFile = ini,
+            issues = issues,
+            checked = checked,
+            report = report
+        )
+    }
+
+    /**
+     * نسخ حرفي لمجلد صوت أصيل إلى مجلد staging جديد وفريد لكل تجربة runId،
+     * مع الحفاظ على البنية النسبية وعدم توليد/تعديل تهيئة ini.
+     */
+    fun stageAuthenticVoiceForRun(
+        context: Context,
+        voiceDir: File,
+        runId: String
+    ): File {
+        val safe = runId.filter {
+            it.isLetterOrDigit() || it == '-' || it == '_'
+        }.ifBlank { UUID.randomUUID().toString() }
+        val stageRoot = File(context.cacheDir, "acapela_stage_runs")
+        val stageDir = File(
+            stageRoot,
+            "run_${safe}_${System.currentTimeMillis()}"
+        )
+        if (stageDir.exists()) runCatching { stageDir.deleteRecursively() }
+        stageDir.mkdirs()
+        val sourceRoot = voiceDir.parentFile ?: voiceDir
+        fun copyRec(src: File, dst: File) {
+            if (src.isDirectory) {
+                dst.mkdirs()
+                src.listFiles()?.forEach { child ->
+                    copyRec(child, File(dst, child.name))
+                }
+            } else if (src.isFile) {
+                dst.parentFile?.mkdirs()
+                runCatching { src.copyTo(dst, overwrite = true) }
+            }
+        }
+        // انسخ محتويات مجلد الصوت مباشرة في جذر المرحلي كي تطابق
+        // المسارات النسبية المعلنة في ini دون إعادة كتابة أي تهيئة.
+        voiceDir.listFiles()?.forEach { child ->
+            copyRec(child, File(stageDir, child.name))
+        }
+        // انسخ ملفات السياق الشقيقة الضرورية (مثل مفاتيح/ملفات مشتركة
+        // بجذر الرمز) كما هي دون تخمين، للحفاظ على البنية المرجعية.
+        sourceRoot.listFiles()?.forEach { sib ->
+            if (!sib.isFile) return@forEach
+            if (sib.name.matches(Regex("^0x[0-9a-fA-F]+$")) ||
+                sib.name.equals("config.yaml", ignoreCase = true)
+            ) {
+                val out = File(stageDir, sib.name)
+                if (!out.exists()) {
+                    runCatching { sib.copyTo(out, overwrite = false) }
+                }
+            }
+        }
+        return stageDir
+    }
+
     /** إخفاء الجزء الأوسط من المعرّفات وحماية الخصوصية. */
     fun maskMiddle(
         value: String,
@@ -461,25 +709,73 @@ object AcapelaVoiceDiagnostics {
         return "الطول=${value.length} | ...$tail"
     }
 
-    /** مفاتيح الأسطر التي قد تحوي قيماً حساسة في سجل المكتبة. */
+    /** مفاتيح الأسطر التي قد تحوي قيماً حساسة في السجلات والتقارير. */
     private val sensitiveLogKeys = listOf(
         "babParam.uid.passwd",
         "babParam.uid.userId",
+        "babParam.uid",
         "babParam.license",
+        "babParam",
         "registration",
+        "license",
+        "licence",
+        "passwd",
+        "password",
+        "pwd",
+        "token",
+        "secret",
+        "apikey",
+        "api_key",
         "param"
     )
 
+    private val sensitiveRegexes = listOf(
+        Regex(
+            """(?i)\b(nInit(?:Callbacks)?|nSetLicense|""" +
+                """nLoadLicense)\s*\([^)]*\)"""
+        ) to "REDACTED_CALL",
+        Regex(
+            """(?i)\b(pass(?:wd|word)?|pwd|license|licence|""" +
+                """registration|token|secret|api[_-]?key)\b\s*[:=]\s*""" +
+                """("([^"]*)"|'([^']*)'|[^\s,;|]+)"""
+        ) to "REDACTED_KV",
+        Regex(
+            """(?i)\b(uid(?:\.(?:userId|passwd))?|userId)\b\s*[:=]""" +
+                """\s*("([^"]*)"|'([^']*)'|[^\s,;|]+)"""
+        ) to "REDACTED_KV",
+        Regex("""(?i)\b0x[0-9a-f]{10,}\b""") to "REDACTED_HEX",
+        Regex("""\b[A-Za-z0-9+/]{48,}={0,2}\b""") to "REDACTED_BLOB"
+    )
+
     /**
-     * إخفاء قيمة أي سطر يحوي أحد المفاتيح الحساسة قبل إدراجه في تقرير
-     * أو ملف تشخيص. يُحتفظ بالمفتاح وحده مع الطول وآخر ٤ أحرف مقنّعة.
+     * إخفاء القيم الحساسة في سطر واحد (ترخيص/كلمات مرور/ndInit/رموز) قبل
+     * إدراجه في أي تقرير أو سجل أو تصدير.
      */
     fun redactSensitiveLine(line: String): String {
+        var out = line
+        sensitiveRegexes.forEach { (regex, kind) ->
+            out = regex.replace(out) { match ->
+                when (kind) {
+                    "REDACTED_CALL" -> {
+                        val name = match.value.substringBefore('(').trim()
+                        "$name([مُقنَّع])"
+                    }
+                    "REDACTED_HEX" -> "[HEX_مُقنَّع:${match.value.length}]"
+                    "REDACTED_BLOB" -> "[BLOB_مُقنَّع:${match.value.length}]"
+                    else -> {
+                        val rawKey = match.value.substringBefore('=')
+                            .substringBefore(':')
+                        "$rawKey=[مُقنَّع]"
+                    }
+                }
+            }
+        }
         val key = sensitiveLogKeys.firstOrNull {
-            line.contains(it, ignoreCase = true)
-        } ?: return line
-        val start = line.indexOf(key, ignoreCase = true)
-        val raw = line.substring(start + key.length)
+            out.contains(it, ignoreCase = true)
+        } ?: return out
+        val start = out.indexOf(key, ignoreCase = true)
+        if (start < 0) return out
+        val raw = out.substring(start + key.length)
             .trimStart()
             .removePrefix("=")
             .removePrefix(":")
@@ -488,7 +784,22 @@ object AcapelaVoiceDiagnostics {
         val value = raw.substringBefore('"')
             .substringBefore('\'')
             .trim()
-        return "$key: ${redactSensitive(value)}"
+        if (value.isEmpty() || value == "[مُقنَّع]") return out
+        return out.substring(0, start) + "$key: ${redactSensitive(value)}"
+    }
+
+    /** تنقية نص متعدد الأسطر (سجلات/تقارير/ذيول native) من الأسرار. */
+    fun redactSensitiveText(text: String?): String {
+        if (text.isNullOrEmpty()) return text.orEmpty()
+        return buildString(text.length) {
+            val seq = text.lineSequence().iterator()
+            if (!seq.hasNext()) return@buildString
+            while (true) {
+                append(redactSensitiveLine(seq.next()))
+                if (!seq.hasNext()) break
+                append('\n')
+            }
+        }
     }
 
     /**
@@ -1047,21 +1358,26 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * معيار النجاح الوحيد لبناء 10724 (وكذلك 10723):
-     * nSpeak يعيد قيمة غير -2 و pcm > 0،
-     * وغياب سطري "Error init language" و "voice ... not loaded" من سجل المكتبة.
-     * ولا يعتبر eb=0 نجاحاً بمفرده.
+     * معيار نجاح تجربة صوت Acapela: callback غير فارغ موصول، وnSpeak ناجح،
+     * وعيّنات PCM فعلية > 0، وغياب أخطاء تحميل اللغة/الصوت من سجل المكتبة.
+     * لا يكفي nInit ناجح ولا ظهور اسم الصوت ولا eb=0 وحده، ولا تُعدّ PCM=0
+     * قياساً صالحاً بلا callback موصول.
      */
     fun evaluateTrialSuccess10724(
         speakCode: Int,
         samples: Long,
-        nativeLines: List<String>
+        nativeLines: List<String>,
+        callbackConnected: Boolean = true
     ): Boolean {
         val hasLangError = nativeLines.any { line ->
             line.contains("Error init language", ignoreCase = true) ||
-                line.contains("not loaded", ignoreCase = true)
+                line.contains("not loaded", ignoreCase = true) ||
+                line.contains("load error", ignoreCase = true)
         }
-        return speakCode != -2 && samples > 0L && !hasLangError
+        return callbackConnected &&
+            speakCode == 0 &&
+            samples > 0L &&
+            !hasLangError
     }
 
     fun evaluateTrialSuccess10723(

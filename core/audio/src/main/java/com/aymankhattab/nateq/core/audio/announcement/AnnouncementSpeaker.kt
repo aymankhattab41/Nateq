@@ -859,9 +859,14 @@ class AnnouncementSpeaker(
     }
 
     /** إبطال صريح لكل المعرّفات النشطة (دورة FLUSH جديدة أو إيقاف/إغلاق). */
-    internal fun invalidateActiveUtterances() {
+    internal fun invalidateActiveUtterances(
+        clearLastQueued: Boolean = true
+    ) {
         activeUtteranceIds.clear()
         pendingUtteranceDataMap.clear()
+        if (clearLastQueued) {
+            lastQueuedUtteranceId = null
+        }
     }
 
     /** تغيير الصوت المفضّل لدورات النطق القادمة دون هدم اتصال المحرك */
@@ -1186,26 +1191,32 @@ class AnnouncementSpeaker(
             setOnUtteranceProgressListener(
                 object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
+                        if (utteranceId != null &&
+                            !activeUtteranceIds.contains(utteranceId)
+                        ) {
+                            return
+                        }
                         nowSpeaking = true
                     }
 
                     @Deprecated("Java Override")
                     override fun onDone(utteranceId: String?) {
-                        if (utteranceId != null) {
-                            activeUtteranceIds.remove(utteranceId)
-                            pendingUtteranceDataMap.remove(utteranceId)
-                            pendingUnitsForResume.removeAll {
-                                it.first == utteranceId
-                            }
-                            if (pendingUnitsForResume.isEmpty() &&
-                                isResumableCategory(currentCategory)
-                            ) {
-                                resumableAnnouncement = null
-                            }
+                        if (utteranceId == null) return
+                        val wasActive = activeUtteranceIds.remove(utteranceId)
+                        pendingUtteranceDataMap.remove(utteranceId)
+                        errorRetryCountMap.remove(utteranceId)
+                        pendingUnitsForResume.removeAll {
+                            it.first == utteranceId
                         }
-                        val isFinal = (utteranceId != null &&
-                            utteranceId == lastQueuedUtteranceId) ||
-                            activeUtteranceIds.isEmpty()
+                        if (pendingUnitsForResume.isEmpty() &&
+                            isResumableCategory(currentCategory)
+                        ) {
+                            resumableAnnouncement = null
+                        }
+                        if (!wasActive) return
+                        val isFinal =
+                            utteranceId == lastQueuedUtteranceId ||
+                                activeUtteranceIds.isEmpty()
                         try {
                             if (isFinal) {
                                 cancelSpeechWatchdog()
@@ -1232,7 +1243,8 @@ class AnnouncementSpeaker(
                     ) {
                         // VZ2 / ع٢٧-A1: معالجة ERROR_NOT_INSTALLED_YET (-9)
                         if (utteranceId != null &&
-                            errorCode == TextToSpeech.ERROR_NOT_INSTALLED_YET
+                            errorCode == TextToSpeech.ERROR_NOT_INSTALLED_YET &&
+                            activeUtteranceIds.contains(utteranceId)
                         ) {
                             val retries =
                                 errorRetryCountMap.getOrDefault(utteranceId, 0)
@@ -1260,7 +1272,6 @@ class AnnouncementSpeaker(
                                 }, 300)
                                 return
                             }
-                            errorRetryCountMap.remove(utteranceId)
                         }
                         handleFailure(utteranceId)
                     }
@@ -1278,13 +1289,14 @@ class AnnouncementSpeaker(
                     }
 
                     private fun handleFailure(utteranceId: String?) {
-                        if (utteranceId != null) {
-                            activeUtteranceIds.remove(utteranceId)
-                            pendingUtteranceDataMap.remove(utteranceId)
-                        }
-                        val shouldClean = (utteranceId != null &&
-                            utteranceId == lastQueuedUtteranceId) ||
-                            activeUtteranceIds.isEmpty()
+                        if (utteranceId == null) return
+                        val wasActive = activeUtteranceIds.remove(utteranceId)
+                        pendingUtteranceDataMap.remove(utteranceId)
+                        errorRetryCountMap.remove(utteranceId)
+                        if (!wasActive) return
+                        val shouldClean =
+                            utteranceId == lastQueuedUtteranceId ||
+                                activeUtteranceIds.isEmpty()
                         try {
                             if (shouldClean) {
                                 cancelSpeechWatchdog()
@@ -1893,6 +1905,7 @@ class AnnouncementSpeaker(
         }
         if (cue == null) {
             startSpeech(
+                gen,
                 text, locale, speechRate, pitch, volume,
                 emojiCfg, parts, engineOverride,
                 immediate = immediate
@@ -1908,6 +1921,7 @@ class AnnouncementSpeaker(
         AudioCuePlayer.getInstance(appContext).play(cue) { _ ->
             if (gen == speechGeneration.get()) {
                 startSpeech(
+                    gen,
                     text, locale, speechRate, pitch, volume,
                     emojiCfg, parts, engineOverride,
                     immediate = true
@@ -1923,6 +1937,7 @@ class AnnouncementSpeaker(
 
     /** تهيئة المحرك ثم نطق المقاطع بتأجيل قصير يسمح لاتصال TTS بالاستقرار. */
     private fun startSpeech(
+        gen: Long,
         text: String,
         locale: Locale,
         speechRate: Float,
@@ -1947,9 +1962,15 @@ class AnnouncementSpeaker(
             )
         }
         val executeSpeech = executeSpeech@ {
+            if (gen != speechGeneration.get()) {
+                releaseAudioFocus()
+                notifySpeechComplete()
+                return@executeSpeech
+            }
             // VZ2: Warm instances (wasWarm) don't wait for warmup polling
             if (immediate && wasWarm) {
                 doSpeakParts(
+                    gen,
                     text, locale, speechRate, pitch, volume,
                     emojiCfg, parts, attempt = 1
                 )
@@ -1968,13 +1989,22 @@ class AnnouncementSpeaker(
             // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد onInit
             val delayMs = if (immediate) 60L else 80L
             mainHandler.postDelayed({
+                if (gen != speechGeneration.get()) {
+                    releaseAudioFocus()
+                    notifySpeechComplete()
+                    return@postDelayed
+                }
                 doSpeakParts(
+                    gen,
                     text, locale, speechRate, pitch, volume,
                     emojiCfg, parts, attempt = 1
                 )
             }, delayMs)
         }
         ensureInit({ ready ->
+            if (gen != speechGeneration.get()) {
+                return@ensureInit
+            }
             if (ready) {
                 val voicesInfo = if (
                     HostProtocol.isEmbeddedEngine(boundEngine)
@@ -2062,6 +2092,7 @@ class AnnouncementSpeaker(
      *  يُقسَّم إلى مقاطع لغوية فيُنطق كلٌّ بلغته وصوته — بند 17)، وأسماء
      *  الإيموجي بصوت فئتها. */
     private fun doSpeakParts(
+        gen: Long,
         text: String,
         locale: Locale,
         speechRate: Float,
@@ -2071,7 +2102,6 @@ class AnnouncementSpeaker(
         parts: List<SpeechPart>?,
         attempt: Int
     ) {
-        val gen = speechGeneration.get()
         // **بند الأداء (خارج خيط الواجهة):** بناء وحدات النطق (معالجة
         // الدلالات وفصل اللغات والتحويل الرقمي) عبءٌ ثقيل كان يجري على
         // خيط الواجهة عند كل إعلان فيجمّده لحظياً — ننقله إلى منفّذ خلفي
@@ -2181,7 +2211,8 @@ speechCycle.incrementAndGet()
             validUnits.forEachIndexed { index, unit ->
                 val queueMode = if (index == 0) {
                     // أولُ جزءٍ يصل بـ FLUSH يُبطل كل معرّفات الدورات السابقة
-                    invalidateActiveUtterances()
+                    // مع إبقاء lastQueuedUtteranceId لهذا الطابور الجديد.
+                    invalidateActiveUtterances(clearLastQueued = false)
                     TextToSpeech.QUEUE_FLUSH
                 } else {
                     TextToSpeech.QUEUE_ADD

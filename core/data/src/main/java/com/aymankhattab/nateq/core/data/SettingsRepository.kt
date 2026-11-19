@@ -290,9 +290,6 @@ class SettingsRepository(context: Context) :
             "speed_dial_launcher_icon_enabled"
         const val KEY_APP_PROFILES = "app_profiles"
         const val KEY_CONTACT_VOICES = "contact_voices"
-        const val KEY_READ_LATER = "read_later_queue"
-        internal const val MAX_READ_LATER_ITEMS = 50
-        internal const val MAX_READ_LATER_TEXT_CHARS = 20_000
         const val BOOT_MIRROR_PREFS = "nateq_boot_mirror"
         const val KEY_EMERGENCY_ENGINE = "emergency_engine"
         const val KEY_EMERGENCY_VOICE = "emergency_voice"
@@ -437,6 +434,7 @@ class SettingsRepository(context: Context) :
         dropObsoleteCallerTemplateKey(it)
         migrateAppProfilesAndContactVoicesIfNeeded(it)
         migrateLanguageFilterRemoval(it)
+        purgeObsoleteReadLaterQueue(it)
     }
 
     /**
@@ -3958,29 +3956,18 @@ class SettingsRepository(context: Context) :
 
 
 
-    // ============ اقرأ لاحقاً (مفوّض) ============
-    private val readLaterDelegate by lazy {
-        SettingsReadLaterDelegate(this)
+    /**
+     * تنظيف ترقية لمرة واحدة (وآمن عند التكرار): يحذف مفتاح طابور
+     * «اقرأ لاحقاً» القديم فقط دون لمس أي تفضيل آخر ودون clear().
+     * فشل الكتابة يُتجاهل بأمان بلا انهيار وبلا وسم نجاح كاذب.
+     */
+    private fun purgeObsoleteReadLaterQueue(targetPrefs: SharedPreferences) {
+        val obsoleteKey = "read_later_queue"
+        if (!targetPrefs.contains(obsoleteKey)) return
+        runCatching {
+            targetPrefs.edit().remove(obsoleteKey).commit()
+        }
     }
-
-    data class ReadLaterItem(
-        val id: Long,
-        val text: String,
-        val timestampMs: Long
-    )
-
-    fun getReadLaterItems(): List<ReadLaterItem> =
-        readLaterDelegate.getReadLaterItems()
-
-    fun addReadLaterText(text: String): Boolean =
-        readLaterDelegate.addReadLaterText(text)
-
-    fun removeReadLaterItem(id: Long): Boolean =
-        readLaterDelegate.removeReadLaterItem(id)
-
-    fun clearReadLater(): Boolean =
-        readLaterDelegate.clearReadLater()
-
 
 }
 

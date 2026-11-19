@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -1331,13 +1332,17 @@ internal class AcapelaHostSession(
         val precedingLine: String? = null,
         val getLanguageResult: String? = null,
         val closestVoiceResult: String? = null,
-        val isLangAvailResult: Int? = null
+        val isLangAvailResult: Int? = null,
+        val callbackConnected: Boolean = false,
+        val runId: String = "",
+        val startedAtMs: Long = 0L
     ) {
         val isSuccess: Boolean
             get() = AcapelaVoiceDiagnostics.evaluateTrialSuccess10724(
                 speakCode = speakCode,
                 samples = samples,
-                nativeLines = nativeLines
+                nativeLines = nativeLines,
+                callbackConnected = callbackConnected
             )
     }
 
@@ -1582,28 +1587,28 @@ internal class AcapelaHostSession(
     private fun recordTrialProgress(trial: VoiceLoadTrialResult) {
         runCatching {
             val f = File(context.cacheDir, "acapela_trials_progress.txt")
-            val line = "${trial.method} => كود nSpeak: ${trial.speakCode} " +
-                "| عينات PCM: ${trial.samples}\n"
+            val ts = SimpleDateFormat(
+                "yyyy-MM-dd HH:mm:ss.SSS",
+                Locale.US
+            ).format(Date(trial.startedAtMs))
+            val line = "[$ts] runId=${trial.runId} | ${trial.method} | " +
+                "كود nSpeak=${trial.speakCode} | عينات PCM=${trial.samples}\n"
             f.appendText(line, StandardCharsets.UTF_8)
         }
     }
 
     /**
-     * [بناء 10729] بدء الملف المستقر: يُفرَّغ مرة واحدة عند كل اختبار،
-     * ثم يُكتب إليه تدريجياً. الفصل بين البدء والإلحاق يمنع محو ما
-     * كُتب من خطوات سابقة عند كل إلحاق.
+     * بدء قسم جديد في الملف المستقر بلا مسح للسجل العام: كل تجربة تُوسَم
+     * بـrunId وتُكتب تدريجياً مع flush/fd.sync كي ينجو ما كُتب عند انهيار
+     * عملية :engine_host.
      */
-    private fun beginAcapelaFullDiagnostic() {
-        runCatching {
-            val file = File(
-                context.cacheDir,
-                AcapelaVoiceDiagnostics.ACAPELA_FULL_DIAGNOSTIC_FILE
-            )
-            file.parentFile?.mkdirs()
-            if (file.exists()) file.delete()
-        }
+    private fun beginAcapelaFullDiagnostic(runId: String) {
+        val ts = SimpleDateFormat(
+            "yyyy-MM-dd HH:mm:ss.SSS",
+            Locale.US
+        ).format(Date())
         appendAcapelaFullDiagnostic(
-            "=== بدء تشخيص Acapela الكامل (بناء 10729) ==="
+            "=== بدء تجربة Acapela runId=$runId في $ts ==="
         )
     }
 
@@ -1638,6 +1643,8 @@ internal class AcapelaHostSession(
      */
     private suspend fun executeVoiceLoadTrial(
         label: String,
+        runId: String,
+        startedAtMs: Long,
         trialDir: File,
         speaker: String,
         iso3: Iso3,
@@ -2158,7 +2165,11 @@ internal class AcapelaHostSession(
         if (babParamUidLines.isEmpty()) {
             sb.appendLine("    (لم يظهر أي سطر يطابق babParam.uid.userId)")
         } else {
-            babParamUidLines.forEach { sb.appendLine("    $it") }
+            babParamUidLines.forEach {
+                sb.appendLine(
+                    "    ${AcapelaVoiceDiagnostics.redactSensitiveLine(it)}"
+                )
+            }
         }
         sb.appendLine(
             "  - أسطر babParam.license (${babParamLicLines.size} سطر):"
@@ -2166,7 +2177,11 @@ internal class AcapelaHostSession(
         if (babParamLicLines.isEmpty()) {
             sb.appendLine("    (لم يظهر أي سطر يطابق babParam.license)")
         } else {
-            babParamLicLines.forEach { sb.appendLine("    $it") }
+            babParamLicLines.forEach {
+                sb.appendLine(
+                    "    ${AcapelaVoiceDiagnostics.redactSensitiveLine(it)}"
+                )
+            }
         }
         sb.appendLine(
             "  - أسطر license / error license (${generalLicLines.size} سطر):"
@@ -2174,7 +2189,11 @@ internal class AcapelaHostSession(
         if (generalLicLines.isEmpty()) {
             sb.appendLine("    (لم يظهر أي سطر يطابق license)")
         } else {
-            generalLicLines.forEach { sb.appendLine("    $it") }
+            generalLicLines.forEach {
+                sb.appendLine(
+                    "    ${AcapelaVoiceDiagnostics.redactSensitiveLine(it)}"
+                )
+            }
         }
 
         sb.appendLine(
@@ -2184,9 +2203,11 @@ internal class AcapelaHostSession(
         if (probeReport.isBlank()) {
             sb.appendLine("    (لم يُفعَّل الرصد في هذه المحاولة)")
         } else {
-            probeReport.lineSequence().forEach { line ->
-                sb.appendLine("    $line")
-            }
+            AcapelaVoiceDiagnostics.redactSensitiveText(probeReport)
+                .lineSequence()
+                .forEach { line ->
+                    sb.appendLine("    $line")
+                }
         }
 
         sb.appendLine("  - قائمة الملفات المفتوحة فعلياً قبل الخطأ:")
@@ -2195,13 +2216,21 @@ internal class AcapelaHostSession(
                 "    (لم يُرصد فتح ملفات عبر /proc/self/fd أو السجل)"
             )
         } else {
-            openedFiles.forEach { sb.appendLine("    $it") }
+            openedFiles.forEach {
+                sb.appendLine(
+                    "    ${AcapelaVoiceDiagnostics.redactSensitiveLine(it)}"
+                )
+            }
         }
 
         sb.appendLine(
             "  - سجل المكتبة الأصلية لهذه التوليفة (${nativeTail.size} سطر):"
         )
-        nativeTail.forEach { sb.appendLine("    $it") }
+        nativeTail.forEach {
+            sb.appendLine(
+                "    ${AcapelaVoiceDiagnostics.redactSensitiveLine(it)}"
+            )
+        }
 
         val logOutput = sb.toString().trimEnd()
         Log.i(TAG, logOutput)
@@ -2231,7 +2260,10 @@ internal class AcapelaHostSession(
             precedingLine = firstErr?.second,
             getLanguageResult = getLangRes,
             closestVoiceResult = closestVoiceRes,
-            isLangAvailResult = isLangAvailRes
+            isLangAvailResult = isLangAvailRes,
+            callbackConnected = useRealCallback,
+            runId = runId,
+            startedAtMs = startedAtMs
         )
     }
 
@@ -2244,6 +2276,8 @@ internal class AcapelaHostSession(
      */
     private fun failedTrialBeforeInit(
         label: String,
+        runId: String,
+        startedAtMs: Long,
         path: String,
         report: String
     ): VoiceLoadTrialResult {
@@ -2251,13 +2285,14 @@ internal class AcapelaHostSession(
         audioHandler.probeOnly = true
         val synthCallback = AcapelaSynthesisCallback { _, _ -> }
         val text = buildString {
-            appendLine("[$label - لم تُنفَّذ المحاولة]")
+            appendLine("=== تجربة لم تُنفَّذ | runId=$runId ===")
+            appendLine("  - المسار: $label")
             appendLine("  - المعامل الحرفي لـ nInit: \"$path\"")
-            appendLine("  - nInit: لم يُستدعَ (فشل التحقق من ملفات ini)")
+            appendLine("  - nInit: لم يُستدعَ (فشل التحقق قبل التشغيل)")
             appendLine("  - nSpeak: لم يُستدعَ")
-            appendLine("  - عدد عينات PCM: 0")
+            appendLine("  - عينات PCM: لم تُرصد (لا callback موصول)")
             appendLine("")
-            appendLine(report)
+            appendLine(AcapelaVoiceDiagnostics.redactSensitiveText(report))
         }.trimEnd()
         Log.e(TAG, text)
         HostLog.e(HostProtocol.ENGINE_ACAPELA, text)
@@ -2273,7 +2308,10 @@ internal class AcapelaHostSession(
             service = null,
             audioHandler = audioHandler,
             synthCallback = synthCallback,
-            details = text
+            details = text,
+            callbackConnected = false,
+            runId = runId,
+            startedAtMs = startedAtMs
         )
     }
 
@@ -2284,73 +2322,24 @@ internal class AcapelaHostSession(
         rawParam: String?,
         voiceKey: String
     ): HostResult? {
+        val runId = UUID.randomUUID().toString()
+        val startedAtMs = System.currentTimeMillis()
         try {
-            val regLen = registration.length
+            beginAcapelaFullDiagnostic(runId)
 
-            // [بناء 10729] ملف واحد مستقر يُكتب تدريجياً منذ هذه اللحظة.
-            beginAcapelaFullDiagnostic()
-
-            // الخطوة 1: تقرير الجرد المتداخل وموقع ملف Salma الكبير
-            logDiagnosticTrees(voice)
-
-            // الخطوة 3: فحص سلامة ملفات الصوت
-            checkAudioFilesIntegrity(voice.dir)
-
-            // تجهيز مجلد الجذر الحرفي وفحص الملف الأصلي 109 بايت
-            val origIniDump =
-                AcapelaVoiceDiagnostics.getOriginalIniDump(context)
-            Log.i(TAG, "[البند 1] فحص الملف الأصلي:\n$origIniDump")
+            // الهوية المطلوبة من اسم الصوت/المجلد، بلا افتراض مسار بديل.
+            val expectedSpeaker = voice.rawSpeaker ?: voice.voiceName
+            val verification = AcapelaVoiceDiagnostics
+                .verifyAuthenticVoicePackage(
+                    voiceDir = voice.dir,
+                    expectedSpeakerHint = expectedSpeaker
+                )
+            Log.i(TAG, verification.report)
             HostLog.i(
                 HostProtocol.ENGINE_ACAPELA,
-                "[البند 1] فحص الملف الأصلي:\n$origIniDump"
+                verification.report
             )
-            // [بناء 10729] يُدفَع فوراً كي يبقى إن انهار :engine_host.
-            appendAcapelaFullDiagnostic(
-                "=== [البند 1] فحص الملف الأصلي 109 بايت ===\n$origIniDump"
-            )
-
-            // [البند 3] مقارنة ملفات NLP مع ملفات التهيئة وكشف المفقود
-            val compareNlp =
-                AcapelaVoiceDiagnostics.compareNlpFiles(context)
-            Log.i(TAG, compareNlp)
-            HostLog.i(HostProtocol.ENGINE_ACAPELA, compareNlp)
-
-            // مقارنة اسم الصوت وتمرير اسم config.yaml إن اختلف
-            val yamlVoiceName = extractVoiceNameFromConfigYaml(voice.dir)
-            val passedVoiceName = voice.rawSpeaker ?: voice.voiceName
-            val dirName = voice.dir.name
-            val matchesYaml = yamlVoiceName != null &&
-                passedVoiceName.equals(yamlVoiceName, ignoreCase = false)
-            val matchesDir =
-                passedVoiceName.equals(dirName, ignoreCase = false)
-
-            val compareLog = "[مقارنة اسم الصوت] الممرر: " +
-                "'$passedVoiceName' | في config.yaml: '$yamlVoiceName' " +
-                "(تطابق=$matchesYaml) | اسم المجلد: '$dirName' " +
-                "(تطابق=$matchesDir)"
-            Log.i(TAG, compareLog)
-            HostLog.i(HostProtocol.ENGINE_ACAPELA, compareLog)
-
-            val effectiveSpeaker = if (!yamlVoiceName.isNullOrBlank() &&
-                passedVoiceName != yamlVoiceName
-            ) {
-                Log.i(
-                    TAG,
-                    "تمرير اسم الصوت كما في config.yaml: " +
-                        "'$yamlVoiceName' (بدلاً من '$passedVoiceName')"
-                )
-                yamlVoiceName
-            } else {
-                passedVoiceName
-            }
-
-            // [بناء 10728] مسار واحد فقط: جذر Salma الحرفي. أُزيلت النسخ
-            // الثلاث الأخرى (stage_v2 وstageFull و10709Exact) لأنها كانت
-            // تكرّر ~69MB لكل محاولة وتنتج 15 تقريراً و16 ملف WAV بلا فائدة.
-            runCatching {
-                File(context.cacheDir, "last_acapela_call.txt").delete()
-                File(context.cacheDir, "acapela_trials_progress.txt").delete()
-            }
+            appendAcapelaFullDiagnostic(verification.report)
 
             val effectiveRawParam = rawParam ?: AcapelaVoiceManifest
                 .readParamFromConfigYaml(voice.dir).orEmpty()
@@ -2358,359 +2347,181 @@ internal class AcapelaHostSession(
                 rawParam = effectiveRawParam,
                 context = context
             )
-            val emailLen = decodedReg.emailLength
-            val hexCodeLen = decodedReg.hexCodeLength
             val regToUse = if (decodedReg.registration.isNotEmpty()) {
                 decodedReg.registration
             } else {
                 registration
             }
-            val effectiveRegLen = regToUse.length
 
-            val hexFileOnDisk = AcapelaVoiceManifest
-                .findHexRegistrationFile(voice.dir)
-            val hexExists = hexFileOnDisk?.isFile == true
-            val hexSize = if (hexExists) hexFileOnDisk.length() else 0L
-            val hexHasComm = runCatching {
-                hexFileOnDisk?.takeIf { it.isFile }
-                    ?.readText(StandardCharsets.ISO_8859_1)
-                    ?.contains("COMMERCIAL") == true
-            }.getOrDefault(false)
-
-            val sha1ComparisonMsg = if (decodedReg.sha1Matches7e88) {
-                "مطابق للقيمة المسجلة (القيمة مخفية)"
-            } else {
-                "مختلف عن القيمة المسجلة (القيمة مخفية)"
-            }
-
-            val keyDiskStatus = "[فحص ملف الترخيص 10719] 0x00169729: " +
-                "موجود=$hexExists, حجم=$hexSize بايت, " +
-                "يحوي COMMERCIAL=$hexHasComm\n" +
-                "[فك وتحليل param - البند 2 من 10719]:\n" +
-                "- هل param كان مشفراً: " +
-                "${if (decodedReg.isEncrypted) "نعم" else "لا"}\n" +
-                "- عدد الأجزاء بعد التقسيم: ${decodedReg.partsCount}\n" +
-                "- طول email: $emailLen\n" +
-                "- طول hexCode: $hexCodeLen\n" +
-                "- طول registration: $effectiveRegLen\n" +
-                "- بصمة SHA1 مخفية؛ الحكم: $sha1ComparisonMsg"
-            Log.i(TAG, keyDiskStatus)
-            HostLog.i(HostProtocol.ENGINE_ACAPELA, keyDiskStatus)
-            // [بناء 10729] فحص الرخصة يُدفَع فوراً أيضاً.
-            appendAcapelaFullDiagnostic(
-                "=== [فحص الترخيص] ===\n$keyDiskStatus"
-            )
-
-            val origSalmaDir = AcapelaVoiceDiagnostics
-                .findOriginalSalmaDir(context)
-                ?: voice.dir.parentFile?.takeIf {
-                    it.name.equals("Salma", ignoreCase = true)
-                }
-                ?: voice.dir
-
-            // ── المسار الوحيد: Path_Original_Root_109 ──────────────────────
-            // نسخة حرفية لجذر Salma/ بلا استبدال، ثم حاجز تحقق من ملف
-            // ini قبل nInit، ثم محاولة واحدة فقط مع رصد الملفات المفتوحة.
-            // [بناء 10729] لا يُمسح سجل logcat قبل الاختبار: ماضيه هو
-            // الدليل الوحيد على ما جرى قبل الانهيار.
-            val root109Dir = AcapelaVoiceDiagnostics.stageOriginalRoot109(
-                context = context,
-                sourceDir = origSalmaDir
-            )
-            val preInitCheck = AcapelaVoiceDiagnostics
-                .verifyRoot109IniBeforeInit(root109Dir)
-            Log.i(TAG, preInitCheck.report)
-            HostLog.i(HostProtocol.ENGINE_ACAPELA, preInitCheck.report)
-            // [بناء 10729] حاجز ما قبل nInit يُدفَع قبل أي نداء أصلي.
-            appendAcapelaFullDiagnostic(
-                "=== [حاجز التحقق قبل nInit] ===\n${preInitCheck.report}"
-            )
-            runCatching {
-                val checkText = preInitCheck.report
-                File(
-                    context.cacheDir,
-                    "acapela_stage_verify_10728.txt"
-                ).writeText(checkText, StandardCharsets.UTF_8)
-            }
-            val trialRoot109 = if (!preInitCheck.passed) {
-                // فشل التجهيز: لا nInit ولا nSpeak، ويُسجَّل السبب صراحةً
-                // كي لا يبدو الفشل انقطاعاً صامتاً.
+            val trial = if (!verification.ok) {
                 failedTrialBeforeInit(
-                    label = "Path_Original_Root_109 (فشل التحقق قبل nInit)",
-                    path = directoryArgument(root109Dir),
-                    report = preInitCheck.report
+                    label = "AuthenticVoice (فشل التحقق قبل nInit)",
+                    runId = runId,
+                    startedAtMs = startedAtMs,
+                    path = directoryArgument(voice.dir),
+                    report = verification.report
                 )
             } else {
-                executeVoiceLoadTrial(
-                    label = "Path_Original_Root_109 (نسخة حرفية لجذر Salma)",
-                    trialDir = root109Dir,
-                    speaker = effectiveSpeaker,
-                    iso3 = iso3,
-                    registration = regToUse,
-                    voiceMode = "MODE=prep_hd",
-                    probeText = "مرحبا",
-                    order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                    useRealCallback = false,
-                    trailingSlash = true,
-                    forceCallVoice = true,
-                    forceVoiceEvenIfInitFailed = true,
-                    allowRetry = false,
-                    probeFiles = true
+                val stageDir = AcapelaVoiceDiagnostics
+                    .stageAuthenticVoiceForRun(
+                        context = context,
+                        voiceDir = verification.voiceDir,
+                        runId = runId
+                    )
+                val stagedCheck = AcapelaVoiceDiagnostics
+                    .verifyAuthenticVoicePackage(
+                        voiceDir = verification.voiceDir,
+                        stagedDir = stageDir,
+                        expectedSpeakerHint = expectedSpeaker
+                    )
+                Log.i(TAG, stagedCheck.report)
+                HostLog.i(
+                    HostProtocol.ENGINE_ACAPELA,
+                    stagedCheck.report
                 )
-            }
-            val trialsList = mutableListOf(trialRoot109)
-            recordTrialProgress(trialRoot109)
-            // [بناء 10729] تفاصيل المحاولة (وسائط nInit وtrailingSlash
-            // والمتحدث وأكواد nSetVoiceMode/nSpeak وeb/nlpErr/sNLPConfig
-            // وعينات PCM وأسطر المكتبة) تُدفَع فور انتهائها.
-            if (trialRoot109.details.isNotBlank()) {
-                appendAcapelaFullDiagnostic(trialRoot109.details)
+                appendAcapelaFullDiagnostic(stagedCheck.report)
+                if (!stagedCheck.ok) {
+                    failedTrialBeforeInit(
+                        label = "AuthenticVoice (فشل تحقق المرحلي)",
+                        runId = runId,
+                        startedAtMs = startedAtMs,
+                        path = directoryArgument(stageDir),
+                        report = stagedCheck.report
+                    )
+                } else {
+                    executeVoiceLoadTrial(
+                        label = "AuthenticVoice (نسخة أصلية حرفية)",
+                        runId = runId,
+                        startedAtMs = startedAtMs,
+                        trialDir = stageDir,
+                        speaker = expectedSpeaker,
+                        iso3 = iso3,
+                        registration = regToUse,
+                        voiceMode = VOICE_MODE_HD,
+                        probeText = "مرحبا",
+                        order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                        useRealCallback = true,
+                        trailingSlash = true,
+                        forceCallVoice = true,
+                        forceVoiceEvenIfInitFailed = false,
+                        allowRetry = false,
+                        probeFiles = true
+                    )
+                }
             }
 
-            // إغلاق خدمة التجربة الفاشلة فوراً: لا تُترك مهيّأةً بلا نطق
-            // فتتراكم خدمات nInit مفتوحة (nStop ثم nShutdown). خدمة
-            // التجربة الناجحة تبقى للنطق وتُغلق عبر closeExtended.
-            if (!trialRoot109.isSuccess) {
-                trialRoot109.service?.let { srv ->
+            lastTrialSucceeded.set(trial.isSuccess)
+            recordTrialProgress(trial)
+            if (trial.details.isNotBlank()) {
+                appendAcapelaFullDiagnostic(trial.details)
+            }
+            if (!trial.isSuccess) {
+                trial.service?.let { srv ->
                     runCatching { srv.nStop() }
                     runCatching { srv.nShutdown() }
                 }
             }
 
-            // فحص النجاح وحفظ ملف WAV واحد للنطق التجريبي "مرحبا".
-            val winningTrial = trialsList.firstOrNull { it.isSuccess }
-            lastTrialSucceeded.set(winningTrial != null)
-            if (winningTrial != null) {
-                val pcmData =
-                    winningTrial.audioHandler.pcmBytes.toByteArray()
-                if (pcmData.isNotEmpty()) {
-                    val wavFile = File(
-                        context.cacheDir,
-                        "acapela_marhaba_10728.wav"
-                    )
-                    AcapelaVoiceDiagnostics.savePcmAsWav(wavFile, pcmData)
-                    Log.i(
-                        TAG,
-                        "تم حفظ ملف نطق مرحبا: ${wavFile.absolutePath} " +
-                            "(${wavFile.length()} بايت)"
-                    )
-                }
+            val pcmBytes = trial.audioHandler.pcmBytes.toByteArray()
+            if (trial.isSuccess && pcmBytes.isNotEmpty()) {
+                val wavFile = File(
+                    context.cacheDir,
+                    "acapela_run_${runId}_speak.wav"
+                )
+                AcapelaVoiceDiagnostics.savePcmAsWav(
+                    wavFile,
+                    pcmBytes
+                )
+                Log.i(
+                    TAG,
+                    "حُفظ نطق التجربة: ${wavFile.absolutePath} " +
+                        "(${wavFile.length()} بايت)"
+                )
             }
 
-            val chosenTrial = winningTrial
-
-            val literalResults = buildString {
-                appendLine("=== [نتائج مسار نطق Acapela (بناء 10728)] ===")
-                trialsList.forEach { t ->
-                    val ebStr = t.ebErrorCode?.let {
-                        "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
-                    } ?: "0"
-                    val nlpStr = t.nlpErrorCode?.let {
-                        "$it (${AcapelaVoiceDiagnostics.babileErrorName(it)})"
-                    } ?: "0"
-                    val sNlpStr = t.sNlpCode?.toString() ?: "0"
-                    val trialDirObj = File(t.path.trimEnd('/', '\\'))
-                    val fileInventory = AcapelaVoiceDiagnostics
-                        .getDetailedDirectoryInventory(trialDirObj)
-                    appendLine("────────────────────────────────────────")
-                    appendLine("المسار: ${t.method}")
-                    appendLine("  - المعامل الحرفي لـ nInit: \"${t.path}\"")
-                    appendLine("")
-                    appendLine("=== [البند 2] محتوى logfile.txt كاملاً ===")
-                    if (t.logFileContent.isBlank()) {
-                        appendLine("  (ملف logfile.txt فارغ أو لم يُنشأ)")
-                    } else {
-                        appendLine(t.logFileContent)
-                    }
-                    appendLine("")
-                    appendLine(
-                        "=== [البند 2] أسطر logcat لـ " +
-                            "acattsandroid-extended-native من nInit إلى " +
-                            "nSpeak (${t.nativeLines.size} سطر) ==="
-                    )
-                    if (t.nativeLines.isEmpty()) {
-                        appendLine("  (سجل المكتبة فارغ في logcat)")
-                    } else {
-                        t.nativeLines.forEach { line ->
-                            appendLine("  $line")
-                        }
-                    }
-                    appendLine("")
-                    appendLine(
-                        "=== [البند 3] أول سطر خطأ في سجل المكتبة " +
-                            "والسطر الذي قبله ==="
-                    )
-                    if (t.firstErrorLine != null) {
-                        appendLine("  - أول سطر خطأ: \"${t.firstErrorLine}\"")
-                        appendLine(
-                            "  - السطر الذي قبله مباشرة: " +
-                                "\"${t.precedingLine ?: "(لا يوجد)"}\""
-                        )
-                    } else {
-                        appendLine(
-                            "  - أول سطر خطأ: (لم يظهر أي سطر خطأ يحوي " +
-                                "Error أو error أو not loaded أو load error)"
-                        )
-                        appendLine("  - السطر الذي قبله مباشرة: —")
-                    }
-                    appendLine("")
-                    appendLine(
-                        "=== [البند 4] أكواد الرجوع واستدعاءات حصر " +
-                            "الأصوات واللغة ==="
-                    )
-                    appendLine("  - رمز إرجاع nInit: ${t.initCode}")
-                    appendLine("  - رمز إرجاع nSetVoiceMode: ${t.modeCode}")
-                    appendLine(
-                        "  - رمز إرجاع nUtf8Mode: ${t.utf8Code ?: "تم تخطيه"}"
-                    )
-                    appendLine(
-                        "  - رمز إرجاع cSetLanguage / nSetLanguage: " +
-                            "${t.langCode}"
-                    )
-                    appendLine(
-                        "  - رمز إرجاع nSetCurrentVoice: ${t.voiceCode}"
-                    )
-                    appendLine("  - رمز إرجاع nSpeak: ${t.speakCode}")
-                    appendLine(
-                        "  - استدعاء nGetLanguage: " +
-                            "\"${t.getLanguageResult ?: "(null)"}\""
-                    )
-                    appendLine(
-                        "  - استدعاء nGetClosestVoice: " +
-                            "\"${t.closestVoiceResult ?: "(null)"}\""
-                    )
-                    appendLine(
-                        "  - استدعاء nIsLanguageAvailable: " +
-                            "${t.isLangAvailResult ?: "لم يُستدعَ"}"
-                    )
-                    appendLine(
-                        "  - قيمتا eb و nlpErr: eb=$ebStr | " +
-                            "nlpErr=$nlpStr | sNLPConfig: $sNlpStr"
-                    )
-                    appendLine(
-                        "  - قيمة nSpeak وعدد عينات PCM: " +
-                            "nSpeak=${t.speakCode} | PCM=${t.samples}"
-                    )
-                    appendLine(
-                        "  - هل تحقق معيار النجاح (بناء 10724): " +
-                            if (t.isSuccess) "نعم (ناجح)" else "لا (فاشل)"
-                    )
-                    appendLine("")
-                    appendLine(
-                        "=== [البند 5] قائمة الملفات المفتوحة للمكتبة ==="
-                    )
-                    if (t.openFiles.isEmpty()) {
-                        appendLine(
-                            "  (لم يُرصد فتح ملفات عبر /proc/self/fd أو السجل)"
-                        )
-                    } else {
-                        t.openFiles.forEach { f ->
-                            appendLine("  * $f")
-                        }
-                    }
-                    appendLine("")
-                    appendLine(
-                        "=== [البند 2] قائمة ملفات المجلد بالأحجام " +
-                            "الدقيقة بالبايت (${fileInventory.size} ملف) ==="
-                    )
-                    fileInventory.forEach { line ->
-                        appendLine("  * $line")
-                    }
-                }
+            val startedText = SimpleDateFormat(
+                "yyyy-MM-dd HH:mm:ss.SSS",
+                Locale.US
+            ).format(Date(startedAtMs))
+            val summary = buildString {
+                appendLine("=== [نتائج تجربة Acapela] ===")
+                appendLine("runId: $runId")
+                appendLine("البداية: $startedText")
+                appendLine("المسار: ${trial.method}")
+                appendLine("nInit code: ${trial.initCode}")
+                appendLine(
+                    "nSetVoiceMode code: ${trial.modeCode}"
+                )
+                appendLine("nSetLanguage code: ${trial.langCode}")
+                appendLine(
+                    "nSetCurrentVoice code: ${trial.voiceCode}"
+                )
+                appendLine("nSpeak code: ${trial.speakCode}")
+                appendLine("عينات PCM: ${trial.samples}")
+                appendLine(
+                    "بايتات PCM: ${trial.audioHandler.pcmBytes.size()}"
+                )
+                appendLine(
+                    "callback موصول: ${trial.callbackConnected}"
+                )
+                appendLine(
+                    "أول خطأ أصلي: ${
+                        trial.firstErrorLine ?: "لم تُرصد"
+                    }"
+                )
+                appendLine(
+                    "النتيجة: ${
+                        if (trial.isSuccess) "نجاح" else "فشل"
+                    }"
+                )
             }.trimEnd()
-            Log.i(TAG, literalResults)
-            HostLog.i(HostProtocol.ENGINE_ACAPELA, literalResults)
+            Log.i(TAG, summary)
+            HostLog.i(HostProtocol.ENGINE_ACAPELA, summary)
+            appendAcapelaFullDiagnostic(summary)
 
-            val trialSummary = trialsList.joinToString(" | ") { t ->
-                val ebStr = t.ebErrorCode?.toString() ?: "0"
-                val nlpStr = t.nlpErrorCode?.toString() ?: "0"
-                val sNlpStr = t.sNlpCode?.toString() ?: "0"
-                "${t.method} (eb=$ebStr, nlpErr=$nlpStr, sNLP=$sNlpStr, " +
-                    "pcm=${t.samples}, speak=${t.speakCode})"
-            }
-            val outcome = if (winningTrial != null) {
-                "نجاح واعتماد (${winningTrial.method}) - تم حفظ WAV"
-            } else {
-                "فشل كافة مسارات نطق Acapela حسب معيار 10724"
-            }
-            val topSummary = "[تشخيص مسارات Acapela 10727] " +
-                "$trialSummary | النتيجة: $outcome"
-            Log.i(TAG, topSummary)
-            HostLog.i(HostProtocol.ENGINE_ACAPELA, topSummary)
-
-            runCatching {
-                val fullTrialsText = buildString {
-                    appendLine(topSummary)
-                    appendLine("")
-                    appendLine(literalResults)
-                    appendLine("")
-                    appendLine(keyDiskStatus)
-                    appendLine("")
-                    appendLine("=== [البند 1] فحص الملف الأصلي 109 بايت ===")
-                    appendLine(origIniDump)
-                    appendLine("")
-                    appendLine(
-                        AcapelaVoiceDiagnostics
-                            .getOriginalRoot109Verification(context)
-                    )
-                    appendLine("")
-                    trialsList.forEach { t ->
-                        if (t.details.isNotBlank()) {
-                            appendLine(t.details)
-                            appendLine("")
-                        }
-                    }
-                }.trimEnd()
-                // [بناء 10729] التقرير الكامل يُلحَق بالملف المستقر بعد
-                // الخطوات التدريجية، فلا يُفقد إن انهار :engine_host.
-                appendAcapelaFullDiagnostic(fullTrialsText)
-            }
-
-            // [بناء 10728] النجاح يُحكم بمعيار 10724 (PCM>0 وnSpeak≠-2
-            // وبلا خطأ لغة) لا باشتراط voiceCode==0، كي لا يُرفض نطق
-            // ناجح بسبب كود صوت شكلي.
-            if (chosenTrial == null || !chosenTrial.isSuccess) {
+            if (!trial.isSuccess) {
                 logVoiceDiagnostics(
                     voice,
-                    "فشل المحاولات: $trialSummary"
+                    "فشل تجربة runId=$runId: ${trial.method}"
                 )
                 return HostResult.failure(
                     "VOICE_LOAD_FAILED",
-                    "فشل nSetCurrentVoice/nSpeak: $trialSummary"
+                    "فشل تحميل صوت Acapela (runId=$runId): " +
+                        "nSpeak=${trial.speakCode}, PCM=${trial.samples}"
                 )
             }
 
-            chosenTrial.audioHandler.probeOnly = false
-            val srv = chosenTrial.service ?: return HostResult.failure(
+            trial.audioHandler.probeOnly = false
+            val srv = trial.service ?: return HostResult.failure(
                 "NOT_INITIALIZED",
                 "خدمة Acapela المعتمدة غير متوفرة"
             )
             extendedService = srv
             extendedKey = "$voiceKey|$registration"
-
             Log.i(
                 TAG,
-                "حزمة Acapela ممتدة جاهزة [${chosenTrial.method}]: " +
-                    "$effectiveSpeaker (${iso3.language}-${iso3.country})، " +
-                    "طول التسجيل=$regLen"
+                "حزمة Acapela جاهزة [runId=$runId]: " +
+                    "$expectedSpeaker " +
+                    "(${iso3.language}-${iso3.country})"
             )
             return null
         } catch (t: Throwable) {
             lastTrialSucceeded.set(false)
             val sw = java.io.StringWriter()
             t.printStackTrace(java.io.PrintWriter(sw))
-            val errText =
-                "=== [استثناء يمنع تشغيل مسار Acapela 10729] ===\n" +
-                    "نوع الخطأ: ${t.javaClass.name}\n" +
-                    "الرسالة: ${t.message ?: "بدون رسالة"}\n" +
-                    "تتبع المكدس:\n$sw"
+            val errText = buildString {
+                appendLine("=== [استثناء في تجربة Acapela] ===")
+                appendLine("runId: $runId")
+                appendLine("النوع: ${t.javaClass.name}")
+                appendLine("الرسالة: ${t.message ?: "بدون رسالة"}")
+                appendLine("التتبع:\n$sw")
+            }.trimEnd()
             Log.e(TAG, errText, t)
             HostLog.e(HostProtocol.ENGINE_ACAPELA, errText)
-            // [بناء 10729] الاستثناء يُلحَق بالملف المستقر لا بملف مرقم.
             appendAcapelaFullDiagnostic(errText)
             return HostResult.failure(
                 "CONFIGURE_EXCEPTION",
-                t.message ?: "استثناء أثناء اختبار التوليفات"
+                t.message ?: "استثناء أثناء تجربة Acapela"
             )
         }
     }

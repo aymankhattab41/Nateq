@@ -58,10 +58,11 @@ class OrdersOneTwoThreeFourTest {
     }
 
     @Test
-    fun `order 1 - vocalized word matches unvocalized key`() {
+    fun `order 1 - vocalized word does not match unvocalized key`() {
+        // حساسية التشكيل: مفتاح غير مشكول لا يطابق كلمة مشكولة
         dict.addEntry("مكتب", "ديوان")
         val result = dict.apply("مَكْتَبٌ")
-        assertEquals("ديوان", result)
+        assertEquals("مَكْتَبٌ", result)
     }
 
     @Test
@@ -122,9 +123,10 @@ class OrdersOneTwoThreeFourTest {
     }
 
     @Test
-    fun `order 2 - vocalized single letter saad matches when standalone`() {
+    fun `order 2 - vocalized single letter saad does not match plain key`() {
+        // حساسية التشكيل: مفتاح "ص" (بلا تشكيل) لا يطابق "صَ" (مفتوحة)
         dict.addEntry("ص", "صفحة")
-        assertEquals("صفحة", dict.apply("صَ"))
+        assertEquals("صَ", dict.apply("صَ"))
     }
 
     @Test
@@ -137,7 +139,7 @@ class OrdersOneTwoThreeFourTest {
 
     @Test
     fun `order 2 - standalone max length 0 restores anywhere match`() {
-        dict.setStandaloneMaxLength(0)
+        dict.standaloneMaxLength = 0
         dict.addEntry("م", "متر")
         assertEquals("متررحبا", dict.apply("مرحبا"))
     }

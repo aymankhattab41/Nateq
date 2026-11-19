@@ -30,7 +30,7 @@ class HijriMonthAndTraceDictTest {
         context = ApplicationProvider.getApplicationContext()
         dict = PronunciationDictionary(context)
         dict.clear()
-        dict.setStandaloneMaxLength(1)
+        dict.standaloneMaxLength = 1
     }
 
     @Test
@@ -115,10 +115,13 @@ class HijriMonthAndTraceDictTest {
         val traces = dict.traceMatches("جُمادى الأولى", "ar")
         val rejectedTrace = traces.firstOrNull { it.key == "ج" }
         assertNotNull(rejectedTrace)
-        assertFalse(rejectedTrace?.accepted ?: true)
+        assertFalse(rejectedTrace!!.accepted)
         assertTrue(
-            rejectedTrace?.reason?.contains("محمية") == true ||
-                rejectedTrace?.reason?.contains("جار") == true
+            "يجب أن يوضح السبب اختلاف التشكيل أو سبب رفض واضحاً",
+            rejectedTrace.reason.contains("التشكيل مختلف") ||
+                rejectedTrace.reason.contains("حدود") ||
+                rejectedTrace.reason.contains("محمية") ||
+                rejectedTrace.reason.contains("جار")
         )
     }
 

@@ -155,7 +155,10 @@ internal object DiagnosticLogRecorder {
             recording = false
             process?.let { p -> runCatching { p.destroy() } }
             process = null
-            snapshot = buffer.toList()
+            snapshot = buffer.map {
+                com.aymankhattab.nateq.core.audio.providers
+                    .AcapelaVoiceDiagnostics.redactSensitiveLine(it)
+            }
         }
         return snapshot
     }

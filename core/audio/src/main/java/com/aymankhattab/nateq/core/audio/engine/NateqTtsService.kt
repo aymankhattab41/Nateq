@@ -746,9 +746,15 @@ class NateqTtsService : TextToSpeechService() {
     }
 
     override fun onStop() {
-        // لا نلغي التركيب الجاري (stop gen) إلا عند وصول نص جديد يستبدله
-        // لمنع إسقاط المقاطع أثناء إعادة الربط أو تغيير الصوت العابر
+        // إيقاف صريح من إطار TTS: إبطال الدورة الحالية فوراً لمنع تسرب
+        // مخرجات/استمرار عمل دورة ملغاة، مع السماح لطلبات جديدة لاحقة.
         interruptedBySensor = false
+        val prevGen = requestGeneration.incrementAndGet()
+        // prevGen الآن هو الجيل الجديد؛ ألغِ المهمة النشطة إن كانت
+        // من الجيل السابق.
+        if (activeJobGeneration == prevGen - 1) {
+            activeJob?.cancel()
+        }
     }
 
     /** رصد الهز/التقارب أثناء رحلة التخليق: يُسجَّل أثناء النطق النشط فقط
@@ -875,6 +881,8 @@ class NateqTtsService : TextToSpeechService() {
         val ttfbMs = AtomicLong(0L)
         val preprocessDurationMs = AtomicLong(0L)
         val planningDurationMs = AtomicLong(0L)
+        val cycleInvalidated =
+            java.util.concurrent.atomic.AtomicBoolean(false)
         val segmentMetrics =
             Collections.synchronizedList(
                 ArrayList<SpeechLatencyTracker.SegmentMetric>()
@@ -884,6 +892,12 @@ class NateqTtsService : TextToSpeechService() {
         val monitoredCallback = MonitoredSynthesisCallback(
             callback,
             { bytes ->
+                if (
+                    cycleInvalidated.get() ||
+                    myGen != requestGeneration.get()
+                ) {
+                    return@MonitoredSynthesisCallback
+                }
                 lastProgressAt.set(SystemClock.uptimeMillis())
                 if (bytes > 0) {
                     val dur = (bytes * 1000L) / 44100L
@@ -892,6 +906,10 @@ class NateqTtsService : TextToSpeechService() {
                         0L, SystemClock.uptimeMillis() - startUptime
                     )
                 }
+            },
+            {
+                cycleInvalidated.get() ||
+                    myGen != requestGeneration.get()
             }
         )
         // بند ١٠: إسناد مُوجِّه الخيط بعد الإنشاء (يحفظ توقيع lambda الأخير).
@@ -994,8 +1012,10 @@ class NateqTtsService : TextToSpeechService() {
                 // فارغة) فكان toString() المباشر يرمي NPE ويسقط التخليق —
                 // الاستدعاء الآمن يرد النص الفارغ بدل الانهيار.
                 if (rawText.isBlank()) {
-                    callback.start(EMPTY_TEXT_SAMPLE_RATE, PCM_16BIT, 1)
-                    callback.done()
+                    monitoredCallback.start(
+                        EMPTY_TEXT_SAMPLE_RATE, PCM_16BIT, 1
+                    )
+                    monitoredCallback.done()
                     return@launch
                 }
                 // ع٢٩-12: توسيع «قراءة المزيد» تلقائياً قبل المعالجة الدلالية
@@ -1190,7 +1210,7 @@ class NateqTtsService : TextToSpeechService() {
                 // النظامُ خيطَ التخليق حتى العودة) ويبقى التحوط للسلامة.
                 if (interruptedBySensor) {
                     Log.d(TAG, "onSynthesizeText interrupted by sensor")
-                    runCatching { callback.done() }
+                    runCatching { monitoredCallback.done() }
                 } else if (myGen < requestGeneration.get()) {
                     // بند 2.4: خروج صامت عند الإيقاف الحقيقي — استدعاء
                     // error() هنا خطأٌ زائف يخرق عقد AOSP (النظام ألغى
@@ -1205,15 +1225,16 @@ class NateqTtsService : TextToSpeechService() {
                     // (تحوّط من رمي النظام InterruptedException/عدم تحلّه
                     // عند الإيقاف) حتى لا يعلق طابور النظام بطلبٍ ميت أو
                     // يبقى AudioTrack مفتوحاً.
-                    runCatching { callback.error() }
+                    runCatching { monitoredCallback.error() }
                 }
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
-                runCatching { callback.error() }
+                runCatching { monitoredCallback.error() }
             }
         }
         if (myGen < requestGeneration.get()) {
             Log.d(TAG, "onSynthesizeText stopped before start ($myGen)")
+            runCatching { monitoredCallback.error() }
             callbackDispatcher.close()
             return
         }
@@ -1245,8 +1266,9 @@ class NateqTtsService : TextToSpeechService() {
                                 "${currentIdleLimit}ms, " +
                                 "${rawText.length} chars)"
                         )
+                        runCatching { monitoredCallback.error() }
+                        cycleInvalidated.set(true)
                         job.cancel()
-                        runCatching { callback.error() }
                         break
                     }
                     val totalElapsed = now - startUptime
@@ -1258,8 +1280,9 @@ class NateqTtsService : TextToSpeechService() {
                             "onSynthesizeText absolute timeout: " +
                                 "${totalElapsed}ms"
                         )
+                        runCatching { monitoredCallback.error() }
+                        cycleInvalidated.set(true)
                         job.cancel()
-                        runCatching { callback.error() }
                         break
                     }
                 }
@@ -3433,7 +3456,8 @@ if (rate == 1.0f && pitch == 1.0f && volume == 1.0f
  */
 internal class MonitoredSynthesisCallback(
     private val delegate: SynthesisCallback,
-    private val onProgress: (bytesWritten: Int) -> Unit
+    private val onProgress: (bytesWritten: Int) -> Unit,
+    private val isStale: () -> Boolean = { false }
 ) : SynthesisCallback by delegate {
 
     private val started = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -3441,7 +3465,7 @@ internal class MonitoredSynthesisCallback(
 
     // بند ١٠: عند إسناده تُرسَل كل نداءات delegate إلى خيط التخليق
     // المخصّص. يبقى null في اختبارات الوحدة فيُحافَظ على التزامن المباشر
-    // وعلى توقيع المُنشئ ذي المعاملين (lambda أخير) دون كسر الاختبارات.
+    // دون كسر الاختبارات (يُمرَّر onProgress بوسيطة مُسمّاة).
     @Volatile
     private var dispatcher: SynthesisCallbackDispatcher? = null
 
@@ -3464,13 +3488,17 @@ internal class MonitoredSynthesisCallback(
         audioFormat: Int,
         channelCount: Int
     ): Int {
-        if (finished.get()) return TextToSpeech.ERROR
+        if (isStale() || finished.get()) return TextToSpeech.ERROR
         if (!started.compareAndSet(false, true)) {
             return TextToSpeech.SUCCESS
         }
         onProgress(0)
         var result = TextToSpeech.ERROR
         deliver {
+            if (isStale()) {
+                result = TextToSpeech.ERROR
+                return@deliver
+            }
             result = delegate.start(sampleRateInHz, audioFormat, channelCount)
         }
         return result
@@ -3481,15 +3509,25 @@ internal class MonitoredSynthesisCallback(
         offset: Int,
         length: Int
     ): Int {
+        if (isStale()) return TextToSpeech.ERROR
         if (finished.get() || buffer == null || length <= 0) {
             return TextToSpeech.SUCCESS
         }
         if (!started.get()) {
-            start(22050, AudioFormat.ENCODING_PCM_16BIT, 1)
+            val startedResult = start(
+                22050, AudioFormat.ENCODING_PCM_16BIT, 1
+            )
+            if (startedResult != TextToSpeech.SUCCESS) {
+                return startedResult
+            }
         }
         onProgress(length)
         val result = IntArray(1) { TextToSpeech.SUCCESS }
         deliver {
+            if (isStale()) {
+                result[0] = TextToSpeech.ERROR
+                return@deliver
+            }
             val maxChunk = delegate.maxBufferSize
             var currentOffset = offset
             var remaining = length
@@ -3507,6 +3545,10 @@ internal class MonitoredSynthesisCallback(
     }
 
     override fun done(): Int {
+        if (isStale()) {
+            finished.set(true)
+            return TextToSpeech.SUCCESS
+        }
         if (!started.get()) {
             error()
             return TextToSpeech.ERROR
@@ -3516,24 +3558,44 @@ internal class MonitoredSynthesisCallback(
         }
         onProgress(0)
         val result = IntArray(1) { TextToSpeech.ERROR }
-        deliver { result[0] = delegate.done() }
+        deliver {
+            if (isStale()) {
+                result[0] = TextToSpeech.SUCCESS
+                return@deliver
+            }
+            result[0] = delegate.done()
+        }
         return result[0]
     }
 
     override fun error() {
+        if (isStale()) {
+            finished.set(true)
+            return
+        }
         if (!finished.compareAndSet(false, true)) {
             return
         }
         onProgress(0)
-        deliver { delegate.error() }
+        deliver {
+            if (isStale()) return@deliver
+            delegate.error()
+        }
     }
 
     override fun error(errorCode: Int) {
+        if (isStale()) {
+            finished.set(true)
+            return
+        }
         if (!finished.compareAndSet(false, true)) {
             return
         }
         onProgress(0)
-        deliver { delegate.error(errorCode) }
+        deliver {
+            if (isStale()) return@deliver
+            delegate.error(errorCode)
+        }
     }
 }
 

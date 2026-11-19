@@ -266,7 +266,7 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                     diagnostic.takeLast(
                         VoiceSelectionFragment.MAX_DIAGNOSTIC_LINES
                     )
-                        .forEach { appendLine(it) }
+                        .forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
                     appendLine("")
                 }
                 val errors = logLines.filter {
@@ -280,14 +280,14 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                     appendLine(
                         "--- أسطر الأخطاء الحرجة (${errors.size}) ---"
                     )
-                    errors.takeLast(300).forEach { appendLine(it) }
+                    errors.takeLast(300).forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
                     appendLine("")
                 }
                 if (warnings.isNotEmpty()) {
                     appendLine(
                         "--- أسطر التحذيرات (${warnings.size}) ---"
                     )
-                    warnings.takeLast(200).forEach { appendLine(it) }
+                    warnings.takeLast(200).forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
                     appendLine("")
                 }
                 // **كان `takeLast(150)`** يطبع التقرير آخر 150 سطراً فقط
@@ -297,7 +297,7 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                 appendLine(
                     "--- سجل نشاط التطبيق (${logLines.size} سطر) ---"
                 )
-                logLines.forEach { appendLine(it) }
+                logLines.forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
             }
 
             // الأمر 2 - البند 4: قسم مستقل بعنوان «سجل :tts»
@@ -325,19 +325,21 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                         "--- أسطر :tts المستهدفة " +
                             "(${ttsFiltered.size}) ---"
                     )
-                    ttsFiltered.takeLast(300).forEach { appendLine(it) }
+                    ttsFiltered.takeLast(300).forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
                     appendLine("")
                 }
                 appendLine(
                     "--- أحدث أسطر عملية :tts " +
                         "(${ttsLogLines.size}) ---"
                 )
-                ttsLogLines.takeLast(300).forEach { appendLine(it) }
+                ttsLogLines.takeLast(300).forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
             }
         }
         // [بناء 10729] سقف التقرير المنسوخ/المُشارَك: يُبقى على
         // الصدارة (تشخيص Acapela أولاً) ويُقتطع ذيل أسطر logcat.
-        AcapelaVoiceDiagnostics.capSharedReport(rawReport)
+        AcapelaVoiceDiagnostics.redactSensitiveText(
+            AcapelaVoiceDiagnostics.capSharedReport(rawReport)
+        )
     }
 
 internal fun VoiceSelectionFragment.writeLogToCacheFile(
@@ -345,9 +347,11 @@ internal fun VoiceSelectionFragment.writeLogToCacheFile(
     content: String
 ): File? =
     runCatching {
+        val redacted =
+            AcapelaVoiceDiagnostics.redactSensitiveText(content)
         val logsDir = File(context.cacheDir, "logs").apply { mkdirs() }
         val logFile = File(logsDir, "nateq_diagnostic_log.txt")
-        logFile.writeText(content, Charsets.UTF_8)
+        logFile.writeText(redacted, Charsets.UTF_8)
         logFile
     }.getOrNull()
 
@@ -376,7 +380,9 @@ internal fun VoiceSelectionFragment.sendReportToTelegram(
     context: android.content.Context,
     reportText: String
 ) {
-    copyToClipboard(reportText)
+    val redacted =
+        AcapelaVoiceDiagnostics.redactSensitiveText(reportText)
+    copyToClipboard(redacted)
     Toast.makeText(
         context,
         R.string.error_report_copied_telegram_hint,
@@ -394,12 +400,14 @@ internal fun VoiceSelectionFragment.shareErrorReport(
     body: String,
     logFile: File?
 ) {
+    val redactedBody =
+        AcapelaVoiceDiagnostics.redactSensitiveText(body)
     val send = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(
             Intent.EXTRA_SUBJECT, getString(R.string.report_error_subject)
         )
-        putExtra(Intent.EXTRA_TEXT, body)
+        putExtra(Intent.EXTRA_TEXT, redactedBody)
         if (logFile != null && logFile.exists()) {
             val uri = runCatching {
                 FileProvider.getUriForFile(
@@ -810,10 +818,10 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
             if (localRecords.isEmpty()) {
                 sb.appendLine("لا توجد عمليات نطق مسجلة بعد")
             } else {
-                localRecords.forEach { sb.appendLine(it) }
+                localRecords.forEach { sb.appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
             }
         } else {
-            speechRecords.forEach { sb.appendLine(it) }
+            speechRecords.forEach { sb.appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
         }
         sb.appendLine("")
 
@@ -1201,11 +1209,13 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
     }
 
 internal fun VoiceSelectionFragment.copyToClipboard(text: String) {
+    val redacted =
+        AcapelaVoiceDiagnostics.redactSensitiveText(text)
     val clipboard = requireContext().getSystemService(
         android.content.Context.CLIPBOARD_SERVICE
     ) as android.content.ClipboardManager
     val clip = android.content.ClipData.newPlainText(
-        "Lord TTS Diagnostics", text
+        "Lord TTS Diagnostics", redacted
     )
     clipboard.setPrimaryClip(clip)
 }

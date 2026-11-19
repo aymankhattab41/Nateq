@@ -302,6 +302,7 @@ object UnlabeledLabelsHandler : A11yFeatureHandler {
                 isInterruptAllowed = true
             )
         } finally {
+            @Suppress("DEPRECATION")
             runCatching { node.recycle() }
         }
     }
@@ -347,6 +348,7 @@ object AutoDescribeUnlabeledHandler : A11yFeatureHandler {
                 store.setCustomLabel(pkg, viewId, description)
             }
         } finally {
+            @Suppress("DEPRECATION")
             runCatching { node.recycle() }
         }
     }
@@ -376,6 +378,7 @@ internal object UnlabeledElementHelper {
                 val d = child.contentDescription?.toString()?.trim().orEmpty()
                 if (d.isNotEmpty()) return d
             } finally {
+                @Suppress("DEPRECATION")
                 runCatching { child.recycle() }
             }
         }
@@ -421,7 +424,9 @@ internal object UnlabeledElementHelper {
     private fun stateLabel(node: AccessibilityNodeInfo): String {
         val parts = mutableListOf<String>()
         if (node.isCheckable) {
-            parts += if (node.isChecked) "محدد" else "غير محدد"
+            @Suppress("DEPRECATION")
+            val checked = node.isChecked
+            parts += if (checked) "محدد" else "غير محدد"
         }
         if (node.isSelected) parts += "مُختار"
         if (!node.isEnabled) parts += "غير مفعّل"
@@ -936,6 +941,7 @@ class NateqAccessibilityService : AccessibilityService() {
                                 .setLastFocusedElement(focusedPkg, viewId)
                         }
                     } finally {
+                        @Suppress("DEPRECATION")
                         runCatching { src.recycle() }
                     }
                 }

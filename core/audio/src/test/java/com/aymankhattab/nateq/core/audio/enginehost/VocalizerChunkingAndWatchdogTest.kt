@@ -159,10 +159,13 @@ class VocalizerChunkingAndWatchdogTest {
             override fun hasFinished(): Boolean = false
         }
 
-        val monitored = MonitoredSynthesisCallback(fakeCallback) { bytes ->
-            progressCount.incrementAndGet()
-            totalBytes.addAndGet(bytes.toLong())
-        }
+        val monitored = MonitoredSynthesisCallback(
+            fakeCallback,
+            onProgress = { bytes ->
+                progressCount.incrementAndGet()
+                totalBytes.addAndGet(bytes.toLong())
+            }
+        )
 
         monitored.start(22050, 2, 1)
         assertEquals(1, progressCount.get())

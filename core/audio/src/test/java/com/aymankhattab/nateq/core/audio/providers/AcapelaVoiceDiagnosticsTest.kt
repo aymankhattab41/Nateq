@@ -183,7 +183,7 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun stageVoiceFlat_createsFlatStructureAndUserdicos() {
+    fun stageVoiceFlat_createsFlatStructureWithoutFabricatedIni() {
         val root = tempDir()
         val voice = File(root, "Salma").apply { mkdirs() }
         val nlp = File(voice, "NLP").apply { mkdirs() }
@@ -209,7 +209,13 @@ class AcapelaVoiceDiagnosticsTest {
             assertTrue(File(stageFlat, "ar_sa_unplugged.dca").exists())
             assertTrue(File(stageFlat, "ar_sa_hde_arq.dca").exists())
             assertTrue(File(stageFlat, "bvcu.inf").exists())
-            assertTrue(File(stageFlat, "bvcu.ini").exists())
+            // لا تُولَّد تهيئة ini بديلة داخل أي تجهيز.
+            assertFalse(File(stageFlat, "bvcu.ini").exists())
+            assertTrue(
+                stageFlat.walkTopDown().none {
+                    it.isFile && AcapelaVoiceManifest.isFabricatedIni(it)
+                }
+            )
             assertTrue(File(stageFlat, "config.yaml").exists())
             assertTrue(File(stageFlat, "salma_lf.txt").exists())
             assertTrue(File(stageFlat, "0x00169729").exists())
@@ -299,7 +305,7 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun stageVoiceV2_copiesRequiredAndExcludesForbiddenFiles() {
+    fun stageVoiceV2_copiesRequiredWithoutFabricatingIni() {
         val root = tempDir()
         try {
             File(root, "ar_sa.dca").writeText("dca")
@@ -333,14 +339,13 @@ class AcapelaVoiceDiagnosticsTest {
             assertTrue(!File(v2, "logfile.txt").exists())
             assertTrue(!File(v2, "test.nuul").exists())
 
-            // تأكيد كتابة ملفات .ini بسطرين
-            val ini = File(v2, "ar_sa_hd_salma_22k_lf.ini")
-            assertTrue(ini.exists())
-            val iniLines = ini.readLines()
-            assertEquals(2, iniLines.size)
-            assertEquals("MODE=prep_hd", iniLines[0])
+            // لا تُولَّد تهيئة ini بديلة داخل أي مرحلي.
+            assertFalse(File(v2, "ar_sa_hd_salma_22k_lf.ini").exists())
+            assertFalse(File(v2, "bvcu.ini").exists())
             assertTrue(
-                iniLines[1].contains("FILEMAP \"salma_22k_lf.bvcu\"")
+                v2.walkTopDown().none {
+                    it.isFile && AcapelaVoiceManifest.isFabricatedIni(it)
+                }
             )
         } finally {
             root.deleteRecursively()
@@ -348,7 +353,7 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun writeStageV2Ini_writesExactlyTwoLinesToAllThreeFiles() {
+    fun writeStageV2Ini_neverFabricatesIni() {
         val root = tempDir()
         try {
             AcapelaVoiceDiagnostics.writeStageV2Ini(
@@ -362,15 +367,7 @@ class AcapelaVoiceDiagnosticsTest {
                 "bvcu.ini"
             )
             for (t in targets) {
-                val f = File(root, t)
-                assertTrue(f.exists())
-                val iniLines = f.readLines()
-                assertEquals(2, iniLines.size)
-                assertEquals("MODE=prep", iniLines[0])
-                assertEquals(
-                    "#1 FILEMAP \"salma_22k_lf.bvcu\"",
-                    iniLines[1]
-                )
+                assertFalse(File(root, t).exists())
             }
         } finally {
             root.deleteRecursively()
@@ -610,32 +607,23 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun writeIniTargets_copiesMeasuredOriginalIniVerbatim() {
+    fun writeIniTargets_neverWritesFabricatedIni() {
         val original = File(
             context.filesDir,
             "acapela/Leila/leila22k_hq/" +
                 "ar_sa_hd_leila_22k_lf.bvcu.ini"
         ).apply { parentFile?.mkdirs() }
-        val richIni = "PRO\t\"NLP/ar_sa.oso\"\t\tPROSODY\n" +
-            "DIC\t\"NLP/ar_sa.dca\"\t\tDICO\n" +
-            "SLV\t\"leila_lf/leila_22k_lf.bvcu\"\t[FILE]\n" +
-            "SLL\t\"leila_lf/leila_22k_lf.bvcu.nuul216vqfp\"\t[FILE]\n" +
-            "END\t\"\"\n" +
-            "#".repeat(320) + "\n"
-        val bytes = richIni.toByteArray(StandardCharsets.ISO_8859_1)
         val target = File(tempDir(), "bvcu.ini")
         try {
-            original.writeBytes(bytes)
-            assertTrue(bytes.size > 300)
+            original.writeText("PRO\t\"NLP/ar_sa.oso\"\t\tPROSODY\n")
 
             val written = AcapelaVoiceDiagnostics.writeIniTargets(
                 context, listOf(target)
             )
 
-            assertEquals(1, written)
-            org.junit.Assert.assertArrayEquals(
-                bytes, target.readBytes()
-            )
+            // لا نسخ ضمني من مصدر مُخمَّن ولا كتابة أي تهيئة بديلة.
+            assertEquals(0, written)
+            assertFalse(target.exists())
         } finally {
             original.delete()
             target.parentFile?.deleteRecursively()
@@ -746,7 +734,7 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun stage10709Exact_createsCleanStagingMatching10709() {
+    fun stage10709Exact_createsCleanStagingWithoutFabricatedIni() {
         val root = tempDir()
         try {
             val salma = File(root, "Acapela/Salma/salma_lf").apply {
@@ -769,11 +757,7 @@ class AcapelaVoiceDiagnosticsTest {
             assertTrue(
                 File(staged, "ar_sa_hd_salma_22k_lf.bvcu.inf").exists()
             )
-            assertTrue(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
-            val ini = File(staged, "ar_sa_hd_salma_22k_lf.ini")
-            val iniText = ini.readText()
-            assertTrue(iniText.contains("MODE=prep_hd"))
-            assertTrue(iniText.contains("[ RAM ]"))
+            assertFalse(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
             // استبعاد الملفات الزائدة وغير المطلوبة
             assertEquals(
                 false,
@@ -902,7 +886,7 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun stageFull_withFlatNlp_copiesAllFilesFlatAndExcludesForbidden() {
+    fun stageFull_withFlatNlp_copiesFilesWithoutFabricatingIni() {
         val root = tempDir()
         File(root, "salma_22k_lf.bvcu").writeBytes(ByteArray(100))
         File(root, "salma_22k_lf.bvcu.nuul216vqfp").writeBytes(ByteArray(50))
@@ -924,7 +908,7 @@ class AcapelaVoiceDiagnosticsTest {
 
         assertTrue(File(staged, "salma_22k_lf.bvcu").exists())
         assertTrue(File(staged, "ar_sa_hd_salma_22k_lf.bvcu.inf").exists())
-        assertTrue(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
+        assertFalse(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
         assertTrue(File(staged, "0x00169729").exists())
         assertTrue(File(staged, "config.yaml").exists())
         assertTrue(File(staged, "userdicos/ara-sau.userdico").exists())
@@ -937,9 +921,7 @@ class AcapelaVoiceDiagnosticsTest {
         assertFalse(File(staged, "salma_22k_lf.bvcu.nuul216vqfp").exists())
         assertFalse(File(staged, "ar_sa_hd_salma_22k_lf.bvcu").exists())
 
-        val iniText = File(staged, "ar_sa_hd_salma_22k_lf.ini").readText()
-        assertTrue(iniText.contains("MODE=prep_hd"))
-        assertTrue(iniText.contains("#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]"))
+        assertFalse(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
     }
 
     @Test
@@ -1105,7 +1087,7 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun getOriginalRoot109Verification_reportsQuotedNamesAndDump() {
+    fun getOriginalRoot109Verification_reportsWithoutFixedSizeClaim() {
         val root = tempDir()
         try {
             val salma = File(root, "Salma")
@@ -1145,7 +1127,8 @@ class AcapelaVoiceDiagnosticsTest {
             )
             assertTrue(report.contains("المحتوى كـ Hex"))
             assertTrue(report.contains("MODE=prep_hd"))
-            assertTrue(report.contains("المتوقع 109 بايت"))
+            // الحجم الثابت ليس معيار صحة؛ لا يُقدَّم ادعاء بصحة 109 بايت.
+            assertFalse(report.contains("المتوقع 109 بايت"))
         } finally {
             root.deleteRecursively()
             File(context.cacheDir, "acapela_stage_orig_root_109")
@@ -1221,7 +1204,7 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun verifyRoot109IniBeforeInit_passesWith109BytesInRoot() {
+    fun verifyRoot109IniBeforeInit_neverTreatsFixedSizeAsValid() {
         val dir = tempDir()
         try {
             File(dir, "ar_sa_hd_salma_22k_lf.ini")
@@ -1231,8 +1214,9 @@ class AcapelaVoiceDiagnosticsTest {
             val check = AcapelaVoiceDiagnostics
                 .verifyRoot109IniBeforeInit(dir)
 
-            assertTrue(check.passed)
-            assertTrue(check.report.contains("النتيجة: نجاح"))
+            // 109 بايت ليس معيار صحة؛ لا يُفتح nInit بناءً عليه.
+            assertFalse(check.passed)
+            assertTrue(check.report.contains("النتيجة: فشل"))
             assertTrue(check.report.contains("bvcu.ini"))
             assertTrue(check.report.contains("MD5="))
         } finally {
@@ -1344,12 +1328,13 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun getNlpInitComparison_printsOnlyMeasuredCodesAndLabelsHypotheses() {
+    fun getNlpInitComparison_neverPresentsFixedCodesAsMeasured() {
         val report = AcapelaVoiceDiagnostics
             .getNlpInitAndLicenseArgumentComparison()
 
         assertTrue(report.contains("المرصود"))
-        assertTrue(report.contains(
+        assertTrue(report.contains("nlpInitError=لم تُرصد"))
+        assertFalse(report.contains(
             "nlpInitError=-34 | eb=-27 | nSpeak=-2 | PCM=0"
         ))
         assertTrue(report.contains("الفرضيات"))
@@ -1414,7 +1399,7 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun getMeasuredIniFilesReport_logsThreeIniFilesWithFullPaths() {
+    fun getMeasuredIniFilesReport_logsPathsWithoutFixedLiveCodes() {
         val root = tempDir()
         try {
             val original = File(root, "working.ini").apply {
@@ -1447,7 +1432,8 @@ class AcapelaVoiceDiagnosticsTest {
             assertTrue(report.contains(staged109.absolutePath))
             assertTrue(report.contains("تجهيز 121: 121 بايت"))
             assertTrue(report.contains(staged121.absolutePath))
-            assertTrue(report.contains(
+            assertTrue(report.contains("nlpInitError=لم تُرصد"))
+            assertFalse(report.contains(
                 "nlpInitError=-34 | eb=-27 | nSpeak=-2 | PCM=0"
             ))
         } finally {

@@ -593,10 +593,11 @@ object AcapelaVoiceFileComparison {
         val results = rows.toSortedMap().map { (name, list) ->
             VoiceResult(name, list.sortedBy { it.relativePath })
         }
+        val measuredNlp = codes.nlpInitError
         return Report(
             voices = results,
-            errorRemains = codes.nlpInitError != 0,
-            remainingCode = codes.nlpInitError
+            errorRemains = measuredNlp != null && measuredNlp != 0,
+            remainingCode = measuredNlp ?: 0
         )
     }
 }

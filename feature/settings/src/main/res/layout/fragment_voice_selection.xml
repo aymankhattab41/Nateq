@@ -1262,8 +1262,6 @@
             
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_changelog" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/changelog_title" android:importantForAccessibility="yes" app:icon="@drawable/ic_history" app:iconGravity="textStart" />
 
-            <com.google.android.material.button.MaterialButton android:id="@+id/btn_read_later" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/read_later_title" android:importantForAccessibility="yes" app:icon="@drawable/ic_history" app:iconGravity="textStart" />
-
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_a11y_guide" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_guide_title" android:importantForAccessibility="yes" app:icon="@drawable/ic_history" app:iconGravity="textStart" />
 
             

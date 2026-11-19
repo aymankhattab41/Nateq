@@ -124,7 +124,12 @@ class PronunciationDictionaryLanguageTest {
     fun `diacriticsOnlyKeyIsRejectedAndDoesNotCorruptTrie`() {
         assertFalse(dict.addEntry("ً", "تنوين"))
         assertFalse(dict.addEntry("ّ", "شدة"))
-        assertTrue(dict.importFromJson("""{"ً": "تنوين", "د.": "دكتور"}"""))
+        // مفتاح من حركات/تطويل فقط في الاستيراد يُرفض ذرياً ولا يُفسد القاموس
+        assertFalse(
+            dict.importFromJson("""{"ً": "تنوين", "د.": "دكتور"}""")
+        )
+        assertEquals(emptyMap<String, String>(), dict.getAllEntries())
+        assertTrue(dict.importFromJson("""{"د.": "دكتور"}"""))
         assertEquals("دكتور محمد", dict.apply("د. محمد"))
         assertEquals("سلام عليكم", dict.apply("سلام عليكم"))
     }

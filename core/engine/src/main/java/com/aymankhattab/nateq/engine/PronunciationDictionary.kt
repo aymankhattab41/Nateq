@@ -12,10 +12,11 @@ import com.aymankhattab.nateq.util.optObject
 import java.io.File
 import java.io.FileOutputStream
 import java.lang.reflect.Type
+import java.text.BreakIterator
+import java.text.Normalizer
 
 /**
- * مخرج مطابقة واحد في آلة Aho-Corasick الموحدة للقاموس
- * (الأوامر 1 و2 و3).
+ * مخرج مطابقة واحد في آلة Aho-Corasick الموحدة للقاموس.
  */
 data class DictOutput(
     val normalizedKey: String,
@@ -28,98 +29,184 @@ data class DictOutput(
 
 /**
  * قاموس النطق الشخصي الموحد — يطبق مرة واحدة على النص الخام قبل أي معالجة.
- * يدعم النطاق العام والطبقات اللغوية، والمطابقة غير الحساسة للحالة
- * اللاتينية، والتخزين بملف JSON موحد بين العمليتين بلا تشفير ولا انقسام.
+ * المطابقة حساسة للتشكيل افتراضياً (مع تكافؤ Unicode القانوني وتجاهل
+ * التطويل التجميلي فقط)، وتُطبَّق في جميع النطاقات وأوضاع الحدود.
  */
-open class PronunciationDictionary(
-    private val context: Context
-) {
+open class PronunciationDictionary(private val context: Context) {
 
-    constructor(context: Context, throttleMs: Long) : this(context)
-
-    val storageMode: String = "JSON_V2"
+    constructor(
+        context: Context,
+        @Suppress("UNUSED_PARAMETER") throttleMs: Long
+    ) : this(context)
 
     companion object {
-        const val ACTION_DICTIONARY_CHANGED =
-            "com.aymankhattab.nateq.action.DICTIONARY_CHANGED"
-
-        const val MAX_IMPORT_BYTES = 8 * 1024 * 1024
-        const val MAX_IMPORT_ENTRIES = 200_000
-        const val MAX_KEY_LENGTH = 8_000
-        const val MAX_VALUE_LENGTH = 8_000
-
-        private const val FILE_NAME_V2 = "dictionary_v2.json"
-        private const val FILE_NAME_TMP = "dictionary_v2.json.tmp"
-        private const val FILE_NAME_BACKUP = "dictionary_legacy_backup.json"
         private const val PREFS_NAME = "nateq_pronunciation_dict"
-        private const val KEY_DEFAULTS_MIGRATED = "defaults_migrated_to_empty"
+        private const val KEY_DICT = "dictionary"
+        private const val KEY_MODIFIED = "modified_at"
         private const val KEY_SCOPES = "dictionary_scopes"
         private const val KEY_MATCH_MODES = "dictionary_match_modes"
-        private const val KEY_VALUE_LANGS = "dictionary_value_lang"
-        private const val LOG_TAG = "NateqDict"
+        private const val KEY_VALUE_LANGS = "dictionary_value_langs"
+
+        private const val LOG_TAG = "PronunciationDict"
+        const val ACTION_DICTIONARY_CHANGED =
+            "com.aymankhattab.nateq.ACTION_DICTIONARY_CHANGED"
+        private const val DICT_FILE_NAME = "dictionary_v2.json"
+        private const val DICT_TMP_FILE_NAME = "dictionary_v2.json.tmp"
+        private const val LEGACY_BACKUP_FILE_NAME =
+            "dictionary_legacy_backup.json"
+
+        const val MAX_KEY_LENGTH = 100
+        const val MAX_VALUE_LENGTH = 500
+        const val MAX_IMPORT_BYTES = 512 * 1024
+        const val MAX_IMPORT_ENTRIES = 10000
+        const val MIN_STANDALONE_LENGTH = 0
+        const val MAX_STANDALONE_LENGTH = 15
+        const val DEFAULT_STANDALONE_MAX_LENGTH = 1
 
         @Volatile
-        private var sharedInstance: PronunciationDictionary? = null
+        private var instance: PronunciationDictionary? = null
 
         fun shared(context: Context): PronunciationDictionary =
-            sharedInstance ?: synchronized(this) {
-                sharedInstance ?: PronunciationDictionary(
-                    context.applicationContext
-                ).also { sharedInstance = it }
+            instance ?: synchronized(this) {
+                instance ?: PronunciationDictionary(context.applicationContext)
+                    .also { instance = it }
             }
 
         fun resetSharedForTests() {
-            synchronized(this) { sharedInstance = null }
+            synchronized(this) { instance = null }
         }
 
-        fun normalizeKey(
-            rawKey: String,
-            caseInsensitive: Boolean = false
-        ): String {
-            val sb = java.lang.StringBuilder(rawKey.length)
-            var i = 0
-            while (i < rawKey.length) {
-                val cp = rawKey.codePointAt(i)
-                val w = Character.charCount(cp)
-                i += w
-                if (isTashkeelOrTatweel(cp)) continue
-                val normCp = normalizeIndicDigit(cp)
-                val finalCp = if (caseInsensitive &&
-                    Character.isUpperCase(normCp)
-                ) {
-                    Character.toLowerCase(normCp)
-                } else normCp
-                sb.appendCodePoint(finalCp)
+        /** تطويل تجميلي فقط — يُتجاهل في المطابقة ولا يُعدّ تشكيلًا. */
+        internal fun isTatweel(cp: Int): Boolean = cp == 0x0640
+
+        /** هل المقطع تحويليّ/تركيبي (لا يُعدّ محتوىً أساسياً للمفتاح)؟ */
+        internal fun isCombiningMark(cp: Int): Boolean {
+            val type = Character.getType(cp)
+            return type == Character.NON_SPACING_MARK.toInt() ||
+                type == Character.ENCLOSING_MARK.toInt() ||
+                type == Character.COMBINING_SPACING_MARK.toInt()
+        }
+
+        /**
+         * تطبيع موحّد للمطابقة: يزيل التطويل، يطبّق تكافؤ Unicode القانوني
+         * (NFC) وترتيب العلامات المكافئ، ويحفظ التشكيل والعلامات ذات المعنى،
+         * مع توحيد الأرقام الهندية/العربية وحالة الأحرف اللاتينية كما هو.
+         */
+        internal fun normalizeForMatch(
+            text: String,
+            caseInsensitive: Boolean = true
+        ): NormalizedText {
+            if (text.isEmpty()) {
+                return NormalizedText(
+                    "", IntArray(0), BooleanArray(1) { true }
+                )
             }
-            return sb.toString().trim()
+            val bi = BreakIterator.getCharacterInstance()
+            bi.setText(text)
+            val normSb = StringBuilder(text.length)
+            val normToOrig = ArrayList<Int>(text.length)
+            val boundaryList = ArrayList<Boolean>(text.length + 1)
+
+            var start = bi.first()
+            var end = bi.next()
+            while (end != BreakIterator.DONE) {
+                val cluster = text.substring(start, end)
+                // إزالة التطويل من داخل العنقود
+                val noTatweel = if (cluster.indexOf('\u0640') >= 0) {
+                    buildString(cluster.length) {
+                        var i = 0
+                        while (i < cluster.length) {
+                            val cp = cluster.codePointAt(i)
+                            val w = Character.charCount(cp)
+                            if (!isTatweel(cp)) appendCodePoint(cp)
+                            i += w
+                        }
+                    }
+                } else cluster
+
+                if (noTatweel.isNotEmpty()) {
+                    val nfc = Normalizer.normalize(
+                        noTatweel, Normalizer.Form.NFC
+                    )
+                    val folded = foldCaseAndDigits(nfc, caseInsensitive)
+                    if (folded.isNotEmpty()) {
+                        while (boundaryList.size < normSb.length) {
+                            boundaryList.add(false)
+                        }
+                        boundaryList.add(true) // بداية هذا العنقود
+                        val baseNormIdx = normSb.length
+                        normSb.append(folded)
+                        val added = normSb.length - baseNormIdx
+                        while (boundaryList.size < normSb.length) {
+                            boundaryList.add(false)
+                        }
+                        repeat(added) { normToOrig.add(start) }
+                    }
+                }
+                start = end
+                end = bi.next()
+            }
+            while (boundaryList.size <= normSb.length) {
+                boundaryList.add(boundaryList.size == normSb.length)
+            }
+            if (boundaryList.isNotEmpty()) {
+                boundaryList[boundaryList.size - 1] = true
+            }
+            val boundaries = BooleanArray(boundaryList.size)
+            for (i in boundaryList.indices) boundaries[i] = boundaryList[i]
+            return NormalizedText(
+                normSb.toString(), normToOrig.toIntArray(), boundaries
+            )
         }
 
-        private fun isTashkeelOrTatweel(cp: Int): Boolean =
-            (cp in 0x064B..0x065F) || cp == 0x0670 || cp == 0x0640
+        private fun foldCaseAndDigits(
+            text: String,
+            caseInsensitive: Boolean
+        ): String {
+            val sb = StringBuilder(text.length)
+            var i = 0
+            while (i < text.length) {
+                val cp = text.codePointAt(i)
+                i += Character.charCount(cp)
+                val digit = normalizeIndicDigit(cp)
+                val out = if (caseInsensitive) {
+                    Character.toLowerCase(digit)
+                } else digit
+                sb.appendCodePoint(out)
+            }
+            return sb.toString()
+        }
+
+        /**
+         * تطبيع مفتاح للمطابقة/الهوية: مسار موحّد (حساس للتشكيل، NFC، بلا تطويل).
+         */
+        fun normalizeKey(
+            key: String,
+            caseInsensitive: Boolean = true
+        ): String = normalizeForMatch(key, caseInsensitive).text
+
+        /**
+         * هل للمفتاح (بعد إزالة التطويل فقط) محتوى أساسي غير حركات/تركيب؟
+         * يُستخدم لرفض المفاتيح المكوّنة من حركات/تطويل فقط.
+         */
+        internal fun hasBaseContent(key: String): Boolean {
+            var i = 0
+            while (i < key.length) {
+                val cp = key.codePointAt(i)
+                i += Character.charCount(cp)
+                if (isTatweel(cp)) continue
+                if (isCombiningMark(cp)) continue
+                return true
+            }
+            return false
+        }
 
         private fun normalizeIndicDigit(cp: Int): Int = when (cp) {
             in 0x0660..0x0669 -> '0'.code + (cp - 0x0660)
             in 0x06F0..0x06F9 -> '0'.code + (cp - 0x06F0)
             else -> cp
         }
-
-        /**
-         * إزالة علامات قفل اللغة لأي نص لا يمر بالمقسم.
-         */
-        fun stripLanguageLocks(text: String): String =
-            LanguageSegmenter.stripLockMarkers(text)
     }
-
-    private val segmenter = LanguageSegmenter()
-    private val dictFile: File = File(context.filesDir, FILE_NAME_V2)
-    private val tmpFile: File = File(context.filesDir, FILE_NAME_TMP)
-    private val backupFile: File = File(context.filesDir, FILE_NAME_BACKUP)
-
-    @Volatile
-    private var entries: Map<String, String> = emptyMap()
-
-    @Volatile
-    private var langEntries: Map<String, Map<String, String>> = emptyMap()
 
     @Volatile
     private var matchModes: Map<String, String> = emptyMap()
@@ -127,27 +214,26 @@ open class PronunciationDictionary(
     @Volatile
     private var valueLangs: Map<String, String> = emptyMap()
 
+    open fun isPersistent(): Boolean = true
+
+    val storageMode: String = "JSON_V2"
+
+    private val dictFile = File(context.filesDir, DICT_FILE_NAME)
+    private val tmpFile = File(context.filesDir, DICT_TMP_FILE_NAME)
+    private val legacyBackupFile =
+        File(context.filesDir, LEGACY_BACKUP_FILE_NAME)
+
     @Volatile
+    private var lastFileModified = 0L
+
+    @Volatile
+    private var lastFileLength = 0L
+
     private var version = 0L
-
-    @Volatile
-    private var lastFileModified = -1L
-
-    @Volatile
-    private var lastFileLength = -1L
-
-    /** حقل لاختبار حد الحرف المنفرد برمجياً في اختبارات الوحدة. */
-    var testStandaloneMaxLength: Int? = null
-
-    /** حقل لاختبار حساسية الحالة برمجياً في اختبارات الوحدة. */
-    var testCaseInsensitive: Boolean? = null
-
-    fun setStandaloneMaxLength(len: Int) {
-        testStandaloneMaxLength = len
-    }
 
     private data class MachineCache(
         val version: Long,
+        val standaloneMaxLength: Int,
         val caseInsensitive: Boolean,
         val machine: UnifiedAhoCorasick
     )
@@ -155,105 +241,75 @@ open class PronunciationDictionary(
     @Volatile
     private var cache: MachineCache? = null
 
-    private val typeToken: Type = NateqJson.mapStringOf(String::class.java)
+    @Volatile
+    var standaloneMaxLength: Int = DEFAULT_STANDALONE_MAX_LENGTH
+        set(value) {
+            field = value.coerceIn(
+                MIN_STANDALONE_LENGTH, MAX_STANDALONE_LENGTH
+            )
+        }
+
+    @Volatile
+    var testCaseInsensitive: Boolean = true
+
+    private var _entries: Map<String, String> = emptyMap()
+    val entries: Map<String, String>
+        get() = _entries
+
+    @Volatile
+    var langEntries: Map<String, Map<String, String>> = emptyMap()
+        private set
+
+    private fun swapEntries(next: Map<String, String>) { _entries = next }
+
+    private fun swapLangEntries(
+        lang: String,
+        next: Map<String, String>
+    ) {
+        val base = LinkedHashMap(langEntries)
+        if (next.isEmpty()) base.remove(lang) else base[lang] = next
+        langEntries = base
+    }
+
+    private val typeToken: Type = object :
+        com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
 
     init {
-        loadInitialData()
-    }
-
-    private fun isCaseInsensitive(): Boolean {
-        testCaseInsensitive?.let { return it }
-        return runCatching {
-            val cls = Class.forName(
-                "com.aymankhattab.nateq.core.data.SettingsRepository"
-            )
-            val createM = cls.getMethod("create", Context::class.java)
-            val repo = createM.invoke(null, context)
-            val getM = cls.getMethod("isDictionaryCaseInsensitive")
-            getM.invoke(repo) as Boolean
-        }.getOrElse {
-            runCatching {
-                context.getSharedPreferences(
-                    "nateq_settings", Context.MODE_PRIVATE
-                ).getBoolean("dictionary_case_insensitive", true)
-            }.getOrDefault(true)
+        if (!loadFromFile()) {
+            val prefs = openPrefs()
+            migrateFromPrefs(prefs)
         }
     }
 
-    fun getStandaloneMaxLength(): Int {
-        testStandaloneMaxLength?.let { return it }
-        return runCatching {
-            val cls = Class.forName(
-                "com.aymankhattab.nateq.core.data.SettingsRepository"
-            )
-            val createM = cls.getMethod("create", Context::class.java)
-            val repo = createM.invoke(null, context)
-            val getM = cls.getMethod("getDictionaryStandaloneMaxLength")
-            getM.invoke(repo) as Int
-        }.getOrElse {
-            runCatching {
-                context.getSharedPreferences(
-                    "nateq_settings", Context.MODE_PRIVATE
-                ).getInt("dictionary_standalone_max_length", 1)
-            }.getOrDefault(1)
-        }
+    open fun reloadIfChanged(): Boolean {
+        if (!dictFile.exists()) return false
+        val lm = dictFile.lastModified()
+        val len = dictFile.length()
+        if (lm == lastFileModified && len == lastFileLength) return false
+        return loadFromFile()
     }
 
-    private fun loadInitialData() {
-        if (dictFile.exists()) {
-            loadFromFile()
-            removeLegacyDefaultsOnce()
-        } else {
-            migrateFromLegacyStorage()
-            removeLegacyDefaultsOnce()
-        }
-    }
-
-    private fun migrateFromLegacyStorage() {
-        val encData = runCatching {
-            openEncryptedPrefs()?.let { loadFromPrefs(it) }
-        }.getOrNull()
-        val plainData = runCatching {
-            val plain = context.getSharedPreferences(
-                PREFS_NAME, Context.MODE_PRIVATE
-            )
-            loadFromPrefs(plain)
-        }.getOrNull()
-
-        val encCount = (encData?.global?.size ?: 0) +
-            (encData?.scopes?.values?.sumOf { it.size } ?: 0)
-        val plainCount = (plainData?.global?.size ?: 0) +
-            (plainData?.scopes?.values?.sumOf { it.size } ?: 0)
-
-        val best = if (encCount >= plainCount && encData != null) {
-            encData
-        } else if (plainData != null) {
-            plainData
-        } else {
-            LoadedData(emptyMap(), emptyMap(), emptyMap(), emptyMap())
-        }
-
+    fun reload() {
         synchronized(this) {
-            entries = best.global
-            langEntries = best.scopes
-            matchModes = best.modes
-            valueLangs = best.vLangs
-            version = 1L
-            cache = null
-        }
-
-        if (best.global.isNotEmpty() || best.scopes.isNotEmpty()) {
-            runCatching {
-                val json = serializeToJson(version, entries, langEntries,
-                    matchModes, valueLangs)
-                backupFile.writeText(json, Charsets.UTF_8)
+            if (!loadFromFile()) {
+                lastFileModified = -1L
+                lastFileLength = -1L
+                cache = null
+                version++
             }
         }
-        save()
     }
 
-    private fun openEncryptedPrefs(): android.content.SharedPreferences? {
-        return runCatching {
+    open fun invalidate() {
+        synchronized(this) {
+            lastFileModified = -1L
+            lastFileLength = -1L
+            cache = null
+        }
+    }
+
+    private fun openPrefs(): android.content.SharedPreferences {
+        return try {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
@@ -264,218 +320,140 @@ open class PronunciationDictionary(
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
-        }.getOrNull()
+        } catch (e: Exception) {
+            android.util.Log.w(
+                LOG_TAG, "فشل التخزين المشفّر، استخدام العادي", e
+            )
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        }
     }
 
-    private fun normalizeLangTag(raw: String?): String? {
-        val trimmed = raw?.trim().orEmpty()
-        return trimmed.ifEmpty { null }
-    }
+    @Synchronized
+    private fun migrateFromPrefs(
+        prefs: android.content.SharedPreferences
+    ) {
+        if (dictFile.exists()) return
+        val json = prefs.getString(KEY_DICT, null)
+        if (json.isNullOrBlank() || json == "{}") return
 
-    private fun removeLegacyDefaultsOnce() {
-        var changed = false
-        val updated = LinkedHashMap(entries)
-        for ((key, badValue) in mapOf(
-            "ريال" to "ريال سعودي", "جم" to "الجمعة"
-        )) {
-            if (updated[key] == badValue) {
-                updated.remove(key)
-                changed = true
+        try {
+            if (!legacyBackupFile.exists()) {
+                legacyBackupFile.writeText(json, Charsets.UTF_8)
             }
-        }
-        if (changed) {
-            synchronized(this) {
-                entries = updated
-                cache = null
-                version++
+
+            val loaded = loadFromPrefs(prefs)
+            val ver = prefs.getLong(KEY_MODIFIED, 0L).let {
+                if (it == 0L) 1L else it
             }
-            save()
-        }
-    }
+            version = ver
+            swapEntries(loaded.global)
+            langEntries = loaded.scopes
+            matchModes = loaded.modes
+            valueLangs = loaded.vLangs
 
-    open fun isPersistent(): Boolean = true
-
-    fun reload() {
-        synchronized(this) {
-            loadFromFile()
-            cache = null
-            version++
-        }
-    }
-
-    fun clearAll(): Boolean {
-        synchronized(this) {
-            entries = emptyMap()
-            langEntries = emptyMap()
-            matchModes = emptyMap()
-            valueLangs = emptyMap()
-            cache = null
-            version++
-        }
-        return save()
-    }
-
-    open fun invalidate() {
-        lastFileModified = -1L
-        lastFileLength = -1L
-    }
-
-    open fun reloadIfChanged(): Boolean {
-        if (!dictFile.exists()) return false
-        val mod = dictFile.lastModified()
-        val len = dictFile.length()
-        if (mod == lastFileModified && len == lastFileLength) {
-            return false
-        }
-        synchronized(this) {
-            if (mod == lastFileModified && len == lastFileLength) {
-                return false
+            val jsonStr = serializeToJson(
+                ver, loaded.global, loaded.scopes,
+                loaded.modes, loaded.vLangs
+            )
+            FileOutputStream(tmpFile).use { fos ->
+                fos.write(jsonStr.toByteArray(Charsets.UTF_8))
+                fos.flush()
+                fos.fd.sync()
             }
-            val loaded = loadFromFile()
-            lastFileModified = mod
-            lastFileLength = len
-            cache = null
-            return loaded
+            if (tmpFile.renameTo(dictFile)) {
+                lastFileModified = dictFile.lastModified()
+                lastFileLength = dictFile.length()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(LOG_TAG, "فشل ترحيل قاموس النطق", e)
         }
     }
 
-    private fun swapEntries(updated: Map<String, String>) {
-        entries = updated
-        cache = null
-        version++
-    }
+    private val caseInsensitive: Boolean
+        get() = testCaseInsensitive
 
-    private fun swapLangEntries(lang: String, updated: Map<String, String>) {
-        val copy = LinkedHashMap(langEntries)
-        if (updated.isEmpty()) copy.remove(lang) else copy[lang] = updated
-        langEntries = copy
-        cache = null
-        version++
-    }
+    open fun apply(text: String): String = apply(text, null, null)
 
-    /**
-     * تطبيق القاموس على النص الخام باستخدام آلة موحدة من إدخالات العام
-     * وكل الطبقات، مع تحديد لغة كل منطقة عبر [segmenter] المشترك.
-     */
-    open fun apply(text: String, languageTag: String? = null): String {
-        return applyInternal(text, languageTag, null)
-    }
+    open fun apply(text: String, languageTag: String? = null): String =
+        apply(text, languageTag, null)
 
     open fun apply(
         text: String,
         languageTag: String?,
         precomputedSegments: List<SegmentWithOffset>?
     ): String {
-        if (precomputedSegments == null) {
-            return apply(text, languageTag)
-        }
-        return applyInternal(text, languageTag, precomputedSegments)
-    }
-
-    private fun applyInternal(
-        text: String,
-        languageTag: String?,
-        precomputedSegments: List<SegmentWithOffset>?
-    ): String {
         if (text.isEmpty()) return text
-        reloadIfChanged()
+        synchronized(this) { reloadIfChanged() }
 
-        val caseInsensitive = isCaseInsensitive()
-        var held = cache
-        if (held == null || held.version != version ||
-            held.caseInsensitive != caseInsensitive
-        ) {
-            held = synchronized(this) {
-                val currentVersion = version
-                val cached = cache
-                if (cached != null && cached.version == currentVersion &&
-                    cached.caseInsensitive == caseInsensitive
-                ) {
-                    cached
-                } else {
-                    val outputs = buildAllOutputs(caseInsensitive)
-                    MachineCache(
-                        currentVersion,
-                        caseInsensitive,
-                        UnifiedAhoCorasick(outputs, caseInsensitive)
-                    ).also { cache = it }
-                }
+        val held = synchronized(this) {
+            val cached = cache
+            if (cached != null && cached.version == version &&
+                cached.standaloneMaxLength == standaloneMaxLength &&
+                cached.caseInsensitive == caseInsensitive
+            ) {
+                cached
+            } else {
+                val outputs = buildAllOutputs(caseInsensitive)
+                val machine = UnifiedAhoCorasick(outputs, caseInsensitive)
+                MachineCache(
+                    version, standaloneMaxLength, caseInsensitive, machine
+                ).also { cache = it }
             }
         }
 
-        val hasLangEntries = synchronized(this) { langEntries.isNotEmpty() }
-        val segments = if (precomputedSegments != null) {
-            precomputedSegments
-        } else if (hasLangEntries) {
-            segmenter.segmentWithOffsets(
-                text,
-                fallbackLanguage = languageTag ?: LanguageCode.AR.tag
-            )
-        } else {
-            listOf(
+        val segments = when {
+            precomputedSegments != null -> precomputedSegments
+            !languageTag.isNullOrBlank() -> listOf(
                 SegmentWithOffset(
                     text = text,
-                    languageTag = languageTag ?: LanguageCode.AR.tag,
+                    languageTag = languageTag.trim(),
                     role = SpeechRole.TEXT,
                     start = 0,
                     end = text.length
                 )
             )
+            else -> LanguageSegmenter().segmentWithOffsets(text)
         }
-
-        return held.machine.apply(text, segments, getStandaloneMaxLength())
+        return held.machine.apply(text, segments, standaloneMaxLength)
     }
 
-    /**
-     * تتبع مطابقات القاموس على النص وتفصيل أسباب القبول والرفض
-     * (الجولة 50 - الأمر 4).
-     */
     fun traceMatches(
         text: String,
         languageTag: String? = null
     ): List<DictTraceEntry> {
         if (text.isEmpty()) return emptyList()
-        reloadIfChanged()
-        val caseInsensitive = isCaseInsensitive()
-        var held = cache
-        if (held == null || held.version != version ||
-            held.caseInsensitive != caseInsensitive
-        ) {
-            held = synchronized(this) {
-                val currentVersion = version
-                val cached = cache
-                if (cached != null && cached.version == currentVersion &&
-                    cached.caseInsensitive == caseInsensitive
-                ) {
-                    cached
-                } else {
-                    val outputs = buildAllOutputs(caseInsensitive)
-                    MachineCache(
-                        currentVersion,
-                        caseInsensitive,
-                        UnifiedAhoCorasick(outputs, caseInsensitive)
-                    ).also { cache = it }
-                }
+        synchronized(this) { reloadIfChanged() }
+
+        val held = synchronized(this) {
+            val cached = cache
+            if (cached != null && cached.version == version &&
+                cached.standaloneMaxLength == standaloneMaxLength &&
+                cached.caseInsensitive == caseInsensitive
+            ) {
+                cached
+            } else {
+                val outputs = buildAllOutputs(caseInsensitive)
+                val machine = UnifiedAhoCorasick(outputs, caseInsensitive)
+                MachineCache(
+                    version, standaloneMaxLength, caseInsensitive, machine
+                ).also { cache = it }
             }
         }
-        val hasLangEntries = synchronized(this) { langEntries.isNotEmpty() }
-        val segments = if (hasLangEntries) {
-            segmenter.segmentWithOffsets(
-                text,
-                fallbackLanguage = languageTag ?: LanguageCode.AR.tag
-            )
-        } else {
+
+        val segments = if (!languageTag.isNullOrBlank()) {
             listOf(
                 SegmentWithOffset(
                     text = text,
-                    languageTag = languageTag ?: LanguageCode.AR.tag,
+                    languageTag = languageTag.trim(),
                     role = SpeechRole.TEXT,
                     start = 0,
                     end = text.length
                 )
             )
+        } else {
+            LanguageSegmenter().segmentWithOffsets(text)
         }
-        return held.machine.trace(text, segments, getStandaloneMaxLength())
+        return held.machine.trace(text, segments, standaloneMaxLength)
     }
 
     private fun buildAllOutputs(caseInsensitive: Boolean): List<DictOutput> {
@@ -485,88 +463,110 @@ open class PronunciationDictionary(
             if (normKey.isEmpty()) continue
             val mode = matchModes["|$key"] ?: "AUTO"
             val vLang = valueLangs["|$key"]
-            list.add(
-                DictOutput(
-                    normalizedKey = normKey,
-                    originalKey = key,
-                    value = value,
-                    scope = null,
-                    matchMode = mode,
-                    valueLang = vLang
-                )
-            )
+            list.add(DictOutput(normKey, key, value, null, mode, vLang))
         }
-        for ((scopeTag, scopeMap) in langEntries) {
-            for ((key, value) in scopeMap) {
+        for ((scopeTag, map) in langEntries) {
+            for ((key, value) in map) {
                 val normKey = normalizeKey(key, caseInsensitive)
                 if (normKey.isEmpty()) continue
                 val mode = matchModes["$scopeTag|$key"] ?: "AUTO"
                 val vLang = valueLangs["$scopeTag|$key"]
                 list.add(
-                    DictOutput(
-                        normalizedKey = normKey,
-                        originalKey = key,
-                        value = value,
-                        scope = scopeTag,
-                        matchMode = mode,
-                        valueLang = vLang
-                    )
+                    DictOutput(normKey, key, value, scopeTag, mode, vLang)
                 )
             }
         }
         return list
     }
 
-    fun addEntry(
-        abbreviation: String,
-        pronunciation: String,
-        languageTag: String? = null
-    ): Boolean = addEntry(
-        abbreviation, pronunciation, languageTag, null, null
-    )
+
+
+    private fun normalizeLangTag(languageTag: String?): String? =
+        languageTag?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun modeKeyOf(languageTag: String?, key: String): String =
+        "${normalizeLangTag(languageTag).orEmpty()}|${key.trim()}"
+
+    /** إيجاد مفتاح مخزّن مكافئ قانونياً (هوية مطابقة موحّدة) في نفس النطاق. */
+    private fun findCanonicallyEquivalentStoredKey(
+        scopeTag: String?,
+        normalized: String
+    ): String? {
+        val map = if (scopeTag == null) entries
+        else (langEntries[scopeTag] ?: emptyMap())
+        for (existing in map.keys) {
+            if (normalizeKey(existing, true) == normalized) return existing
+        }
+        return null
+    }
+
+    fun addEntry(abbreviation: String, pronunciation: String): Boolean =
+        addEntry(abbreviation, pronunciation, null, null, null)
 
     fun addEntry(
         abbreviation: String,
         pronunciation: String,
-        languageTag: String? = null,
+        languageTag: String?
+    ): Boolean = addEntry(abbreviation, pronunciation, languageTag, null, null)
+
+    fun addEntry(
+        abbreviation: String,
+        pronunciation: String,
+        languageTag: String?,
         matchMode: String? = null,
         valueLang: String? = null
     ): Boolean {
         if (abbreviation.isBlank() || pronunciation.isBlank()) return false
         val key = abbreviation.trim()
-        val strippedKey = normalizeKey(key, false)
-        if (strippedKey.isEmpty()) return false
+        if (!hasBaseContent(key)) return false
+        val normKey = normalizeKey(key, true)
+        if (normKey.isEmpty()) return false
         val value = pronunciation.trim()
         if (key.length > MAX_KEY_LENGTH || value.length > MAX_VALUE_LENGTH) {
             return false
         }
         val lang = normalizeLangTag(languageTag)
-        val modeKey = "${lang.orEmpty()}|$key"
 
         synchronized(this) {
+            // منع الالتباس: مفتاح مكافئ قانونياً في نفس النطاق = نفس الهوية
+            val equivalent = findCanonicallyEquivalentStoredKey(lang, normKey)
+
             if (lang == null) {
                 val updated = LinkedHashMap(entries)
+                if (equivalent != null && equivalent != key) {
+                    updated.remove(equivalent)
+                    migrateMetaKey(
+                        modeKeyOf(null, equivalent), modeKeyOf(null, key)
+                    )
+                }
                 updated[key] = value
                 swapEntries(updated)
             } else {
                 val overlay = LinkedHashMap(langEntries[lang] ?: emptyMap())
+                if (equivalent != null && equivalent != key) {
+                    overlay.remove(equivalent)
+                    migrateMetaKey(
+                        modeKeyOf(lang, equivalent), modeKeyOf(lang, key)
+                    )
+                }
                 overlay[key] = value
                 swapLangEntries(lang, overlay)
             }
 
+            val finalModeKey = modeKeyOf(lang, key)
             val modes = LinkedHashMap(matchModes)
             if (!matchMode.isNullOrBlank() && matchMode != "AUTO") {
-                modes[modeKey] = matchMode.uppercase()
+                modes[finalModeKey] = matchMode.uppercase()
             } else {
-                modes.remove(modeKey)
+                modes.remove(finalModeKey)
             }
             matchModes = modes
 
             val vLangs = LinkedHashMap(valueLangs)
             if (!valueLang.isNullOrBlank()) {
-                vLangs[modeKey] = valueLang.trim()
+                vLangs[finalModeKey] = valueLang.trim()
             } else {
-                vLangs.remove(modeKey)
+                vLangs.remove(finalModeKey)
             }
             valueLangs = vLangs
 
@@ -576,33 +576,37 @@ open class PronunciationDictionary(
         return save()
     }
 
+    private fun migrateMetaKey(oldKey: String, newKey: String) {
+        if (oldKey == newKey) return
+        val modes = LinkedHashMap(matchModes)
+        val m = modes.remove(oldKey)
+        if (m != null) modes[newKey] = m
+        matchModes = modes
+        val vLangs = LinkedHashMap(valueLangs)
+        val v = vLangs.remove(oldKey)
+        if (v != null) vLangs[newKey] = v
+        valueLangs = vLangs
+    }
+
     fun removeEntry(
         abbreviation: String,
         languageTag: String? = null
     ): Boolean {
         val lang = normalizeLangTag(languageTag)
-        val key = abbreviation.trim()
-        val modeKey = "${lang.orEmpty()}|$key"
+        val trimmed = abbreviation.trim()
         var changed = false
         synchronized(this) {
             if (lang == null) {
                 val updated = LinkedHashMap(entries)
-                changed = updated.remove(key) != null
+                changed = removeByIdentity(updated, trimmed)
                 if (changed) swapEntries(updated)
             } else {
                 val overlay = LinkedHashMap(langEntries[lang] ?: emptyMap())
-                changed = overlay.remove(key) != null
+                changed = removeByIdentity(overlay, trimmed)
                 if (changed) swapLangEntries(lang, overlay)
             }
             if (changed) {
-                val modes = LinkedHashMap(matchModes)
-                modes.remove(modeKey)
-                matchModes = modes
-
-                val vLangs = LinkedHashMap(valueLangs)
-                vLangs.remove(modeKey)
-                valueLangs = vLangs
-
+                cleanupMetaForRemoved(lang, trimmed)
                 cache = null
                 version++
             }
@@ -610,13 +614,50 @@ open class PronunciationDictionary(
         return if (changed) save() else false
     }
 
+    private fun removeByIdentity(
+        map: MutableMap<String, String>,
+        key: String
+    ): Boolean {
+        if (map.remove(key) != null) return true
+        val norm = normalizeKey(key, true)
+        val it = map.keys.iterator()
+        while (it.hasNext()) {
+            val k = it.next()
+            if (normalizeKey(k, true) == norm) {
+                it.remove()
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun cleanupMetaForRemoved(lang: String?, removedKey: String) {
+        val norm = runCatching { normalizeKey(removedKey, true) }.getOrNull()
+        val modes = LinkedHashMap(matchModes)
+        val vLangs = LinkedHashMap(valueLangs)
+        val prefix = "${lang.orEmpty()}|"
+        fun shouldDrop(metaKey: String): Boolean {
+            if (!metaKey.startsWith(prefix)) return false
+            val k = metaKey.removePrefix(prefix)
+            if (k == removedKey) return true
+            return norm != null && normalizeKey(k, true) == norm
+        }
+        modes.keys.toList().forEach { if (shouldDrop(it)) modes.remove(it) }
+        vLangs.keys.toList().forEach { if (shouldDrop(it)) vLangs.remove(it) }
+        matchModes = modes
+        valueLangs = vLangs
+    }
+
     fun getMatchMode(
         abbreviation: String,
         languageTag: String? = null
     ): String {
         val lang = normalizeLangTag(languageTag)
-        val modeKey = "${lang.orEmpty()}|${abbreviation.trim()}"
-        return matchModes[modeKey] ?: "AUTO"
+        val modeKey = modeKeyOf(lang, abbreviation)
+        matchModes[modeKey]?.let { return it }
+        val norm = normalizeKey(abbreviation.trim(), true)
+        val eq = findCanonicallyEquivalentStoredKey(lang, norm) ?: return "AUTO"
+        return matchModes[modeKeyOf(lang, eq)] ?: "AUTO"
     }
 
     fun getValueLang(
@@ -624,8 +665,11 @@ open class PronunciationDictionary(
         languageTag: String? = null
     ): String? {
         val lang = normalizeLangTag(languageTag)
-        val modeKey = "${lang.orEmpty()}|${abbreviation.trim()}"
-        return valueLangs[modeKey]
+        val modeKey = modeKeyOf(lang, abbreviation)
+        valueLangs[modeKey]?.let { return it }
+        val norm = normalizeKey(abbreviation.trim(), true)
+        val eq = findCanonicallyEquivalentStoredKey(lang, norm) ?: return null
+        return valueLangs[modeKeyOf(lang, eq)]
     }
 
     fun clear() {
@@ -640,6 +684,8 @@ open class PronunciationDictionary(
         save()
     }
 
+    fun clearAll() = clear()
+
     fun getAllEntries(languageTag: String? = null): Map<String, String> {
         val lang = normalizeLangTag(languageTag)
         return if (lang == null) entries.toMap()
@@ -648,11 +694,28 @@ open class PronunciationDictionary(
 
     fun findEntryScope(key: String): String? {
         val trimmed = key.trim()
-        if (entries.containsKey(trimmed)) return null
+        val norm = normalizeKey(trimmed, true)
+        if (entries.keys.any {
+                it == trimmed || normalizeKey(it, true) == norm
+            }) {
+            return null
+        }
         for ((tag, map) in langEntries) {
-            if (map.containsKey(trimmed)) return tag
+            if (map.keys.any {
+                    it == trimmed || normalizeKey(it, true) == norm
+                }) {
+                return tag
+            }
         }
         return null
+    }
+
+    fun hasEntry(abbreviation: String, languageTag: String? = null): Boolean {
+        val lang = normalizeLangTag(languageTag)
+        val norm = normalizeKey(abbreviation.trim(), true)
+        val map = if (lang == null) entries
+        else (langEntries[lang] ?: emptyMap())
+        return map.keys.any { normalizeKey(it, true) == norm }
     }
 
     fun importFromJson(
@@ -664,7 +727,9 @@ open class PronunciationDictionary(
         val obj = NateqJson.parseObject(json) ?: return false
         if (obj.size() == 0) return false
 
+        val lang = normalizeLangTag(languageTag)
         val valid = LinkedHashMap<String, String>()
+        val seenNorms = HashSet<String>()
         for ((rawKey, element) in obj.entrySet()) {
             if (!element.isJsonPrimitive ||
                 !element.asJsonPrimitive.isString
@@ -677,16 +742,44 @@ open class PronunciationDictionary(
             if (value.isEmpty() || value.length > MAX_VALUE_LENGTH) {
                 return false
             }
+            // رفض المفتاح المكوّن من حركات/تطويل فقط (سياسة واضحة)
+            if (!hasBaseContent(key)) return false
+            val norm = normalizeKey(key, true)
+            if (norm.isEmpty()) return false
+            // منع الالتباس: تكرار مكافئ قانونياً داخل الدفعة نفسها
+            if (!seenNorms.add(norm)) return false
             valid[key] = value
         }
         if (valid.isEmpty()) return false
 
-        val lang = normalizeLangTag(languageTag)
         val imported = synchronized(this) {
             val base = if (lang == null) entries
             else (langEntries[lang] ?: emptyMap())
             val updated = if (merge) LinkedHashMap(base)
             else LinkedHashMap<String, String>()
+
+            // عند الدمج: إزالة أي مفاتيح قائمة مكافئة قانونياً لما سيُستورد
+            // (تحديث هوية مكافئة، بلا حذف بيانات قديمة أخرى بصمت)
+            if (merge) {
+                val toRemove = ArrayList<String>()
+                for (existing in updated.keys) {
+                    val eNorm = normalizeKey(existing, true)
+                    if (seenNorms.contains(eNorm)) toRemove.add(existing)
+                }
+                for (rk in toRemove) {
+                    val oldModeKey = modeKeyOf(lang, rk)
+                    // أزل المفتاح القديم؛ ستُضاف الإعدادات مع المفتاح الجديد أدناه
+                    updated.remove(rk)
+                    // إزالة وصف قديم إذا تغيّر المفتاح النصي
+                    val modes = LinkedHashMap(matchModes)
+                    val vLangs = LinkedHashMap(valueLangs)
+                    modes.remove(oldModeKey)
+                    vLangs.remove(oldModeKey)
+                    matchModes = modes
+                    valueLangs = vLangs
+                }
+            }
+
             if (updated.size + valid.size > MAX_IMPORT_ENTRIES) {
                 return@synchronized -1
             }
@@ -698,6 +791,8 @@ open class PronunciationDictionary(
             if (count > 0) {
                 if (lang == null) swapEntries(updated)
                 else swapLangEntries(lang, updated)
+                cache = null
+                version++
             }
             count
         }
@@ -758,7 +853,7 @@ open class PronunciationDictionary(
 
             synchronized(this) {
                 version = fileVer
-                entries = gMap
+                swapEntries(gMap)
                 langEntries = sMap
                 matchModes = mMap
                 valueLangs = vMap
@@ -789,26 +884,14 @@ open class PronunciationDictionary(
     private fun loadFromPrefs(
         sp: android.content.SharedPreferences
     ): LoadedData {
-        val globalJson = try {
-            sp.getString("dictionary", "{}")
-        } catch (_: Throwable) {
-            "{}"
-        }
-        val scopesJson = try {
-            sp.getString(KEY_SCOPES, "{}")
-        } catch (_: Throwable) {
-            "{}"
-        }
-        val modesJson = try {
-            sp.getString(KEY_MATCH_MODES, "{}")
-        } catch (_: Throwable) {
-            "{}"
-        }
-        val vLangsJson = try {
-            sp.getString(KEY_VALUE_LANGS, "{}")
-        } catch (_: Throwable) {
-            "{}"
-        }
+        val globalJson = try { sp.getString("dictionary", "{}") }
+        catch (_: Throwable) { "{}" }
+        val scopesJson = try { sp.getString(KEY_SCOPES, "{}") }
+        catch (_: Throwable) { "{}" }
+        val modesJson = try { sp.getString(KEY_MATCH_MODES, "{}") }
+        catch (_: Throwable) { "{}" }
+        val vLangsJson = try { sp.getString(KEY_VALUE_LANGS, "{}") }
+        catch (_: Throwable) { "{}" }
 
         return LoadedData(
             global = parseEntries(globalJson),
@@ -914,7 +997,7 @@ open class PronunciationDictionary(
             }
             ok
         } catch (e: Exception) {
-            android.util.Log.e(LOG_TAG, "فشل حفظ القاموس الذري", e)
+            android.util.Log.e(LOG_TAG, "فشل حفظ قاموس النطق", e)
             false
         }
     }
@@ -929,9 +1012,21 @@ open class PronunciationDictionary(
     }
 }
 
-/**
- * نتيجة فحص مطابقة واحدة في أداة تتبع القاموس (الجولة 50 - الأمر 4).
- */
+/** نص مُطَبَّع للمطابقة مع خرائط المواضع وحدود العناقيد الحرفية. */
+internal data class NormalizedText(
+    val text: String,
+    val normToOrig: IntArray,
+    /** حدود العناقيد: boundaries[i]==true تعني أن i بداية عنقود أو نهاية النص. */
+    val boundaries: BooleanArray
+) {
+    fun isBoundary(index: Int): Boolean =
+        index >= 0 && index < boundaries.size && boundaries[index]
+
+    fun origEndForNorm(normEnd: Int, originalLength: Int): Int =
+        if (normEnd < normToOrig.size) normToOrig[normEnd] else originalLength
+}
+
+/** نتيجة فحص مطابقة واحدة في تتبع القاموس. */
 data class DictTraceEntry(
     val key: String,
     val value: String,
@@ -942,12 +1037,9 @@ data class DictTraceEntry(
     val origEnd: Int
 )
 
-/**
- * آلة Aho-Corasick موحدة تجمع إدخالات العام وكل الطبقات اللغوية،
- * وتطبق قواعد قبول الحرف المنفرد والمطابقة الحساسة/غير الحساسة لحالة الأحرف.
- */
+/** آلة Aho-Corasick موحدة (حساسة للتشكيل مع تكافؤ قانوني وتجاهل التطويل). */
 private class UnifiedAhoCorasick(
-    entries: List<DictOutput>,
+    private val allEntries: List<DictOutput>,
     private val caseInsensitive: Boolean
 ) {
 
@@ -967,7 +1059,7 @@ private class UnifiedAhoCorasick(
     private val root = Node()
 
     init {
-        for (entry in entries) {
+        for (entry in allEntries) {
             val key = entry.normalizedKey
             if (key.isEmpty()) continue
             var node = root
@@ -1005,100 +1097,20 @@ private class UnifiedAhoCorasick(
         standaloneMaxLength: Int
     ): String {
         if (text.isEmpty()) return text
+        val norm = PronunciationDictionary.normalizeForMatch(
+            text, caseInsensitive
+        )
+        if (norm.text.isEmpty()) return text
 
-        val normSb = StringBuilder(text.length)
-        val normToOrig = ArrayList<Int>(text.length)
-        var i = 0
-        while (i < text.length) {
-            val origIdx = i
-            val cp = text.codePointAt(i)
-            val w = Character.charCount(cp)
-            i += w
-            if (isTashkeelOrTatweel(cp)) continue
-            val normCp = normalizeIndicDigit(cp)
-            val matchCp = if (caseInsensitive &&
-                Character.isUpperCase(normCp)
-            ) {
-                Character.toLowerCase(normCp)
-            } else normCp
-
-            val startLen = normSb.length
-            normSb.appendCodePoint(matchCp)
-            val addedLen = normSb.length - startLen
-            for (k in 0 until addedLen) {
-                normToOrig.add(origIdx)
-            }
-        }
-        val normText = normSb.toString()
-        if (normText.isEmpty()) return text
-
-        fun origEndForNorm(normEnd: Int): Int =
-            if (normEnd < normToOrig.size) normToOrig[normEnd] else text.length
-
-        val candidates = ArrayList<MatchCandidate>()
-        var node = root
-        for (idx in 0 until normText.length) {
-            val ch = normText[idx]
-            while (node !== root && !node.children.containsKey(ch)) {
-                node = node.fail ?: root
-            }
-            node = node.children[ch] ?: root
-            if (node.outputs.isEmpty()) continue
-
-            val normEnd = idx + 1
-            for (out in node.outputs) {
-                val normStart = normEnd - out.normalizedKey.length
-                if (normStart < 0) continue
-                val origStart = normToOrig[normStart]
-                val origEnd = origEndForNorm(normEnd)
-
-                val regionLang = findRegionLanguage(segments, origStart)
-                if (!isScopeMatching(out.scope, regionLang)) {
-                    continue
-                }
-
-                val (accepted, _) = evaluateMatch(
-                    out, text, origStart, origEnd,
-                    normText, normStart, normEnd,
-                    standaloneMaxLength
-                )
-                if (!accepted) {
-                    continue
-                }
-
-                val replacement = if (!out.valueLang.isNullOrBlank()) {
-                    "${LanguageSegmenter.LOCK_START}${out.valueLang}" +
-                        "${LanguageSegmenter.LOCK_TAG_END}${out.value}" +
-                        "${LanguageSegmenter.LOCK_END}"
-                } else {
-                    out.value
-                }
-
-                candidates.add(
-                    MatchCandidate(origStart, origEnd, out, replacement)
-                )
-            }
-        }
-
-        if (candidates.isEmpty()) return text
-
-        candidates.sortWith { a, b ->
-            if (a.origStart != b.origStart) {
-                a.origStart.compareTo(b.origStart)
-            } else {
-                val aScoped = if (a.output.scope != null) 1 else 0
-                val bScoped = if (b.output.scope != null) 1 else 0
-                if (aScoped != bScoped) {
-                    bScoped.compareTo(aScoped)
-                } else {
-                    b.origEnd.compareTo(a.origEnd)
-                }
-            }
-        }
+        val candidates = collectCandidates(
+            text, norm, segments, standaloneMaxLength
+        )
+        val selected = resolveOverlaps(candidates)
+        if (selected.isEmpty()) return text
 
         val result = StringBuilder(text.length)
         var cursor = 0
-        for (cand in candidates) {
+        for (cand in selected) {
             if (cand.origStart < cursor) continue
             result.append(text, cursor, cand.origStart)
             result.append(cand.replacement)
@@ -1116,37 +1128,202 @@ private class UnifiedAhoCorasick(
         standaloneMaxLength: Int
     ): List<DictTraceEntry> {
         if (text.isEmpty()) return emptyList()
+        val norm = PronunciationDictionary.normalizeForMatch(
+            text, caseInsensitive
+        )
+        if (norm.text.isEmpty()) return emptyList()
 
-        val normSb = StringBuilder(text.length)
-        val normToOrig = ArrayList<Int>(text.length)
-        var i = 0
-        while (i < text.length) {
-            val origIdx = i
-            val cp = text.codePointAt(i)
-            val w = Character.charCount(cp)
-            i += w
-            if (isTashkeelOrTatweel(cp)) continue
-            val normCp = normalizeIndicDigit(cp)
-            val matchCp = if (caseInsensitive &&
-                Character.isUpperCase(normCp)
-            ) {
-                Character.toLowerCase(normCp)
-            } else normCp
+        val prelim = ArrayList<Pair<DictTraceEntry, MatchCandidate?>>()
+        collectCandidatesWithTrace(
+            text, norm, segments, standaloneMaxLength, prelim
+        )
+        val allAccepted = ArrayList<MatchCandidate>()
+        for ((_, cand) in prelim) if (cand != null) allAccepted.add(cand)
+        val finalSelected = resolveOverlaps(allAccepted)
+        val finalIds = IdentityHashSet<MatchCandidate>()
+        for (c in finalSelected) finalIds.add(c)
 
-            val startLen = normSb.length
-            normSb.appendCodePoint(matchCp)
-            val addedLen = normSb.length - startLen
-            for (k in 0 until addedLen) {
-                normToOrig.add(origIdx)
+        val finalTrace = ArrayList<DictTraceEntry>(prelim.size)
+        val acceptedKeys = HashSet<String>()
+        for ((entry, cand) in prelim) {
+            if (cand == null) {
+                finalTrace.add(entry)
+            } else if (finalIds.contains(cand)) {
+                acceptedKeys.add(entry.key + "\u0000" + entry.origStart)
+                finalTrace.add(entry)
+            } else {
+                finalTrace.add(
+                    entry.copy(
+                        accepted = false,
+                        reason = "مرفوض: أزاحه تطابقٌ آخر (أطول/أسبق) حُسم نهائياً"
+                    )
+                )
             }
         }
-        val normText = normSb.toString()
-        if (normText.isEmpty()) return emptyList()
+        appendDiacriticNearMisses(text, norm, segments, finalTrace)
+        return finalTrace
+    }
 
-        fun origEndForNorm(normEnd: Int): Int =
-            if (normEnd < normToOrig.size) normToOrig[normEnd] else text.length
+    private fun appendDiacriticNearMisses(
+        text: String,
+        norm: NormalizedText,
+        segments: List<SegmentWithOffset>,
+        trace: ArrayList<DictTraceEntry>
+    ) {
+        if (allEntries.isEmpty()) return
+        val baseText = stripMarks(norm.text)
+        if (baseText.isEmpty()) return
+        val reported = HashSet<String>()
+        // لا نكرر لمواضع/مفاتيح مذكورة بالفعل
+        for (e in trace) {
+            reported.add(e.key + "\u0000" + e.origStart + "\u0000" + e.origEnd)
+        }
+        for (entry in allEntries) {
+            val regionOk = true // النطاق يُقيّم لاحقاً لكل موضع
+            val baseKey = stripMarks(entry.normalizedKey)
+            if (baseKey.isEmpty()) continue
+            var searchFrom = 0
+            while (searchFrom <= baseText.length - baseKey.length) {
+                val pos = baseText.indexOf(baseKey, searchFrom)
+                if (pos < 0) break
+                val end = pos + baseKey.length
+                // مواضع base تقابل مواضع norm 1:1 لأننا أزلنا العلامات من نفس السلسلة
+                // نحتاج مواضع norm الحقيقية: ابحث عن نافذة norm تُعطي نفس base
+                val normRange = findNormRangeForBase(norm, baseKey, pos)
+                searchFrom = pos + 1
+                if (normRange == null) continue
+                val (ns, ne) = normRange
+                if (!norm.isBoundary(ns) || !norm.isBoundary(ne)) continue
+                if (ns < 0 || ne > norm.normToOrig.size && ne != norm.text.length) {
+                    continue
+                }
+                val origStart = if (ns < norm.normToOrig.size)
+                    norm.normToOrig[ns] else continue
+                val origEnd = norm.origEndForNorm(ne, text.length)
+                val markId = entry.originalKey + "\u0000" +
+                    origStart + "\u0000" + origEnd
+                if (reported.contains(markId)) continue
+                val regionLang = findRegionLanguage(segments, origStart)
+                if (!isScopeMatching(entry.scope, regionLang)) continue
+                // تطابق تامّ حسّاس للتشكيل موجود؟ لا نُبلغ
+                val exact = norm.text.substring(ns, ne)
+                if (exact == entry.normalizedKey) continue
+                // تطابق الحروف الأساس مع اختلاف التشكيل
+                reported.add(markId)
+                val matchedText = text.substring(origStart, origEnd)
+                trace.add(
+                    DictTraceEntry(
+                        key = entry.originalKey,
+                        value = entry.value,
+                        matchMode = entry.matchMode,
+                        accepted = false,
+                        reason = "مرفوض: الحروف الأساس متطابقة («$matchedText») " +
+                            "لكن التشكيل مختلف عن مفتاح القاموس — " +
+                            "المطابقة حساسة للتشكيل",
+                        origStart = origStart,
+                        origEnd = origEnd
+                    )
+                )
+            }
+        }
+    }
 
-        val traceResults = ArrayList<DictTraceEntry>()
+    private fun stripMarks(s: String): String {
+        val sb = StringBuilder(s.length)
+        var i = 0
+        while (i < s.length) {
+            val cp = s.codePointAt(i)
+            i += Character.charCount(cp)
+            if (PronunciationDictionary.isCombiningMark(cp)) continue
+            sb.appendCodePoint(cp)
+        }
+        return sb.toString()
+    }
+
+    private fun findNormRangeForBase(
+        norm: NormalizedText,
+        baseKey: String,
+        basePos: Int
+    ): Pair<Int, Int>? {
+        val normText = norm.text
+        // حوّل موضع basePos في النص المجرد من العلامات إلى نطاق في normText
+        var baseIdx = 0
+        var normStart = -1
+        var i = 0
+        while (i < normText.length) {
+            if (baseIdx == basePos) {
+                normStart = i
+                break
+            }
+            val cp = normText.codePointAt(i)
+            val w = Character.charCount(cp)
+            if (!PronunciationDictionary.isCombiningMark(cp)) baseIdx++
+            i += w
+        }
+        if (baseIdx == basePos && normStart == -1) {
+            normStart = normText.length
+        }
+        if (normStart < 0) return null
+        var j = normStart
+        var matched = 0
+        while (j < normText.length && matched < baseKey.length) {
+            val cp = normText.codePointAt(j)
+            val w = Character.charCount(cp)
+            if (!PronunciationDictionary.isCombiningMark(cp)) matched++
+            j += w
+        }
+        if (matched != baseKey.length) return null
+        // امتد لالتقاط العلامات التركيبية التابعة لآخر محرف أساس داخل
+        // العنقود نفسه (مثل التنوين/الشدة)، حتى حد العنقود التالي.
+        var end = j
+        while (end < normText.length && !norm.isBoundary(end)) {
+            val cp = normText.codePointAt(end)
+            val w = Character.charCount(cp)
+            if (!PronunciationDictionary.isCombiningMark(cp)) break
+            end += w
+        }
+        return normStart to end
+    }
+
+    private class IdentityHashSet<T> {
+        private val map = java.util.IdentityHashMap<T, Boolean>()
+        fun add(v: T) { map[v] = true }
+        fun contains(v: T): Boolean = map.containsKey(v)
+    }
+
+    private fun collectCandidates(
+        text: String,
+        norm: NormalizedText,
+        segments: List<SegmentWithOffset>,
+        standaloneMaxLength: Int
+    ): ArrayList<MatchCandidate> {
+        val out = ArrayList<MatchCandidate>()
+        collectInternal(text, norm, segments, standaloneMaxLength) { _, cand ->
+            if (cand != null) out.add(cand)
+        }
+        return out
+    }
+
+    private fun collectCandidatesWithTrace(
+        text: String,
+        norm: NormalizedText,
+        segments: List<SegmentWithOffset>,
+        standaloneMaxLength: Int,
+        sink: ArrayList<Pair<DictTraceEntry, MatchCandidate?>>
+    ) {
+        collectInternal(text, norm, segments, standaloneMaxLength) { entry, cand ->
+            sink.add(entry to cand)
+        }
+    }
+
+    private fun collectInternal(
+        text: String,
+        norm: NormalizedText,
+        segments: List<SegmentWithOffset>,
+        standaloneMaxLength: Int,
+        consumer: (DictTraceEntry, MatchCandidate?) -> Unit
+    ) {
+        val normText = norm.text
         var node = root
         for (idx in 0 until normText.length) {
             val ch = normText[idx]
@@ -1160,45 +1337,97 @@ private class UnifiedAhoCorasick(
             for (out in node.outputs) {
                 val normStart = normEnd - out.normalizedKey.length
                 if (normStart < 0) continue
-                val origStart = normToOrig[normStart]
-                val origEnd = origEndForNorm(normEnd)
+
+                // حدود العناقيد الحرفية إلزامية (بداية/نهاية عنقود):
+                // يمنع البدء داخل عنقود مركب أو الانتهاء قبل علامة تابعة.
+                if (!norm.isBoundary(normStart) || !norm.isBoundary(normEnd)) {
+                    val os = if (normStart < norm.normToOrig.size)
+                        norm.normToOrig[normStart] else text.length
+                    val oe = norm.origEndForNorm(normEnd, text.length)
+                    consumer(
+                        DictTraceEntry(
+                            out.originalKey, out.value, out.matchMode, false,
+                            "مرفوض: التطابق لا يلتزم بحدود العناقيد الحرفية" +
+                                " (تشكيل/علامة تابعة خارج المطابقة)",
+                            os, oe
+                        ), null
+                    )
+                    continue
+                }
+
+                val origStart = norm.normToOrig[normStart]
+                val origEnd = norm.origEndForNorm(normEnd, text.length)
 
                 val regionLang = findRegionLanguage(segments, origStart)
                 if (!isScopeMatching(out.scope, regionLang)) {
-                    traceResults.add(
+                    consumer(
                         DictTraceEntry(
-                            key = out.originalKey,
-                            value = out.value,
-                            matchMode = out.matchMode,
-                            accepted = false,
-                            reason =
-                                "مرفوض: نطاق اللغة لا يطابق (${out.scope})",
-                            origStart = origStart,
-                            origEnd = origEnd
-                        )
+                            out.originalKey, out.value, out.matchMode, false,
+                            "مرفوض: نطاق اللغة لا يطابق (${out.scope})",
+                            origStart, origEnd
+                        ), null
                     )
                     continue
                 }
 
                 val (accepted, reason) = evaluateMatch(
                     out, text, origStart, origEnd,
-                    normText, normStart, normEnd,
-                    standaloneMaxLength
+                    normText, normStart, normEnd, standaloneMaxLength
                 )
-                traceResults.add(
-                    DictTraceEntry(
-                        key = out.originalKey,
-                        value = out.value,
-                        matchMode = out.matchMode,
-                        accepted = accepted,
-                        reason = reason,
-                        origStart = origStart,
-                        origEnd = origEnd
+                if (!accepted) {
+                    consumer(
+                        DictTraceEntry(
+                            out.originalKey, out.value, out.matchMode,
+                            false, reason, origStart, origEnd
+                        ), null
                     )
+                    continue
+                }
+
+                val replacement = if (!out.valueLang.isNullOrBlank()) {
+                    "${LanguageSegmenter.LOCK_START}${out.valueLang}" +
+                        "${LanguageSegmenter.LOCK_TAG_END}${out.value}" +
+                        LanguageSegmenter.LOCK_END
+                } else out.value
+
+                val cand = MatchCandidate(
+                    origStart, origEnd, out, replacement
+                )
+                consumer(
+                    DictTraceEntry(
+                        out.originalKey, out.value, out.matchMode,
+                        true, reason, origStart, origEnd
+                    ), cand
                 )
             }
         }
-        return traceResults
+    }
+
+    private fun resolveOverlaps(
+        candidates: ArrayList<MatchCandidate>
+    ): List<MatchCandidate> {
+        if (candidates.isEmpty()) return emptyList()
+        candidates.sortWith { a, b ->
+            if (a.origStart != b.origStart) {
+                a.origStart.compareTo(b.origStart)
+            } else {
+                val aScoped = if (a.output.scope != null) 1 else 0
+                val bScoped = if (b.output.scope != null) 1 else 0
+                if (aScoped != bScoped) {
+                    bScoped.compareTo(aScoped)
+                } else {
+                    b.origEnd.compareTo(a.origEnd)
+                }
+            }
+        }
+        val selected = ArrayList<MatchCandidate>(candidates.size)
+        var cursor = 0
+        for (cand in candidates) {
+            if (cand.origStart < cursor) continue
+            selected.add(cand)
+            cursor = cand.origEnd
+        }
+        return selected
     }
 
     private fun findRegionLanguage(
@@ -1213,10 +1442,7 @@ private class UnifiedAhoCorasick(
         return segments.lastOrNull()?.languageTag ?: LanguageCode.AR.tag
     }
 
-    private fun isScopeMatching(
-        scope: String?,
-        regionLang: String
-    ): Boolean {
+    private fun isScopeMatching(scope: String?, regionLang: String): Boolean {
         if (scope == null) return true
         if (scope.equals(regionLang, ignoreCase = true)) return true
         if (!scope.contains('-') && !scope.contains('_')) {
@@ -1226,16 +1452,14 @@ private class UnifiedAhoCorasick(
     }
 
     private val PROTECTED_HIJRI_WORDS = listOf(
-        "محرم", "صفر", "ربيع الاول", "ربيع الاخر", "ربيع الأول",
-        "ربيع الآخر", "جمادى الاولى", "جمادى الاخرة", "جمادى الأولى",
-        "جمادى الآخرة", "جمادى", "رجب", "شعبان", "رمضان", "شوال",
+        "محرم", "صفر", "ربيع الأول", "ربيع الآخر", "ربيع الاول",
+        "ربيع الاخر", "جمادى الأولى", "جمادى الآخرة", "جمادى الاولى",
+        "جمادى الاخرة", "جمادى", "رجب", "شعبان", "رمضان", "شوال",
         "ذو القعدة", "ذو الحجة"
     )
 
     private fun isInsideProtectedWord(
-        normText: String,
-        normStart: Int,
-        normEnd: Int
+        normText: String, normStart: Int, normEnd: Int
     ): Boolean {
         for (word in PROTECTED_HIJRI_WORDS) {
             var idx = 0
@@ -1243,9 +1467,7 @@ private class UnifiedAhoCorasick(
                 val pos = normText.indexOf(word, idx)
                 if (pos == -1) break
                 val wordEnd = pos + word.length
-                if (normStart >= pos && normEnd <= wordEnd) {
-                    return true
-                }
+                if (normStart >= pos && normEnd <= wordEnd) return true
                 idx = pos + 1
             }
         }
@@ -1264,13 +1486,13 @@ private class UnifiedAhoCorasick(
     ): Pair<Boolean, String> {
         val mode = out.matchMode.uppercase()
         if (mode == "ANYWHERE") {
-            return true to "مقبول: وضع أي موضع (ANYWHERE)"
+            return true to "مقبول: وضع أي موضع (ANYWHERE) — المطابقة حساسة للتشكيل"
         }
 
         if (out.normalizedKey.length <= 2 &&
             isInsideProtectedWord(normText, normStart, normEnd)
         ) {
-            return false to "مرفوض: يقع داخل كلمة هجرية محمية"
+            return false to "مرفوض: يقع داخل كلمة شهر هجري محمية"
         }
 
         val requireStandalone = if (mode == "WHOLE") {
@@ -1286,32 +1508,22 @@ private class UnifiedAhoCorasick(
         }
 
         if (!requireStandalone) {
-            return true to "مقبول: لا يتطلب كلمة مستقلة"
+            return true to "مقبول: لا تتطلب كلمة مستقلة (حساسة للتشكيل)"
         }
 
         if (hasLetterNeighborBefore(text, origStart)) {
-            return false to "مرفوض: حرف جار قبله"
+            return false to
+                "مرفوض: حرف جارٍ قبله (حدود كلمة) — المطابقة حساسة للتشكيل"
         }
         if (hasLetterNeighborAfter(text, origEnd)) {
-            return false to "مرفوض: حرف جار بعده"
+            return false to
+                "مرفوض: حرف جارٍ بعده (حدود كلمة) — المطابقة حساسة للتشكيل"
         }
 
-        if (normStart > 0 && Character.isLetter(normText[normStart - 1])) {
-            return false to "مرفوض: حرف جار قبله في النص المطبّع"
-        }
-        if (normEnd < normText.length &&
-            Character.isLetter(normText[normEnd])
-        ) {
-            return false to "مرفوض: حرف جار بعده في النص المطبّع"
-        }
-
-        return true to "مقبول: كلمة مستقلة بلا أحرف جارة"
+        return true to "مقبول: كلمة مستقلة بلا حروف جارة (حساسة للتشكيل)"
     }
 
-    private fun hasLetterNeighborBefore(
-        text: String,
-        origStart: Int
-    ): Boolean {
+    private fun hasLetterNeighborBefore(text: String, origStart: Int): Boolean {
         var i = origStart - 1
         while (i >= 0) {
             val cp = text.codePointBefore(i + 1)
@@ -1383,14 +1595,5 @@ private class UnifiedAhoCorasick(
     }
 
     private fun isConnectorChar(cp: Int): Boolean =
-        cp == '\''.code || cp == '’'.code || cp == '-'.code || cp == '_'.code
-
-    private fun isTashkeelOrTatweel(cp: Int): Boolean =
-        (cp in 0x064B..0x065F) || cp == 0x0670 || cp == 0x0640
-
-    private fun normalizeIndicDigit(cp: Int): Int = when (cp) {
-        in 0x0660..0x0669 -> '0'.code + (cp - 0x0660)
-        in 0x06F0..0x06F9 -> '0'.code + (cp - 0x06F0)
-        else -> cp
-    }
+        cp == '\''.code || cp == '\u2019'.code || cp == '-'.code || cp == '_'.code
 }

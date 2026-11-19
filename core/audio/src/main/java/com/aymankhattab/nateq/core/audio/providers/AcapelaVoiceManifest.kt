@@ -74,6 +74,77 @@ object AcapelaVoiceManifest {
             "\\s*(?:\\[\\s*([^\\]]*?)\\s*])?"
     )
 
+    /** مرجع تبعية مُعلن في تهيئة ini أصلية (مثل PRO/SLV/NLP/ملف صوت). */
+    data class IniDependency(
+        val key: String,
+        val rawValue: String,
+        val relativePath: String
+    )
+
+    /** يختار تهيئة ini أصلية (غير مصطنعة) من مجلد الصوت، إن وُجدت. */
+    fun findAuthenticIni(dir: File): File? =
+        dir.listFiles { f ->
+            f.isFile && f.extension.equals("ini", ignoreCase = true) &&
+                isAuthenticIni(f)
+        }?.sortedBy { it.name.lowercase(Locale.ROOT) }?.firstOrNull()
+
+    /**
+     * استخراج تبعيات الملفات المُعلنة في تهيئة ini أصلية. لا تُخمَّن
+     * توجيهات ولا مسارات؛ تُقرأ القيم المقتبسة كما وردت مع تطبيع الفواصل.
+     */
+    fun parseIniDependencies(iniFile: File): List<IniDependency> {
+        if (!iniFile.isFile) return emptyList()
+        val text = runCatching {
+            iniFile.readText(StandardCharsets.ISO_8859_1)
+        }.getOrNull() ?: return emptyList()
+        val out = mutableListOf<IniDependency>()
+        INI_DIRECTIVE_REGEX.findAll(text).forEach { m ->
+            val key = m.groupValues[1].trim().uppercase(Locale.ROOT)
+            val raw = m.groupValues[2].trim()
+            if (key.isEmpty() || raw.isEmpty()) return@forEach
+            val rel = raw.replace('\\', '/').trimStart('/')
+            if (rel.isEmpty()) return@forEach
+            val looksLikePath = rel.contains('/') || rel.contains('.') ||
+                key in INI_DIRECTIVE_KEYS
+            if (looksLikePath) {
+                out += IniDependency(
+                    key = key,
+                    rawValue = raw,
+                    relativePath = rel
+                )
+            }
+        }
+        return out.distinctBy {
+            "${it.key}|${it.relativePath.lowercase(Locale.ROOT)}"
+        }
+    }
+
+    /**
+     * إيجاد ملف داخل [baseDir] لمسار نسبي مع مراعاة اختلاف حالة الأحرف
+     * وفواصل المسار دون تخمين مسارات بديلة.
+     */
+    fun resolveRelativeFile(baseDir: File, relativePath: String): File? {
+        val cleaned = relativePath.replace('\\', '/').trimStart('/')
+        if (cleaned.isEmpty()) return null
+        val direct = File(baseDir, cleaned)
+        if (direct.exists()) return direct
+        val parts = cleaned.split('/').filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return null
+        var current = baseDir
+        for (part in parts) {
+            if (!current.isDirectory) return null
+            val exact = File(current, part)
+            if (exact.exists()) {
+                current = exact
+                continue
+            }
+            current = current.listFiles()?.firstOrNull {
+                it.name.equals(part, ignoreCase = true)
+            } ?: return null
+        }
+        return current.takeIf { it.exists() }
+    }
+
     /**
      * عمر نتيجة التعداد المخزَّنة (ms).
      *
@@ -397,6 +468,7 @@ object AcapelaVoiceManifest {
 
     private fun isRichConfig(f: File): Boolean {
         if (!f.exists() || !f.isFile) return false
+        if (isFabricatedIni(f)) return false
         val lines = runCatching {
             f.readLines(StandardCharsets.ISO_8859_1)
         }.getOrDefault(emptyList())
@@ -407,34 +479,54 @@ object AcapelaVoiceManifest {
                 t.startsWith("PATH", ignoreCase = true) ||
                 t.startsWith("BNF", ignoreCase = true) ||
                 t.startsWith("PHM", ignoreCase = true) ||
+                t.startsWith("#", ignoreCase = true) ||
+                t.startsWith("PRO", ignoreCase = true) ||
+                t.startsWith("SLV", ignoreCase = true) ||
                 t.contains(".bvcu", ignoreCase = true) ||
                 t.contains(".dat", ignoreCase = true)
         }
     }
 
     /**
-     * هل هذا `.ini` تهيئة أصلية غنية لا يجوز لمسها؟
-     *
-     * المعيار مقيس من حزم MultiTTS الأصلية: ملف Leila 1047 بايت وملف
-     * Heather 699 بايت، وكلاهما يحمل `PRO "NLP/..."` و`SLV ... [FILE]`.
-     * أما التهيئة المولّدة (109 بايت من `MODE=prep_hd`) فلا تحوي
-     * `NLP/` ولا `PRO`، فتُترك بلا حماية ويمكن إكمالها أو تجديدها.
+     * تهيئة ini مصطنعة/بديلة (مثل MODE+FILEMAP فقط) لا تُعدّ دليلاً على
+     * صحة الصوت ولا يجوز توليدها أو حشوها أو الاعتماد عليها. نكشفها
+     * بمحتواها لا بحجمها وحده.
      */
-    internal fun isOriginalRichIni(file: File): Boolean {
-        if (!file.isFile || file.length() < 300L) return false
+    internal fun isFabricatedIni(file: File): Boolean {
+        if (!file.isFile) return false
+        if (!file.extension.equals("ini", ignoreCase = true)) return false
+        val text = runCatching {
+            file.readText(StandardCharsets.ISO_8859_1)
+        }.getOrNull()?.trim().orEmpty()
+        if (text.isEmpty()) return true
+        val hasMode = text.contains("MODE=", ignoreCase = true)
+        val hasFileMap = text.contains("FILEMAP", ignoreCase = true)
+        val hasPro = text.contains("PRO", ignoreCase = true)
+        val hasSlv = text.contains("SLV", ignoreCase = true)
+        val hasNlp = text.contains("NLP/", ignoreCase = true)
+        // بديل مختصر/مولّد: MODE و/أو FILEMAP بلا توجيهات صوتية أصلية
+        // (PRO/SLV/NLP). الحجم ليس معياراً.
+        return hasMode && hasFileMap && !hasPro && !hasSlv && !hasNlp
+    }
+
+    /**
+     * هل هذا `.ini` تهيئة أصلية صالحة من الحزمة (لا مصطنعة)؟
+     * لا يُحكم بالحجم، ولا يُستبدل بملف صوت آخر.
+     */
+    internal fun isAuthenticIni(file: File): Boolean {
+        if (!file.isFile || file.length() <= 0L) return false
+        if (isFabricatedIni(file)) return false
         val text = runCatching {
             file.readText(StandardCharsets.ISO_8859_1)
         }.getOrNull() ?: return false
-        return text.contains("NLP/", ignoreCase = true) &&
-            text.contains("PRO", ignoreCase = true) &&
-            text.contains("SLV", ignoreCase = true)
+        return text.isNotBlank()
     }
 
-    /** وجود تهيئة أصلية غنية في مجلد الصوت يمنع أي توليد أو تسطيح. */
+    /** وجود تهيئة أصلية (غير مصطنعة) في مجلد الصوت يمنع أي توليد/تسطيح. */
     fun hasVerbatimOriginalConfig(dir: File): Boolean =
         dir.listFiles { f ->
             f.isFile && f.extension.equals("ini", ignoreCase = true) &&
-                isOriginalRichIni(f)
+                isAuthenticIni(f)
         }?.isNotEmpty() == true
 
     fun normalizeExtensionsCase(dir: File) {
@@ -521,9 +613,13 @@ object AcapelaVoiceManifest {
      * تسطيح الملفات المتداخلة في المجلدات الفرعية (مثل salma_lf)
      * إلى جذر مجلد الصوت مباشرة، لضمان عثور المكتبة الأصلية على
      * ملف المفتاح 0x... وملفات .bvcu و .inf و .ini دون حواجز مجلدات.
+     *
+     * لا يُطبَّق على مجلدات تحمل تهيئة أصلية (غير مصطنعة) حتى لا تُكسر
+     * المسارات النسبية الأصلية.
      */
     fun flattenNestedVoiceFiles(dir: File) {
         if (!dir.exists() || !dir.isDirectory) return
+        if (hasVerbatimOriginalConfig(dir)) return
         val subDirs = dir.listFiles { f -> f.isDirectory } ?: return
         for (sub in subDirs) {
             if (sub.name.equals("userdicos", ignoreCase = true)) continue
@@ -543,15 +639,16 @@ object AcapelaVoiceManifest {
         if (!baseDir.exists() || !baseDir.isDirectory) return
         for (dir in completeVoiceDirs(baseDir)) {
             runCatching {
-                // حارس النسخ الحرفي: التهيئة الأصلية الغنية هي مصدر
-                // الحقيقة. تسطيحها أو إعادة كتابة `.inf`/`.ini` لها
-                // يُفقد `PRO "NLP/ar_sa.oso"` فيؤدي إلى -34 ثم -27
-                // ثم nSpeak -2 بلا عيّنات PCM. لا نلمسها إطلاقاً.
+                // تهيئة أصلية (غير مصطنعة) هي مصدر الحقيقة: لا تسطيح ولا
+                // إعادة كتابة ولا توليد ini بديل حتى لا تُكسر المسارات
+                // النسبية ولا تُستبدل تهيئة الصوت بغيرها.
                 if (hasVerbatimOriginalConfig(dir)) {
                     diagLog(
-                        "تهيئة أصلية غنية في ${dir.name}: " +
+                        "تهيئة أصلية في ${dir.name}: " +
                             "لا تسطيح ولا توليد ini"
                     )
+                    File(dir, "userdicos").mkdirs()
+                    copyRegistrationKeyInto(dir)
                     return@runCatching
                 }
                 flattenNestedVoiceFiles(dir)
@@ -563,8 +660,10 @@ object AcapelaVoiceManifest {
                 } ?: emptyArray()
                 for (inf in infFiles) {
                     completeInfProperties(inf)
-                    ensureIniFor(inf)
                 }
+                // لا يُولَّد ini بديل (MODE+FILEMAP فقط) ولا يُحشى:
+                // غياب التهيئة الأصلية المطابقة يُبلَّغ عنه عند التحقق
+                // والتشغيل بدلاً من اختلاق تهيئة.
             }
         }
     }
@@ -577,75 +676,16 @@ object AcapelaVoiceManifest {
     )
 
     /**
-     * توليد `<stem>.ini` **فقط عند غيابه**.
+     * يُحظَر توليد أو حشو ملف ini بديل (لا سيما MODE+FILEMAP فقط) كبديل
+     * عن تهيئة الصوت الأصلية المطابقة. وجود تهيئة أصلية صالحة من الحزمة
+     * هو المطلوب؛ وغيابها/عدم توافقها يُكتشف ويُبلَّغ عنه عند التحقق
+     * والتشغيل برسالة تحدد الأصل المطلوب، دون اختلاق تهيئة.
      *
-     * **لماذا:** `find_voices` يشتقّ مسار ملف اللغة من مسار `.inf`
-     * (استبدال حرفه الأخير بـ`i`) ويحفظه، ثم يمرّره `load_voice` إلى
-     * `initLanguageDbaNewEx`. فإن غاب الملف أعاد `NULL`، فعاد
-     * `load_voice` بـ`-10` وظلّ مؤشّر الصوت فارغاً ففشل `nSpeak` بـ`-2`
-     * بلا عيّنات — وهو عين العطل الذي نعالجه.
-     *
-     * **الصيغة:** `KEY "value" [ RAM ]`؛ فعدّاد الأسطر الأول
-     * (`%s "%[^"]"`) يقبلها فتتجاوز البوابة الحاسمة (سطرٌ واحد على
-     * الأقل وإلا `NULL`)، وعدّاد الدورة الثاني
-     * (`%s "%[^"]" [ %[^] ] ]`) يحوّلها إلى مُدخل فعلي يُمرَّر إلى
-     * `BABILE_init`. والسطر العاري `KEY "value"` يمرّ من البوابة وحدها
-     * ولا يصير مُدخلاً، فلا يكفي.
-     *
-     * **المصدر:** توجيهات `.inf` نفسها أولاً، ثم تُستكمل المفاتيح
-     * الغائبة من ملفات البيانات الموجودة فعلاً على القرص. ولا تُكتب
-     * قيمةٌ بلا ملفٍ يقابلها، ولا يُكتب ملف إن لم يبق توجيه صالح.
+     * تُبقي هذه الدالة الواجهة للتوافق مع المستدعين، لكنها لا تكتب
+     * أي ملف.
      */
-    internal fun ensureIniFor(inf: File) {
-        val dir = inf.parentFile ?: return
-        val iniName = if (inf.name.endsWith(".inf", true)) {
-            inf.name.dropLast(1) + "i"
-        } else {
-            "${inf.nameWithoutExtension}.ini"
-        }
-        val targets = mutableListOf<File>()
-        targets.add(File(dir, iniName))
-        val altName = "${inf.nameWithoutExtension}.ini"
-        if (altName != iniName) {
-            targets.add(File(dir, altName))
-        }
-        if (inf.name.contains(".bvcu.", ignoreCase = true)) {
-            val shortIni = inf.name.replace(".bvcu.", ".", true)
-                .dropLast(1) + "i"
-            targets.add(File(dir, shortIni))
-        }
-
-        val allValid = targets.all { f ->
-            f.exists() && runCatching {
-                val txt = f.readText(StandardCharsets.ISO_8859_1)
-                txt.contains("#") && txt.contains("MODE")
-            }.getOrDefault(false)
-        }
-        if (allValid) return
-
-        val fromInf = directivesFromInf(inf, dir)
-        val covered = fromInf.map { it.key }.toSet()
-        val entries = fromInf + entriesFromDataFiles(dir)
-            .filter { it.key !in covered }
-        if (entries.isEmpty()) return
-        val content = buildString {
-            append("MODE=prep_hd\n")
-            for ((idx, entry) in entries.withIndex()) {
-                val num = idx + 1
-                append("#$num ").append(entry.key).append(" \"")
-                    .append(entry.value).append("\" [ ")
-                    .append(entry.section).append(" ]\n")
-            }
-        }
-        for (target in targets) {
-            runCatching {
-                target.writeText(content, StandardCharsets.ISO_8859_1)
-            }
-        }
-        diagLog(
-            "توليد $iniName (${entries.size} توجيهاً): " +
-                entries.joinToString(",") { it.key }
-        )
+    internal fun ensureIniFor(@Suppress("UNUSED_PARAMETER") inf: File) {
+        // لا توليد ولا حشو لملف ini بديل.
     }
 
     /** التوجيهات المقروءة من `.inf` والموجودة ملفاتها فعلاً. */

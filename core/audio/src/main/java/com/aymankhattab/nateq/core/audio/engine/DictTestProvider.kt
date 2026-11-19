@@ -69,17 +69,24 @@ class DictTestProvider : ContentProvider() {
         if (method == METHOD_TRACE) {
             val dict = PronunciationDictionary.shared(ctx)
             dict.reloadIfChanged()
-            val standaloneMax = dict.getStandaloneMaxLength()
+            val standaloneMax = dict.standaloneMaxLength
             val processor = TextProcessor(ctx, injectedDict = dict)
             val processed = processor.applyDictionaryFirst(text, lang)
             val traces = dict.traceMatches(text, lang)
 
             val traceLines = ArrayList<String>()
             for (t in traces) {
-                val status = if (t.accepted) "مقبول ✓" else "مرفوض ✗"
+                val modeLabel = when (t.matchMode.uppercase()) {
+                    "WHOLE", "STANDALONE" -> "كلمة مستقلة"
+                    "ANYWHERE" -> "أي موضع"
+                    else -> "تلقائي"
+                }
+                val decision = if (t.accepted) "مقبول" else "مرفوض"
                 traceLines.add(
-                    "المفتاح: «${t.key}» ← «${t.value}» | " +
-                        "الوضع: ${t.matchMode} | القرار: $status (${t.reason})"
+                    "المفتاح المختار: «${t.key}» ← النطق: «${t.value}». " +
+                        "الوضع: $modeLabel. " +
+                        "القرار: $decision. " +
+                        "السبب: ${t.reason}"
                 )
             }
 

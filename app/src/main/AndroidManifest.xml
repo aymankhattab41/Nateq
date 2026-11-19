@@ -251,13 +251,6 @@
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
 
-            <!-- استقبال مشاركة نص (اقرأ لاحقاً) — بند 12 -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-
             <meta-data
                 android:name="android.shortcuts"
                 android:resource="@xml/shortcuts" />

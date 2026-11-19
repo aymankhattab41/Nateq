@@ -9,41 +9,41 @@ class EgyptianSpeechProcessingStepTest {
 
     @Test
     fun disabled_returnsInputUnchanged() {
-        val step = EgyptianSpeechProcessingStep { false }
+        val step = EgyptianSpeechProcessingStep(enabledProvider = { false })
         val input = "ازاي عامل ايه"
         assertEquals(input, step.apply(input))
     }
 
     @Test
     fun enabled_replacesCommonEgyptianWord() {
-        val step = EgyptianSpeechProcessingStep { true }
+        val step = EgyptianSpeechProcessingStep(enabledProvider = { true })
         val out = step.apply("ازاي")
         assertEquals("إِزَّاي", out)
     }
 
     @Test
     fun enabled_nonArabic_returnsUnchanged() {
-        val step = EgyptianSpeechProcessingStep { true }
+        val step = EgyptianSpeechProcessingStep(enabledProvider = { true })
         val input = "hello world"
         assertEquals(input, step.apply(input))
     }
 
     @Test
     fun enabled_empty_returnsEmpty() {
-        val step = EgyptianSpeechProcessingStep { true }
+        val step = EgyptianSpeechProcessingStep(enabledProvider = { true })
         assertEquals("", step.apply(""))
     }
 
     @Test
     fun enabled_appliesLightTashkeelWord() {
-        val step = EgyptianSpeechProcessingStep { true }
+        val step = EgyptianSpeechProcessingStep(enabledProvider = { true })
         val out = step.apply("شكرا")
         assertTrue(out.contains("شُكْرًا") || out != "شكرا")
     }
 
     @Test
     fun enabled_doesNotReplaceInsideLongerWordBoundary() {
-        val step = EgyptianSpeechProcessingStep { true }
+        val step = EgyptianSpeechProcessingStep(enabledProvider = { true })
         // "ازاي" should be replaced as a standalone word only
         val out = step.apply("ازايك")
         // "ازايك" is a separate mapped key ("إِزَّيَّك") in our map

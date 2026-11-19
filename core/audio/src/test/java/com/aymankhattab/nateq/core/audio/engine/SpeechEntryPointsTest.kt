@@ -31,7 +31,7 @@ class SpeechEntryPointsTest {
         context = ApplicationProvider.getApplicationContext()
         dict = PronunciationDictionary.shared(context)
         dict.clear()
-        dict.setStandaloneMaxLength(1)
+        dict.standaloneMaxLength = 1
         dict.addEntry(
             abbreviation = "ج",
             pronunciation = "جنيه",

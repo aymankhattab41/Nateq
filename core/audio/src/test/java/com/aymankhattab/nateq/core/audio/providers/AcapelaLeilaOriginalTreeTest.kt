@@ -92,7 +92,7 @@ class AcapelaLeilaOriginalTreeTest {
     }
 
     @Test
-    fun trialReport_reportsUnmeasuredNativeCodesHonestly() {
+    fun trialReport_neverShowsFixedCodeAsMeasured() {
         val verification = AcapelaLeilaOriginalTree.Verification(
             matched = listOf("a"),
             missing = emptyList(),
@@ -104,7 +104,9 @@ class AcapelaLeilaOriginalTreeTest {
         assertTrue(report.contains("Path_Original_Leila_Verbatim"))
         assertTrue(report.contains("لم يُشغَّل nInit/nSpeak"))
         assertTrue(report.contains("غير مقيسة"))
-        assertTrue(report.contains("nlpInitError=-34"))
+        // لا يُعرض أي كود قديم (-34/-27/-2) بوصفه قياساً حياً.
+        assertFalse(report.contains("nlpInitError=-34"))
+        assertTrue(report.contains("لم تُرصد"))
         val measured = AcapelaLeilaOriginalTree.trialReport(
             verification,
             AcapelaVoiceDiagnostics.MeasuredNInitCodes(

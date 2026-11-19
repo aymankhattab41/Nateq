@@ -169,7 +169,7 @@ class AcapelaVoiceManifestTest {
     }
 
     @Test
-    fun pruneSyntheticConfigs_removesContentlessDuplicateInfs() {
+    fun pruneSyntheticConfigs_keepsAllWhenAuthenticIniPresent() {
         val baseDir = tempFolder.newFolder("voices_with_stubs")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
         File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
@@ -189,11 +189,30 @@ class AcapelaVoiceManifestTest {
 
         AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
 
+        // وجود تهيئة أصلية يمنع أي حذف: لا يُخاطر بتهيئة الصوت الأصلية.
         assertTrue(mainInf.exists())
         assertTrue(mainIni.exists())
-        assertFalse(stubInf.exists())
-        // `.ini` لم يعد يُحذف: صار ملفاً نافعاً يُولَّد عند غيابه.
+        assertTrue(stubInf.exists())
         assertTrue(stubIni.exists())
+    }
+
+    @Test
+    fun pruneSyntheticConfigs_removesStubInfWhenNoAuthenticIni() {
+        val baseDir = tempFolder.newFolder("voices_stubs_no_ini")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
+        val mainInf = File(voiceFolder, "salma.inf")
+        mainInf.writeText(
+            "[Voice]\nspeaker = \" Salma\"\n" +
+                "FILE \"salma.bvcu\" [ RAM ]\n"
+        )
+        val stubInf = File(voiceFolder, "salma_22k.inf")
+        stubInf.writeText("[Voice]\nspeaker = \" Salma\"\n")
+
+        AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
+
+        assertTrue(mainInf.exists())
+        assertFalse(stubInf.exists())
     }
 
     @Test
@@ -257,7 +276,7 @@ class AcapelaVoiceManifestTest {
     }
 
     @Test
-    fun ensureVoiceConfigs_generatesIniFromInfDirectives() {
+    fun ensureVoiceConfigs_neverGeneratesIniFromInfDirectives() {
         val baseDir = tempFolder.newFolder("ini_from_inf")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
         File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
@@ -274,17 +293,12 @@ class AcapelaVoiceManifestTest {
 
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
 
-        val text = File(voiceFolder, "salma.ini").readText()
-        assertTrue(text.contains("FILEMAP \"salma.bvcu\" [ RAM ]"))
-        assertTrue(text.contains("BNF \"salma_lf.bnf\" [ RAM ]"))
-        // المفاتيح الوصفية لا تُنقل إلى ملف اللغة: المحمّل لا يعرفها.
-        assertFalse(text.contains("speaker", ignoreCase = true))
-        assertFalse(text.contains("ISOCode", ignoreCase = true))
-        assertFalse(text.contains("freq", ignoreCase = true))
+        // لا تُختلَق تهيئة ini من توجيهات .inf؛ التهيئة الأصلية مطلوبة.
+        assertFalse(File(voiceFolder, "salma.ini").exists())
     }
 
     @Test
-    fun ensureVoiceConfigs_generatesRamSuffixedQuotedLines() {
+    fun ensureVoiceConfigs_neverGeneratesRamSuffixedIni() {
         val baseDir = tempFolder.newFolder("ini_line_shape")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
         File(voiceFolder, "salma.inf").writeText(
@@ -295,20 +309,12 @@ class AcapelaVoiceManifestTest {
 
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
 
-        val lines = File(voiceFolder, "salma.ini").readLines()
-        assertTrue(lines.isNotEmpty())
-        // الصيغة تمرّ من بوّابة `#%s %s "%[^"]" [ %[^] ] ]`
-        // أو `MODE=prep_hd` (بلا MODE= مكرَّرة داخل القيمة).
-        val shape = Regex(
-            "^(?:MODE=[^\\s\"]+|#[0-9]+ [A-Z]+ \"[^\"]+\" \\[ [A-Z_]+ ])$"
-        )
-        for (line in lines) {
-            assertTrue("سطر تهيئة غير مطابق: $line", shape.matches(line))
-        }
+        // أي نموذج MODE/FILEMAP مولّد ممنوع حتى لو طابق الصيغة.
+        assertFalse(File(voiceFolder, "salma.ini").exists())
     }
 
     @Test
-    fun ensureVoiceConfigs_derivesIniFromDataFiles() {
+    fun ensureVoiceConfigs_neverDerivesIniFromDataFiles() {
         val baseDir = tempFolder.newFolder("ini_from_files")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
         File(voiceFolder, "salma.inf").writeText(
@@ -320,10 +326,10 @@ class AcapelaVoiceManifestTest {
 
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
 
-        val text = File(voiceFolder, "salma.ini").readText()
-        assertTrue(text.contains("FILEMAP \"salma_lf.bvcu\" [ RAM ]"))
-        // الملف المتداخل يُذكر بمسار نسبي يفهمه المحمّل.
-        assertTrue(text.contains("SLL \"salma_lf/salma_lf.sll\" [ RAM ]"))
+        // لا تُستنتج مسارات NLP من أسماء الملفات وتُكتب في ini مولّد.
+        assertFalse(File(voiceFolder, "salma.ini").exists())
+        // الملف الأصلي يبقى في مساره النسبي دون حذف.
+        assertTrue(File(nested, "salma_lf.sll").exists())
     }
 
     @Test
@@ -786,34 +792,31 @@ class AcapelaVoiceManifestTest {
     }
 
     @Test
-    fun ensureIniFor_generatesModeAndNumberedDirectives() {
+    fun ensureIniFor_neverGeneratesModeOrNumberedDirectives() {
         val dir = tempFolder.newFolder("ini_test")
         val inf = File(dir, "voice.inf").apply {
             writeText("speaker = \"Salma\"\nISOCode = \"ara-SAU\"\n")
         }
         File(dir, "voice.bvcu").writeBytes(ByteArray(10_000))
         AcapelaVoiceManifest.ensureIniFor(inf)
-        val ini = File(dir, "voice.ini")
-        assertTrue(ini.exists())
-        val text = ini.readText()
-        assertTrue(text.contains("MODE=prep_hd"))
-        assertTrue(text.contains("#1 FILEMAP \"voice.bvcu\" [ RAM ]"))
+        // بوابة التوافق لا تكتب أي ملف: التهيئة الأصلية فقط هي المصدر.
+        assertFalse(File(dir, "voice.ini").exists())
     }
 
     @Test
-    fun ensureIniFor_regeneratesWhenOldIniMissingNumberOrMode() {
+    fun ensureIniFor_neverRewritesExistingIni() {
         val dir = tempFolder.newFolder("ini_regen_test")
         val inf = File(dir, "voice.inf").apply {
             writeText("speaker = \"Salma\"\nISOCode = \"ara-SAU\"\n")
         }
         File(dir, "voice.bvcu").writeBytes(ByteArray(10_000))
+        val original = "FILEMAP \"voice.bvcu\" [ RAM ]\n"
         val ini = File(dir, "voice.ini").apply {
-            writeText("FILEMAP \"voice.bvcu\" [ RAM ]\n")
+            writeText(original)
         }
         AcapelaVoiceManifest.ensureIniFor(inf)
-        val text = ini.readText()
-        assertTrue(text.contains("#1 FILEMAP \"voice.bvcu\" [ RAM ]"))
-        assertTrue(text.contains("MODE=prep_hd"))
+        // حتى ini ناقص/مصنّع لا يُعاد كتابته بالحشو.
+        assertEquals(original, ini.readText())
     }
 
     @Test

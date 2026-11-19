@@ -192,8 +192,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // زر آخر التحديثات (يعرض ملخص الإصدار الحالي وتغييراته في حوار)
     private lateinit var btnChangelog:
         com.google.android.material.button.MaterialButton
-    private lateinit var btnReadLater:
-        com.google.android.material.button.MaterialButton
 
     // المفتاح الرئيسي لكل الإعلانات
     internal lateinit var switchAllAnnouncements: SwitchMaterial
@@ -1007,8 +1005,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // زر آخر التحديثات: يعرض ملخص أحدث إصدار وتغييراته في حوار
         btnChangelog = view.findViewById(R.id.btn_changelog)
         btnChangelog.setOnClickListener { showChangelogDialog() }
-        btnReadLater = view.findViewById(R.id.btn_read_later)
-        btnReadLater.setOnClickListener { showReadLaterDialog() }
 
         // زر دليل الميزات والإيماءات (ع٤١-ب14.3): شرح مختصر يقرؤه TalkBack
         view.findViewById<View>(R.id.btn_a11y_guide).setOnClickListener {
@@ -1502,13 +1498,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
     }
 
-    // ===== اقرأ لاحقاً / آخر التحديثات / دليل الوصولية (مفوّض) =====
+    // ===== آخر التحديثات / دليل الوصولية (مفوّض) =====
     internal val infoDialogs by lazy { SettingsInfoDialogsController(this) }
-
-    internal fun showReadLaterDialog() = infoDialogs.showReadLaterDialog()
-
-    internal fun showReadLaterItemActions(id: Long, text: String) =
-        infoDialogs.showReadLaterItemActions(id, text)
 
     internal fun showChangelogDialog() = infoDialogs.showChangelogDialog()
 

@@ -87,15 +87,28 @@ object SpeechLatencyTracker {
     }
 
     fun formatSpeedReport(): String {
+        val list = history.toList()
         val sb = StringBuilder()
         sb.appendLine("--- تقرير السرعة ---")
-        val count = history.size
+        val count = list.size
         sb.appendLine("• إجمالي العبارات المسجلة: $count (آخر $MAX_HISTORY)")
         sb.appendLine("• متوسط زمن النطق: ${getAverageDurationMs()} ms")
         sb.appendLine("• زمن p95 للنطق: ${getP95DurationMs()} ms")
+        val avgPreprocess = if (list.isEmpty()) {
+            0L
+        } else {
+            list.map { it.preprocessDurationMs }.average().toLong()
+        }
+        val avgPlanning = if (list.isEmpty()) {
+            0L
+        } else {
+            list.map { it.planningDurationMs }.average().toLong()
+        }
+        sb.appendLine("• متوسط زمن المعالجة المسبقة: $avgPreprocess ms")
+        sb.appendLine("• متوسط زمن التخطيط: $avgPlanning ms")
         val avgTtfb = getAverageTimeToFirstByteMs()
         val ttfbText = if (avgTtfb == TTFB_NOT_MEASURED) {
-            "غير مقاس"
+            "غير مقيس"
         } else {
             "$avgTtfb ms"
         }
@@ -117,17 +130,19 @@ object SpeechLatencyTracker {
                 } else {
                     item.text
                 }
-                val ttfbText = if (item.timeToFirstByteMs ==
+                val itemTtfb = if (item.timeToFirstByteMs ==
                     TTFB_NOT_MEASURED
                 ) {
-                    "غير مقاس"
+                    "غير مقيس"
                 } else {
                     "${item.timeToFirstByteMs}ms"
                 }
                 sb.appendLine(
                     "  ${idx + 1}. \"$preview\" — إجمالي: " +
-                        "${item.totalDurationMs}ms (أول بايت: " +
-                        "$ttfbText, " +
+                        "${item.totalDurationMs}ms (معالجة: " +
+                        "${item.preprocessDurationMs}ms, تخطيط: " +
+                        "${item.planningDurationMs}ms, أول بايت: " +
+                        "$itemTtfb, " +
                         "${item.segments.size} مقاطع)"
                 )
             }

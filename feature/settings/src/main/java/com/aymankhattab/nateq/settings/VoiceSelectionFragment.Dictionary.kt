@@ -484,20 +484,26 @@ internal fun VoiceSelectionFragment.showDictTraceDialog() {
                 DictTestProvider.KEY_TRACE_LINES
             ) ?: emptyList<String>()
 
+            val note = getString(R.string.dict_trace_diacritic_note)
             val tracesText = if (traceLines.isEmpty()) {
-                "• لا توجد مطابقات في القاموس لهذا النص"
+                getString(R.string.dict_trace_no_matches)
             } else {
                 traceLines.joinToString("\n")
             }
 
-            val text = "قبل القاموس: $orig\n" +
-                "بعد القاموس (:tts): $proc\n" +
-                "حد الكلمة المنفردة (:tts): $standaloneMax\n\n" +
-                "المطابقات وأسباب القبول/الرفض:\n$tracesText"
+            val text = getString(R.string.dict_trace_before, orig) + "\n" +
+                getString(R.string.dict_trace_after_tts, proc) + "\n" +
+                getString(
+                    R.string.dict_trace_standalone_tts, standaloneMax
+                ) + "\n\n" +
+                note + "\n\n" +
+                getString(R.string.dict_trace_results_header) + "\n" +
+                tracesText
             tvResult.text = text
+            tvResult.contentDescription = text
         } else {
             val dict = pronunciationDict
-            val standaloneMax = dict.getStandaloneMaxLength()
+            val standaloneMax = dict.standaloneMaxLength
             val traces = dict.traceMatches(raw, "ar")
             val proc = TextProcessor(
                 requireContext(),
@@ -505,25 +511,33 @@ internal fun VoiceSelectionFragment.showDictTraceDialog() {
             ).applyDictionaryFirst(raw, "ar")
             val traceLines = traces.map { tr ->
                 val modeStr = when (tr.matchMode.uppercase()) {
-                    "WHOLE", "STANDALONE" -> "كلمة منفردة"
+                    "WHOLE", "STANDALONE" -> "كلمة مستقلة"
                     "ANYWHERE" -> "أي موضع"
                     else -> "تلقائي"
                 }
-                val status = if (tr.accepted) "✓ قُبلت"
-                else "✗ رُفضت (${tr.reason})"
-                "• المفتاح: «${tr.key}» ← «${tr.value}» | " +
-                    "الوضع: $modeStr | الحالة: $status"
+                val decision = if (tr.accepted) "مقبول" else "مرفوض"
+                "المفتاح المختار: «${tr.key}» ← النطق: «${tr.value}». " +
+                    "الوضع: $modeStr. " +
+                    "القرار: $decision. " +
+                    "السبب: ${tr.reason}"
             }
+            val note = getString(R.string.dict_trace_diacritic_note)
             val tracesText = if (traceLines.isEmpty()) {
-                "• لا توجد مطابقات في القاموس لهذا النص"
+                getString(R.string.dict_trace_no_matches)
             } else {
                 traceLines.joinToString("\n")
             }
-            tvResult.text = "قبل القاموس: $raw\n" +
-                "بعد القاموس (محلي): $proc\n" +
-                "حد الكلمة المنفردة: $standaloneMax\n\n" +
-                "المطابقات وأسباب القبول/الرفض:\n$tracesText\n" +
-                "(تعذّر الاتصال بـ :tts؛ استُخدم المسار المحلي)"
+            val text = getString(R.string.dict_trace_before, raw) + "\n" +
+                getString(R.string.dict_trace_after_local, proc) + "\n" +
+                getString(
+                    R.string.dict_trace_standalone_local, standaloneMax
+                ) + "\n\n" +
+                note + "\n\n" +
+                getString(R.string.dict_trace_results_header) + "\n" +
+                tracesText + "\n" +
+                getString(R.string.dict_trace_fallback_note)
+            tvResult.text = text
+            tvResult.contentDescription = text
         }
     }
 }

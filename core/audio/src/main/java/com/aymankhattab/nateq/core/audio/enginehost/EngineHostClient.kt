@@ -67,6 +67,14 @@ object EngineHostClient {
     /** آخر مسار بيانات تم تهيئة المحرك به لإعادة استخدامه عند إعادة الربط. */
     private val lastDataDirs = ConcurrentHashMap<String, String>()
 
+    /**
+     * عدّاد النداءات النشطة لكل محرك مضيف (synthesize/init/listVoices/…).
+     * مع علامة تحرير مؤجّل: يمنع إغلاق/تحرير الاتصال أو المضيف المشترك
+     * أثناء استخدامه، ويُنفَّذ التحرير فور خلوّ العداد (بند 1-8/أ).
+     */
+    private val activeCalls = ConcurrentHashMap<String, AtomicInteger>()
+    private val pendingRelease = ConcurrentHashMap.newKeySet<String>()
+
     @Volatile
     private var appContext: Context? = null
 
@@ -319,16 +327,57 @@ object EngineHostClient {
     }
 
     /**
-     * إصدار اتصال محرك: يوقف جلسته في المضيف ثم يفكّ الربط. بلا
-     * انتظار (لا يعلّق خيط المُستدعي — يُنفَّذ خلفياً).
+     * تحرير موارد محرك مضيف: يؤجّل التحرير إن كان قيد استخدام نشط
+     * (synthesize/init/listVoices/…) ويُنفَّذ فور خلوّ النداءات، منعاً
+     * لإغلاق الاتصال أو المضيف المشترك أثناء الاستخدام (بند 1-8/أ).
+     * بلا انتظار (لا يعلّق خيط المُستدعي — يُنفَّذ خلفياً عند الإمكان).
      */
     fun release(context: Context, engineId: String) {
         val id = HostProtocol.normalizeEngineId(engineId)
+        requestRelease(id)
+    }
+
+    /** يطلب تحرير محرك مضيف مع احترام النداءات النشطة الجارية. */
+    private fun requestRelease(engineId: String) {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        val active = activeCalls[id]?.get() ?: 0
+        if (active > 0) {
+            pendingRelease.add(id)
+            Log.i(TAG, "release deferred: $id has $active active call(s)")
+            return
+        }
+        pendingRelease.remove(id)
+        performRelease(id)
+    }
+
+    private fun performRelease(engineId: String) {
+        val id = HostProtocol.normalizeEngineId(engineId)
         initializedEngines.remove(id)
+        lastDataDirs.remove(id)
         val connection = connections.remove(id) ?: return
         background.execute {
             runCatching { connection.current()?.shutdown(id) }
             connection.close()
+        }
+        activeCalls.remove(id)
+    }
+
+    private fun beginActiveCall(engineId: String) {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        pendingRelease.remove(id)
+        activeCalls.computeIfAbsent(id) { AtomicInteger(0) }
+            .incrementAndGet()
+    }
+
+    private fun endActiveCall(engineId: String) {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        val counter = activeCalls[id] ?: return
+        val remaining = counter.decrementAndGet()
+        if (remaining <= 0) {
+            activeCalls.remove(id, counter)
+            if (pendingRelease.remove(id)) {
+                performRelease(id)
+            }
         }
     }
 
@@ -437,56 +486,61 @@ object EngineHostClient {
         body: suspend (IEmbeddedEngineHost) -> T
     ): HostCall<T> {
         val id = HostProtocol.normalizeEngineId(engineId)
-        var attempt = 0
-        var last = HostCall.Failure(
-            "HOST_UNAVAILABLE",
-            "تعذّر الوصول إلى مضيف $id"
-        )
-        while (attempt < 2) {
-            attempt++
-            val svc = connection(context, id).service()
-            if (svc == null) {
-                last = HostCall.Failure(
-                    "HOST_UNAVAILABLE",
-                    "تعذّر ربط مضيف $id"
-                )
-                continue
-            }
-            val result: HostCall<T> = try {
-                HostCall.Success(body(svc))
-            } catch (t: HostCallException) {
-                HostCall.Failure(t.code, t.message)
-            } catch (t: DeadObjectException) {
-                Log.e(TAG, "موت المضيف أثناء النداء: ${t.message}")
-                HostCall.Failure("HOST_DIED", "انهار مضيف $id")
-            } catch (t: CancellationException) {
-                throw t
-            } catch (t: RemoteException) {
-                HostCall.Failure("HOST_ERROR", t.message ?: "خطأ بَرْج")
-            } catch (t: Throwable) {
-                Log.e(TAG, "خطأ غير متوقّع من المضيف: ${t.message}", t)
-                HostCall.Failure(
-                    "HOST_ERROR",
-                    t.message ?: "خطأ غير متوقّع"
-                )
-            }
-            when (result) {
-                is HostCall.Success -> return result
-                is HostCall.Failure -> last = result
-            }
-            val died = last.code == "HOST_DIED" ||
-                last.code == "HOST_UNAVAILABLE"
-            if (!died || attempt >= 2) {
-                if (died) {
-                    initializedEngines.remove(id)
+        beginActiveCall(id)
+        try {
+            var attempt = 0
+            var last = HostCall.Failure(
+                "HOST_UNAVAILABLE",
+                "تعذّر الوصول إلى مضيف $id"
+            )
+            while (attempt < 2) {
+                attempt++
+                val svc = connection(context, id).service()
+                if (svc == null) {
+                    last = HostCall.Failure(
+                        "HOST_UNAVAILABLE",
+                        "تعذّر ربط مضيف $id"
+                    )
+                    continue
                 }
-                return last
+                val result: HostCall<T> = try {
+                    HostCall.Success(body(svc))
+                } catch (t: HostCallException) {
+                    HostCall.Failure(t.code, t.message)
+                } catch (t: DeadObjectException) {
+                    Log.e(TAG, "موت المضيف أثناء النداء: ${t.message}")
+                    HostCall.Failure("HOST_DIED", "انهار مضيف $id")
+                } catch (t: CancellationException) {
+                    throw t
+                } catch (t: RemoteException) {
+                    HostCall.Failure("HOST_ERROR", t.message ?: "خطأ بَرْج")
+                } catch (t: Throwable) {
+                    Log.e(TAG, "خطأ غير متوقّع من المضيف: ${t.message}", t)
+                    HostCall.Failure(
+                        "HOST_ERROR",
+                        t.message ?: "خطأ غير متوقّع"
+                    )
+                }
+                when (result) {
+                    is HostCall.Success -> return result
+                    is HostCall.Failure -> last = result
+                }
+                val died = last.code == "HOST_DIED" ||
+                    last.code == "HOST_UNAVAILABLE"
+                if (!died || attempt >= 2) {
+                    if (died) {
+                        initializedEngines.remove(id)
+                    }
+                    return last
+                }
+                // ع٢٩-5: إعادة محاولة واحدة فقط — أعد البناء ثم أعد النداء.
+                initializedEngines.remove(id)
+                connection(context, id).invalidate()
             }
-            // ع٢٩-5: إعادة محاولة واحدة فقط — أعد البناء ثم أعد النداء.
-            initializedEngines.remove(id)
-            connection(context, id).invalidate()
+            return last
+        } finally {
+            endActiveCall(id)
         }
-        return last
     }
 
     private fun cancelRequest(
