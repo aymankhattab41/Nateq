@@ -206,7 +206,8 @@ object AcapelaVoiceManifest {
         return result.iniFile
     }
 
-    /** جذر الحزمة المحددة: ابن مباشر لجذر Acapela يضم [startDir]، أو [startDir]. */
+    /** جذر الحزمة المحددة: ابن مباشر لجذر Acapela يضم [startDir]،
+     * أو [startDir]. */
     private fun findPackageRoot(startDir: File): File {
         val base = if (startDir.isDirectory) startDir
         else (startDir.parentFile ?: startDir)
@@ -328,7 +329,8 @@ object AcapelaVoiceManifest {
         if (expectedToken != null) {
             val foreign = allTokens - expectedToken
             if (foreign.isNotEmpty() && expectedToken !in allTokens) {
-                reasons += "التهيئة تخص صوتاً آخر (${foreign.joinToString()}) " +
+                reasons += "التهيئة تخص صوتاً آخر " +
+                    "(${foreign.joinToString()}) " +
                     "لا الصوت المطلوب ($expectedToken)"
                 return IniCandidate(
                     file, IniDiscoveryState.INCOMPATIBLE_INI, reasons
@@ -342,7 +344,8 @@ object AcapelaVoiceManifest {
                 )
             }
         } else if (fileTokens.size > 1) {
-            reasons += "هوية صوت غير محددة في المرشح: ${fileTokens.joinToString()}"
+            reasons += "هوية صوت غير محددة في " +
+                "المرشح: ${fileTokens.joinToString()}"
         }
 
         val incompatible = substitute || !substantial
@@ -432,7 +435,10 @@ object AcapelaVoiceManifest {
         val data = dir.listFiles { f ->
             f.isFile && f.extension.lowercase(Locale.ROOT) in DATA_EXTENSIONS
         }.orEmpty()
-        if (data.any { stem.contains(it.nameWithoutExtension.lowercase(Locale.ROOT)) ||
+        if (data.any {
+                stem.contains(
+                    it.nameWithoutExtension.lowercase(Locale.ROOT)
+                ) ||
                 it.nameWithoutExtension.lowercase(Locale.ROOT).contains(
                     stem.take(12)
                 )
@@ -441,7 +447,8 @@ object AcapelaVoiceManifest {
                 .contains(expectedToken)
         ) score += 2
         // وجود تبعيات معلنة قابلة للحل من نفس المجلد مؤشر نسخة متطابقة.
-        val deps = runCatching { parseIniDependencies(ini) }.getOrDefault(emptyList())
+        val deps =
+            runCatching { parseIniDependencies(ini) }.getOrDefault(emptyList())
         if (deps.isNotEmpty()) {
             val resolved = deps.count {
                 resolveRelativeFile(dir, it.relativePath) != null
@@ -831,7 +838,11 @@ object AcapelaVoiceManifest {
     fun isCompleteVoiceDir(dir: File): Boolean {
         if (!dir.exists() || !dir.isDirectory) return false
         val discovery = runCatching {
-            discoverVoiceConfig(dir, expectedSpeakerHint = dir.name, maxDepth = 4)
+            discoverVoiceConfig(
+                dir,
+                expectedSpeakerHint = dir.name,
+                maxDepth = 4
+            )
         }.getOrNull() ?: return false
         if (discovery.state != IniDiscoveryState.AUTHENTIC) return false
         val iniDir = discovery.iniFile?.parentFile ?: return false
@@ -854,7 +865,11 @@ object AcapelaVoiceManifest {
             if (c.state != IniDiscoveryState.AUTHENTIC) continue
             val vDir = ini.parentFile ?: continue
             val hint = voiceHintFromIni(ini, vDir)
-            val d = discoverVoiceConfig(vDir, expectedSpeakerHint = hint, maxDepth = 2)
+            val d = discoverVoiceConfig(
+                vDir,
+                expectedSpeakerHint = hint,
+                maxDepth = 2
+            )
             if (d.state == IniDiscoveryState.AUTHENTIC &&
                 d.iniFile?.absolutePath == ini.absolutePath
             ) {
@@ -1956,7 +1971,12 @@ object AcapelaVoiceManifest {
 
     private fun findRegistrationInYaml(dir: File): String? {
         val candidates = listOf("config.yaml", "engines.yaml")
-        val dirs = listOfNotNull(dir, dir.parentFile)
+        val root = runCatching { findAcapelaRootDir(dir) }.getOrNull()
+        val dirs = LinkedHashSet<File>().apply {
+            add(dir)
+            dir.parentFile?.let { add(it) }
+            root?.let { add(it) }
+        }
         for (d in dirs) {
             for (name in candidates) {
                 val f = File(d, name)

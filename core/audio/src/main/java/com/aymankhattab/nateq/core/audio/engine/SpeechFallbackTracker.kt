@@ -163,6 +163,13 @@ object SpeechFallbackTracker {
         acapelaFallbackEngine = substituteEngine
     }
 
+    fun clearAcapelaFallbackState() {
+        acapelaFallbackActive = false
+        acapelaFallbackVoice = null
+        acapelaFallbackEngine = null
+        acapelaFallbackReason = null
+    }
+
     fun isAcapelaFallbackActive(): Boolean = acapelaFallbackActive
 
     fun getRecentFormatted(): List<String> = records.map { it.format() }

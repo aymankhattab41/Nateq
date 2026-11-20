@@ -1894,6 +1894,8 @@ class NateqTtsService : TextToSpeechService() {
 
         // إذا فشل المحرك المختار تماماً ولم يبدأ، نحاول التحويل للمزود
         // الافتراضي كصوت بديل (Fallback) وتوثيق ذلك في سجل التشخيص (البند 7)
+        var acapelaAttemptFailed = false
+        var fallbackRecorded = false
         if (!started && effEngine != null) {
             // البند ١٧: الصوت المنطوق فعلاً هو صوت المزوّد البديل، لا
             // الاسم الثابت المُفترَض، وحالة Acapela وحدها تُسجَّل
@@ -1905,16 +1907,25 @@ class NateqTtsService : TextToSpeechService() {
                     "Samantha"
                 }
             }
-            val acapelaFailure = effEngine.contains("acapela", true) ||
+            acapelaAttemptFailed = effEngine.contains("acapela", true) ||
                 attemptedProvider?.providerId?.contains(
                     "acapela", true
                 ) == true
-            if (acapelaFailure) {
-                SpeechFallbackTracker.noteAcapelaFailure(
-                    reason = "فشل تخليق Acapela في $effEngine",
-                    substituteVoice = fallbackVoiceName,
-                    substituteEngine = provider.providerId
-                )
+            if (acapelaAttemptFailed) {
+                if (!SpeechFallbackTracker.isAcapelaFallbackActive()) {
+                    SpeechFallbackTracker.noteAcapelaFailure(
+                        reason = "فشل تخليق Acapela في $effEngine",
+                        substituteVoice = fallbackVoiceName,
+                        substituteEngine = provider.providerId
+                    )
+                } else {
+                    SpeechFallbackTracker.noteAcapelaFailure(
+                        reason = SpeechFallbackTracker.acapelaFallbackReason
+                            ?: "فشل تخليق Acapela في $effEngine",
+                        substituteVoice = fallbackVoiceName,
+                        substituteEngine = provider.providerId
+                    )
+                }
             } else {
                 Log.w(
                     TAG,
@@ -1950,6 +1961,12 @@ class NateqTtsService : TextToSpeechService() {
                 )
             }
             if (started) {
+                val fbReason = if (acapelaAttemptFailed) {
+                    SpeechFallbackTracker.acapelaFallbackReason
+                        ?: "تعثر نطق $effEngine والانتقال للبديل"
+                } else {
+                    "تعثر نطق $effEngine والانتقال للبديل"
+                }
                 SpeechFallbackTracker.record(
                     text = speechText,
                     languageTag = languageTag,
@@ -1958,8 +1975,9 @@ class NateqTtsService : TextToSpeechService() {
                     actualEngine = provider.providerId,
                     actualVoice = voice.id,
                     isFallback = true,
-                    fallbackReason = "تعثر نطق $effEngine والانتقال للبديل"
+                    fallbackReason = fbReason
                 )
+                fallbackRecorded = true
                 // البند ١٧: يُسجَّل الصوت الفعلي المنطوق بعد التحويل.
                 Log.i(
                     TAG,
@@ -1969,8 +1987,14 @@ class NateqTtsService : TextToSpeechService() {
             }
         }
 
+        val attemptedAcapela =
+            (effEngine ?: finalEngine ?: "").contains("acapela", true) ||
+                attemptedProvider?.providerId?.contains("acapela", true) == true
         if (started) {
-            if (!SpeechFallbackTracker.isAcapelaFallbackActive()) {
+            if (!fallbackRecorded) {
+                if (attemptedAcapela) {
+                    SpeechFallbackTracker.clearAcapelaFallbackState()
+                }
                 SpeechFallbackTracker.record(
                     text = speechText,
                     languageTag = languageTag,
@@ -1988,6 +2012,12 @@ class NateqTtsService : TextToSpeechService() {
             singleCategory?.let { CategoryFailureTracker.recordSuccess(it) }
             callback.done()
         } else {
+            val failReason = if (attemptedAcapela) {
+                SpeechFallbackTracker.acapelaFallbackReason
+                    ?: "فشل التخليق بالكامل (callback.error)"
+            } else {
+                "فشل التخليق بالكامل (callback.error)"
+            }
             SpeechFallbackTracker.record(
                 text = speechText,
                 languageTag = languageTag,
@@ -1995,8 +2025,8 @@ class NateqTtsService : TextToSpeechService() {
                 requestedVoice = finalVoiceName ?: effVoice ?: voice.id,
                 actualEngine = "none",
                 actualVoice = "none",
-                isFallback = false,
-                fallbackReason = "فشل التخليق بالكامل (callback.error)"
+                isFallback = attemptedAcapela,
+                fallbackReason = failReason
             )
             singleCategory?.let { CategoryFailureTracker.recordFailure(it) }
             callback.error()

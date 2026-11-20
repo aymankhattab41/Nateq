@@ -102,6 +102,59 @@ class SpeechFallbackTrackerTest {
     }
 
     @Test
+    fun clearAcapelaFallbackState_resetsFallbackOnly() {
+        SpeechFallbackTracker.record(
+            text = "مرحبا",
+            languageTag = "ar",
+            requestedEngine = "acapela_embedded",
+            requestedVoice = "Salma",
+            actualEngine = "acapela_embedded",
+            actualVoice = "Salma",
+            isFallback = false
+        )
+        SpeechFallbackTracker.noteAcapelaFailure(
+            reason = "CONFIG_YAML_MISSING",
+            substituteVoice = "Laila",
+            substituteEngine = "vocalizer_embedded"
+        )
+        assertTrue(SpeechFallbackTracker.isAcapelaFallbackActive())
+
+        SpeechFallbackTracker.clearAcapelaFallbackState()
+
+        assertFalse(SpeechFallbackTracker.isAcapelaFallbackActive())
+        assertNull(SpeechFallbackTracker.acapelaFallbackReason)
+        assertEquals(1, SpeechFallbackTracker.getRecentFormatted().size)
+    }
+
+    @Test
+    fun failedAcapelaAttemptWithFallback_logsReasonRequestedAndSubstitute() {
+        SpeechFallbackTracker.noteAcapelaFailure(
+            reason = "فشل نطق Acapela [CONFIG_YAML_MISSING]: " +
+                "ملف config.yaml غير موجود",
+            substituteVoice = "Laila",
+            substituteEngine = "vocalizer_embedded"
+        )
+        SpeechFallbackTracker.record(
+            text = "مرحبا",
+            languageTag = "ar",
+            requestedEngine = "acapela_embedded",
+            requestedVoice = "Salma",
+            actualEngine = "vocalizer_embedded",
+            actualVoice = "Laila",
+            isFallback = true,
+            fallbackReason = SpeechFallbackTracker.acapelaFallbackReason
+        )
+
+        val entry = SpeechFallbackTracker.getRecentFormatted()[0]
+        assertTrue(entry.contains("acapela_embedded"))
+        assertTrue(entry.contains("Salma"))
+        assertTrue(entry.contains("vocalizer_embedded"))
+        assertTrue(entry.contains("Laila"))
+        assertTrue(entry.contains("CONFIG_YAML_MISSING"))
+        assertTrue(entry.contains("بديل"))
+    }
+
+    @Test
     fun record_truncatesTextSnippetTo40Characters() {
         val longText = "أ".repeat(50)
         SpeechFallbackTracker.record(

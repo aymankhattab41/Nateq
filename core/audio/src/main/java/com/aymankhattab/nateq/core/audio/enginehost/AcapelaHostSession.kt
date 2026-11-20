@@ -654,9 +654,31 @@ internal class AcapelaHostSession(
                 return extended
             }
 
+            val resolvedReg = AcapelaVoiceManifest.resolveRegistration(
+                voice.dir
+            )
+            if (AcapelaVoiceManifest.isRegistrationMetadata(resolvedReg)) {
+                val registeredVoice = voice.copy(registration = resolvedReg)
+                val extended = speakExtended(
+                    voice = registeredVoice,
+                    chunks = chunks,
+                    rate = req.rate,
+                    pitch = req.pitch,
+                    sink = sink,
+                    cancelled = cancelled
+                )
+                if (!extended.ok) {
+                    logVoiceDiagnostics(
+                        registeredVoice,
+                        extended.code ?: "UNKNOWN"
+                    )
+                }
+                return extended
+            }
+
             if (isHdPackageWithoutRegistration(voice)) {
-                val hdMsg = "حزمة الصوت عالية الجودة (HD) تفتقر إلى ملف " +
-                    "config.yaml، يرجى إعادة استيراد الحزمة كاملة"
+                val hdMsg = "ملف config.yaml غير موجود في مجلد الصوت " +
+                    "أو المجلد الأب أو جذر files/Acapela"
                 val hdLog = "فشل النطق: CONFIG_YAML_MISSING - " +
                     "path=classic, registration.length=0, id=${voice.id}"
                 Log.w(TAG, hdLog)
@@ -1111,7 +1133,7 @@ internal class AcapelaHostSession(
         val voiceKey = registrationKey(voice)
         val rawParam =
             AcapelaVoiceManifest.readParamFromConfigYaml(voice.dir)
-        val registration = if (!rawParam.isNullOrBlank()) {
+        var registration = if (!rawParam.isNullOrBlank()) {
             AcapelaVoiceManifest.extractRegistrationFromParam(
                 rawParam,
                 context
@@ -1119,11 +1141,22 @@ internal class AcapelaHostSession(
         } else {
             voice.registration
         }
+        if (registration.isEmpty() ||
+            !AcapelaVoiceManifest.isRegistrationMetadata(registration)
+        ) {
+            val resolved =
+                AcapelaVoiceManifest.resolveRegistration(voice.dir)
+            if (AcapelaVoiceManifest.isRegistrationMetadata(resolved)) {
+                registration = resolved
+            }
+        }
         val regLen = registration.length
         if (regLen == 0) {
             return HostResult.failure(
                 "CONFIG_YAML_MISSING",
-                "بيانات التسجيل مفقودة في ${voice.dir.name}"
+                "بيانات التسجيل غير متوفرة في ${voice.dir.name} " +
+                    "(ملف config.yaml غير موجود في مجلد الصوت أو الأب أو " +
+                    "جذر files/Acapela)"
             )
         }
 
@@ -1360,10 +1393,15 @@ internal class AcapelaHostSession(
                 return parsed.first.trim()
             }
         }
+        val rootConfig = File(
+            AcapelaVoiceManifest.findAcapelaRootDir(dir),
+            "config.yaml"
+        )
         val yamlFile = File(dir, "config.yaml")
             .takeIf { it.isFile }
             ?: dir.parentFile?.let { File(it, "config.yaml") }
                 ?.takeIf { it.isFile }
+            ?: rootConfig.takeIf { it.isFile }
         if (yamlFile != null) {
             val content = runCatching {
                 yamlFile.readText(StandardCharsets.UTF_8)
@@ -2574,7 +2612,8 @@ internal class AcapelaHostSession(
                 Locale.US
             ).format(Date(startedAtMs))
             fun fmtInv(inv: Boolean, v: Int?) =
-                if (!inv) "لم يُستدعَ (غير مقيس)" else (v?.toString() ?: "غير مقيس")
+                if (!inv) "لم يُستدعَ (غير مقيس)"
+                else (v?.toString() ?: "غير مقيس")
             fun fmtLong(inv: Boolean, v: Long?) =
                 if (!inv) "غير مقيس" else (v?.toString() ?: "غير مقيس")
             val pcmBytesCount = trial.audioHandler.pcmBytes.size().toLong()
@@ -2583,25 +2622,35 @@ internal class AcapelaHostSession(
                 appendLine("runId: $runId")
                 appendLine("البداية: $startedText")
                 appendLine("المسار: ${trial.method}")
-                appendLine("nInit: ${fmtInv(trial.initInvoked, trial.initCode)}")
                 appendLine(
-                    "nSetVoiceMode: ${fmtInv(trial.modeInvoked, trial.modeCode)}"
+                    "nInit: " +
+                        "${fmtInv(trial.initInvoked, trial.initCode)}"
                 )
                 appendLine(
-                    "nSetLanguage: ${fmtInv(trial.langInvoked, trial.langCode)}"
+                    "nSetVoiceMode: " +
+                        "${fmtInv(trial.modeInvoked, trial.modeCode)}"
                 )
                 appendLine(
-                    "nSetCurrentVoice: ${fmtInv(trial.voiceInvoked, trial.voiceCode)}"
+                    "nSetLanguage: " +
+                        "${fmtInv(trial.langInvoked, trial.langCode)}"
                 )
                 appendLine(
-                    "nSpeak: ${fmtInv(trial.speakInvoked, trial.speakCode)}"
+                    "nSetCurrentVoice: " +
+                        "${fmtInv(trial.voiceInvoked, trial.voiceCode)}"
+                )
+                appendLine(
+                    "nSpeak: " +
+                        "${fmtInv(trial.speakInvoked, trial.speakCode)}"
                 )
                 appendLine(
                     "callback موصول: " +
                         if (!trial.speakInvoked) "غير مقيس"
                         else if (trial.callbackConnected) "نعم" else "لا"
                 )
-                appendLine("عينات PCM: ${fmtLong(trial.pcmInvoked, trial.samples)}")
+                appendLine(
+                    "عينات PCM: " +
+                        "${fmtLong(trial.pcmInvoked, trial.samples)}"
+                )
                 appendLine(
                     "بايتات PCM: " +
                         if (!trial.pcmInvoked) "غير مقيس"

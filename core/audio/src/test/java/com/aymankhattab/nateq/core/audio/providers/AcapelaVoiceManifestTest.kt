@@ -580,6 +580,22 @@ class AcapelaVoiceManifestTest {
     }
 
     @Test
+    fun resolveRegistration_findsConfigYamlInAcapelaRootOnly() {
+        val root = tempFolder.newFolder("Acapela")
+        val voiceDir = File(root, "voice/acapela/salma22k_hq").apply {
+            mkdirs()
+        }
+        File(root, "config.yaml").writeText(
+            "param: \"salma22k_hq,user@domain.com,fedcba9876543210\"\n"
+        )
+
+        val reg = AcapelaVoiceManifest.resolveRegistration(voiceDir)
+
+        assertEquals("user@domain.comfedcba9876543210", reg)
+        assertTrue(AcapelaVoiceManifest.isRegistrationMetadata(reg))
+    }
+
+    @Test
     fun resolveRegistration_prefersConfigYamlOverHexFile() {
         val baseDir = tempFolder.newFolder("yaml_over_hex")
         File(baseDir, "config.yaml").writeText(

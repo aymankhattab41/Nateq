@@ -191,6 +191,37 @@ object AcapelaVoiceImporter {
     }
 
     /**
+     * يضمن وجود config.yaml داخل كل مجلد حزمة صوت عند الاستيراد الجديد،
+     * مع إبقاء نسخة/بحث الجذر احتياطياً للحزم المستوردة سابقاً.
+     */
+    private fun ensureConfigYamlInVoiceDirs(baseDir: File) {
+        val configSource = AcapelaVoiceManifest
+            .findConfigYamlWithParam(baseDir)?.first
+            ?: baseDir.walkTopDown().maxDepth(6).firstOrNull { f ->
+                f.isFile && f.name.equals("config.yaml", ignoreCase = true)
+            } ?: return
+        val voiceDirs = AcapelaVoiceManifest.completeVoiceDirs(baseDir)
+            .ifEmpty {
+                baseDir.walkTopDown().maxDepth(6)
+                    .filter { it.isDirectory }
+                    .filter { AcapelaVoiceManifest.isCompleteVoiceDir(it) }
+                    .toList()
+            }
+        for (vd in voiceDirs) {
+            val target = File(vd, "config.yaml")
+            if (target.isFile) continue
+            runCatching {
+                configSource.copyTo(target, overwrite = false)
+            }.onSuccess {
+                Log.i(
+                    TAG,
+                    "نسخ config.yaml إلى مجلد حزمة الصوت ${vd.name}"
+                )
+            }
+        }
+    }
+
+    /**
      * استيراد صوت Acapela من ملف ZIP عبر [Uri].
      */
     suspend fun importFromZip(
@@ -281,6 +312,7 @@ object AcapelaVoiceImporter {
                         "نسخ MultiTTS حرفي: $copied ملفاً تحت " +
                             "${File(baseDir, "voice").absolutePath}"
                     )
+                    ensureConfigYamlInVoiceDirs(baseDir)
                     notifyStorageChanged(context)
                     return@withContext finishImport(
                         context = context,
@@ -454,6 +486,7 @@ object AcapelaVoiceImporter {
             }
 
             // إبطال كاش التخزين والمحركات لتحديث الواجهة فوراً
+            ensureConfigYamlInVoiceDirs(baseDir)
             notifyStorageChanged(context)
 
             finishImport(
@@ -594,6 +627,8 @@ object AcapelaVoiceImporter {
                         }
                     }
                 }
+            } else {
+                ensureConfigYamlInVoiceDirs(baseDir)
             }
 
             notifyStorageChanged(context)
@@ -811,6 +846,7 @@ object AcapelaVoiceImporter {
                     File(baseDir, "voice")
                 )
                 if (copied > 0) {
+                    ensureConfigYamlInVoiceDirs(baseDir)
                     notifyStorageChanged(context)
                     return@withContext finishImport(
                         context = context,
@@ -824,6 +860,7 @@ object AcapelaVoiceImporter {
                     File(baseDir, "voice/acapela")
                 )
                 if (copied > 0) {
+                    ensureConfigYamlInVoiceDirs(baseDir)
                     notifyStorageChanged(context)
                     return@withContext finishImport(
                         context = context,

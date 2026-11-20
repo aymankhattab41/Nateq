@@ -266,7 +266,12 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                     diagnostic.takeLast(
                         VoiceSelectionFragment.MAX_DIAGNOSTIC_LINES
                     )
-                        .forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
+                        .forEach {
+                            appendLine(
+                                AcapelaVoiceDiagnostics
+                                    .redactSensitiveLine(it)
+                            )
+                        }
                     appendLine("")
                 }
                 val errors = logLines.filter {
@@ -280,14 +285,24 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                     appendLine(
                         "--- أسطر الأخطاء الحرجة (${errors.size}) ---"
                     )
-                    errors.takeLast(300).forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
+                    errors.takeLast(300).forEach {
+                        appendLine(
+                            AcapelaVoiceDiagnostics
+                                .redactSensitiveLine(it)
+                        )
+                    }
                     appendLine("")
                 }
                 if (warnings.isNotEmpty()) {
                     appendLine(
                         "--- أسطر التحذيرات (${warnings.size}) ---"
                     )
-                    warnings.takeLast(200).forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
+                    warnings.takeLast(200).forEach {
+                        appendLine(
+                            AcapelaVoiceDiagnostics
+                                .redactSensitiveLine(it)
+                        )
+                    }
                     appendLine("")
                 }
                 // **كان `takeLast(150)`** يطبع التقرير آخر 150 سطراً فقط
@@ -297,7 +312,9 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                 appendLine(
                     "--- سجل نشاط التطبيق (${logLines.size} سطر) ---"
                 )
-                logLines.forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
+                logLines.forEach {
+                    appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it))
+                }
             }
 
             // الأمر 2 - البند 4: قسم مستقل بعنوان «سجل :tts»
@@ -325,14 +342,21 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                         "--- أسطر :tts المستهدفة " +
                             "(${ttsFiltered.size}) ---"
                     )
-                    ttsFiltered.takeLast(300).forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
+                    ttsFiltered.takeLast(300).forEach {
+                        appendLine(
+                            AcapelaVoiceDiagnostics
+                                .redactSensitiveLine(it)
+                        )
+                    }
                     appendLine("")
                 }
                 appendLine(
                     "--- أحدث أسطر عملية :tts " +
                         "(${ttsLogLines.size}) ---"
                 )
-                ttsLogLines.takeLast(300).forEach { appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
+                ttsLogLines.takeLast(300).forEach {
+                    appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it))
+                }
             }
         }
         // [بناء 10729] سقف التقرير المنسوخ/المُشارَك: يُبقى على
@@ -689,18 +713,14 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
                 }
                 val size = if (exists) configYamlFile!!.length() else 0L
                 val path = configYamlFile?.absolutePath ?: "غير محدد"
-                val regVal = if (exists && foundYaml != null) {
-                    AcapelaVoiceManifest
-                        .extractRegistrationFromParam(foundYaml.second)
-                } else if (exists) {
-                    val vDir = configYamlFile!!.parentFile
-                        ?: configYamlFile
-                    AcapelaVoiceManifest.readParamFromConfigYaml(
-                        vDir
-                    )?.let {
-                        AcapelaVoiceManifest
-                            .extractRegistrationFromParam(it)
-                    } ?: AcapelaVoiceManifest.resolveRegistration(vDir)
+                val vDir = when {
+                    exists -> configYamlFile!!.parentFile ?: configYamlFile
+                    foundYaml != null -> foundYaml.first.parentFile
+                        ?: searchDirs.firstOrNull()
+                    else -> searchDirs.firstOrNull()
+                }
+                val regVal = if (vDir != null) {
+                    AcapelaVoiceManifest.resolveRegistration(vDir)
                 } else {
                     ""
                 }
@@ -716,7 +736,7 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
                 } else if (regVal.isNotBlank()) {
                     "  حالة تسجيل Salma: مسجَّل بقيمة غير قياسية ($masked)"
                 } else {
-                    "  حالة تسجيل Salma: غير مسجَّل (لم يُعثر على param)"
+                    "  حالة تسجيل Salma: غير مسجَّل"
                 }
             }
 
@@ -818,10 +838,17 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
             if (localRecords.isEmpty()) {
                 sb.appendLine("لا توجد عمليات نطق مسجلة بعد")
             } else {
-                localRecords.forEach { sb.appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
+                localRecords.forEach {
+                    sb.appendLine(
+                        AcapelaVoiceDiagnostics
+                            .redactSensitiveLine(it)
+                    )
+                }
             }
         } else {
-            speechRecords.forEach { sb.appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it)) }
+            speechRecords.forEach {
+                sb.appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it))
+            }
         }
         sb.appendLine("")
 
@@ -836,9 +863,21 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
         // ── المحرك/الصوت المختار لكل فئة (مع السرعة/النبرة/المستوى) ──
         sb.appendLine("--- الاختيارات النشطة لكل فئة ---")
         sb.appendLine(
-            "الأشرطة العامة: سرعة=${"%.1f".format(runCatching { settings.getDefaultSpeechRate() }.getOrDefault(1f))}  " +
-                "نبرة=${"%.1f".format(runCatching { settings.getDefaultPitch() }.getOrDefault(1f))}  " +
-                "صوت=${"%.1f".format(runCatching { settings.getDefaultVolume() }.getOrDefault(1f))}"
+            "الأشرطة العامة: سرعة=" +
+                "%.1f".format(
+                    runCatching { settings.getDefaultSpeechRate() }
+                        .getOrDefault(1f)
+                ) + "  " +
+                "نبرة=" +
+                    "%.1f".format(
+                        runCatching { settings.getDefaultPitch() }
+                            .getOrDefault(1f)
+                    ) + "  " +
+                "صوت=" +
+                    "%.1f".format(
+                        runCatching { settings.getDefaultVolume() }
+                            .getOrDefault(1f)
+                    )
         )
         val categories = listOf(
             "time" to "إعلان الوقت",

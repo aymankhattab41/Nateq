@@ -508,7 +508,8 @@ object AcapelaVoiceDiagnostics {
                 issues += VoiceDependencyIssue(
                     dependency = "ini",
                     expectedPath = effectiveVoiceDir.absolutePath,
-                    reason = "لا يوجد ملف ini أصلية كاملة متوافقة داخل حدود الحزمة"
+                    reason = "لا يوجد ملف ini أصلية " +
+                        "كاملة متوافقة داخل حدود الحزمة"
                 )
             }
             AcapelaVoiceManifest.IniDiscoveryState.INCOMPATIBLE_INI -> {
@@ -551,7 +552,8 @@ object AcapelaVoiceDiagnostics {
                         issues += VoiceDependencyIssue(
                             dependency = "ini-dependencies",
                             expectedPath = ini.absolutePath,
-                            reason = "التهيئة الأصلية لا تحتوي توجيهات تبعيات قابلة للتحقق (PRO/SLV/NLP/ملفات)"
+                            reason = "التهيئة الأصلية لا تحتوي توجيهات " +
+                                "تبعيات قابلة للتحقق (PRO/SLV/NLP/ملفات)"
                         )
                     }
                     val refRoot = ini.parentFile ?: effectiveVoiceDir
@@ -559,12 +561,14 @@ object AcapelaVoiceDiagnostics {
                         val resolved = AcapelaVoiceManifest.resolveRelativeFile(
                             refRoot, dep.relativePath
                         )
-                        val expected = File(refRoot, dep.relativePath).absolutePath
+                        val expected =
+                            File(refRoot, dep.relativePath).absolutePath
                         if (resolved == null || !resolved.exists()) {
                             issues += VoiceDependencyIssue(
                                 dependency = dep.key,
                                 expectedPath = expected,
-                                reason = "تبعية ناقصة معلنة في ${ini.name}: ${dep.relativePath}"
+                                reason = "تبعية ناقصة معلنة في " +
+                                    "${ini.name}: ${dep.relativePath}"
                             )
                             continue
                         }
@@ -588,17 +592,21 @@ object AcapelaVoiceDiagnostics {
                             continue
                         }
                         val fp = fingerprintOf(resolved)
-                        checked += "${dep.key}:${dep.relativePath} -> ${resolved.absolutePath} ($fp)"
+                        checked += "${dep.key}:${dep.relativePath} " +
+                            "-> ${resolved.absolutePath} ($fp)"
                         if (stagedDir != null) {
-                            val staged = AcapelaVoiceManifest.resolveRelativeFile(
+                            val staged =
+                                AcapelaVoiceManifest.resolveRelativeFile(
                                 stagedDir, dep.relativePath
                             )
-                            val stagedExpected = File(stagedDir, dep.relativePath).absolutePath
+                            val stagedExpected =
+                                File(stagedDir, dep.relativePath).absolutePath
                             if (staged == null || !staged.exists()) {
                                 issues += VoiceDependencyIssue(
                                     dependency = dep.key,
                                     expectedPath = stagedExpected,
-                                    reason = "الملف غير موجود في النسخة المرحلية"
+                                    reason = "الملف غير موجود " +
+                                        "في النسخة المرحلية"
                                 )
                             } else {
                                 val sfp = fingerprintOf(staged)
@@ -606,10 +614,12 @@ object AcapelaVoiceDiagnostics {
                                     issues += VoiceDependencyIssue(
                                         dependency = dep.key,
                                         expectedPath = staged.absolutePath,
-                                        reason = "اختلاف بصمة/حجم بين المصدر والنسخة المرحلية"
+                                        reason = "اختلاف بصمة/حجم بين " +
+                                            "المصدر والنسخة المرحلية"
                                     )
                                 } else {
-                                    checked += "staged-ok:${dep.key} (${staged.absolutePath})"
+                                    checked += "staged-ok:${dep.key} " +
+                                        "(${staged.absolutePath})"
                                 }
                             }
                         }
@@ -619,22 +629,29 @@ object AcapelaVoiceDiagnostics {
         }
 
         if (hint.isNotBlank() && ini != null) {
-            val inVoice = effectiveVoiceDir.name.contains(hint, ignoreCase = true)
+            val inVoice =
+                effectiveVoiceDir.name.contains(hint, ignoreCase = true)
             val inIni = ini.name.contains(hint, ignoreCase = true)
             val inPath = ini.absolutePath.contains(hint, ignoreCase = true)
-            val matchesDir = discovery.voiceDir?.name?.contains(hint, ignoreCase = true) == true
+            val matchesDir = discovery.voiceDir?.name?.contains(
+                hint,
+                ignoreCase = true
+            ) == true
             if (!inVoice && !inIni && !inPath && !matchesDir) {
                 issues += VoiceDependencyIssue(
                     dependency = "voice-identity",
                     expectedPath = effectiveVoiceDir.absolutePath,
-                    reason = "هوية الصوت لا تطابق المطلوب ($hint) — منع خلط الأصوات"
+                    reason = "هوية الصوت لا تطابق " +
+                        "المطلوب ($hint) — منع خلط الأصوات"
                 )
             }
         }
 
         val contextTokens = buildSet {
             addKnownTokens(effectiveVoiceDir.name.lowercase(Locale.ROOT), this)
-            if (hint.isNotBlank()) addKnownTokens(hint.lowercase(Locale.ROOT), this)
+            if (hint.isNotBlank()) {
+                addKnownTokens(hint.lowercase(Locale.ROOT), this)
+            }
             discovery.voiceDir?.name?.lowercase(Locale.ROOT)?.let {
                 addKnownTokens(it, this)
             }
@@ -646,13 +663,17 @@ object AcapelaVoiceDiagnostics {
         if (foreign.isNotEmpty()) {
             issues += VoiceDependencyIssue(
                 dependency = "voice-mixing",
-                expectedPath = ini?.absolutePath ?: effectiveVoiceDir.absolutePath,
-                reason = "تهيئة ini تحمل هوية صوت آخر (${foreign.sorted()}) — يُمنع خلط الأصوات"
+                expectedPath = ini?.absolutePath
+                    ?: effectiveVoiceDir.absolutePath,
+                reason = "تهيئة ini تحمل هوية صوت آخر " +
+                    "(${foreign.sorted()}) — يُمنع خلط الأصوات"
             )
         }
 
         val hex = effectiveVoiceDir.walkTopDown().maxDepth(5).firstOrNull { f ->
-            f.isFile && f.name.matches(Regex("^0x[0-9a-fA-F]+$")) && f.length() > 0L
+            f.isFile &&
+                f.name.matches(Regex("^0x[0-9a-fA-F]+$")) &&
+                f.length() > 0L
         } ?: AcapelaVoiceManifest.findHexRegistrationFile(effectiveVoiceDir)
         if (hex == null) {
             issues += VoiceDependencyIssue(
@@ -661,12 +682,18 @@ object AcapelaVoiceDiagnostics {
                 reason = "ملف مفتاح الترخيص (0x...) غير موجود ضمن حزمة الصوت"
             )
         } else {
-            checked += "registration-key=${hex.absolutePath}(size=${hex.length()})"
+            checked +=
+                "registration-key=${hex.absolutePath}" +
+                    "(size=${hex.length()})"
         }
 
-        if (issues.any { it.dependency == "voice-mixing" || it.dependency == "voice-identity" }) {
+        if (issues.any {
+                it.dependency == "voice-mixing" ||
+                    it.dependency == "voice-identity"
+            }) {
             state = VoiceVerificationState.IDENTITY_MISMATCH
-        } else if (state == VoiceVerificationState.AUTHENTIC_READY && issues.any {
+        } else if (state == VoiceVerificationState.AUTHENTIC_READY &&
+            issues.any {
                 it.reason.contains("ناقصة") ||
                     it.reason.contains("غير موجود") ||
                     it.reason.contains("غير قابل للقراءة") ||
@@ -676,7 +703,8 @@ object AcapelaVoiceDiagnostics {
             state = VoiceVerificationState.MISSING_DEPENDENCIES
         }
 
-        val ok = issues.isEmpty() && state == VoiceVerificationState.AUTHENTIC_READY
+        val ok =
+            issues.isEmpty() && state == VoiceVerificationState.AUTHENTIC_READY
         val report = buildString {
             appendLine("=== التحقق من حزمة صوت Acapela الأصلية ===")
             appendLine("جذر الحزمة: ${discovery.packageRoot.absolutePath}")
@@ -1064,17 +1092,16 @@ object AcapelaVoiceDiagnostics {
         val yamlExists = configYaml?.isFile == true && configYaml.exists()
         val yamlSize = if (yamlExists) configYaml!!.length() else 0L
         val yamlPath = configYaml?.absolutePath ?: "غير معروف"
-        val regVal = if (yamlExists && foundYaml != null) {
-            AcapelaVoiceManifest.extractRegistrationFromParam(foundYaml.second)
-        } else if (yamlExists) {
-            val vDir = configYaml!!.parentFile ?: configYaml
-            AcapelaVoiceManifest.readParamFromConfigYaml(vDir)?.let {
-                AcapelaVoiceManifest.extractRegistrationFromParam(it)
-            } ?: voiceDir?.let {
-                AcapelaVoiceManifest.resolveRegistration(it)
-            }.orEmpty()
-        } else {
-            ""
+        val regVal = when {
+            voiceDir != null ->
+                AcapelaVoiceManifest.resolveRegistration(voiceDir)
+            rootDir != null ->
+                AcapelaVoiceManifest.resolveRegistration(rootDir)
+            foundYaml != null ->
+                AcapelaVoiceManifest.resolveRegistration(
+                    foundYaml.first.parentFile ?: foundYaml.first
+                )
+            else -> ""
         }
         val maskedReg = if (regVal.isEmpty()) {
             "(لا يوجد)"
@@ -2288,7 +2315,8 @@ object AcapelaVoiceDiagnostics {
      * تشغيل محاولة تشخيص واحدة جديدة فقط لصوت Acapela: تنظيف آثار
      * التشخيص القديمة في cache (بلا مسّ بيانات الأصوات)، ثم تنفيذ محاولة
      * تخليق واحدة عبر المسار الطبيعي حتى يكتب المضيف سجل محاولة مقطوعاً
-     * (runId + وقت بداية + بيانات بناء فعلية) في [ACAPELA_FULL_DIAGNOSTIC_FILE].
+     * (runId + وقت بداية + بيانات بناء فعلية) في
+     * [ACAPELA_FULL_DIAGNOSTIC_FILE].
      * لا يُنشئ ملفات تشخيص قديمة ولا يُلحق بإرث سابق.
      */
     suspend fun runDiagnosticProbe(context: Context) {
