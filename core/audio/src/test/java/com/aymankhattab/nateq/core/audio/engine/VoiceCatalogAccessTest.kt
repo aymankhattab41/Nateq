@@ -138,4 +138,46 @@ class VoiceCatalogAccessTest {
         /** فترة صلاحية طويلة تُبقي الاختبار بعيداً عن كرونومتر النظام. */
         const val LONG_TTL_MS = 60 * 60 * 1000L
     }
+
+
+    /** إصلاح 1.6.142 ع4: استنتاج لغة مفقودة (Mariam→ar) ومنع مجموعات لغة فارغة. */
+    @Test
+    fun infersMissingLanguageForMariam_andSkipsEmpty() {
+        val engineLabels = listOf(
+            "com.acapelagroup.android.tts" to "Acapela"
+        )
+        val mariam = android.speech.tts.Voice(
+            "Mariam",
+            java.util.Locale.ROOT,
+            android.speech.tts.Voice.QUALITY_HIGH,
+            android.speech.tts.Voice.LATENCY_NORMAL,
+            false,
+            emptySet()
+        )
+        val unknown = android.speech.tts.Voice(
+            "MysteryVoice",
+            java.util.Locale.ROOT,
+            android.speech.tts.Voice.QUALITY_NORMAL,
+            android.speech.tts.Voice.LATENCY_NORMAL,
+            false,
+            emptySet()
+        )
+        val grouped = VoiceCatalog.groupVoicesByLanguage(
+            engineLabels,
+            mapOf(
+                "com.acapelagroup.android.tts" to
+                    listOf(mariam, unknown)
+            )
+        )
+        // Mariam تُستنتج عربيًا فلا تُفقد، والمجهول بلا لغة يُتخطى بلا مجموعة فارغة.
+        assertTrue(grouped.containsKey("ar"))
+        val arVoices = grouped["ar"]
+            ?.firstOrNull()
+            ?.voices
+            ?.map { it.name }
+            .orEmpty()
+        assertTrue(arVoices.contains("Mariam"))
+        assertFalse(grouped.containsKey(""))
+    }
+
 }

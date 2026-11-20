@@ -72,37 +72,77 @@ class AcapelaEmbeddedVoiceProvider(
             for (dir in searchDirs) {
                 val voices = AcapelaVoiceManifest.cachedVoices(dir)
                 for (v in voices) {
-                    // لغةٌ غير معروفة (ROOT) تظهر في القائمة العامة فقط،
-                    // ولا تُعرض تحت لغةٍ صريحة كي لا تبدو كل الأصوات
-                    // عربية عند اختيار العربية.
+                    val resolvedLocale =
+                        if (v.locale.language.isNotBlank()) {
+                            v.locale
+                        } else {
+                            inferVoiceLocale(v, locale)
+                        }
+                    val requested = locale.language.takeIf {
+                        it.isNotBlank()
+                    }?.let {
+                        com.aymankhattab.nateq.util.LocaleUtils
+                            .normalizeLanguageCode(it)
+                    }
+                    val voiceLang =
+                        com.aymankhattab.nateq.util.LocaleUtils
+                            .normalizeLanguageCode(
+                                resolvedLocale.toLanguageTag()
+                            )
                     val matches = locale == Locale.ROOT ||
-                        locale.language.isBlank() ||
-                        (v.locale.language.isNotEmpty() &&
-                            v.locale.language.equals(
-                                locale.language,
-                                ignoreCase = true
-                            ))
+                        requested == null ||
+                        voiceLang.equals(requested, ignoreCase = true) ||
+                        (requested == com.aymankhattab.nateq.util
+                            .LanguageCode.AR.tag &&
+                            (v.voiceName.contains(
+                                "mariam", ignoreCase = true
+                            ) || v.id.contains(
+                                "mariam", ignoreCase = true
+                            )))
                     if (matches) {
                         result.add(
                             VoiceDescriptor(
                                 id = v.id,
                                 providerId = PROVIDER_ID,
                                 displayName = v.displayName,
-                                locale = v.locale
+                                locale = resolvedLocale
                             )
                         )
                     }
                 }
             }
-            result.distinctBy { "${it.id}|${it.locale.language}" }
+            result.distinctBy {
+                "${it.id}|${it.locale.toLanguageTag()}"
+            }
         }
 
-    /**
-     * علامة الانهيار القديمة (`CRASHED_LAST_RUN`) كانت تحجب التهيئة
-     * إلى الأبد: كل نداء يعود بالفشل نفسه فيبقى المحرك معطلاً حتى
-     * مسح البيانات. تُشفى الحالة بإعادة **واحدة** قسرية، فلا تكرار
-     * بلا نهاية إن كان العطل حقيقياً.
-     */
+    private fun inferVoiceLocale(
+        voice: AcapelaVoiceManifest.VoiceInfo,
+        fallback: Locale
+    ): Locale {
+        val combined =
+            "${voice.voiceName} ${voice.id} ${voice.rawSpeaker.orEmpty()}"
+        val tag = when {
+            combined.contains("mariam", ignoreCase = true) ||
+                combined.contains("salma", ignoreCase = true) ||
+                combined.contains("leila", ignoreCase = true) ||
+                combined.contains("layla", ignoreCase = true) ||
+                combined.contains("tarik", ignoreCase = true) ||
+                combined.contains("mehdi", ignoreCase = true) ||
+                combined.contains("nizar", ignoreCase = true) ->
+                com.aymankhattab.nateq.util.LanguageCode.AR.tag
+            else -> fallback.toLanguageTag().takeIf {
+                fallback.language.isNotBlank()
+            } ?: com.aymankhattab.nateq.util.LanguageCode.AR.tag
+        }
+        return runCatching { Locale.forLanguageTag(tag) }
+            .getOrDefault(
+                Locale.forLanguageTag(
+                    com.aymankhattab.nateq.util.LanguageCode.AR.tag
+                )
+            )
+    }
+
     @Volatile
     private var crashRetryDone = false
 

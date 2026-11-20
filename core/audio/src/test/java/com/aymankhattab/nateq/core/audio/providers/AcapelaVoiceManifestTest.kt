@@ -919,4 +919,47 @@ class AcapelaVoiceManifestTest {
         val infoZeroHex = AcapelaVoiceManifest.parseConfigFile(inf22k)
         assertEquals("", infoZeroHex.registration)
     }
+
+
+    @Test
+    fun hdInfWithDataAndConfigYamlParam_isAcceptedWithoutIni() {
+        val baseDir = tempFolder.newFolder("AcapelaHd")
+        val voiceDir = File(baseDir, "mariam").apply { mkdirs() }
+        // حزمة HD ممتدة: .inf + بيانات + config.yaml(param) بلا .ini
+        File(voiceDir, "mariam.inf").writeText(
+            "[Voice]\n" +
+                "Speaker=Mariam\n" +
+                "IsoCode=ara\n" +
+                "SampleRate=22050\n"
+        )
+        File(voiceDir, "mariam.bvcu").writeBytes(ByteArray(20_000))
+        File(voiceDir, "config.yaml").writeText(
+            "param: \"voicecode,user@example.com,0011223344556677\"\n"
+        )
+
+        assertTrue(
+            "حزمة HD الممتدة يجب أن تُقبل كمكتملة",
+            AcapelaVoiceManifest.isCompleteVoiceDir(voiceDir)
+        )
+        val complete = AcapelaVoiceManifest.completeVoiceDirs(baseDir)
+        assertEquals(1, complete.size)
+        assertEquals(voiceDir.canonicalPath, complete[0].canonicalPath)
+
+        val voices = AcapelaVoiceManifest.listVoices(baseDir)
+        assertEquals(1, voices.size)
+        assertTrue(
+            voices.first().voiceName.contains("Mariam", true) ||
+                voices.first().id.contains("mariam", true)
+        )
+    }
+
+    @Test
+    fun classicIniStrictness_stillRequiredForClassicPackage() {
+        val dir = tempFolder.newFolder("classic_no_ini")
+        File(dir, "voice.inf").writeText("Speaker=Salma\nIsoCode=ara\n")
+        File(dir, "voice.dat").writeBytes(ByteArray(20_000))
+        // بلا config.yaml(param) وبلا .ini أصلي => غير مكتمل
+        assertFalse(AcapelaVoiceManifest.isCompleteVoiceDir(dir))
+    }
+
 }

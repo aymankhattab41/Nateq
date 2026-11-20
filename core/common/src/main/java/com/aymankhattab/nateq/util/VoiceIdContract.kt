@@ -209,12 +209,12 @@ object VoiceIdContract {
             }
             val isGoogle = voiceId.contains("-x-") ||
                 voiceId.endsWith("-local")
-            val isAcapela = voiceId.startsWith("ar_") ||
-                voiceId.startsWith("en_") ||
-                voiceId.startsWith("ara-") ||
-                voiceId.startsWith("eng-") ||
-                voiceId.startsWith("fra-") ||
-                voiceId.contains("acapela")
+            val isAcapela = voiceId.startsWith("ar_", ignoreCase = true) ||
+                voiceId.startsWith("en_", ignoreCase = true) ||
+                voiceId.startsWith("ara-", ignoreCase = true) ||
+                voiceId.startsWith("eng-", ignoreCase = true) ||
+                voiceId.startsWith("fra-", ignoreCase = true) ||
+                voiceId.contains("acapela", ignoreCase = true)
             val isSamsung = voiceId.contains("_f00") ||
                 voiceId.contains("_m00")
             if (isGoogle || isAcapela || isSamsung) return false
@@ -231,12 +231,12 @@ object VoiceIdContract {
             }
             val isGoogle = voiceId.contains("-x-") ||
                 voiceId.endsWith("-local")
-            val isAcapela = voiceId.startsWith("ar_") ||
-                voiceId.startsWith("en_") ||
-                voiceId.startsWith("ara-") ||
-                voiceId.startsWith("eng-") ||
-                voiceId.startsWith("fra-") ||
-                voiceId.contains("acapela")
+            val isAcapela = voiceId.startsWith("ar_", ignoreCase = true) ||
+                voiceId.startsWith("en_", ignoreCase = true) ||
+                voiceId.startsWith("ara-", ignoreCase = true) ||
+                voiceId.startsWith("eng-", ignoreCase = true) ||
+                voiceId.startsWith("fra-", ignoreCase = true) ||
+                voiceId.contains("acapela", ignoreCase = true)
             val isSamsung = voiceId.contains("_f00") ||
                 voiceId.contains("_m00")
             if (isGoogle || isAcapela || isSamsung) return false

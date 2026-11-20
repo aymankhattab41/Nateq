@@ -728,6 +728,10 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Accept extended Acapela HD packages (.inf + voice data + config.yaml with param) as complete for discovery/listing/readiness/import while keeping strict .ini validation for classic packages only; avoid false "data directory not found"/DIR_NOT_FOUND diagnosis and never delete a sole config.
+• Make *.userdico files optional: create the sibling userdicos folder if missing and continue to nInit/nSpeak, while keeping .bvcu and NLP/ strict before nInit.
+• Caller announcement: verify the selected voice belongs to the resolved engine before speaking; if not, use a safe fallback within the same engine (Arabic/Vocalizer: Tarik or engine default) without sending a voice ID to an engine that does not own it, and record the failure/reason without VOICE_NOT_FOUND.
+• Infer missing voice language (e.g. Mariam → Arabic) or use the engine default language to prevent empty language groups across catalog/provider paths, with guard tests for contracts 1–4.
 ? Unified the languages/auto-convert entry: removed the duplicate per-language reading voice entry and kept the original Convert Languages/auto-convert path with all its settings and language selection in the correct place.
 ? Improved voice stability and speech cache after Accessibility Service detach/reconnect for both reader and announcements: wait for readiness before speech, set language before voice, verify voice application sequentially tied to the speech cycle with safe cancellation, and prevent storing/retrieving unverified PCM cache results or results from cancelled/stale cycles, with logging of requested/actual engine and voice, cache outcome, and reasons without private text.
 ? Fully restored "Read later": an independent card after the Text reading section to save texts from apps and read/stop/delete them with persistent storage and history, deduplication on redelivery, removal of queue purging, and backup/restore support while keeping only real existing data.

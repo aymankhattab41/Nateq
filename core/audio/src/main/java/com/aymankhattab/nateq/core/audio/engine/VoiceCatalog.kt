@@ -469,6 +469,38 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
          * تُرجعها getVoices لا تُدرج إطلاقاً حتى لو أعلن المحرك دعمها نظرياً.
          * دالة نقية قابلة للاختبار الآلي.
          */
+
+        /**
+         * يستنتج رمز لغة صوتٍ تفتقر لغته (مثل Mariam → ar) أو يعيد الافتراضي
+         * المناسب للمحرك، منعاً لمجموعة لغة فارغة.
+         */
+        private fun inferVoiceLanguageTag(voice: Voice, pkg: String): String {
+            val name = voice.name.orEmpty()
+            val localeTag = voice.locale?.toLanguageTag().orEmpty()
+            val combined = "$name $localeTag $pkg"
+            if (combined.contains("mariam", ignoreCase = true) ||
+                combined.contains("tarik", ignoreCase = true) ||
+                combined.contains("salma", ignoreCase = true) ||
+                combined.contains("leila", ignoreCase = true) ||
+                combined.contains("mehdi", ignoreCase = true)
+            ) {
+                return LanguageCode.AR.tag
+            }
+            val fromName = LocaleUtils.toBcp47Tag(name)
+                ?.let { LocaleUtils.normalizeLanguageCode(it) }
+                ?.takeIf { it.isNotBlank() }
+            if (fromName != null) return fromName
+            val fromLocale = LocaleUtils.normalizeLanguageCode(localeTag)
+                .takeIf { it.isNotBlank() }
+            if (fromLocale != null) return fromLocale
+            return when {
+                pkg.contains("vocalizer", ignoreCase = true) ||
+                    pkg.contains("acapela", ignoreCase = true) ->
+                    LanguageCode.AR.tag
+                else -> ""
+            }
+        }
+
         fun groupVoicesByLanguage(
             engineLabels: List<Pair<String, String>>,
             voicesByEngine: Map<String, List<Voice>>
@@ -480,14 +512,19 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             for ((pkg, voices) in voicesByEngine) {
                 for (voice in voices) {
                     val rawLang = voice.locale?.language.orEmpty()
-                    // بند 5: عدم إسقاط لغة فارغة بصمت — اشتقاق وتسجيل.
                     if (rawLang.isBlank()) {
-                        val derived = LocaleUtils.toBcp47Tag(voice.name)
-                            ?.let { LocaleUtils.normalizeLanguageCode(it) }
-                            ?: LocaleUtils.normalizeLanguageCode(rawLang)
+                        val derived = inferVoiceLanguageTag(voice, pkg)
+                        if (derived.isBlank()) {
+                            Log.w(
+                                TAG,
+                                "groupVoicesByLanguage: تخطي صوت بلا لغة " +
+                                    "voice=${voice.name} pkg=$pkg"
+                            )
+                            continue
+                        }
                         Log.w(
                             TAG,
-                            "groupVoicesByLanguage: لغة فارغة " +
+                            "groupVoicesByLanguage: استُنتجت لغة " +
                                 "voice=${voice.name} pkg=$pkg " +
                                 "derived=$derived"
                         )
@@ -497,6 +534,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                         continue
                     }
                     val lang = LocaleUtils.normalizeLanguageCode(rawLang)
+                        .ifBlank { inferVoiceLanguageTag(voice, pkg) }
+                    if (lang.isBlank()) continue
                     grouped.getOrPut(lang) { LinkedHashMap() }
                         .getOrPut(pkg) { mutableListOf() }
                         .add(voice)

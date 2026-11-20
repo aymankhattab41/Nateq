@@ -1961,4 +1961,45 @@ fun `waiting call announces only once without repeat schedule`() {
         assertEquals(7, repo.getCallerAnnouncementRepeat())
         assertEquals(4, repo.getCallWaitingRepeat())
     }
+
+
+    /** إصلاح 1.6.142 ع3: صوت متصل لا يتبع المحرك -> بديل آمن ضمن نفس المحرك وتسجيل. */
+    @Test
+    fun applySafeCallerVoiceSelection_fallsBackWithinSameEngine() {
+        val settings = SettingsRepository.create(context)
+        settings.setLastFallbackFailureInfo("")
+        val receiver = CallerAnnouncementReceiver()
+        val sel = receiver.applySafeCallerVoiceSelection(
+            settings = settings,
+            requestedEngine = "vocalizer_embedded",
+            requestedVoice = "SomeAcapelaVoice",
+            isArabic = true,
+            languageTag = "ar",
+            text = "اتصال وارد"
+        )
+        assertEquals("vocalizer_embedded", sel.engine)
+        assertEquals("Tarik", sel.voiceId)
+        assertTrue(sel.fallbackApplied)
+        val info = settings.getLastFallbackFailureInfo().orEmpty()
+        assertTrue(info.contains("بديل آمن") || info.contains("لا يتبع"))
+        assertFalse(info.contains("VOICE_NOT_FOUND"))
+    }
+
+    @Test
+    fun applySafeCallerVoiceSelection_keepsBelongingVoice() {
+        val settings = SettingsRepository.create(context)
+        val receiver = CallerAnnouncementReceiver()
+        val sel = receiver.applySafeCallerVoiceSelection(
+            settings = settings,
+            requestedEngine = "vocalizer_embedded",
+            requestedVoice = "Tarik",
+            isArabic = true,
+            languageTag = "ar",
+            text = "اتصال وارد"
+        )
+        assertEquals("vocalizer_embedded", sel.engine)
+        assertEquals("Tarik", sel.voiceId)
+        assertFalse(sel.fallbackApplied)
+    }
+
 }

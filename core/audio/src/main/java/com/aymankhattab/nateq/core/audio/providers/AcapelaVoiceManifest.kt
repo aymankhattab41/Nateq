@@ -835,6 +835,11 @@ object AcapelaVoiceManifest {
      * هل يحوي المجلد صوت Acapela بتهيئة أصلية متوافقة قابلة للاعتماد؟
      * (لا يكفي وجود ملف بيانات أو تهيئة بديلة/مختصرة/غير متوافقة).
      */
+    /**
+     * هل المجلد حزمة صوت Acapela صالحة (كلاسيكية `.ini` أصلية متوافقة،
+     * أو HD ممتدة: `.inf` + بيانات صوت + `config.yaml` يحوي `param`)؟
+     * فحص `.ini` يبقى صارماً للكلاسيكي فقط.
+     */
     fun isCompleteVoiceDir(dir: File): Boolean {
         if (!dir.exists() || !dir.isDirectory) return false
         val discovery = runCatching {
@@ -843,18 +848,39 @@ object AcapelaVoiceManifest {
                 expectedSpeakerHint = dir.name,
                 maxDepth = 4
             )
-        }.getOrNull() ?: return false
-        if (discovery.state != IniDiscoveryState.AUTHENTIC) return false
-        val iniDir = discovery.iniFile?.parentFile ?: return false
-        val dPath = runCatching { dir.canonicalPath }
-            .getOrDefault(dir.absolutePath)
-        val iPath = runCatching { iniDir.canonicalPath }
-            .getOrDefault(iniDir.absolutePath)
-        return iPath == dPath || iPath.startsWith(dPath + File.separator)
+        }.getOrNull()
+        if (discovery?.state == IniDiscoveryState.AUTHENTIC) {
+            val iniDir = discovery.iniFile?.parentFile ?: return false
+            val dPath = runCatching { dir.canonicalPath }
+                .getOrDefault(dir.absolutePath)
+            val iPath = runCatching { iniDir.canonicalPath }
+                .getOrDefault(iniDir.absolutePath)
+            if (iPath == dPath ||
+                iPath.startsWith(dPath + File.separator)
+            ) {
+                return true
+            }
+        }
+        return isHdExtendedVoiceDir(dir)
     }
 
     /**
-     * مجلدات الأصوات التي تملك تهيئة أصلية متوافقة تحت المجلد الأساسي.
+     * حزمة HD ممتدة: `.inf` + بيانات صوت + `config.yaml` (param) دون `.ini`.
+     * يُشترط أن يكون `.inf` وملف البيانات في نفس مجلد الحزمة (وليس في حزمة
+     * فرعية) حتى لا يُعامل مجلد حاوٍ كحزمة صوت.
+     */
+    fun isHdExtendedVoiceDir(dir: File): Boolean {
+        if (!dir.exists() || !dir.isDirectory) return false
+        val hasInf = dir.listFiles()?.any { f ->
+            f.isFile && f.extension.equals("inf", ignoreCase = true)
+        } == true
+        if (!hasInf) return false
+        if (!hasVoiceData(dir)) return false
+        return findConfigYamlWithParam(dir) != null
+    }
+
+    /**
+     * يعيد مجلدات حزم الصوت المكتملة (كلاسيكية أصلية أو HD ممتدة).
      */
     fun completeVoiceDirs(baseDir: File): List<File> {
         if (!baseDir.exists() || !baseDir.isDirectory) return emptyList()
@@ -876,11 +902,21 @@ object AcapelaVoiceManifest {
                 result.add(vDir)
             }
         }
+        // حزم HD الممتدة (قد لا تملك .ini أصلية).
+        val hdCandidates = linkedSetOf<File>()
+        runCatching {
+            baseDir.walkTopDown().maxDepth(5).forEach { f ->
+                if (f.isDirectory) hdCandidates.add(f)
+            }
+        }
+        hdCandidates.add(baseDir)
+        for (d in hdCandidates) {
+            if (isHdExtendedVoiceDir(d)) result.add(d)
+        }
         return result.distinctBy {
             runCatching { it.canonicalPath }.getOrDefault(it.absolutePath)
         }
     }
-
     /** تلميح هوية الصوت المستخلص من اسم/محتوى ini ومجلده. */
     private fun voiceHintFromIni(ini: File, dir: File): String {
         val text = runCatching {
@@ -2216,8 +2252,9 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * تعداد الأصوات ذات التهيئة الأصلية المتوافقة فقط (اكتشاف موحّد).
-     * قراءة خالصة: لا توليد/حشو/تعديل/تسطيح/نسخ.
+     * اكتشاف الأصوات من المجلدات الجذرية المعطاة فقط (اكتشاف فعلي).
+     * الكلاسيكي: يتطلب تهيئة `.ini` أصلية متوافقة (صارم للكلاسيكي).
+     * HD/الممتد: `.inf` + بيانات + `config.yaml` (param) بلا `.ini`.
      */
     fun listVoices(baseDir: File): List<VoiceInfo> {
         if (!baseDir.exists() || !baseDir.isDirectory) return emptyList()
@@ -2227,15 +2264,22 @@ object AcapelaVoiceManifest {
             val discovery = discoverVoiceConfig(
                 dir, expectedSpeakerHint = dir.name, maxDepth = 4
             )
-            if (discovery.state != IniDiscoveryState.AUTHENTIC) continue
-            val ini = discovery.iniFile ?: continue
-            val info = runCatching {
-                val parsed = parseVoice(dir)
-                parsed.copy(
-                    dir = ini.parentFile ?: dir,
-                    configFile = ini
-                )
-            }.getOrNull() ?: continue
+            val candidate: VoiceInfo? =
+                if (discovery.state == IniDiscoveryState.AUTHENTIC) {
+                    val ini = discovery.iniFile ?: continue
+                    runCatching {
+                        val parsed = parseVoice(dir)
+                        parsed.copy(
+                            dir = ini.parentFile ?: dir,
+                            configFile = ini
+                        )
+                    }.getOrNull()
+                } else if (isHdExtendedVoiceDir(dir)) {
+                    runCatching { parseVoice(dir) }.getOrNull()
+                } else {
+                    null
+                }
+            val info = candidate ?: continue
             if (isNonVoiceConfig(info, dir)) continue
             result.add(info)
         }
@@ -2331,11 +2375,20 @@ object AcapelaVoiceManifest {
         return !hasVoiceData(dir)
     }
 
-    private fun hasVoiceData(dir: File): Boolean =
-        dir.listFiles()?.any { f ->
+    internal fun hasVoiceData(dir: File): Boolean {
+        val direct = dir.listFiles()?.any { f ->
             f.isFile && f.length() > MIN_DATA_FILE_BYTES &&
                 f.extension.lowercase(Locale.ROOT) in DATA_EXTENSIONS
-        } ?: false
+        } == true
+        if (direct) return true
+        // السماح بملفات البيانات داخل مجلد فرعي مباشر للحزمة.
+        return dir.listFiles()?.any { sub ->
+            sub.isDirectory && sub.listFiles()?.any { f ->
+                f.isFile && f.length() > MIN_DATA_FILE_BYTES &&
+                    f.extension.lowercase(Locale.ROOT) in DATA_EXTENSIONS
+            } == true
+        } == true
+    }
 
     /**
      * قراءة أزواج `KEY = "value"` من كامل النص.

@@ -677,18 +677,40 @@ internal class AcapelaHostSession(
             }
 
             if (isHdPackageWithoutRegistration(voice)) {
-                val hdMsg = "ملف config.yaml غير موجود في مجلد الصوت " +
-                    "أو المجلد الأب أو جذر files/Acapela"
-                val hdLog = "فشل النطق: CONFIG_YAML_MISSING - " +
-                    "path=classic, registration.length=0, id=${voice.id}"
-                Log.w(TAG, hdLog)
-                HostLog.w(HostProtocol.ENGINE_ACAPELA, hdLog)
-                return HostResult.failure(
-                    "CONFIG_YAML_MISSING",
-                    hdMsg
+                val hasYamlParam = AcapelaVoiceManifest
+                    .findConfigYamlWithParam(voice.dir) != null
+                if (!hasYamlParam) {
+                    val hdMsg =
+                        "ملف config.yaml غير موجود في مجلد الصوت " +
+                            "أو تفتقد قيمته إلى سطر param"
+                    val hdLog = "فشل النطق: CONFIG_YAML_MISSING - " +
+                        "path=classic, registration.length=0, " +
+                        "id=${voice.id}"
+                    Log.w(TAG, hdLog)
+                    HostLog.w(HostProtocol.ENGINE_ACAPELA, hdLog)
+                    return HostResult.failure(
+                        "CONFIG_YAML_MISSING",
+                        hdMsg
+                    )
+                }
+                // يوجد config.yaml(param) لحزمة HD ممتدة: جرّب المسار
+                // الممتد بدل تشخيص «config.yaml مفقود» الخاطئ.
+                val extended = speakExtended(
+                    voice = voice,
+                    chunks = chunks,
+                    rate = req.rate,
+                    pitch = req.pitch,
+                    sink = sink,
+                    cancelled = cancelled
                 )
+                if (!extended.ok) {
+                    logVoiceDiagnostics(
+                        voice,
+                        extended.code ?: "UNKNOWN"
+                    )
+                }
+                return extended
             }
-
             val classic = speakNative(
                 voice = voice,
                 chunks = chunks,

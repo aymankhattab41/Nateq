@@ -17,12 +17,15 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
+import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
+import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.data.ContactVoiceStore
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.VoiceProfile
 import com.aymankhattab.nateq.engine.NumberSpeech
-import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
+import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.VoiceIdContract
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -1757,11 +1760,24 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 completionListener = listener
                 speaker.addCompletionListener(listener)
                 try {
+                    val resolvedEngine = callerSpeechEngine(
+                        settings, locale.language
+                    )
+                    val safe = applySafeCallerVoiceSelection(
+                        settings = settings,
+                        requestedEngine = resolvedEngine,
+                        requestedVoice = callerVoice,
+                        isArabic = hasArabic,
+                        languageTag = locale.language,
+                        text = text
+                    )
+                    if (safe.voiceId != callerVoice) {
+                        callerVoice = safe.voiceId
+                    }
+                    speaker.resetVoice(safe.voiceId)
                     speaker.speak(
                         text, locale, speechRate, pitch, volume,
-                        engineOverride = callerSpeechEngine(
-                            settings, locale.language
-                        ),
+                        engineOverride = safe.engine,
                         category =
                             SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                     )
@@ -1924,16 +1940,25 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         val effectiveVolume = contactVoice?.volume ?: volume
 
         val speaker = AnnouncementSpeaker.getInstance(context)
-        val callerVoice = contactVoice?.voiceId
+        val requestedVoice = contactVoice?.voiceId
             ?: callerVoice(settings, hasArabic)
-        speaker.resetVoice(callerVoice)
+        val requestedEngine = contactVoice?.engine
+            ?: callerSpeechEngine(settings, locale.language)
+        val safe = applySafeCallerVoiceSelection(
+            settings = settings,
+            requestedEngine = requestedEngine,
+            requestedVoice = requestedVoice,
+            isArabic = hasArabic,
+            languageTag = locale.language,
+            text = text
+        )
+        speaker.resetVoice(safe.voiceId)
 
         val pitch = contactVoice?.pitch
             ?: settings.getCallerAnnouncementPitchOrDefault(locale.language)
         speaker.speak(
             text, locale, effectiveRate, pitch, effectiveVolume,
-            engineOverride = contactVoice?.engine
-                ?: callerSpeechEngine(settings, locale.language),
+            engineOverride = safe.engine,
             category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
         )
         ringingAnnounced = true
@@ -2002,6 +2027,81 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         settings.getCallerAnnouncementArabicVoiceId()
     } else {
         settings.getCallerAnnouncementEnglishVoiceId()
+    }
+
+    internal data class CallerSpeechSelection(
+        val engine: String?,
+        val voiceId: String?,
+        val fallbackApplied: Boolean,
+        val fallbackReason: String?
+    )
+
+    /**
+     * يتحقق من تبعية صوت المتصل للمحرك المحسوم ويستبدله ببديل آمن ضمن
+     * نفس المحرك عند عدم التبعية (عربي/Vocalizer: Tarik، وإلا افتراضي
+     * المحرك) دون إرسال معرّف صوت لمحرك لا يملكه، مع تسجيل السبب.
+     */
+    internal fun applySafeCallerVoiceSelection(
+        settings: SettingsRepository,
+        requestedEngine: String?,
+        requestedVoice: String?,
+        isArabic: Boolean,
+        languageTag: String,
+        text: String
+    ): CallerSpeechSelection {
+        if (requestedVoice.isNullOrBlank()) {
+            return CallerSpeechSelection(
+                requestedEngine, requestedVoice, false, null
+            )
+        }
+        val resolvedEngine = requestedEngine?.takeIf { it.isNotBlank() }
+            ?: settings.getEngineForLanguage(languageTag)
+        if (resolvedEngine.isNullOrBlank()) {
+            return CallerSpeechSelection(
+                requestedEngine, requestedVoice, false, null
+            )
+        }
+        if (VoiceIdContract.isVoiceBelongingToEngine(
+                resolvedEngine, requestedVoice
+            )
+        ) {
+            return CallerSpeechSelection(
+                requestedEngine, requestedVoice, false, null
+            )
+        }
+        val isVocalizer = resolvedEngine.equals(
+            VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
+            ignoreCase = true
+        ) || resolvedEngine.contains("vocalizer", ignoreCase = true)
+        val fallbackVoice = if (isArabic && isVocalizer) {
+            "Tarik"
+        } else {
+            null
+        }
+        val reason =
+            "صوت المتصل لا يتبع المحرك ($resolvedEngine) — بديل آمن"
+        runCatching {
+            SpeechFallbackTracker.record(
+                text = text,
+                languageTag = languageTag,
+                requestedEngine = resolvedEngine,
+                requestedVoice = requestedVoice,
+                actualEngine = resolvedEngine,
+                actualVoice = fallbackVoice,
+                isFallback = true,
+                fallbackReason = reason,
+                source = "إعلان المتصل"
+            )
+        }
+        runCatching {
+            settings.setLastFallbackFailureInfo(
+                "$reason | voice=$requestedVoice"
+            )
+        }
+        Log.w(TAG, "caller voice fallback: $reason voice=$requestedVoice")
+        return CallerSpeechSelection(
+            requestedEngine, fallbackVoice, true, reason
+        )
     }
 
     /**

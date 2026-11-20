@@ -12,6 +12,7 @@ import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.VoiceIdContract
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -300,11 +301,20 @@ class VocalizerEmbeddedVoiceProvider(
 
                 // البند 6: طَبِّع رمز اللغة قبل المقارنة كي تُقبل
                 // الصيغ الثلاثية (ara/enu/…) والثنائية (ar/en) معاً.
+                // إصلاح 1.6.142 (ع4): استنتاج لغة مفقودة (مثل Mariam→ara/ar)
+                // أو لغة المحرك الافتراضية لمنع مجموعة لغة فارغة.
+                val inferredLocale = resolveVoiceLocale(
+                    candidate = voiceLocale,
+                    rawLang = rawLang,
+                    voiceId = voice.id,
+                    voiceName = name,
+                    fallback = locale
+                )
                 val requestedLang = locale.language.takeIf {
                     it.isNotBlank()
                 }?.let { LocaleUtils.normalizeLanguageCode(it) }
                 val voiceLangCode = LocaleUtils.normalizeLanguageCode(
-                    voiceLocale.toLanguageTag().ifBlank { rawLang }
+                    inferredLocale.toLanguageTag().ifBlank { rawLang }
                 )
                 val matchesLang = requestedLang == null ||
                     voiceLangCode.equals(requestedLang, ignoreCase = true)
@@ -314,10 +324,57 @@ class VocalizerEmbeddedVoiceProvider(
                     id = voice.id,
                     providerId = PROVIDER_ID,
                     displayName = name,
-                    locale = voiceLocale
+                    locale = inferredLocale
                 )
             }
         }
+    }
+
+
+    /**
+     * يضمن أن يكون للغة الصوت قيمة غير فارغة. عند غياب اللغة يستنتجها من
+     * المعرّف/الاسم (مثل Mariam → ara/ar)، وإلا يستخدم لغة المحرك/السياق
+     * الافتراضية [fallback]، منعاً لمجموعة لغة فارغة.
+     */
+    private fun resolveVoiceLocale(
+        candidate: Locale,
+        rawLang: String,
+        voiceId: String,
+        voiceName: String,
+        fallback: Locale
+    ): Locale {
+        if (candidate.language.isNotBlank()) return candidate
+        val inferredTag = inferLanguageTag(voiceId, voiceName, rawLang)
+            ?: fallback.toLanguageTag().takeIf { fallback.language.isNotBlank() }
+            ?: LanguageCode.AR.tag
+        return runCatching { Locale.forLanguageTag(inferredTag) }
+            .getOrDefault(fallback)
+            .takeIf { it.language.isNotBlank() }
+            ?: Locale.forLanguageTag(LanguageCode.AR.tag)
+    }
+
+    private fun inferLanguageTag(
+        voiceId: String,
+        voiceName: String,
+        rawLang: String
+    ): String? {
+        val combined = "$voiceId $voiceName $rawLang"
+        if (combined.contains("mariam", ignoreCase = true)) {
+            return LanguageCode.AR.tag
+        }
+        if (combined.contains("tarik", ignoreCase = true) ||
+            combined.contains("salma", ignoreCase = true) ||
+            combined.contains("leila", ignoreCase = true) ||
+            combined.contains("mehdi", ignoreCase = true)
+        ) {
+            return LanguageCode.AR.tag
+        }
+        val normalized = LocaleUtils.toBcp47Tag(rawLang)
+            ?.takeIf { it.isNotBlank() }
+            ?: LocaleUtils.toBcp47Tag(voiceName)
+            ?: LocaleUtils.toBcp47Tag(voiceId)
+        val tag = normalized?.let { Locale.forLanguageTag(it) }
+        return tag?.toLanguageTag()?.takeIf { tag.language.isNotBlank() }
     }
 
     override suspend fun synthesize(
