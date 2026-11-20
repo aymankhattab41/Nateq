@@ -53,6 +53,12 @@ class AcapelaVoiceImporterTest {
     @Test
     fun importFromDirectory_copiesValidVoiceAndUpdatesRegistry() = runBlocking {
         val srcDir = tempFolder.newFolder("mehdi_source")
+        // تهيئة أصلية متوافقة مطلوبة للاكتشاف/الاكتمال (عقد ini الأصيل).
+        File(srcDir, "mehdi.ini").writeText(
+            "PRO \"NLP/ar.oso\"\n" +
+                "SLV \"mehdi.bvcu\"\n" +
+                "VOICE \"Mehdi\"\n"
+        )
         File(srcDir, "mehdi.inf").writeText("Speaker=Mehdi\nIsoCode=ara")
         File(srcDir, "mehdi.dat").writeBytes(ByteArray(15_000))
 
@@ -84,6 +90,14 @@ class AcapelaVoiceImporterTest {
         java.util.zip.ZipOutputStream(
             java.io.FileOutputStream(zipFile)
         ).use { zos ->
+            // تهيئة أصلية متوافقة مطلوبة للاكتشاف/الاكتمال (عقد ini الأصيل).
+            zos.putNextEntry(java.util.zip.ZipEntry("salma/salma.ini"))
+            zos.write(
+                ("PRO \"NLP/ar.oso\"\n" +
+                    "SLV \"salma.bvcu\"\n" +
+                    "VOICE \"Salma\"\n").toByteArray()
+            )
+            zos.closeEntry()
             zos.putNextEntry(java.util.zip.ZipEntry("salma/salma.inf"))
             zos.write(
                 "Speaker=Salma\nIsoCode=ara\nfreq=22050".toByteArray()

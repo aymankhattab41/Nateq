@@ -632,8 +632,7 @@ object AcapelaVoiceImporter {
         // الكتابة والقراءة معاً على IO: الاستيراد ينتهي بنسخ ملفات،
         // وقارئ المانيفست لا يُشغَّل على الخيط الرئيسي هنا إطلاقاً.
         val voices = withContext(Dispatchers.IO) {
-            AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
-            AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+            // اكتشاف/تحقق موحّد دون توليد أو حشو تهيئة.
             // الملفات تغيّرت للتوّ: لا يجوز أن تُقرأ لقطة سابقة.
             AcapelaVoiceManifest.invalidateVoicesCache()
             AcapelaVoiceManifest.listVoices(baseDir)

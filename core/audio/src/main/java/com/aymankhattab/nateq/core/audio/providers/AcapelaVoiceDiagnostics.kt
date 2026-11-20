@@ -290,15 +290,16 @@ object AcapelaVoiceDiagnostics {
     }.trimEnd()
 
     /**
-     * اقتطاع التقرير المنسوخ/المُشارَك إلى [maxChars] حرفاً بلا تجاوز.
-     * يُبقى على الصدارة (تشخيص Acapela أولاً) ويُحذف الذيل (أسطر
-     * logcat) لأنها تُضاف في نهاية التقرير.
+     * اقتطاع التقرير عند حد المشاركة الآمن مع تنقية كاملة: ينقل قسم
+     * Acapela المحصور بالعلامات إلى الصدارة (إن وُجد) ثم يقتطع من
+     * النهاية مع إشارة صريحة، بعد تنقية كل المحتوى.
      */
     fun capSharedReport(
         report: String,
         maxChars: Int = MAX_SHARED_REPORT_CHARS
     ): String {
-        val ordered = moveAcapelaSectionFirst(report)
+        val redacted = redactSensitiveText(report)
+        val ordered = moveAcapelaSectionFirst(redacted)
         if (ordered.length <= maxChars) return ordered
         val marker = "\n\n[تم الاقتطاع إلى $maxChars حرف: " +
             "حُذفت أسطر logcat من النهاية]"
@@ -308,8 +309,7 @@ object AcapelaVoiceDiagnostics {
 
     /**
      * ينقل قسم Acapela (المحصور بين العلامتين) إلى صدارة التقرير من دون
-     * حذف أي محتوى آخر، كي يبقى داخل أول [MAX_SHARED_REPORT_CHARS] حرف
-     * عند الاقتطاع. العلامات نفسها لا تظهر في الناتج.
+     * حذف أي محتوى آخر. العلامات نفسها لا تظهر في الناتج.
      */
     private fun moveAcapelaSectionFirst(report: String): String {
         val start = report.indexOf(ACAPELA_REPORT_START)
@@ -321,12 +321,6 @@ object AcapelaVoiceDiagnostics {
             report.substring(end + ACAPELA_REPORT_END.length)
         return (acapela + "\n\n" + rest.trim('\n')).trimEnd()
     }
-
-    /**
-     * محظور توليد/حشو تهيئة ini بديلة (مثل MODE+FILEMAP فقط) أو الاعتماد
-     * على حجم ثابت كدليل صحة. أي غياب/عدم توافق للتهيئة الأصلية يُبلَّغ
-     * عنه صراحةً ولا يُعوَّض باختلاق محتوى.
-     */
     @Deprecated("لا يُولّد ini بديل؛ التهيئة الأصلية مطلوبة")
     fun originalIniFallbackContent(): String = ""
 
@@ -379,9 +373,13 @@ object AcapelaVoiceDiagnostics {
                 if (note.isNotBlank()) " | ملاحظة=$note" else ""
     }
 
-    /** لا قيم حيّة ثابتة افتراضية؛ أي قياس قديم يُعرض كـ«لم تُرصد». */
+    /**
+     * قيم قديمة غير مقيسة (لا إرث لنتائج سابقة). تُحفظ للتوافق مع
+     * واجهات تقارير تاريخية فقط ولا تُستخدم كدليل على قياس حي.
+     */
+    @Deprecated("لا يُورَّث قياس قديم؛ استخدم نتيجة المحاولة الحالية")
     val observedRoot109Codes = MeasuredNInitCodes(
-        note = "غير مقيس (لا قياس حي حديث)"
+        note = "غير مقيس (لا إرث لنتائج سابقة)"
     )
 
     /** ملف ini مقيس بمساره الكامل — يُحقن مع تسمية مصدره. */
@@ -407,7 +405,17 @@ object AcapelaVoiceDiagnostics {
     /** ملف الرخصة البديل في جذر البيانات (يقرأه `check_license`). */
     private const val TEMPORARY_FILE_NAME = ".temporary"
 
-    /** نتيجة تحقق تبعيات حزمة/تهيئة صوت أصلية. */
+    enum class VoiceVerificationState {
+        NO_INI,
+        INCOMPATIBLE_INI,
+        MISSING_DEPENDENCIES,
+        CONFLICT,
+        AUTHENTIC_READY,
+        IDENTITY_MISMATCH,
+        INVALID_PATH
+    }
+
+    /** نتيجة التحقق من تبعيات/أصالة حزمة صوت Acapela. */
     data class VoiceDependencyIssue(
         val dependency: String,
         val expectedPath: String,
@@ -420,7 +428,13 @@ object AcapelaVoiceDiagnostics {
         val iniFile: File?,
         val issues: List<VoiceDependencyIssue>,
         val checked: List<String>,
-        val report: String
+        val report: String,
+        val state: VoiceVerificationState = if (ok) {
+            VoiceVerificationState.AUTHENTIC_READY
+        } else {
+            VoiceVerificationState.MISSING_DEPENDENCIES
+        },
+        val discovery: AcapelaVoiceManifest.VoiceDiscoveryResult? = null
     )
 
     /** بصمة غير سرية (حجم + SHA-256) لمقارنة المصدر بالمرحلي. */
@@ -455,9 +469,10 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * تحقق هوية/تهيئة/تبعيات صوت Acapela أصيل من ini فعلي: PRO/SLV/NLP
-     * وكل المسارات المُعلنة تُفحص وجوداً/قراءةً/حجماً/بصمةً (لغير السري)
-     * مع احترام المجلد المرجعي وحالة الأحرف، ومقارنة مصدر↔مرحلي إن وُجد.
+     * تحقق موحّد لحزمة/تهيئة صوت Acapela أصيل: اكتشاف ini (لا ini /
+     * مختصر|مولّد|غير متوافق / تعارض) داخل حدود الحزمة، ثم تبعيات
+     * PRO/SLV/NLP بالمسارات المرجعية الصحيحة دون تسطيح أو تطبيع امتدادات
+     * أو بحث عشوائي بالأسماء، مع مقارنة مصدر↔مرحلي. لا توليد/حشو/تعديل.
      */
     fun verifyAuthenticVoicePackage(
         voiceDir: File,
@@ -466,112 +481,163 @@ object AcapelaVoiceDiagnostics {
     ): VoiceDependencyVerification {
         val issues = mutableListOf<VoiceDependencyIssue>()
         val checked = mutableListOf<String>()
-        val ini = AcapelaVoiceManifest.findAuthenticIni(voiceDir)
-        if (ini == null) {
-            issues += VoiceDependencyIssue(
-                dependency = "ini",
-                expectedPath = voiceDir.absolutePath,
-                reason = "لا توجد تهيئة ini أصلية (غير مصطنعة/بديلة) " +
-                    "مطابقة للصوت"
-            )
-        } else {
-            checked += "ini=${ini.name}(${fingerprintOf(ini)})"
-            val deps = AcapelaVoiceManifest.parseIniDependencies(ini)
-            if (deps.isEmpty()) {
+        val hint = expectedSpeakerHint?.trim().orEmpty()
+        val discoveryHint = hint.ifBlank {
+            voiceDir.name.substringBeforeLast('.')
+        }
+        val discovery = AcapelaVoiceManifest.discoverVoiceConfig(
+            startDir = voiceDir,
+            expectedSpeakerHint = discoveryHint
+        )
+        val ini = discovery.iniFile
+        val effectiveVoiceDir = discovery.voiceDir ?: voiceDir
+
+        var state = when (discovery.state) {
+            AcapelaVoiceManifest.IniDiscoveryState.NO_INI ->
+                VoiceVerificationState.NO_INI
+            AcapelaVoiceManifest.IniDiscoveryState.INCOMPATIBLE_INI ->
+                VoiceVerificationState.INCOMPATIBLE_INI
+            AcapelaVoiceManifest.IniDiscoveryState.CONFLICT ->
+                VoiceVerificationState.CONFLICT
+            AcapelaVoiceManifest.IniDiscoveryState.AUTHENTIC ->
+                VoiceVerificationState.AUTHENTIC_READY
+        }
+
+        when (discovery.state) {
+            AcapelaVoiceManifest.IniDiscoveryState.NO_INI -> {
                 issues += VoiceDependencyIssue(
-                    dependency = "ini-dependencies",
-                    expectedPath = ini.absolutePath,
-                    reason = "التهيئة الأصلية لا تحتوي توجيهات تبعيات " +
-                        "قابلة للتحقق"
+                    dependency = "ini",
+                    expectedPath = effectiveVoiceDir.absolutePath,
+                    reason = "لا يوجد ملف ini أصلية كاملة متوافقة داخل حدود الحزمة"
                 )
             }
-            for (dep in deps) {
-                val resolved = AcapelaVoiceManifest.resolveRelativeFile(
-                    voiceDir,
-                    dep.relativePath
+            AcapelaVoiceManifest.IniDiscoveryState.INCOMPATIBLE_INI -> {
+                val found = discovery.candidates.firstOrNull()?.file
+                val allReasons = (
+                    discovery.reasons +
+                        discovery.candidates.flatMap { it.reasons }
+                    ).distinct()
+                val reason = allReasons.joinToString(" | ").ifBlank {
+                    "تهيئة ini موجودة لكنها مختصرة/مولّدة/غير متوافقة"
+                }
+                val isMixing = allReasons.any {
+                    it.contains("تخلط هوية") ||
+                        it.contains("تخص صوتاً آخر") ||
+                        it.contains("صوتاً آخر") ||
+                        it.contains("خلط")
+                }
+                issues += VoiceDependencyIssue(
+                    dependency = if (isMixing) "voice-mixing" else "ini",
+                    expectedPath = found?.absolutePath
+                        ?: effectiveVoiceDir.absolutePath,
+                    reason = reason
                 )
-                val expected = File(voiceDir, dep.relativePath).absolutePath
-                if (resolved == null || !resolved.exists()) {
-                    issues += VoiceDependencyIssue(
-                        dependency = dep.key,
-                        expectedPath = expected,
-                        reason = "تبعية مفقودة معلنة في ${ini.name}"
-                    )
-                    continue
+            }
+            AcapelaVoiceManifest.IniDiscoveryState.CONFLICT -> {
+                val reason = discovery.reasons.joinToString(" | ").ifBlank {
+                    "تعارض: أكثر من تهيئة أصلية دون حسم آمن بالمحتوى/الهوية"
                 }
-                if (!resolved.isFile) {
-                    issues += VoiceDependencyIssue(
-                        dependency = dep.key,
-                        expectedPath = resolved.absolutePath,
-                        reason = "المسار ليس ملفاً"
-                    )
-                    continue
-                }
-                val readable = runCatching {
-                    resolved.inputStream().use { it.read() }
-                }.isSuccess
-                if (!readable) {
-                    issues += VoiceDependencyIssue(
-                        dependency = dep.key,
-                        expectedPath = resolved.absolutePath,
-                        reason = "الملف غير قابل للقراءة"
-                    )
-                    continue
-                }
-                val fp = fingerprintOf(resolved)
-                checked += "${dep.key}:${dep.relativePath} -> " +
-                    "${resolved.name} ($fp)"
-                if (stagedDir != null) {
-                    val staged = AcapelaVoiceManifest.resolveRelativeFile(
-                        stagedDir,
-                        dep.relativePath
-                    )
-                    if (staged == null || !staged.exists()) {
+                issues += VoiceDependencyIssue(
+                    dependency = "ini",
+                    expectedPath = effectiveVoiceDir.absolutePath,
+                    reason = reason
+                )
+            }
+            AcapelaVoiceManifest.IniDiscoveryState.AUTHENTIC -> {
+                if (ini != null) {
+                    checked += "ini=${ini.absolutePath} (${fingerprintOf(ini)})"
+                    val deps = AcapelaVoiceManifest.parseIniDependencies(ini)
+                    if (deps.isEmpty()) {
                         issues += VoiceDependencyIssue(
-                            dependency = dep.key,
-                            expectedPath = File(
-                                stagedDir,
-                                dep.relativePath
-                            ).absolutePath,
-                            reason = "الملف غير موجود في النسخة المرحلية"
+                            dependency = "ini-dependencies",
+                            expectedPath = ini.absolutePath,
+                            reason = "التهيئة الأصلية لا تحتوي توجيهات تبعيات قابلة للتحقق (PRO/SLV/NLP/ملفات)"
                         )
-                    } else {
-                        val sfp = fingerprintOf(staged)
-                        if (sfp != fp) {
+                    }
+                    val refRoot = ini.parentFile ?: effectiveVoiceDir
+                    for (dep in deps) {
+                        val resolved = AcapelaVoiceManifest.resolveRelativeFile(
+                            refRoot, dep.relativePath
+                        )
+                        val expected = File(refRoot, dep.relativePath).absolutePath
+                        if (resolved == null || !resolved.exists()) {
                             issues += VoiceDependencyIssue(
                                 dependency = dep.key,
-                                expectedPath = staged.absolutePath,
-                                reason = "اختلاف بصمة/حجم بين المصدر " +
-                                    "والنسخة المرحلية"
+                                expectedPath = expected,
+                                reason = "تبعية ناقصة معلنة في ${ini.name}: ${dep.relativePath}"
                             )
+                            continue
+                        }
+                        if (!resolved.isFile) {
+                            issues += VoiceDependencyIssue(
+                                dependency = dep.key,
+                                expectedPath = resolved.absolutePath,
+                                reason = "المسار المعلن ليس ملفاً"
+                            )
+                            continue
+                        }
+                        val readable = runCatching {
+                            resolved.inputStream().use { it.read() }
+                        }.isSuccess
+                        if (!readable) {
+                            issues += VoiceDependencyIssue(
+                                dependency = dep.key,
+                                expectedPath = resolved.absolutePath,
+                                reason = "الملف غير قابل للقراءة"
+                            )
+                            continue
+                        }
+                        val fp = fingerprintOf(resolved)
+                        checked += "${dep.key}:${dep.relativePath} -> ${resolved.absolutePath} ($fp)"
+                        if (stagedDir != null) {
+                            val staged = AcapelaVoiceManifest.resolveRelativeFile(
+                                stagedDir, dep.relativePath
+                            )
+                            val stagedExpected = File(stagedDir, dep.relativePath).absolutePath
+                            if (staged == null || !staged.exists()) {
+                                issues += VoiceDependencyIssue(
+                                    dependency = dep.key,
+                                    expectedPath = stagedExpected,
+                                    reason = "الملف غير موجود في النسخة المرحلية"
+                                )
+                            } else {
+                                val sfp = fingerprintOf(staged)
+                                if (sfp != fp) {
+                                    issues += VoiceDependencyIssue(
+                                        dependency = dep.key,
+                                        expectedPath = staged.absolutePath,
+                                        reason = "اختلاف بصمة/حجم بين المصدر والنسخة المرحلية"
+                                    )
+                                } else {
+                                    checked += "staged-ok:${dep.key} (${staged.absolutePath})"
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        val hint = expectedSpeakerHint?.trim().orEmpty()
-        if (hint.isNotBlank()) {
-            val matches = voiceDir.name.contains(hint, ignoreCase = true) ||
-                ini?.name?.contains(hint, ignoreCase = true) == true
-            if (!matches) {
+
+        if (hint.isNotBlank() && ini != null) {
+            val inVoice = effectiveVoiceDir.name.contains(hint, ignoreCase = true)
+            val inIni = ini.name.contains(hint, ignoreCase = true)
+            val inPath = ini.absolutePath.contains(hint, ignoreCase = true)
+            val matchesDir = discovery.voiceDir?.name?.contains(hint, ignoreCase = true) == true
+            if (!inVoice && !inIni && !inPath && !matchesDir) {
                 issues += VoiceDependencyIssue(
                     dependency = "voice-identity",
-                    expectedPath = voiceDir.absolutePath,
-                    reason = "هوية الصوت لا تطابق المطلوب ($hint) " +
-                        "— منع خلط الأصوات"
+                    expectedPath = effectiveVoiceDir.absolutePath,
+                    reason = "هوية الصوت لا تطابق المطلوب ($hint) — منع خلط الأصوات"
                 )
             }
         }
-        // منع خلط الأصوات: إذا حمل اسم مجلد الصوت أو الاسم المطلوب
-        // مميّز صوت معروف، فلا يجوز أن تحمل التهيئة مميّز صوت آخر.
+
         val contextTokens = buildSet {
-            voiceDir.name.lowercase(Locale.ROOT).let { name ->
-                addKnownTokens(name, this)
+            addKnownTokens(effectiveVoiceDir.name.lowercase(Locale.ROOT), this)
+            if (hint.isNotBlank()) addKnownTokens(hint.lowercase(Locale.ROOT), this)
+            discovery.voiceDir?.name?.lowercase(Locale.ROOT)?.let {
+                addKnownTokens(it, this)
             }
-            if (hint.isNotBlank()) addKnownTokens(
-                hint.lowercase(Locale.ROOT),
-                this
-            )
         }
         val iniTokens = ini?.name?.lowercase(Locale.ROOT)?.let { name ->
             buildSet { addKnownTokens(name, this) }
@@ -580,81 +646,105 @@ object AcapelaVoiceDiagnostics {
         if (foreign.isNotEmpty()) {
             issues += VoiceDependencyIssue(
                 dependency = "voice-mixing",
-                expectedPath = ini?.absolutePath ?: voiceDir.absolutePath,
-                reason = "تهيئة ini تحمل هوية صوت آخر (${foreign.sorted()}) " +
-                    "($hint) — يُمنع خلط الأصوات"
+                expectedPath = ini?.absolutePath ?: effectiveVoiceDir.absolutePath,
+                reason = "تهيئة ini تحمل هوية صوت آخر (${foreign.sorted()}) — يُمنع خلط الأصوات"
             )
         }
-        val hex = voiceDir.walkTopDown().maxDepth(4).firstOrNull { f ->
-            f.isFile && f.name.matches(Regex("^0x[0-9a-fA-F]+$"))
-        }
+
+        val hex = effectiveVoiceDir.walkTopDown().maxDepth(5).firstOrNull { f ->
+            f.isFile && f.name.matches(Regex("^0x[0-9a-fA-F]+$")) && f.length() > 0L
+        } ?: AcapelaVoiceManifest.findHexRegistrationFile(effectiveVoiceDir)
         if (hex == null) {
             issues += VoiceDependencyIssue(
                 dependency = "registration-key",
-                expectedPath = voiceDir.absolutePath,
+                expectedPath = effectiveVoiceDir.absolutePath,
                 reason = "ملف مفتاح الترخيص (0x...) غير موجود ضمن حزمة الصوت"
             )
         } else {
-            checked += "registration-key=${hex.name}(size=${hex.length()})"
+            checked += "registration-key=${hex.absolutePath}(size=${hex.length()})"
         }
+
+        if (issues.any { it.dependency == "voice-mixing" || it.dependency == "voice-identity" }) {
+            state = VoiceVerificationState.IDENTITY_MISMATCH
+        } else if (state == VoiceVerificationState.AUTHENTIC_READY && issues.any {
+                it.reason.contains("ناقصة") ||
+                    it.reason.contains("غير موجود") ||
+                    it.reason.contains("غير قابل للقراءة") ||
+                    it.reason.contains("اختلاف بصمة")
+            }
+        ) {
+            state = VoiceVerificationState.MISSING_DEPENDENCIES
+        }
+
+        val ok = issues.isEmpty() && state == VoiceVerificationState.AUTHENTIC_READY
         val report = buildString {
-            appendLine("تحقق حزمة/تهيئة الصوت الأصلية:")
-            appendLine("- مجلد الصوت: ${voiceDir.absolutePath}")
-            appendLine("- ملف ini الأصلي: ${ini?.absolutePath ?: "غير موجود"}")
-            appendLine("- تبعيات/ملفات مفحوصة: ${checked.size}")
-            checked.take(60).forEach { appendLine("  • $it") }
-            if (checked.size > 60) {
-                appendLine("  • … (${checked.size - 60} إضافي)")
+            appendLine("=== التحقق من حزمة صوت Acapela الأصلية ===")
+            appendLine("جذر الحزمة: ${discovery.packageRoot.absolutePath}")
+            appendLine("مجلد الصوت: ${effectiveVoiceDir.absolutePath}")
+            appendLine("ملف ini: ${ini?.absolutePath ?: "(لا يوجد)"}")
+            appendLine("حالة الاكتشاف: ${discovery.state}")
+            if (discovery.reasons.isNotEmpty()) {
+                appendLine("أسباب الاكتشاف:")
+                discovery.reasons.forEach { appendLine("  - $it") }
+            }
+            appendLine("حالة التحقق: $state")
+            if (checked.isNotEmpty()) {
+                appendLine("التحقق (بصمات غير سرية):")
+                checked.forEach { appendLine("  - $it") }
             }
             if (issues.isEmpty()) {
-                appendLine(
-                    "- النتيجة: تحقق مبدئي ناجح " +
-                        "(لا توجيهات/بيانات تخمينية)"
-                )
+                appendLine("النتيجة: تحقق ناجح — التبعيات/الهوية سليمة")
             } else {
-                appendLine("- النتيجة: فشل التحقق (${issues.size} مشكلة)")
+                appendLine("النتيجة: فشل التحقق")
+                appendLine("المشكلات:")
                 issues.forEach {
-                    appendLine("  ! [${it.dependency}] ${it.reason}")
-                    appendLine(
-                        "    المسار المتوقع: " +
-                            "${redactSensitiveLine(it.expectedPath)}"
-                    )
+                    appendLine("  - [${it.dependency}] ${it.reason}")
+                    appendLine("    المتوقع/المرجع: ${it.expectedPath}")
                 }
             }
             if (stagedDir != null) {
-                appendLine("- مقارنة مصدر↔مرحلي: ${stagedDir.absolutePath}")
+                appendLine("النسخة المرحلية: ${stagedDir.absolutePath}")
             }
         }.trimEnd()
+
         return VoiceDependencyVerification(
-            ok = issues.isEmpty(),
-            voiceDir = voiceDir,
+            ok = ok,
+            voiceDir = effectiveVoiceDir,
             iniFile = ini,
             issues = issues,
             checked = checked,
-            report = report
+            report = report,
+            state = state,
+            discovery = discovery
         )
     }
 
     /**
      * نسخ حرفي لمجلد صوت أصيل إلى مجلد staging جديد وفريد لكل تجربة runId،
-     * مع الحفاظ على البنية النسبية وعدم توليد/تعديل تهيئة ini.
+     * مع الحفاظ على البنية النسبية وعدم توليد/تعديل تهيئة ini أو المصدر،
+     * ودون نسخ سجلات قديمة.
      */
     fun stageAuthenticVoiceForRun(
         context: Context,
         voiceDir: File,
         runId: String
     ): File {
-        val safe = runId.filter {
-            it.isLetterOrDigit() || it == '-' || it == '_'
-        }.ifBlank { UUID.randomUUID().toString() }
-        val stageRoot = File(context.cacheDir, "acapela_stage_runs")
-        val stageDir = File(
-            stageRoot,
-            "run_${safe}_${System.currentTimeMillis()}"
-        )
+        val cache = context.cacheDir
+        val safeId = runId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val stageDir = File(File(cache, "acapela_stage_authentic"), safeId)
         if (stageDir.exists()) runCatching { stageDir.deleteRecursively() }
         stageDir.mkdirs()
-        val sourceRoot = voiceDir.parentFile ?: voiceDir
+
+        fun isStaleLog(name: String): Boolean {
+            val n = name.lowercase(Locale.ROOT)
+            return n == LOG_FILE_NAME.lowercase(Locale.ROOT) ||
+                n == "last_acapela_call.txt" ||
+                n == "acapela_trials_progress.txt" ||
+                n == "acapela_diagnostic_report.txt" ||
+                n.startsWith("acapela_full_diagnostic") ||
+                n.endsWith(".log")
+        }
+
         fun copyRec(src: File, dst: File) {
             if (src.isDirectory) {
                 dst.mkdirs()
@@ -662,25 +752,27 @@ object AcapelaVoiceDiagnostics {
                     copyRec(child, File(dst, child.name))
                 }
             } else if (src.isFile) {
+                if (isStaleLog(src.name)) return
                 dst.parentFile?.mkdirs()
                 runCatching { src.copyTo(dst, overwrite = true) }
             }
         }
-        // انسخ محتويات مجلد الصوت مباشرة في جذر المرحلي كي تطابق
-        // المسارات النسبية المعلنة في ini دون إعادة كتابة أي تهيئة.
-        voiceDir.listFiles()?.forEach { child ->
-            copyRec(child, File(stageDir, child.name))
+
+        if (voiceDir.isDirectory) {
+            voiceDir.listFiles()?.forEach { child ->
+                copyRec(child, File(stageDir, child.name))
+            }
         }
-        // انسخ ملفات السياق الشقيقة الضرورية (مثل مفاتيح/ملفات مشتركة
-        // بجذر الرمز) كما هي دون تخمين، للحفاظ على البنية المرجعية.
+        val sourceRoot = voiceDir.parentFile ?: voiceDir
         sourceRoot.listFiles()?.forEach { sib ->
             if (!sib.isFile) return@forEach
+            if (isStaleLog(sib.name)) return@forEach
             if (sib.name.matches(Regex("^0x[0-9a-fA-F]+$")) ||
                 sib.name.equals("config.yaml", ignoreCase = true)
             ) {
-                val out = File(stageDir, sib.name)
-                if (!out.exists()) {
-                    runCatching { sib.copyTo(out, overwrite = false) }
+                val dst = File(stageDir, sib.name)
+                if (!dst.exists()) {
+                    runCatching { sib.copyTo(dst, overwrite = true) }
                 }
             }
         }
@@ -788,11 +880,22 @@ object AcapelaVoiceDiagnostics {
         return out.substring(0, start) + "$key: ${redactSensitive(value)}"
     }
 
-    /** تنقية نص متعدد الأسطر (سجلات/تقارير/ذيول native) من الأسرار. */
+    /**
+     * ينقّي النص من مواد حساسة: مفاتيح/رموز، توقيعات، معرّفات، مسارات.
+     * تنقية كاملة متعددة الأسطر بلا ذيول/أجزاء متبقية.
+     */
     fun redactSensitiveText(text: String?): String {
         if (text.isNullOrEmpty()) return text.orEmpty()
-        return buildString(text.length) {
-            val seq = text.lineSequence().iterator()
+        val blockRedacted = text
+            .replace(
+                Regex(
+                    "(?s)-----BEGIN [A-Z ]+-----.*?" +
+                        "-----END [A-Z ]+-----"
+                ),
+                "[REDACTED_BLOCK]"
+            )
+        return buildString(blockRedacted.length) {
+            val seq = blockRedacted.lineSequence().iterator()
             if (!seq.hasNext()) return@buildString
             while (true) {
                 append(redactSensitiveLine(seq.next()))
@@ -1052,54 +1155,67 @@ object AcapelaVoiceDiagnostics {
         return sb.toString().trimEnd()
     }
 
-    /** مسح ملفات السجل القديمة وسجل Logcat للبدء من نظيف. */
+    /**
+     * تنظيف آثار التشخيص القديمة فقط (بلا حذف بيانات الأصوات وبلا إرث
+     * تشخيص): يحذف ملفات/مجلدات staging والتقارير القديمة في cache، ولا
+     * يمس ملفات/مجلدات الأصوات في filesDir إطلاقاً.
+     */
     fun clearOldLogs(context: Context?) {
         if (context == null) return
-        val cache = context.cacheDir
-        val files = context.filesDir
-        listOfNotNull(
-            cache?.let { File(it, "acapela_stage") },
-            cache?.let { File(it, "acapela_stage_parent") },
-            cache?.let { File(it, "acapela_stage_direct") },
-            cache?.let { File(it, "acapela_stage_flat") },
-            cache?.let { File(it, "acapela_stage_min") },
-            cache?.let { File(it, "acapela_stage_nounplugged") },
-            cache?.let { File(it, "acapela_stage_v2") },
-            cache?.let { File(it, "acapela_stage_10709_exact") },
-            cache?.let { File(it, "acapela_stage_full") },
-            cache?.let { File(it, "acapela_stage_full_nlp_subdir") },
-            cache?.let { File(it, "acapela_marhaba_trial.wav") },
-            cache?.let { File(it, "acapela_marhaba_10723.wav") },
-            cache?.let { File(it, "acapela_marhaba_10722.wav") },
-            cache?.let { File(it, "acapela_marhaba_10721.wav") },
-            cache?.let { File(it, "acapela_marhaba_10720.wav") },
-            cache?.let { File(it, "acapela_marhaba_10712.wav") },
-            cache?.let { File(it, "acapela_marhaba_10711.wav") },
-            cache?.let { File(it, "acapela_marhaba_10710.wav") },
-            cache?.let { File(it, "acapela_marhaba_10709.wav") },
-            cache?.let { File(it, "acapela_marhaba_10708.wav") },
-            cache?.let { File(it, "acapela_diagnostic_report.txt") },
-            cache?.let { File(it, "acapela_full_diagnostic_10723.txt") },
-            cache?.let { File(it, "acapela_full_diagnostic_10722.txt") },
-            cache?.let { File(it, "acapela_full_diagnostic_10721.txt") },
-            cache?.let { File(it, "acapela_full_diagnostic_10720.txt") },
-            cache?.let { File(it, "acapela_full_diagnostic_10711.txt") },
-            files?.let { File(it, "Acapela") },
-            files?.let { File(it, "acapela") }
-        ).forEach { dir ->
-            if (dir.exists()) {
-                if (dir.isFile) {
-                    runCatching { dir.delete() }
-                } else {
-                    dir.walkTopDown().filter {
-                        it.isFile && it.name.equals(LOG_FILE_NAME, true)
-                    }.forEach { f -> runCatching { f.delete() } }
-                }
+        val cache = context.cacheDir ?: return
+        listOf(
+            "acapela_stage",
+            "acapela_stage_parent",
+            "acapela_stage_direct",
+            "acapela_stage_flat",
+            "acapela_stage_min",
+            "acapela_stage_nounplugged",
+            "acapela_stage_v2",
+            "acapela_stage_10709_exact",
+            "acapela_stage_full",
+            "acapela_stage_full_nlp_subdir",
+            "acapela_stage_original_root109",
+            "acapela_stage_multitts_verbatim",
+            "acapela_stage_authentic",
+            "acapela_stage_runs",
+            "acapela_marhaba_trial.wav",
+            "acapela_marhaba_10723.wav",
+            "acapela_marhaba_10722.wav",
+            "acapela_marhaba_10721.wav",
+            "acapela_marhaba_10720.wav",
+            "acapela_marhaba_10712.wav",
+            "acapela_marhaba_10711.wav",
+            "acapela_marhaba_10710.wav",
+            "acapela_marhaba_10709.wav",
+            "acapela_marhaba_10708.wav",
+            "acapela_diagnostic_report.txt",
+            "acapela_full_diagnostic_10723.txt",
+            "acapela_full_diagnostic_10722.txt",
+            "acapela_full_diagnostic_10721.txt",
+            "acapela_full_diagnostic_10720.txt",
+            "acapela_full_diagnostic_10711.txt",
+            "acapela_full_diagnostic_10712.txt",
+            ACAPELA_FULL_DIAGNOSTIC_FILE,
+            "acapela_trials_progress.txt",
+            "last_acapela_call.txt"
+        ).forEach { name ->
+            runCatching {
+                val target = File(cache, name)
+                if (target.isDirectory) target.deleteRecursively()
+                else if (target.exists()) target.delete()
             }
         }
         runCatching {
-            Runtime.getRuntime().exec(arrayOf("logcat", "-c")).waitFor()
+            cache.listFiles()?.forEach { f ->
+                if (!f.isFile) return@forEach
+                val n = f.name
+                val isOldDiag = n.startsWith("acapela_full_diagnostic") ||
+                    n.startsWith("acapela_diagnostic") ||
+                    (n.startsWith("acapela_run_") && n.endsWith(".wav"))
+                if (isOldDiag) runCatching { f.delete() }
+            }
         }
+        clearNativeLogcat()
     }
 
     /** مسح سجل logcat للعملية الحالية للبدء بسجل نظيف. */
@@ -1132,9 +1248,10 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * تجهيز مجلد مسطح [cache/acapela_stage_flat] بدون مجلدات فرعية،
-     * يضم ملف الصوت وكافة ملفات وحدة معالجة اللغة (NLP) وملفات الإعداد
-     * ومجلد [userdicos/].
+     * تجهيز قديم (محيَّد): يُنشئ مجلداً نظيفاً في cache ويَنسخ محتوى
+     * [sourceDir] حرفياً إن وُجد، دون توليد/حشو/تعديل ini ودون تسطيح
+     * أو خلط مخالف. يُحفظ التوقيع للتوافق فقط؛ المسار المعتمد للتشخيص
+     * هو [stageAuthenticVoiceForRun] بعد [verifyAuthenticVoicePackage].
      */
     fun stageVoiceFlat(
         context: Context,
@@ -1145,246 +1262,40 @@ object AcapelaVoiceDiagnostics {
             runCatching { stageDir.deleteRecursively() }
         }
         stageDir.mkdirs()
-        val userdicos = File(stageDir, "userdicos")
-        userdicos.mkdirs()
-
-        val candidateRoots = listOfNotNull(
-            sourceDir,
-            sourceDir?.parentFile,
-            context.filesDir?.let { File(it, "Acapela") },
-            context.filesDir?.let { File(it, "acapela") },
-            context.filesDir,
-            context.cacheDir?.let { File(it, "acapela_stage_parent") },
-            context.cacheDir?.let { File(it, "acapela_stage_direct") },
-            context.cacheDir
-        ).filter { it.exists() && it.isDirectory }
-            .distinctBy { it.absolutePath }
-
-        // 1. نسخ كافة ملفات Salma/NLP/ وملفات ar_sa* مباشرة في جذر المجلد
-        for (root in candidateRoots) {
-            root.walkTopDown().maxDepth(6).forEach { file ->
-                if (file.isFile) {
-                    val name = file.name
-                    val parentName = file.parentFile?.name.orEmpty()
-                    val isNlpDir = parentName.equals("NLP", ignoreCase = true)
-                    val isArSa = name.startsWith("ar_sa", ignoreCase = true)
-                    val isNlpExt = name.endsWith(".dca", ignoreCase = true) ||
-                        name.endsWith(".bnx", ignoreCase = true) ||
-                        name.endsWith(".ldi", ignoreCase = true) ||
-                        name.endsWith(".trz", ignoreCase = true) ||
-                        name.endsWith(".cma", ignoreCase = true) ||
-                        name.endsWith(".dic", ignoreCase = true) ||
-                        name.endsWith(".bnf", ignoreCase = true)
-                    if (isNlpDir || isArSa || isNlpExt) {
-                        val dest = File(stageDir, name)
-                        if (!dest.exists() || dest.length() != file.length()) {
-                            runCatching { file.copyTo(dest, overwrite = true) }
-                        }
-                    }
-                }
-            }
+        val source = sourceDir?.takeIf { it.exists() && it.isDirectory }
+            ?: findOriginalSalmaDir(context)
+        if (source != null) {
+            copyTreeVerbatim(source, stageDir, skipLogs = true)
         }
-
-        // 2. ملف الصوت salma_22k_lf.bvcu وملفات .bvcu
-        val bvcu = findSalmaBvcuFile(context)
-            ?: candidateRoots.firstNotNullOfOrNull { root ->
-                root.walkTopDown().maxDepth(5).firstOrNull { f ->
-                    f.isFile && f.extension.equals("bvcu", ignoreCase = true)
-                }
-            }
-        if (bvcu != null && bvcu.isFile) {
-            val destNamed = File(stageDir, "salma_22k_lf.bvcu")
-            if (!destNamed.exists() || destNamed.length() != bvcu.length()) {
-                runCatching {
-                    Files.createLink(destNamed.toPath(), bvcu.toPath())
-                }.onFailure {
-                    runCatching { bvcu.copyTo(destNamed, overwrite = true) }
-                }
-            }
-            // ع١٠٧١٤-١: نسخة حقيقية وليست رابطاً باسم
-            // ar_sa_hd_salma_22k_lf.bvcu
-            val destArSa = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu")
-            if (!destArSa.exists() || destArSa.length() != bvcu.length()) {
-                runCatching { bvcu.copyTo(destArSa, overwrite = true) }
-            }
-            val destOrig = File(stageDir, bvcu.name)
-            if (!destOrig.exists() || destOrig.length() != bvcu.length()) {
-                runCatching {
-                    Files.createLink(destOrig.toPath(), bvcu.toPath())
-                }.onFailure {
-                    runCatching { bvcu.copyTo(destOrig, overwrite = true) }
-                }
-            }
-        }
-
-        // 3. ملفات الإعداد .inf و .ini وتوليد bvcu.inf و bvcu.ini
-        for (root in candidateRoots) {
-            root.walkTopDown().maxDepth(5).forEach { f ->
-                if (f.isFile && (
-                        f.extension.equals("inf", ignoreCase = true) ||
-                        f.extension.equals("ini", ignoreCase = true)
-                    )
-                ) {
-                    val dest = File(stageDir, f.name)
-                    if (!dest.exists() || dest.length() != f.length()) {
-                        runCatching { f.copyTo(dest, overwrite = true) }
-                    }
-                }
-            }
-        }
-        val infFiles = stageDir.listFiles { f ->
-            f.isFile && f.extension.equals("inf", ignoreCase = true)
-        }.orEmpty()
-        val bvcuInf = File(stageDir, "bvcu.inf")
-        if (!bvcuInf.exists() && infFiles.isNotEmpty()) {
-            runCatching { infFiles.first().copyTo(bvcuInf, overwrite = true) }
-        }
-        stageDir.listFiles { f ->
-            f.isFile && f.extension.equals("inf", ignoreCase = true)
-        }?.forEach { inf ->
-            AcapelaVoiceManifest.ensureIniFor(inf)
-        }
-        val iniFiles = stageDir.listFiles { f ->
-            f.isFile && f.extension.equals("ini", ignoreCase = true)
-        }.orEmpty()
-        val bvcuIni = File(stageDir, "bvcu.ini")
-        val salmaIni = File(stageDir, "ar_sa_hd_salma_22k_lf.ini")
-        if (iniFiles.isNotEmpty()) {
-            val srcIni = iniFiles.first()
-            if (!bvcuIni.exists()) {
-                runCatching { srcIni.copyTo(bvcuIni, overwrite = true) }
-            }
-            if (!salmaIni.exists()) {
-                runCatching { srcIni.copyTo(salmaIni, overwrite = true) }
-            }
-        }
-
-        // 4. ملف config.yaml
-        val foundYaml = AcapelaVoiceManifest.findConfigYamlWithParam(
-            candidateRoots
-        )
-        val yamlSrc = foundYaml?.first ?: candidateRoots.firstNotNullOfOrNull {
-            it.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile && f.name.equals("config.yaml", ignoreCase = true)
-            }
-        }
-        if (yamlSrc != null && yamlSrc.isFile) {
-            val destYaml = File(stageDir, "config.yaml")
-            if (!destYaml.exists() || destYaml.length() != yamlSrc.length()) {
-                runCatching { yamlSrc.copyTo(destYaml, overwrite = true) }
-            }
-        }
-
-        // 5. ملف salma_lf.txt
-        val txtSrc = candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile && (
-                    f.name.equals("salma_lf.txt", ignoreCase = true) ||
-                    f.name.endsWith("_lf.txt", ignoreCase = true)
-                )
-            }
-        }
-        if (txtSrc != null && txtSrc.isFile) {
-            val destTxt = File(stageDir, "salma_lf.txt")
-            if (!destTxt.exists() || destTxt.length() != txtSrc.length()) {
-                runCatching { txtSrc.copyTo(destTxt, overwrite = true) }
-            }
-            val destOrigTxt = File(stageDir, txtSrc.name)
-            if (!destOrigTxt.exists()) {
-                runCatching { txtSrc.copyTo(destOrigTxt, overwrite = true) }
-            }
-        }
-
-        // 6. ملف 0x00169729
-        val hexSrc = candidateRoots.firstNotNullOfOrNull { r ->
-            AcapelaVoiceManifest.findHexRegistrationFile(r)
-        }
-        if (hexSrc != null && hexSrc.isFile) {
-            val destNamedHex = File(stageDir, "0x00169729")
-            if (!destNamedHex.exists() ||
-                destNamedHex.length() != hexSrc.length()
-            ) {
-                runCatching { hexSrc.copyTo(destNamedHex, overwrite = true) }
-            }
-            val destOrigHex = File(stageDir, hexSrc.name)
-            if (!destOrigHex.exists()) {
-                runCatching { hexSrc.copyTo(destOrigHex, overwrite = true) }
-            }
-        }
-
-        // 7. ملف user.userdico ومجلد userdicos/
-        for (root in candidateRoots) {
-            root.walkTopDown().maxDepth(5).forEach { f ->
-                if (f.isFile &&
-                    f.name.endsWith(".userdico", ignoreCase = true)
-                ) {
-                    val dstSub = File(userdicos, f.name)
-                    if (!dstSub.exists() || dstSub.length() != f.length()) {
-                        runCatching { f.copyTo(dstSub, overwrite = true) }
-                    }
-                    if (f.name.equals("user.userdico", ignoreCase = true)) {
-                        val dstRoot = File(stageDir, "user.userdico")
-                        if (!dstRoot.exists() ||
-                            dstRoot.length() != f.length()
-                        ) {
-                            runCatching { f.copyTo(dstRoot, overwrite = true) }
-                        }
-                    }
-                    if (f.name.equals("ara-sau.userdico", ignoreCase = true)) {
-                        val dstRoot = File(stageDir, "ara-sau.userdico")
-                        if (!dstRoot.exists() ||
-                            dstRoot.length() != f.length()
-                        ) {
-                            runCatching { f.copyTo(dstRoot, overwrite = true) }
-                        }
-                    }
-                }
-            }
-        }
-
-        val araDico = File(userdicos, "ara-sau.userdico")
-        val userDico = File(userdicos, "user.userdico")
-        val userDicoRoot = File(stageDir, "user.userdico")
-        if (!userDico.exists() && userDicoRoot.exists()) {
-            runCatching { userDicoRoot.copyTo(userDico, overwrite = true) }
-        } else if (userDico.exists() && !userDicoRoot.exists()) {
-            runCatching { userDico.copyTo(userDicoRoot, overwrite = true) }
-        }
-        if (!araDico.exists() && userDico.exists()) {
-            runCatching { userDico.copyTo(araDico, overwrite = true) }
-        }
-
         return stageDir
     }
-
-    /**
-     * معيار نجاح تجربة صوت Acapela: callback غير فارغ موصول، وnSpeak ناجح،
-     * وعيّنات PCM فعلية > 0، وغياب أخطاء تحميل اللغة/الصوت من سجل المكتبة.
-     * لا يكفي nInit ناجح ولا ظهور اسم الصوت ولا eb=0 وحده، ولا تُعدّ PCM=0
-     * قياساً صالحاً بلا callback موصول.
-     */
     fun evaluateTrialSuccess10724(
-        speakCode: Int,
-        samples: Long,
+        speakCode: Int?,
+        samples: Long?,
         nativeLines: List<String>,
-        callbackConnected: Boolean = true
+        callbackConnected: Boolean = true,
+        invoked: Boolean = true
     ): Boolean {
+        if (!invoked) return false
+        val code = speakCode ?: return false
+        val pcm = samples ?: return false
         val hasLangError = nativeLines.any { line ->
             line.contains("Error init language", ignoreCase = true) ||
                 line.contains("not loaded", ignoreCase = true) ||
                 line.contains("load error", ignoreCase = true)
         }
-        return callbackConnected &&
-            speakCode == 0 &&
-            samples > 0L &&
-            !hasLangError
+        return callbackConnected && code == 0 && pcm > 0L && !hasLangError
     }
 
     fun evaluateTrialSuccess10723(
-        speakCode: Int,
-        samples: Long,
+        speakCode: Int?,
+        samples: Long?,
         nativeLines: List<String>
-    ): Boolean = evaluateTrialSuccess10724(speakCode, samples, nativeLines)
+    ): Boolean = evaluateTrialSuccess10724(
+        speakCode = speakCode,
+        samples = samples,
+        nativeLines = nativeLines
+    )
 
     /**
      * تحديد أول سطر خطأ في سجل المكتبة الأصلية والسطر الذي قبله (البند 3).
@@ -1422,15 +1333,9 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * تجهيز نظيف لمسار Path_Full_Stage (بناء 10723):
-     * - salma_22k_lf.bvcu
-     * - ar_sa_hd_salma_22k_lf.bvcu.inf
-     * - ar_sa_hd_salma_22k_lf.ini (MODE=prep_hd و [ RAM ])
-     * - 0x00169729
-     * - ملفات NLP مسطحة في الجذر إذا [flatNlp] = true أو داخل NLP/ إن كان false
-     * - userdicos/ara-sau.userdico وأي .userdico آخر
-     * - config.yaml
-     * - يستثني nuul ونسخة ar_sa_hd_...bvcu المكررة وأي ملف دخيل
+     * تجهيز قديم (محيَّد): يُنشئ مجلداً نظيفاً ويَنسخ محتوى المصدر
+     * حرفياً إن وُجد، دون توليد/حشو/تعديل ini ودون تسطيح/خلط مخالف
+     * (بغضّ النظر عن [flatNlp]). التوقيع محفوظ للتوافق.
      */
     fun stageFull(
         context: Context,
@@ -1447,220 +1352,18 @@ object AcapelaVoiceDiagnostics {
             runCatching { stageDir.deleteRecursively() }
         }
         stageDir.mkdirs()
-
-        val userdicosDir = File(stageDir, "userdicos")
-        userdicosDir.mkdirs()
-
-        val nlpTargetDir = if (flatNlp) {
-            stageDir
-        } else {
-            File(stageDir, "NLP").also { it.mkdirs() }
+        val source = sourceDir?.takeIf { it.exists() && it.isDirectory }
+            ?: findOriginalSalmaDir(context)
+        if (source != null) {
+            copyTreeVerbatim(source, stageDir, skipLogs = true)
         }
-
-        fun isExcluded(name: String): Boolean {
-            val lower = name.lowercase(Locale.ROOT)
-            return lower.contains("nuul") ||
-                lower.contains("tmp") ||
-                lower == "version.txt" ||
-                lower == "3073.ini" ||
-                lower == "msttslocalreg.ini" ||
-                lower == "logfile.txt" ||
-                lower.contains("microsoft") ||
-                lower.contains("mstts") ||
-                lower == "ar_sa_hd_salma_22k_lf.bvcu"
-        }
-
-        val salmaDir = findOriginalSalmaDir(context)
-        val candidateRoots = listOfNotNull(
-            sourceDir,
-            sourceDir?.parentFile,
-            sourceDir?.parentFile?.parentFile,
-            salmaDir,
-            salmaDir?.let { File(it, "NLP") },
-            salmaDir?.let { File(it, "salma_lf") },
-            context.filesDir?.let { File(it, "Acapela") },
-            context.filesDir?.let { File(it, "Acapela/Salma") },
-            context.filesDir?.let { File(it, "Acapela/Salma/NLP") },
-            context.filesDir?.let { File(it, "Acapela/Salma/salma_lf") },
-            context.filesDir?.let { File(it, "acapela") },
-            context.filesDir?.let { File(it, "acapela/Salma") },
-            context.filesDir?.let { File(it, "acapela/Salma/NLP") },
-            context.filesDir?.let { File(it, "acapela/Salma/salma_lf") },
-            context.filesDir,
-            context.cacheDir?.let { File(it, "acapela_stage_v2") },
-            context.cacheDir?.let { File(it, "acapela_stage_10709_exact") },
-            context.cacheDir
-        ).filter { it.exists() && it.isDirectory }
-            .distinctBy { it.absolutePath }
-
-        // 1. ملف الصوت salma_22k_lf.bvcu فقط
-        val bvcu = candidateRoots.firstNotNullOfOrNull { root ->
-            root.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile && f.extension.equals("bvcu", true) &&
-                    !isExcluded(f.name) &&
-                    (f.name.equals("salma_22k_lf.bvcu", true) ||
-                        f.length() > 5_000_000L)
-            }
-        } ?: findSalmaBvcuFile(context)
-        if (bvcu != null && bvcu.isFile) {
-            val destBvcu = File(stageDir, "salma_22k_lf.bvcu")
-            runCatching {
-                Files.createLink(destBvcu.toPath(), bvcu.toPath())
-            }.onFailure {
-                runCatching { bvcu.copyTo(destBvcu, overwrite = true) }
-            }
-        }
-
-        // 2. ملف ar_sa_hd_salma_22k_lf.bvcu.inf
-        val infSrc = candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile &&
-                    f.name.equals("ar_sa_hd_salma_22k_lf.bvcu.inf", true)
-            }
-        } ?: candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile && f.extension.equals("inf", true) &&
-                    !isExcluded(f.name)
-            }
-        }
-        if (infSrc != null && infSrc.isFile) {
-            val destInf = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.inf")
-            runCatching { infSrc.copyTo(destInf, overwrite = true) }
-            val destInf2 = File(stageDir, "bvcu.inf")
-            runCatching { infSrc.copyTo(destInf2, overwrite = true) }
-        }
-
-        // 3. كتابة ملفات .ini: الأصل الغني أولاً، والبديل للتجربة فقط
-        writeIniTargets(
-            context = context,
-            targets = listOf(
-                File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.ini"),
-                File(stageDir, "ar_sa_hd_salma_22k_lf.ini"),
-                File(stageDir, "bvcu.ini")
-            ),
-            // تجربة قديمة مسطّحة: المحتوى المتخيّل مسموح هنا صراحةً فقط،
-            // ولا يُستخدم أبداً في مسار الاستيراد الحقيقي.
-            fallback = originalIniFallbackContent()
-        )
-
-        // 4. ملف 0x00169729
-        val hexSrc = candidateRoots.firstNotNullOfOrNull { r ->
-            AcapelaVoiceManifest.findHexRegistrationFile(r)
-        } ?: candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(6).firstOrNull { f ->
-                f.isFile && f.name.contains("0x0016", ignoreCase = true) &&
-                    f.length() > 0L
-            }
-        }
-        if (hexSrc != null && hexSrc.isFile) {
-            val destHex = File(stageDir, "0x00169729")
-            runCatching { hexSrc.copyTo(destHex, overwrite = true) }
-        }
-
-        // 5. ملف config.yaml
-        val yamlSrc = candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile && f.name.equals("config.yaml", true)
-            }
-        }
-        if (yamlSrc != null && yamlSrc.isFile) {
-            val destYaml = File(stageDir, "config.yaml")
-            runCatching { yamlSrc.copyTo(destYaml, overwrite = true) }
-        }
-
-        // 6. ملفات NLP الأصلية
-        for (root in candidateRoots) {
-            root.walkTopDown().maxDepth(6).forEach { file ->
-                if (file.isFile) {
-                    val name = file.name
-                    val parentName = file.parentFile?.name.orEmpty()
-                    val isNlpDir = parentName.equals("NLP", true)
-                    val isArSa = name.startsWith("ar_sa", true)
-                    val isNlpExt = name.endsWith(".dca", true) ||
-                        name.endsWith(".bnx", true) ||
-                        name.endsWith(".ldi", true) ||
-                        name.endsWith(".trz", true) ||
-                        name.endsWith(".cma", true) ||
-                        name.endsWith(".oso", true) ||
-                        name.endsWith(".gra", true)
-                    val isBvcuOrConfig = name.endsWith(".bvcu", true) ||
-                        name.endsWith(".ini", true) ||
-                        name.endsWith(".inf", true)
-                    if ((isNlpDir || isArSa || isNlpExt) &&
-                        !isBvcuOrConfig && !isExcluded(name)
-                    ) {
-                        val dest = File(nlpTargetDir, name)
-                        if (!dest.exists() || dest.length() != file.length()) {
-                            runCatching { file.copyTo(dest, overwrite = true) }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 7. ملفات userdicos/ ونسخها في الجذر أيضاً (البند 6 لبناء 10724)
-        val allDicos = candidateRoots.flatMap { root ->
-            root.walkTopDown().maxDepth(6).filter {
-                it.isFile && it.name.endsWith(".userdico", true)
-            }.toList()
-        }
-        val bestAraSau = allDicos
-            .filter { it.name.equals("ara-sau.userdico", true) }
-            .maxByOrNull { it.length() }
-        val bestUser = allDicos
-            .filter { it.name.equals("user.userdico", true) }
-            .maxByOrNull { it.length() }
-
-        // نسخ كافة ملفات userdico إلى مجلد userdicos/
-        for (f in allDicos) {
-            val dstSub = File(userdicosDir, f.name)
-            if (!dstSub.exists() || dstSub.length() != f.length()) {
-                runCatching { f.copyTo(dstSub, overwrite = true) }
-            }
-        }
-        // وضع الملفين في userdicos/ وفي المجلد الرئيسي معاً
-        bestAraSau?.let { src ->
-            val dstSub = File(userdicosDir, "ara-sau.userdico")
-            runCatching { src.copyTo(dstSub, overwrite = true) }
-            val dstRoot = File(stageDir, "ara-sau.userdico")
-            runCatching { src.copyTo(dstRoot, overwrite = true) }
-        }
-        bestUser?.let { src ->
-            val dstSub = File(userdicosDir, "user.userdico")
-            runCatching { src.copyTo(dstSub, overwrite = true) }
-            val dstRoot = File(stageDir, "user.userdico")
-            runCatching { src.copyTo(dstRoot, overwrite = true) }
-        }
-        val araDicoSub = File(userdicosDir, "ara-sau.userdico")
-        val userDicoSub = File(userdicosDir, "user.userdico")
-        if (!araDicoSub.exists() && userDicoSub.exists()) {
-            runCatching { userDicoSub.copyTo(araDicoSub, overwrite = true) }
-            val dstRoot = File(stageDir, "ara-sau.userdico")
-            runCatching { userDicoSub.copyTo(dstRoot, overwrite = true) }
-        }
-
-        // 8. تنظيف نهائي صارم لضمان خلو المجلد من أي ملف غير مرغوب فيه
-        stageDir.walkTopDown().forEach { f ->
-            if (f.isFile && isExcluded(f.name)) {
-                runCatching { f.delete() }
-            }
-        }
-        if (flatNlp) {
-            val nestedNlp = File(stageDir, "NLP")
-            if (nestedNlp.exists()) {
-                runCatching { nestedNlp.deleteRecursively() }
-            }
-        }
-
         return stageDir
     }
 
     /**
-     * تجهيز نظيف يطابق 10709 حرفياً في [cache/acapela_stage_10709_exact]:
-     * - salma_22k_lf.bvcu وملفات ar_sa وملفات .inf وملف 0x00169729 و userdicos/
-     * - بدون نسخة ar_sa_hd_salma_22k_lf.bvcu
-     * - بدون أي ملف nuul216vqfp
-     * - كتابة ar_sa_hd_salma_22k_lf.ini بـ MODE=prep_hd و [ RAM ]
+     * تجهيز قديم (محيَّد): يُنشئ مجلداً نظيفاً ويَنسخ محتوى المصدر
+     * حرفياً إن وُجد، دون توليد/حشو/تعديل ini ودون استبعاد/خلط.
+     * التوقيع محفوظ للتوافق.
      */
     fun stage10709Exact(
         context: Context,
@@ -1671,92 +1374,11 @@ object AcapelaVoiceDiagnostics {
             runCatching { stageDir.deleteRecursively() }
         }
         stageDir.mkdirs()
-
-        fun isExcluded(name: String): Boolean {
-            val lower = name.lowercase(Locale.ROOT)
-            return lower.contains("nuul") ||
-                lower.contains("tmp") ||
-                lower == "version.txt" ||
-                lower == "config.yaml" ||
-                lower == "3073.ini" ||
-                lower == "msttslocalreg.ini" ||
-                lower == "logfile.txt" ||
-                lower.contains("microsoft") ||
-                lower.contains("mstts") ||
-                lower == "ar_sa_hd_salma_22k_lf.bvcu"
+        val source = sourceDir?.takeIf { it.exists() && it.isDirectory }
+            ?: findOriginalSalmaDir(context)
+        if (source != null) {
+            copyTreeVerbatim(source, stageDir, skipLogs = true)
         }
-
-        val candidateRoots = listOfNotNull(
-            sourceDir,
-            sourceDir?.parentFile,
-            context.filesDir?.let { File(it, "Acapela") },
-            context.filesDir?.let { File(it, "Acapela/Salma") },
-            context.filesDir?.let { File(it, "Acapela/Salma/salma_lf") },
-            context.filesDir?.let { File(it, "acapela") },
-            context.filesDir
-        ).filter { it.exists() && it.isDirectory }
-            .distinctBy { it.absolutePath }
-
-        // 1. ملف الصوت salma_22k_lf.bvcu فقط
-        val bvcu = candidateRoots.firstNotNullOfOrNull { root ->
-            root.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile && f.extension.equals("bvcu", true) &&
-                    !isExcluded(f.name) &&
-                    (f.name.equals("salma_22k_lf.bvcu", true) ||
-                        f.length() > 5_000_000L)
-            }
-        } ?: findSalmaBvcuFile(context)
-        if (bvcu != null && bvcu.isFile) {
-            val destNamed = File(stageDir, "salma_22k_lf.bvcu")
-            runCatching {
-                Files.createLink(destNamed.toPath(), bvcu.toPath())
-            }.onFailure {
-                runCatching { bvcu.copyTo(destNamed, overwrite = true) }
-            }
-        }
-
-        // 2. ملف .inf
-        val infSrc = candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile &&
-                    f.name.equals("ar_sa_hd_salma_22k_lf.bvcu.inf", true)
-            }
-        } ?: candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile && f.extension.equals("inf", true) &&
-                    !isExcluded(f.name)
-            }
-        }
-        if (infSrc != null && infSrc.isFile) {
-            val destInf = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.inf")
-            runCatching { infSrc.copyTo(destInf, overwrite = true) }
-        }
-
-        // 3. كتابة ملف .ini بمحتوى 10709
-        writeStageV2Ini(
-            stageDir = stageDir,
-            mode = "MODE=prep_hd",
-            filemapDirective = "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]",
-            context = context
-        )
-
-        // 4. حذف أي ملف أو مجلد دخيل للتأكد من بقاء الملفات المطلوبة فقط
-        val allowedNames = setOf(
-            "salma_22k_lf.bvcu",
-            "ar_sa_hd_salma_22k_lf.bvcu.inf",
-            "ar_sa_hd_salma_22k_lf.bvcu.ini",
-            "ar_sa_hd_salma_22k_lf.ini",
-            "bvcu.ini",
-            "bvcu.inf"
-        )
-        stageDir.listFiles()?.forEach { f ->
-            if (f.name !in allowedNames) {
-                runCatching {
-                    if (f.isDirectory) f.deleteRecursively() else f.delete()
-                }
-            }
-        }
-
         return stageDir
     }
 
@@ -2147,8 +1769,8 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * تجهيز نسخة مصغرة [cache/acapela_stage_min] تحتوي فقط على الملفات
-     * الأساسية لصوت Salma وملفات ar_sa المحددة.
+     * تجهيز قديم (محيَّد): يَنسخ [flatDir] حرفياً إلى مجلد staging
+     * نظيف دون تصفية انتقائية أو توليد ini. التوقيع محفوظ للتوافق.
      */
     fun prepareStageMin(context: Context, flatDir: File): File {
         val minDir = File(context.cacheDir, "acapela_stage_min")
@@ -2156,47 +1778,15 @@ object AcapelaVoiceDiagnostics {
             runCatching { minDir.deleteRecursively() }
         }
         minDir.mkdirs()
-
-        val allowedExact = setOf(
-            "salma_22k_lf.bvcu",
-            "bvcu.inf",
-            "bvcu.ini",
-            "config.yaml",
-            "ar_sa.dca",
-            "ar_sa.bnx",
-            "ar_sa.ldi",
-            "ar_sa.trz",
-            "ar_sa_iv.trz.gra",
-            "ar_sa_oov.trz.gra",
-            "ar_sa_utf8.cma",
-            "ar_sa_utf8.dca",
-            "ar_sa_cp.cma",
-            "ar_sa.oso"
-        )
-
-        flatDir.listFiles { f -> f.isFile }?.forEach { f ->
-            val n = f.name
-            val matchPrefix = n.startsWith("ar_sa_hd_salma_22k_lf.", true)
-            if (n in allowedExact || matchPrefix) {
-                val dst = File(minDir, n)
-                runCatching { f.copyTo(dst, overwrite = true) }
-            }
-        }
-
-        val userdicosSrc = File(flatDir, "userdicos")
-        if (userdicosSrc.isDirectory) {
-            val userdicosDst = File(minDir, "userdicos")
-            userdicosDst.mkdirs()
-            userdicosSrc.listFiles()?.forEach { f ->
-                runCatching { f.copyTo(File(userdicosDst, f.name), true) }
-            }
+        if (flatDir.exists() && flatDir.isDirectory) {
+            copyTreeVerbatim(flatDir, minDir, skipLogs = true)
         }
         return minDir
     }
 
     /**
-     * تجهيز نسخة [cache/acapela_stage_nounplugged] مع حذف كافة ملفات
-     * unplugged و e_arq و hde_arq.
+     * تجهيز قديم (محيَّد): يَنسخ [flatDir] حرفياً إلى مجلد staging
+     * نظيف دون حذف انتقائي أو توليد ini. التوقيع محفوظ للتوافق.
      */
     fun prepareStageNoUnplugged(context: Context, flatDir: File): File {
         val nounpDir = File(context.cacheDir, "acapela_stage_nounplugged")
@@ -2204,58 +1794,26 @@ object AcapelaVoiceDiagnostics {
             runCatching { nounpDir.deleteRecursively() }
         }
         nounpDir.mkdirs()
-
-        flatDir.listFiles()?.forEach { f ->
-            if (f.isFile) {
-                val n = f.name.lowercase(java.util.Locale.ROOT)
-                val isBlocked = n.contains("unplugged") ||
-                    n.contains("e_arq") ||
-                    n.contains("hde_arq")
-                if (!isBlocked) {
-                    runCatching { f.copyTo(File(nounpDir, f.name), true) }
-                }
-            } else if (f.isDirectory) {
-                val dstSub = File(nounpDir, f.name)
-                dstSub.mkdirs()
-                f.listFiles()?.forEach { subF ->
-                    runCatching {
-                        subF.copyTo(File(dstSub, subF.name), true)
-                    }
-                }
-            }
+        if (flatDir.exists() && flatDir.isDirectory) {
+            copyTreeVerbatim(flatDir, nounpDir, skipLogs = true)
         }
         return nounpDir
     }
 
-    /**
-     * كتابة ملفات .ini الثلاثة بنفس المحتوى حرفياً سطرين فقط:
-     * MODE=prep_hd
-     * #1 FILEMAP "salma_22k_lf.bvcu" ...
-     */
+    /** لا يُولّد/يُحشو/يُعدّل أي تهيئة ini (عقد الأصالة). */
     fun writeStageV2Ini(
         stageDir: File,
         mode: String,
         filemapDirective: String,
         context: Context? = null
     ) {
-        val cleanMode = mode.removePrefix("MODE=").trim()
-        writeIniTargets(
-            context = context,
-            targets = listOf(
-                File(stageDir, "ar_sa_hd_salma_22k_lf.ini"),
-                File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.ini"),
-                File(stageDir, "bvcu.ini")
-            ),
-            fallback = "MODE=$cleanMode\n$filemapDirective\n"
-        )
+        // محظور بموجب متطلبات الأصالة.
     }
 
     /**
-     * تجهيز مجلد مسطح [cache/acapela_stage_v2] يحتوي فقط على:
-     * ملفات ar_sa* وsalma_22k_lf.bvcu و.inf وconfig.yaml وsalma_lf.txt
-     * و0x00169729 وuserdicos/.
-     * ويستثني 3073.INI وMSTTSLocArEG.ini وlogfile.txt وأي ملف Microsoft
-     * أو .nuul.
+     * تجهيز قديم (محيَّد): يُنشئ مجلداً نظيفاً ويَنسخ محتوى المصدر
+     * حرفياً إن وُجد، دون توليد/حشو/تعديل ini ودون تسطيح/استبعاد/خلط
+     * (بغضّ النظر عن [copyArSaBvcu]). التوقيع محفوظ للتوافق.
      */
     fun stageVoiceV2(
         context: Context,
@@ -2267,180 +1825,11 @@ object AcapelaVoiceDiagnostics {
             runCatching { stageDir.deleteRecursively() }
         }
         stageDir.mkdirs()
-        val userdicos = File(stageDir, "userdicos")
-        userdicos.mkdirs()
-
-        fun isExcluded(name: String): Boolean {
-            val lower = name.lowercase(java.util.Locale.ROOT)
-            return lower == "3073.ini" ||
-                lower == "msttslocalreg.ini" ||
-                lower == "logfile.txt" ||
-                lower.contains("microsoft") ||
-                lower.contains("mstts") ||
-                lower.endsWith(".nuul")
+        val source = sourceDir?.takeIf { it.exists() && it.isDirectory }
+            ?: findOriginalSalmaDir(context)
+        if (source != null) {
+            copyTreeVerbatim(source, stageDir, skipLogs = true)
         }
-
-        val candidateRoots = listOfNotNull(
-            sourceDir,
-            sourceDir?.parentFile,
-            sourceDir?.parentFile?.parentFile,
-            context.filesDir?.let { File(it, "Acapela") },
-            context.filesDir?.let { File(it, "Acapela/Salma") },
-            context.filesDir?.let { File(it, "Acapela/Salma/salma_lf") },
-            context.filesDir?.let { File(it, "acapela") },
-            context.filesDir,
-            context.cacheDir?.let { File(it, "acapela_stage_flat") },
-            context.cacheDir?.let { File(it, "acapela_stage_parent") },
-            context.cacheDir?.let { File(it, "acapela_stage_direct") },
-            context.cacheDir
-        ).filter { it.exists() && it.isDirectory }
-            .distinctBy { it.absolutePath }
-
-        // 1. نسخ ملفات ar_sa* ومحتويات Salma/NLP/
-        for (root in candidateRoots) {
-            root.walkTopDown().maxDepth(6).forEach { file ->
-                if (file.isFile) {
-                    val name = file.name
-                    val parentName = file.parentFile?.name.orEmpty()
-                    val isNlpDir = parentName.equals("NLP", true)
-                    val isArSa = name.startsWith("ar_sa", true)
-                    val isNlpExt = name.endsWith(".dca", true) ||
-                        name.endsWith(".bnx", true) ||
-                        name.endsWith(".ldi", true) ||
-                        name.endsWith(".trz", true) ||
-                        name.endsWith(".cma", true) ||
-                        name.endsWith(".oso", true) ||
-                        name.endsWith(".gra", true)
-                    if ((isNlpDir || isArSa || isNlpExt) && !isExcluded(name)) {
-                        val dest = File(stageDir, name)
-                        if (!dest.exists() || dest.length() != file.length()) {
-                            runCatching { file.copyTo(dest, overwrite = true) }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. ملف الصوت salma_22k_lf.bvcu
-        val bvcu = findSalmaBvcuFile(context)
-            ?: candidateRoots.firstNotNullOfOrNull { root ->
-                root.walkTopDown().maxDepth(5).firstOrNull { f ->
-                    f.isFile && f.extension.equals("bvcu", true)
-                }
-            }
-        if (bvcu != null && bvcu.isFile) {
-            val destNamed = File(stageDir, "salma_22k_lf.bvcu")
-            if (!destNamed.exists() || destNamed.length() != bvcu.length()) {
-                runCatching {
-                    Files.createLink(destNamed.toPath(), bvcu.toPath())
-                }.onFailure {
-                    runCatching { bvcu.copyTo(destNamed, overwrite = true) }
-                }
-            }
-            if (copyArSaBvcu) {
-                // ع١٠٧١٤-١: نسخة حقيقية وليست رابطاً باسم
-                // ar_sa_hd_salma_22k_lf.bvcu
-                val destArSa = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu")
-                if (!destArSa.exists() || destArSa.length() != bvcu.length()) {
-                    runCatching { bvcu.copyTo(destArSa, overwrite = true) }
-                }
-            }
-        }
-
-        // 3. ملفات .inf
-        val infSrc = candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile &&
-                    f.name.equals("ar_sa_hd_salma_22k_lf.bvcu.inf", true)
-            }
-        } ?: candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile && f.extension.equals("inf", true) &&
-                    !isExcluded(f.name)
-            }
-        }
-        if (infSrc != null && infSrc.isFile) {
-            val destInf1 = File(stageDir, "ar_sa_hd_salma_22k_lf.bvcu.inf")
-            runCatching { infSrc.copyTo(destInf1, overwrite = true) }
-            val destInf2 = File(stageDir, "bvcu.inf")
-            runCatching { infSrc.copyTo(destInf2, overwrite = true) }
-        }
-
-        // 4. ملف config.yaml
-        val yamlSrc = AcapelaVoiceManifest.findConfigYamlWithParam(
-            candidateRoots
-        )?.first ?: candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile && f.name.equals("config.yaml", true)
-            }
-        }
-        if (yamlSrc != null && yamlSrc.isFile) {
-            val destYaml = File(stageDir, "config.yaml")
-            runCatching { yamlSrc.copyTo(destYaml, overwrite = true) }
-        }
-
-        // 5. ملف salma_lf.txt
-        val txtSrc = candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(5).firstOrNull { f ->
-                f.isFile && (
-                    f.name.equals("salma_lf.txt", true) ||
-                    f.name.endsWith("_lf.txt", true)
-                )
-            }
-        }
-        if (txtSrc != null && txtSrc.isFile) {
-            val destTxt = File(stageDir, "salma_lf.txt")
-            runCatching { txtSrc.copyTo(destTxt, overwrite = true) }
-        }
-
-        // 6. ملف 0x00169729
-        val hexSrc = candidateRoots.firstNotNullOfOrNull { r ->
-            AcapelaVoiceManifest.findHexRegistrationFile(r)
-        } ?: candidateRoots.firstNotNullOfOrNull { r ->
-            r.walkTopDown().maxDepth(6).firstOrNull { f ->
-                f.isFile && f.name.contains("0x", ignoreCase = true) &&
-                    f.length() > 0L
-            }
-        }
-        if (hexSrc != null && hexSrc.isFile) {
-            val destHexOrig = File(stageDir, hexSrc.name)
-            runCatching { hexSrc.copyTo(destHexOrig, overwrite = true) }
-            val destHex = File(stageDir, "0x00169729")
-            runCatching { hexSrc.copyTo(destHex, overwrite = true) }
-        }
-
-        // 7. ملفات userdicos/
-        for (root in candidateRoots) {
-            root.walkTopDown().maxDepth(5).forEach { f ->
-                if (f.isFile && f.name.endsWith(".userdico", true)) {
-                    val dstSub = File(userdicos, f.name)
-                    if (!dstSub.exists() || dstSub.length() != f.length()) {
-                        runCatching { f.copyTo(dstSub, overwrite = true) }
-                    }
-                }
-            }
-        }
-        val araDico = File(userdicos, "ara-sau.userdico")
-        val userDico = File(userdicos, "user.userdico")
-        if (!araDico.exists() && userDico.exists()) {
-            runCatching { userDico.copyTo(araDico, overwrite = true) }
-        }
-
-        // 8. ضمان خلو المجلد من أي ملف مستبعد
-        stageDir.listFiles()?.forEach { f ->
-            if (f.isFile && isExcluded(f.name)) {
-                runCatching { f.delete() }
-            }
-        }
-
-        // 9. كتابة ملفات .ini الثلاثة بالمحتوى الافتراضي الأولي
-        writeStageV2Ini(
-            stageDir = stageDir,
-            mode = "MODE=prep_hd",
-            filemapDirective = "#1 FILEMAP \"salma_22k_lf.bvcu\" [ RAM ]",
-            context = context
-        )
-
         return stageDir
     }
 
@@ -2486,6 +1875,37 @@ object AcapelaVoiceDiagnostics {
             appendLine("المحتوى كـ Hex (${bytes.size} بايت):")
             appendLine(hex)
         }.trimEnd()
+    }
+
+
+    /**
+     * نسخ حرفي للشجرة (ملفات/مجلدات كما هي) مع خيار تجاوز سجلات التشغيل
+     * فقط، بلا توليد/تعديل/تصفية انتقائية للمحتوى.
+     */
+    private fun copyTreeVerbatim(
+        source: File,
+        target: File,
+        skipLogs: Boolean = false
+    ) {
+        if (!source.exists()) return
+        if (!target.exists()) target.mkdirs()
+        source.walkTopDown().forEach { f ->
+            val rel = runCatching { f.relativeTo(source).path }.getOrNull()
+                ?: return@forEach
+            if (rel.isEmpty()) return@forEach
+            if (skipLogs && f.isFile &&
+                f.name.equals(LOG_FILE_NAME, ignoreCase = true)
+            ) {
+                return@forEach
+            }
+            val dst = File(target, rel)
+            if (f.isDirectory) {
+                dst.mkdirs()
+            } else if (f.isFile) {
+                dst.parentFile?.mkdirs()
+                runCatching { f.copyTo(dst, overwrite = true) }
+            }
+        }
     }
 
     fun findOriginalSalmaDir(context: Context): File? {
@@ -2865,25 +2285,36 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * تشغيل محاولة نطق واحدة بعد مسح السجل لتوليد وتحديث كافة السجلات.
+     * تشغيل محاولة تشخيص واحدة جديدة فقط لصوت Acapela: تنظيف آثار
+     * التشخيص القديمة في cache (بلا مسّ بيانات الأصوات)، ثم تنفيذ محاولة
+     * تخليق واحدة عبر المسار الطبيعي حتى يكتب المضيف سجل محاولة مقطوعاً
+     * (runId + وقت بداية + بيانات بناء فعلية) في [ACAPELA_FULL_DIAGNOSTIC_FILE].
+     * لا يُنشئ ملفات تشخيص قديمة ولا يُلحق بإرث سابق.
      */
     suspend fun runDiagnosticProbe(context: Context) {
         clearOldLogs(context)
-        stageVoiceFlat(context)
         try {
             val provider = AcapelaEmbeddedVoiceProvider(context)
-            provider.shutdown()
+            runCatching { provider.shutdown() }
             EngineHostClient.release(context, HostProtocol.ENGINE_ACAPELA)
             EngineHostClient.clearInitialized(HostProtocol.ENGINE_ACAPELA)
 
             val baseDir = provider.resolveDataDir()
             if (baseDir == null) {
-                val err =
-                    "=== [استثناء يمنع تشغيل اختبار التوليفات 10712] ===\n" +
-                        "تعذر تحديد مجلد أصوات Acapela " +
-                        "(resolveDataDir returned null)"
-                File(context.cacheDir, "acapela_diagnostic_report.txt")
-                    .writeText(err, StandardCharsets.UTF_8)
+                val msg = buildString {
+                    appendLine("=== محاولة تشخيص Acapela (فشل مبكر) ===")
+                    appendLine("لم يُعثر على مجلد بيانات Acapela.")
+                    appendLine("nInit: لم يُستدعَ (غير مقيس)")
+                    appendLine("nSpeak: لم يُستدعَ (غير مقيس)")
+                    appendLine("PCM: غير مقيس")
+                }
+                val file = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
+                runCatching {
+                    file.writeText(
+                        redactSensitiveText(msg),
+                        StandardCharsets.UTF_8
+                    )
+                }
                 return
             }
 
@@ -2894,31 +2325,52 @@ object AcapelaVoiceDiagnostics {
                 force = true
             )
             if (!initRes.ok) {
-                val err =
-                    "=== [استثناء يمنع تشغيل اختبار التوليفات 10712] ===\n" +
-                        "فشل نداء EngineHostClient.init [${initRes.code}]: " +
-                        "${initRes.message}"
-                File(context.cacheDir, "acapela_diagnostic_report.txt")
-                    .writeText(err, StandardCharsets.UTF_8)
+                val file = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
+                if (!file.exists() || file.length() == 0L) {
+                    val msg = buildString {
+                        appendLine("=== محاولة تشخيص Acapela (فشل تهيئة) ===")
+                        appendLine(
+                            "فشل EngineHostClient.init [${initRes.code}]: " +
+                                (initRes.message ?: "")
+                        )
+                        appendLine("nSpeak: لم يُستدعَ (غير مقيس)")
+                        appendLine("PCM: غير مقيس")
+                    }
+                    runCatching {
+                        file.writeText(
+                            redactSensitiveText(msg),
+                            StandardCharsets.UTF_8
+                        )
+                    }
+                }
                 return
             }
 
             val voices = provider.listVoices(java.util.Locale.ROOT)
             val voice = voices.firstOrNull {
                 it.id.contains("salma", ignoreCase = true)
-            } ?: voices.firstOrNull() ?: VoiceDescriptor(
-                id = "ar_sa_hd_salma_22k_lf",
-                providerId = AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
-                displayName = "Salma",
-                locale = java.util.Locale.forLanguageTag("ar-SA")
-            )
-            val voiceIdToPass = if (voice.id.isNotBlank()) {
-                voice.id
-            } else {
-                "Salma"
+            } ?: voices.firstOrNull()
+            if (voice == null) {
+                val file = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
+                if (!file.exists() || file.length() == 0L) {
+                    val msg = buildString {
+                        appendLine("=== محاولة تشخيص Acapela (لا صوت) ===")
+                        appendLine("لم يُعثر على أي صوت Acapela متاح.")
+                        appendLine("nSpeak: لم يُستدعَ (غير مقيس)")
+                        appendLine("PCM: غير مقيس")
+                    }
+                    runCatching {
+                        file.writeText(
+                            redactSensitiveText(msg),
+                            StandardCharsets.UTF_8
+                        )
+                    }
+                }
+                return
             }
 
-            val synthRes = EngineHostClient.synthesize(
+            val voiceIdToPass = if (voice.id.isNotBlank()) voice.id else "Salma"
+            EngineHostClient.synthesize(
                 context = context,
                 engineId = HostProtocol.ENGINE_ACAPELA,
                 voiceId = voiceIdToPass,
@@ -2929,387 +2381,50 @@ object AcapelaVoiceDiagnostics {
                 onFormatInfo = { _, _ -> },
                 onAudioChunk = { _, _ -> }
             )
-
-            val diagReport =
-                File(context.cacheDir, "acapela_diagnostic_report.txt")
-            if (!diagReport.exists() || diagReport.length() == 0L ||
-                !synthRes.ok
-            ) {
-                val fullCrashReport = HostCrashDiagnostics.buildHostReport(
-                    context = context,
-                    engineId = HostProtocol.ENGINE_ACAPELA,
-                    synthResult = synthRes
-                )
-                diagReport.writeText(fullCrashReport, StandardCharsets.UTF_8)
-                File(context.cacheDir, "acapela_full_diagnostic_10712.txt")
-                    .writeText(fullCrashReport, StandardCharsets.UTF_8)
-            }
         } catch (t: Throwable) {
             val sw = java.io.StringWriter()
             t.printStackTrace(java.io.PrintWriter(sw))
-            val errText =
-                "=== [استثناء يمنع تشغيل اختبار التوليفات 10712] ===\n" +
-                    "نوع الخطأ: ${t.javaClass.name}\n" +
-                    "الرسالة: ${t.message ?: "بدون رسالة"}\n" +
-                    "تتبع المكدس:\n$sw"
+            val errText = buildString {
+                appendLine("=== محاولة تشخيص Acapela (استثناء) ===")
+                appendLine("النوع: ${t.javaClass.name}")
+                appendLine("الرسالة: ${t.message ?: "بدون رسالة"}")
+                appendLine("nSpeak: غير مقيس (استثناء قبل/أثناء المحاولة)")
+                appendLine("PCM: غير مقيس")
+                appendLine("التتبع:")
+                appendLine(sw.toString())
+            }
             Log.e(TAG, errText, t)
+            val file = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
             runCatching {
-                File(context.cacheDir, "acapela_diagnostic_report.txt")
-                    .writeText(errText, StandardCharsets.UTF_8)
-                File(context.cacheDir, "acapela_full_diagnostic_10712.txt")
-                    .writeText(errText, StandardCharsets.UTF_8)
+                file.writeText(
+                    redactSensitiveText(errText),
+                    StandardCharsets.UTF_8
+                )
             }
         }
     }
 
     /**
-     * بناء تقرير Acapela الشامل الذي يضم كافة الأقسام المطلوبة (1..6).
+     * يبني تقرير تشخيص Acapela للمحاولة الحالية فقط: يقرأ الملف المستقر
+     * [ACAPELA_FULL_DIAGNOSTIC_FILE] المقطوع لكل محاولة، وينقّيه من الأسرار
+     * (متعدد الأسطر) بلا إلحاق/إرث بيانات قديمة.
      */
     fun buildAcapelaFullReport(context: Context): String {
-        val sb = StringBuilder()
-        sb.appendLine("==================================================")
-        sb.appendLine("=== تقرير تشخيص Acapela المتقدم (إصدار 10730) ===")
-        sb.appendLine("==================================================")
-        sb.appendLine("")
-
-        // [بناء 10730] المرصود منفصلاً عن الفرضي في فشل nInit
-        sb.appendLine(getNlpInitAndLicenseArgumentComparison())
-        sb.appendLine("")
-
-        // [بناء 10730] مقارنة التجهيز بالأصل بالمسارات والقياس الفعلي
-        sb.appendLine(getStagingVsMultiTtsFilesComparison(context))
-        sb.appendLine("")
-
-        // [بند 25] ملفات ini المقيسة وتجربة Root_109
-        sb.appendLine(
-            getMeasuredIniFilesReport(collectMeasuredIniFiles(context))
-        )
-        sb.appendLine("")
-
-        // [بند 25] تجربة نسخ MultiTTS حرفياً بلا ini مولَّد
-        sb.appendLine(
-            getMultiTtsVerbatimExperimentReport(
-                stageMultiTtsVerbatim(context)
-            )
-        )
-        sb.appendLine("")
-
-        // ── [بناء 10729] الملف المستقر ثم ملفات 10725..10728 ─────────────────
-        // التشخيص المكتوب تدريجياً هو أحدث دليل على ما جرى داخل :engine_host،
-        // فيُقرأ أولاً ويُوضع في صدارة التقرير قبل أي قسم آخر.
-        sb.appendLine(
-            "--- [بناء 10729] الملف المستقر acapela_full_diagnostic.txt ---"
-        )
-        appendCachedDiagnosticFile(
-            sb, context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE
-        )
-        sb.appendLine("")
-        for (build in listOf(10728, 10727, 10726, 10725)) {
-            val name = "acapela_full_diagnostic_$build.txt"
-            sb.appendLine("--- [بناء 10729] $name ---")
-            appendCachedDiagnosticFile(sb, context.cacheDir, name)
-            sb.appendLine("")
-        }
-
-        // ── [البند 1 من 10722] فحص أدلة نجاح 10708 و10709 ────────────────────
-        sb.appendLine(getEvidenceReportFor10708And10709())
-        sb.appendLine("")
-
-        // ── [البند 1 من 10720] مقارنة git diff بين 10709 والحالي ────────────
-        sb.appendLine(getGitDiffComparisonBetween10709AndCurrent())
-        sb.appendLine("")
-
-        // ── [البند 4 من 10720] فحص ملف salma_22k_lf.bvcu.nuul216vqfp ───────
-        sb.appendLine(getNuulFile10709Status())
-        sb.appendLine("")
-
-        // ── [البند 1 من 10719] مسح حي لملفات التجهيز والصوت الأصلي ──────────
-        sb.appendLine(getLiveDiskFilesReport(context))
-        sb.appendLine("")
-
-        // ── [البند 2 من 10719] قائمة مكونات NLP ومقارنتها ──────────────
-        sb.appendLine(getNlpComponentsComparison(context))
-        sb.appendLine("")
-
-        // ── [البند 3 من 10719] تفكيك load_voicei وتعبئة sNLPConfig ─────
-        sb.appendLine(getSnlpConfigDisassemblyExplanation())
-        sb.appendLine("")
-
-        // ── [البند 1 من 10718] مقارنة مكتبة libttsacattsandroidextended.so ──
-        sb.appendLine(getLibraryComparisonDetails())
-        sb.appendLine("")
-
-        // ── [بناء 10730] نُقل قسم المقارنة إلى صدارة التقرير أعلاه ───────────
-
-        // ── [البند 3 من 10718] تفكيك BBNLP_init والملفات المفتوحة قبل -34 ───
-        sb.appendLine(getBbnlpInitDisassemblyAnalysis())
-        sb.appendLine("")
-
-        // ── [البند 4 من 10718] مقارنة سجل logcat بين MultiTTS و Nateq ──────
-        sb.appendLine(getLogcatMultiTtsComparisonDetails())
-        sb.appendLine("")
-
-        // ── [البندان 1 و 2 من 10717] فك وتحليل param و MultiTTS Codec ────
-        val yamlWithParam = AcapelaVoiceManifest.findConfigYamlWithParam(
-            File(context.filesDir, "Acapela")
-        ) ?: AcapelaVoiceManifest.findConfigYamlWithParam(context.filesDir)
-        val decoded = AcapelaMetadataCodec.resolveAcapelaParam(
-            rawParam = yamlWithParam?.second,
-            context = context
-        )
-        val sha1ComparisonMsg = if (decoded.sha1Matches7e88) {
-            "مطابق للقيمة المسجلة (القيمة محذوفة عمداً)"
-        } else {
-            "مختلف عن القيمة المسجلة (كلتا القيمتين محذوفتان عمداً)"
-        }
-        sb.appendLine("=== [البندان 1 و 2 من 10717] فك وتحليل param ===")
-        sb.appendLine(
-            "- هل param كان مشفراً: " +
-                if (decoded.isEncrypted) "نعم" else "لا"
-        )
-        sb.appendLine("- عدد الأجزاء بعد التقسيم: ${decoded.partsCount}")
-        sb.appendLine("- طول email: ${decoded.emailLength}")
-        sb.appendLine("- طول hexCode: ${decoded.hexCodeLength}")
-        sb.appendLine(
-            "- بصمة SHA1 مخفية؛ الحكم: $sha1ComparisonMsg"
-        )
-        sb.appendLine("")
-
-        // ── [البند 4 من 10717] تفسير كود الخطأ -25 (E_BABILE_NULLARG) ────
-        sb.appendLine(getBabileError25Explanation())
-        sb.appendLine("")
-
-        // ── [البند 5 من 10717] مطابقة SHA1 مع 7e88 ───────────────────────
-        sb.appendLine(getSha1Mismatch7e88Analysis())
-        sb.appendLine("")
-
-        // ── [البند 1] تتبع مسار email و hexCode في كود MultiTTS ──────────
-        sb.appendLine(getMultiTtsEmailHexCodeTrace())
-        sb.appendLine("")
-
-        // ── [البند 2] تفكيك check_license وفحص ملف الترخيص على القرص ─────
-        sb.appendLine(getDiskLicenseFileDisassemblyAnalysis())
-        sb.appendLine("")
-
-        // ── فحص كود MultiTTS لنداءات nSetLicense ─────────────────────────
-        sb.appendLine(getMultiTtsLicenseAnalysis())
-        sb.appendLine("")
-
-        // ── [البند 1] فحص الملف الأصلي 109 بايت (نص و Hex) ───────────────
-        sb.appendLine("--- فحص الملف الأصلي 109 بايت (نص و Hex) ---")
-        sb.appendLine(getOriginalIniDump(context))
-        sb.appendLine("")
-
-        // ── [البند 1 من 10727] التحقق من النسخة الحرفية لجذر Salma ──────
-        sb.appendLine(
-            "--- [البند 1 من 10727] التحقق من " +
-                "acapela_stage_orig_root_109 ---"
-        )
-        sb.appendLine(getOriginalRoot109Verification(context))
-        sb.appendLine("")
-
-        // ── [البند 3] مقارنة ملفات NLP مع ملفات التهيئة ──────────────────
-        sb.appendLine("--- [البند 3] مقارنة ملفات NLP مع ملفات التهيئة ---")
-        sb.appendLine(compareNlpFiles(context))
-        sb.appendLine("")
-
-        val filesDir = context.filesDir
-        val cacheDir = context.cacheDir
-        val filesAcapela = File(filesDir, "Acapela")
-        val altAcapela = File(filesDir, "acapela")
-        val cacheV2 = File(cacheDir, "acapela_stage_v2")
-        val cacheFlat = File(cacheDir, "acapela_stage_flat")
-        val cacheMin = File(cacheDir, "acapela_stage_min")
-        val cacheNoUnp = File(cacheDir, "acapela_stage_nounplugged")
-
-        // ── [البند 3] معمارية النظام والمكتبة الأصلية المحمّلة ─────────────
-        sb.appendLine("--- [البند 3] معمارية النظام والمكتبة المحمّلة ---")
-        sb.appendLine(getNativeLibraryDetails(context))
-        sb.appendLine("")
-
-        // ── [البند 1] محتوى النصوص الكامل وملفات التجهيز المسطح ────────────
-        sb.appendLine("--- [البند 1] محتوى النصوص والملفات المطلوبة ---")
-        val req1FlatFiles = listOf(
-            "ar_sa_hd_salma_22k_lf.ini",
-            "ar_sa_hd_salma_22k_lf.bvcu.ini",
-            "ar_sa_hd_salma_22k_lf.bvcu.inf",
-            "bvcu.ini",
-            "bvcu.inf",
-            "config.yaml",
-            "salma_lf.txt",
-            "3073.INI",
-            "logfile.txt"
-        )
-        for (fName in req1FlatFiles) {
-            val f = File(cacheV2, fName).takeIf { it.exists() }
-                ?: File(cacheFlat, fName).takeIf { it.exists() }
-                ?: if (fName.equals("3073.INI", true)) {
-                    File(cacheFlat, "3073.ini").takeIf { it.exists() }
-                        ?: findFileRecursively(context, "3073.ini")
-                        ?: findFileRecursively(context, "3073.INI")
-                } else null
-                ?: findFileRecursively(context, fName)
-            sb.appendLine(">>> ملف: $fName (${f?.absolutePath ?: "غير موجود"})")
-            sb.appendLine(dumpFileContent(f))
-            sb.appendLine("")
-        }
-
-        val extraFiles = listOf(
-            "version.txt" to ("Salma/version.txt"),
-            "logfile.txt (salma_lf)" to ("Salma/salma_lf/logfile.txt"),
-            "engines.yaml" to null,
-            "voicelist" to null
-        )
-        for ((label, hint) in extraFiles) {
-            val fName = label.substringBefore(' ')
-            val f = findFileRecursively(context, fName, hint)
-            sb.appendLine(">>> ملف خارجي: $label (${f?.absolutePath ?: "-"})")
-            sb.appendLine(dumpFileContent(f))
-            sb.appendLine("")
-        }
-
-        // ── [البند 2] أول 64 بايت Hex و MD5 للملفات الأساسية ───────────────
-        sb.appendLine("--- [البند 2] أول 64 بايت Hex و MD5 للملفات ---")
-        val req2Files = listOf(
-            "ar_sa.dca",
-            "ar_sa_unplugged.dca",
-            "ar_sa_hde_arq.dca",
-            "ar_sa.bnx",
-            "ar_sa_utf8.cma",
-            "ar_sa.trz",
-            "salma_22k_lf.bvcu"
-        )
-        for (fName in req2Files) {
-            val f = File(cacheV2, fName).takeIf { it.exists() }
-                ?: File(cacheFlat, fName).takeIf { it.exists() }
-                ?: if (fName.endsWith(".bvcu")) findSalmaBvcuFile(context)
-                else findFileRecursively(context, fName)
-            sb.appendLine(getFileHexHeaderAndMd5(f))
-            sb.appendLine("")
-        }
-
-        // ── شجرة المجلدات المتداخلة للأدلة ────────────────────────────────
-        sb.appendLine("--- شجرة المجلدات المتداخلة للأدلة ---")
-        sb.append(buildNestedDirectoryTree(filesAcapela, "files/Acapela"))
-        if (altAcapela.exists() && altAcapela != filesAcapela) {
-            sb.append(buildNestedDirectoryTree(altAcapela, "files/acapela"))
-        }
-        val cacheList = listOf(
-            cacheV2,
-            cacheFlat,
-            cacheMin,
-            cacheNoUnp,
-            File(cacheDir, "acapela_stage_parent")
-        ).filter { it.exists() }
-        cacheList.forEach { cDir ->
-            sb.append(buildNestedDirectoryTree(cDir, "cache/${cDir.name}"))
-        }
-        sb.appendLine("")
-
-        // ── [البند 2] سرد دوال JNI في مكتبات Acapela الأصلية ─────────────
-        sb.appendLine(getJniFunctionsCatalog())
-        sb.appendLine("")
-
-        // ── [البند 4] معنى الرمز -2 الراجع من nSpeak وثوابته ──────────────
-        sb.appendLine(getSpeakErrorCodeExplanation())
-        sb.appendLine("")
-
-        // ── [البند 3] نتائج البحث عن license والرمز -27 ──────────────────
-        sb.appendLine(getLicenseStringsAndError27Catalog())
-        sb.appendLine("")
-
-        // ── [البنود 2 و 3 و 4] نتائج تجارب nSetLicense وسجل النداءات ──────
-        sb.appendLine(
-            "--- [البنود 2 و 3 و 4] نتائج تجارب nSetLicense و nSetLog " +
-                "وسجل النداءات (إصدار 10715) ---"
-        )
-        val diagReport = File(cacheDir, "acapela_diagnostic_report.txt")
-        if (diagReport.exists() && diagReport.length() > 0L) {
-            val reportText = runCatching {
-                diagReport.readText(StandardCharsets.UTF_8)
-            }.getOrNull()
-            if (!reportText.isNullOrBlank()) {
-                sb.appendLine(reportText)
-            } else {
-                sb.appendLine("  (ملف acapela_diagnostic_report.txt فارغ)")
+        val diagFile = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
+        if (diagFile.isFile && diagFile.length() > 0L) {
+            val text = runCatching {
+                diagFile.readText(StandardCharsets.UTF_8)
+            }.getOrNull().orEmpty()
+            if (text.isNotBlank()) {
+                return redactSensitiveText(text).trimEnd()
             }
-        } else {
-            val status = EngineStatusRegistry.statusOf(
-                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-            )
-            sb.appendLine("=== [نتائج محاولات نطق Acapela 10715] ===")
-            sb.appendLine("  (لم يُسجّل ملف التوليفات بعد)")
-            sb.appendLine("  حالة المحرك: ${status?.state ?: "غير معروف"}")
-            sb.appendLine("  كود الحالة: ${status?.code ?: "—"}")
-            sb.appendLine("  آخر خطأ: ${status?.lastError ?: "لا يوجد"}")
         }
-        sb.appendLine("")
-
-        // ── [البند 6] حالة ملف WAV التجريبي (مرحبا) ───────────────────────
-        sb.appendLine("--- [البند 6] حالة ملف WAV التجريبي (مرحبا) ---")
-        val trialWav = File(cacheDir, "acapela_marhaba_trial.wav")
-        if (trialWav.exists()) {
-            sb.appendLine(
-                "ملف WAV موجود: ${trialWav.absolutePath} " +
-                    "(${trialWav.length()} بايت)"
-            )
-        } else {
-            sb.appendLine("لم يُنتج ملف WAV بعد (عينات PCM = 0)")
-        }
-        sb.appendLine("")
-
-        // ── كامل سجل المكتبة الأصلية (البند 4) ─────────────────────────────
-        sb.appendLine("--- [البند 4] كامل سجل المكتبة الأصلية logcat ---")
-        val fullNative = readNativeLogcatLines(1500)
-        fullNative.forEach { sb.appendLine("  $it") }
-        sb.appendLine("")
-
-        // ── [بناء 10729] أسطر :engine_host صراحةً (في ذيل التقرير) ──────────
-        sb.appendLine("--- [بناء 10729] أسطر logcat :engine_host ---")
-        readEngineHostLogcatLines().forEach { sb.appendLine("  $it") }
-        sb.appendLine("")
-
-        val fullOutput = sb.toString().trimEnd()
-
-        // حفظ التقرير في ملف نصي واحد كما في البند 6
-        runCatching {
-            File(cacheDir, "acapela_full_diagnostic_10724.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10723.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10722.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10721.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10720.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10719.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10718.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10717.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10716.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10715.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10714.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10713.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10712.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10711.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10710.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10709.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-            File(cacheDir, "acapela_full_diagnostic_10708.txt")
-                .writeText(fullOutput, StandardCharsets.UTF_8)
-        }
-
-        return fullOutput
+        return buildString {
+            appendLine("=== تشخيص Acapela ===")
+            appendLine("لا يوجد سجل لمحاولة حالية.")
+            appendLine("nSpeak: غير مقيس")
+            appendLine("PCM: غير مقيس")
+        }.trimEnd()
     }
 
     /**

@@ -155,12 +155,12 @@ internal object DiagnosticLogRecorder {
             recording = false
             process?.let { p -> runCatching { p.destroy() } }
             process = null
-            snapshot = buffer.map {
-                com.aymankhattab.nateq.core.audio.providers
-                    .AcapelaVoiceDiagnostics.redactSensitiveLine(it)
-            }
+            snapshot = buffer.toList()
         }
-        return snapshot
+        val redacted = com.aymankhattab.nateq.core.audio.providers
+            .AcapelaVoiceDiagnostics
+            .redactSensitiveText(snapshot.joinToString("\n"))
+        return if (redacted.isEmpty()) emptyList() else redacted.split('\n')
     }
 
     private fun appendBounded(line: String) {

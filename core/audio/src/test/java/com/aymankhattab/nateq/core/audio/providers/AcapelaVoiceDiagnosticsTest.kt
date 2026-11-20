@@ -199,29 +199,34 @@ class AcapelaVoiceDiagnosticsTest {
             File(nlp, "ar_sa_unplugged.dca").writeText("unp_data")
             File(nlp, "ar_sa_hde_arq.dca").writeText("hde_data")
 
-            val stageFlat = AcapelaVoiceDiagnostics.stageVoiceFlat(
+            val staged = AcapelaVoiceDiagnostics.stageVoiceFlat(
                 context,
                 voice
             )
 
-            assertTrue(File(stageFlat, "salma_22k_lf.bvcu").exists())
-            assertTrue(File(stageFlat, "ar_sa.dca").exists())
-            assertTrue(File(stageFlat, "ar_sa_unplugged.dca").exists())
-            assertTrue(File(stageFlat, "ar_sa_hde_arq.dca").exists())
-            assertTrue(File(stageFlat, "bvcu.inf").exists())
-            // لا تُولَّد تهيئة ini بديلة داخل أي تجهيز.
-            assertFalse(File(stageFlat, "bvcu.ini").exists())
+            // نسخ حرفي يحفظ البنية النسبية دون توليد/تعديل تهيئة.
+            assertTrue(File(staged, "salma_22k_lf.bvcu").exists())
+            assertTrue(File(staged, "NLP/ar_sa.dca").exists())
+            assertTrue(File(staged, "NLP/ar_sa_unplugged.dca").exists())
+            assertTrue(File(staged, "NLP/ar_sa_hde_arq.dca").exists())
+            assertTrue(File(staged, "bvcu.inf").exists())
+            assertEquals(
+                "bvcu_data",
+                File(staged, "salma_22k_lf.bvcu").readText()
+            )
+            assertEquals(
+                "dca_data",
+                File(staged, "NLP/ar_sa.dca").readText()
+            )
             assertTrue(
-                stageFlat.walkTopDown().none {
+                staged.walkTopDown().none {
                     it.isFile && AcapelaVoiceManifest.isFabricatedIni(it)
                 }
             )
-            assertTrue(File(stageFlat, "config.yaml").exists())
-            assertTrue(File(stageFlat, "salma_lf.txt").exists())
-            assertTrue(File(stageFlat, "0x00169729").exists())
-            assertTrue(File(stageFlat, "user.userdico").exists())
-            assertTrue(File(stageFlat, "userdicos/user.userdico").exists())
-            assertTrue(File(stageFlat, "userdicos/ara-sau.userdico").exists())
+            assertTrue(File(staged, "config.yaml").exists())
+            assertTrue(File(staged, "salma_lf.txt").exists())
+            assertTrue(File(staged, "0x00169729").exists())
+            assertTrue(File(staged, "user.userdico").exists())
         } finally {
             root.deleteRecursively()
         }
@@ -271,11 +276,13 @@ class AcapelaVoiceDiagnosticsTest {
 
             val minDir = AcapelaVoiceDiagnostics.prepareStageMin(context, root)
 
+            // نسخ حرفي يحفظ البنية/المسارات/حالة الأحرف دون توليد تهيئة.
             assertTrue(File(minDir, "salma_22k_lf.bvcu").exists())
             assertTrue(File(minDir, "bvcu.inf").exists())
+            assertEquals("ini", File(minDir, "bvcu.ini").readText())
             assertTrue(File(minDir, "ar_sa.dca").exists())
-            assertTrue(!File(minDir, "unwanted_extra.txt").exists())
-            assertTrue(File(minDir, "userdicos/user.userdico").exists())
+            assertEquals("extra", File(minDir, "unwanted_extra.txt").readText())
+            assertEquals("dico", File(minDir, "userdicos/user.userdico").readText())
         } finally {
             root.deleteRecursively()
         }
@@ -295,10 +302,22 @@ class AcapelaVoiceDiagnosticsTest {
                 root
             )
 
-            assertTrue(File(nounpDir, "ar_sa.dca").exists())
-            assertTrue(File(nounpDir, "salma_22k_lf.bvcu").exists())
-            assertTrue(!File(nounpDir, "ar_sa_unplugged.dca").exists())
-            assertTrue(!File(nounpDir, "ar_sa_hde_arq.dca").exists())
+            // نسخ حرفي يحفظ البنية/التبعيات دون توليد تهيئة.
+            assertEquals("keep", File(nounpDir, "ar_sa.dca").readText())
+            assertEquals("keep", File(nounpDir, "salma_22k_lf.bvcu").readText())
+            assertEquals(
+                "remove",
+                File(nounpDir, "ar_sa_unplugged.dca").readText()
+            )
+            assertEquals(
+                "remove",
+                File(nounpDir, "ar_sa_hde_arq.dca").readText()
+            )
+            assertTrue(
+                nounpDir.walkTopDown().none {
+                    it.isFile && AcapelaVoiceManifest.isFabricatedIni(it)
+                }
+            )
         } finally {
             root.deleteRecursively()
         }
@@ -314,39 +333,39 @@ class AcapelaVoiceDiagnosticsTest {
             File(root, "config.yaml").writeText("yaml")
             File(root, "salma_lf.txt").writeText("txt")
             File(root, "0x00169729").writeText("hex")
-            File(root, "3073.ini").writeText("forbidden")
-            File(root, "MSTTSLocArEG.ini").writeText("forbidden")
-            File(root, "logfile.txt").writeText("forbidden")
-            File(root, "test.nuul").writeText("forbidden")
+            File(root, "3073.ini").writeText("ini3073")
+            File(root, "MSTTSLocArEG.ini").writeText("mstts")
+            File(root, "logfile.txt").writeText("oldlog")
+            File(root, "test.nuul").writeText("nuul")
             val userdicos = File(root, "userdicos").apply { mkdirs() }
             File(userdicos, "user.userdico").writeText("dico")
 
             val v2 = AcapelaVoiceDiagnostics.stageVoiceV2(context, root)
 
-            assertTrue(File(v2, "ar_sa.dca").exists())
-            assertTrue(File(v2, "salma_22k_lf.bvcu").exists())
-            assertTrue(File(v2, "ar_sa_hd_salma_22k_lf.bvcu.inf").exists())
-            assertTrue(File(v2, "bvcu.inf").exists())
-            assertTrue(File(v2, "config.yaml").exists())
-            assertTrue(File(v2, "salma_lf.txt").exists())
-            assertTrue(File(v2, "0x00169729").exists())
-            assertTrue(File(v2, "userdicos/user.userdico").exists())
-            assertTrue(File(v2, "userdicos/ara-sau.userdico").exists())
-
-            // تأكيد استبعاد الملفات المحظورة
-            assertTrue(!File(v2, "3073.ini").exists())
-            assertTrue(!File(v2, "MSTTSLocArEG.ini").exists())
-            assertTrue(!File(v2, "logfile.txt").exists())
-            assertTrue(!File(v2, "test.nuul").exists())
-
-            // لا تُولَّد تهيئة ini بديلة داخل أي مرحلي.
-            assertFalse(File(v2, "ar_sa_hd_salma_22k_lf.ini").exists())
-            assertFalse(File(v2, "bvcu.ini").exists())
-            assertTrue(
-                v2.walkTopDown().none {
-                    it.isFile && AcapelaVoiceManifest.isFabricatedIni(it)
-                }
+            // نسخ حرفي يحفظ البنية/المسارات/حالة الأحرف والتبعيات.
+            assertEquals("dca", File(v2, "ar_sa.dca").readText())
+            assertEquals("bvcu", File(v2, "salma_22k_lf.bvcu").readText())
+            assertEquals(
+                "inf",
+                File(v2, "ar_sa_hd_salma_22k_lf.bvcu.inf").readText()
             )
+            assertEquals("yaml", File(v2, "config.yaml").readText())
+            assertEquals("txt", File(v2, "salma_lf.txt").readText())
+            assertEquals("hex", File(v2, "0x00169729").readText())
+            assertEquals(
+                "dico",
+                File(v2, "userdicos/user.userdico").readText()
+            )
+            // ملفات المصدر تُنسخ حرفياً (لا توليد تهيئة بديلة).
+            assertEquals("ini3073", File(v2, "3073.ini").readText())
+            assertEquals("mstts", File(v2, "MSTTSLocArEG.ini").readText())
+            assertEquals("nuul", File(v2, "test.nuul").readText())
+            // سجلات قديمة لا تُنسخ.
+            assertFalse(File(v2, "logfile.txt").exists())
+            // لا يُنشأ أي ملف ini مُولّد/مُضاف.
+            assertFalse(File(v2, "ar_sa_hd_salma_22k_lf.ini").exists())
+            assertFalse(File(v2, "bvcu.inf").exists())
+            assertFalse(File(v2, "bvcu.ini").exists())
         } finally {
             root.deleteRecursively()
         }
@@ -469,10 +488,14 @@ class AcapelaVoiceDiagnosticsTest {
             val destNamed = File(staged, "salma_22k_lf.bvcu")
             val destArSa = File(staged, "ar_sa_hd_salma_22k_lf.bvcu")
 
+            // نسخ حرفي للملفات الموجودة فقط دون إنشاء نسخ/أسماء بديلة.
             assertTrue(destNamed.exists())
-            assertTrue(destArSa.exists())
+            assertFalse(destArSa.exists())
             assertEquals(bvcu.length(), destNamed.length())
-            assertEquals(bvcu.length(), destArSa.length())
+            assertEquals(
+                "[voice]\nname = ar_sa_hd_salma_22k_lf.bvcu\n",
+                File(staged, "ar_sa_hd_salma_22k_lf.bvcu.inf").readText()
+            )
         } finally {
             root.deleteRecursively()
         }
@@ -740,36 +763,38 @@ class AcapelaVoiceDiagnosticsTest {
             val salma = File(root, "Acapela/Salma/salma_lf").apply {
                 mkdirs()
             }
-            val bvcu = File(salma, "salma_22k_lf.bvcu")
-            bvcu.writeText("TEST_BVCU")
-            val inf = File(salma, "ar_sa_hd_salma_22k_lf.bvcu.inf")
-            inf.writeText("[General]\nname=ar_sa_hd_salma_22k_lf\n")
-            val hex = File(salma, "0x00169729")
-            hex.writeText("COMMERCIAL")
-            val nuul = File(salma, "salma_22k_lf.bvcu.nuul216vqfp")
-            nuul.writeText("NUUL")
+            File(salma, "salma_22k_lf.bvcu").writeText("TEST_BVCU")
+            File(salma, "ar_sa_hd_salma_22k_lf.bvcu.inf")
+                .writeText("[General]\nname=ar_sa_hd_salma_22k_lf\n")
+            File(salma, "0x00169729").writeText("COMMERCIAL")
+            File(salma, "salma_22k_lf.bvcu.nuul216vqfp").writeText("NUUL")
 
             val staged = AcapelaVoiceDiagnostics.stage10709Exact(
                 context = context,
                 sourceDir = salma
             )
-            assertTrue(File(staged, "salma_22k_lf.bvcu").exists())
-            assertTrue(
-                File(staged, "ar_sa_hd_salma_22k_lf.bvcu.inf").exists()
+            // نسخ حرفي يحفظ البنية/التبعيات/المسارات دون توليد تهيئة.
+            assertEquals(
+                "TEST_BVCU",
+                File(staged, "salma_22k_lf.bvcu").readText()
+            )
+            assertEquals(
+                "[General]\nname=ar_sa_hd_salma_22k_lf\n",
+                File(staged, "ar_sa_hd_salma_22k_lf.bvcu.inf").readText()
+            )
+            assertEquals(
+                "COMMERCIAL",
+                File(staged, "0x00169729").readText()
+            )
+            assertEquals(
+                "NUUL",
+                File(staged, "salma_22k_lf.bvcu.nuul216vqfp").readText()
             )
             assertFalse(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
-            // استبعاد الملفات الزائدة وغير المطلوبة
-            assertEquals(
-                false,
-                File(staged, "0x00169729").exists()
-            )
-            assertEquals(
-                false,
-                File(staged, "ar_sa_hd_salma_22k_lf.bvcu").exists()
-            )
-            assertEquals(
-                false,
-                File(staged, "salma_22k_lf.bvcu.nuul216vqfp").exists()
+            assertTrue(
+                staged.walkTopDown().none {
+                    it.isFile && AcapelaVoiceManifest.isFabricatedIni(it)
+                }
             )
         } finally {
             root.deleteRecursively()
@@ -906,22 +931,24 @@ class AcapelaVoiceDiagnosticsTest {
             flatNlp = true
         )
 
-        assertTrue(File(staged, "salma_22k_lf.bvcu").exists())
-        assertTrue(File(staged, "ar_sa_hd_salma_22k_lf.bvcu.inf").exists())
-        assertFalse(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
-        assertTrue(File(staged, "0x00169729").exists())
-        assertTrue(File(staged, "config.yaml").exists())
-        assertTrue(File(staged, "userdicos/ara-sau.userdico").exists())
-        assertTrue(File(staged, "ara-sau.userdico").exists())
-        assertTrue(File(staged, "ar_sa.bnx").exists())
-        assertTrue(File(staged, "ar_sa.dca").exists())
-
-        // التأكد من استبعاد المجلد الفرعي والملفات الممنوعة
-        assertFalse(File(staged, "NLP").exists())
-        assertFalse(File(staged, "salma_22k_lf.bvcu.nuul216vqfp").exists())
-        assertFalse(File(staged, "ar_sa_hd_salma_22k_lf.bvcu").exists())
-
-        assertFalse(File(staged, "ar_sa_hd_salma_22k_lf.ini").exists())
+        // نسخ حرفي يحفظ البنية النسبية/المسارات/حالة الأحرف.
+        assertEquals(100, File(staged, "salma_22k_lf.bvcu").length())
+        assertEquals(50, File(staged, "salma_22k_lf.bvcu.nuul216vqfp").length())
+        assertEquals(80, File(staged, "ar_sa_hd_salma_22k_lf.bvcu").length())
+        assertEquals(
+            "speaker=Salma",
+            File(staged, "ar_sa_hd_salma_22k_lf.bvcu.inf").readText()
+        )
+        assertEquals(61, File(staged, "0x00169729").length())
+        assertEquals("name: Salma", File(staged, "config.yaml").readText())
+        assertEquals(30, File(staged, "userdicos/ara-sau.userdico").length())
+        assertEquals(100, File(staged, "NLP/ar_sa.bnx").length())
+        assertEquals(200, File(staged, "NLP/ar_sa.dca").length())
+        assertTrue(
+            staged.walkTopDown().none {
+                it.isFile && AcapelaVoiceManifest.isFabricatedIni(it)
+            }
+        )
     }
 
     @Test
@@ -1300,7 +1327,7 @@ class AcapelaVoiceDiagnosticsTest {
             AcapelaVoiceDiagnostics.ACAPELA_FULL_DIAGNOSTIC_FILE
         )
         val legacy = File(cache, "acapela_full_diagnostic_10728.txt")
-        val stableMarker = "STABLE_DIAGNOSTIC_MARKER_10729"
+        val stableMarker = "STABLE_DIAGNOSTIC_MARKER_CURRENT"
         val legacyMarker = "LEGACY_10728_MARKER"
         try {
             stable.writeText(stableMarker, StandardCharsets.UTF_8)
@@ -1310,17 +1337,9 @@ class AcapelaVoiceDiagnosticsTest {
                 context
             )
 
-            assertTrue(report.contains("(إصدار 10730)"))
-            assertTrue(report.contains(stableMarker))
-            assertTrue(report.contains(legacyMarker))
-            val stablePos = report.indexOf(stableMarker)
-            val legacyPos = report.indexOf(legacyMarker)
-            val sectionsPos = report.indexOf("أدلة نجاح 10708")
-            assertTrue(stablePos in 0 until legacyPos)
-            assertTrue(legacyPos < sectionsPos)
-            assertTrue(report.contains("أسطر logcat :engine_host"))
-            assertTrue(report.contains("ملفات ini المقيسة بمساراتها"))
-            assertTrue(report.contains("تجربة جديدة: نسخ MultiTTS"))
+            // تقرير المحاولة الحالية فقط (ملف التشخيص المقيد) بلا إلحاق إرث.
+            assertEquals(stableMarker, report)
+            assertFalse(report.contains(legacyMarker))
         } finally {
             stable.delete()
             legacy.delete()

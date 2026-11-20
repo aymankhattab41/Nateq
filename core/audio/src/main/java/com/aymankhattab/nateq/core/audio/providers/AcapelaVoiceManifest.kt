@@ -81,12 +81,427 @@ object AcapelaVoiceManifest {
         val relativePath: String
     )
 
-    /** يختار تهيئة ini أصلية (غير مصطنعة) من مجلد الصوت، إن وُجدت. */
-    fun findAuthenticIni(dir: File): File? =
-        dir.listFiles { f ->
-            f.isFile && f.extension.equals("ini", ignoreCase = true) &&
-                isAuthenticIni(f)
-        }?.sortedBy { it.name.lowercase(Locale.ROOT) }?.firstOrNull()
+    /** حالة تهيئة ini المكتشفة لحزمة/صوت محدد. */
+    enum class IniDiscoveryState {
+        /** لا يوجد أي ملف ini داخل الحزمة المحددة. */
+        NO_INI,
+        /** يوجد ini لكنه مختصر/مولّد/بديل أو غير متوافق مع الصوت المطلوب. */
+        INCOMPATIBLE_INI,
+        /** وُجدت تهيئة أصلية كاملة متوافقة قابلة للاعتماد. */
+        AUTHENTIC,
+        /** تعارض: أكثر من تهيئة أصلية متوافقة بلا حسم واضح. */
+        CONFLICT
+    }
+
+    /** مرشح تهيئة ini مع تصنيفه وأسباب تقييمه. */
+    data class IniCandidate(
+        val file: File,
+        val state: IniDiscoveryState,
+        val reasons: List<String>,
+        val identityScore: Int = 0
+    )
+
+    /**
+     * نتيجة اكتشاف موحّدة لحزمة/صوت Acapela: تحدد جذر الحزمة ومجلد
+     * الصوت وملف ini الأصلي المختار، أو سبب التعذّر بوضوح.
+     */
+    data class VoiceDiscoveryResult(
+        val packageRoot: File,
+        val voiceDir: File?,
+        val iniFile: File?,
+        val state: IniDiscoveryState,
+        val reasons: List<String>,
+        val candidates: List<IniCandidate> = emptyList()
+    )
+
+    /**
+     * اكتشاف موحّد لتهيئة الصوت الأصلية داخل حزمة محددة بحدود واضحة.
+     *
+     * يبحث في [startDir] وبمستوى عمق محدود داخله فقط (لا كامل التخزين
+     * ولا حزم أصوات أخرى)، ويصنّف المرشحين بالمحتوى والهوية ونسخة
+     * البيانات. عند التعارض بين تهيئتين أصليتين متوافقتين دون حسم
+     * يتوقف بتعارض واضح بدل الاختيار الأبجدي.
+     */
+    fun discoverVoiceConfig(
+        startDir: File,
+        expectedSpeakerHint: String? = null,
+        maxDepth: Int = 6
+    ): VoiceDiscoveryResult {
+        val packageRoot = findPackageRoot(startDir)
+        val reasons = mutableListOf<String>()
+        val iniFiles = collectIniFiles(packageRoot, maxDepth)
+        if (iniFiles.isEmpty()) {
+            reasons += "لم يُعثر على أي ملف ini داخل الحزمة: " +
+                packageRoot.absolutePath
+            return VoiceDiscoveryResult(
+                packageRoot = packageRoot,
+                voiceDir = if (startDir.isDirectory) startDir else null,
+                iniFile = null,
+                state = IniDiscoveryState.NO_INI,
+                reasons = reasons
+            )
+        }
+
+        val hint = normalizeIdentity(expectedSpeakerHint)
+        val candidates = iniFiles.map { classifyIniCandidate(it, hint) }
+        val authentic = candidates.filter {
+            it.state == IniDiscoveryState.AUTHENTIC
+        }
+
+        val selected: IniCandidate?
+        val state: IniDiscoveryState
+        when {
+            authentic.isEmpty() -> {
+                selected = null
+                state = IniDiscoveryState.INCOMPATIBLE_INI
+                reasons += "وُجدت ملفات ini لكنها مختصرة/مولّدة أو " +
+                    "غير متوافقة مع الصوت المطلوب"
+            }
+            authentic.size == 1 -> {
+                selected = authentic.first()
+                state = IniDiscoveryState.AUTHENTIC
+                reasons += "اختيرت تهيئة أصلية متوافقة وحيدة"
+                reasons += selected.reasons
+            }
+            else -> {
+                val resolved = resolveAuthenticConflict(authentic, hint)
+                if (resolved.second != null) {
+                    selected = resolved.second
+                    state = IniDiscoveryState.AUTHENTIC
+                    reasons += resolved.first
+                    reasons += selected!!.reasons
+                } else {
+                    selected = null
+                    state = IniDiscoveryState.CONFLICT
+                    reasons += resolved.first
+                    reasons += authentic.map { c ->
+                        "مرشح متعارض: ${c.file.absolutePath}"
+                    }
+                }
+            }
+        }
+
+        val voiceDir = selected?.file?.parentFile
+            ?: bestVoiceDirForHint(packageRoot, hint)
+            ?: if (startDir.isDirectory) startDir else packageRoot
+        return VoiceDiscoveryResult(
+            packageRoot = packageRoot,
+            voiceDir = voiceDir,
+            iniFile = selected?.file,
+            state = state,
+            reasons = reasons.distinct(),
+            candidates = candidates
+        )
+    }
+
+    /**
+     * توافق خلفي: يختار تهيئة أصلية متوافقة من [dir] أو شجرته المحدودة.
+     * لا يعيد ملفات مولّدة/غير متوافقة، ولا يختار أبجدياً عند التعارض.
+     */
+    fun findAuthenticIni(dir: File): File? {
+        if (!dir.exists()) return null
+        val result = runCatching {
+            discoverVoiceConfig(dir, expectedSpeakerHint = dir.name)
+        }.getOrNull() ?: return null
+        return result.iniFile
+    }
+
+    /** جذر الحزمة المحددة: ابن مباشر لجذر Acapela يضم [startDir]، أو [startDir]. */
+    private fun findPackageRoot(startDir: File): File {
+        val base = if (startDir.isDirectory) startDir
+        else (startDir.parentFile ?: startDir)
+        val acapelaRoot = runCatching { findAcapelaRootDir(base) }
+            .getOrNull()
+        if (acapelaRoot != null) {
+            val aPath = runCatching { acapelaRoot.canonicalPath }
+                .getOrDefault(acapelaRoot.absolutePath)
+            val bPath = runCatching { base.canonicalPath }
+                .getOrDefault(base.absolutePath)
+            if (aPath != bPath) {
+                var cur: File? = base
+                while (cur != null) {
+                    val p = cur.parentFile ?: break
+                    val pPath = runCatching { p.canonicalPath }
+                        .getOrDefault(p.absolutePath)
+                    if (pPath == aPath) return cur
+                    cur = p
+                }
+            }
+        }
+        return base
+    }
+
+    /** جمع ملفات ini داخل [root] بعمق محدود، دون الخروج عن حدوده. */
+    private fun collectIniFiles(root: File, maxDepth: Int): List<File> {
+        if (!root.exists()) return emptyList()
+        val rootPath = runCatching { root.canonicalPath }
+            .getOrDefault(root.absolutePath)
+        val out = mutableListOf<File>()
+        fun walk(dir: File, depth: Int) {
+            if (depth > maxDepth || !dir.isDirectory) return
+            val children = dir.listFiles() ?: return
+            for (f in children) {
+                val fPath = runCatching { f.canonicalPath }
+                    .getOrDefault(f.absolutePath)
+                if (!fPath.startsWith(rootPath)) continue
+                if (f.isDirectory) {
+                    walk(f, depth + 1)
+                } else if (f.isFile &&
+                    f.extension.equals("ini", ignoreCase = true)
+                ) {
+                    out += f
+                }
+            }
+        }
+        if (root.isFile) {
+            if (root.extension.equals("ini", ignoreCase = true)) out += root
+        } else {
+            walk(root, 0)
+        }
+        return out.distinctBy {
+            runCatching { it.canonicalPath }.getOrDefault(it.absolutePath)
+        }
+    }
+
+    private fun normalizeIdentity(hint: String?): String =
+        hint?.removePrefix("acapela_embedded:")
+            ?.removePrefix("acapela:")
+            ?.substringBefore('(')
+            ?.trim()
+            ?.lowercase(Locale.ROOT)
+            .orEmpty()
+
+    /** رموز هوية أصوات معروفة لمنع اختيار تهيئة صوت آخر. */
+    private val KNOWN_VOICE_TOKENS = setOf(
+        "salma", "leila", "layla", "heather", "mehdi", "nizar",
+        "youssef", "tarik", "mariam", "antoine", "alice", "ryan",
+        "laura", "julia", "claire", "zoe", "peter", "kenny"
+    )
+
+    private fun tokenOfIdentity(identity: String): String? {
+        val id = identity.lowercase(Locale.ROOT)
+        return KNOWN_VOICE_TOKENS.firstOrNull { id.contains(it) }
+    }
+
+    /** تصنيف مرشح ini بالمحتوى والهوية (لا بالحجم وحده). */
+    private fun classifyIniCandidate(
+        file: File,
+        expectedIdentity: String
+    ): IniCandidate {
+        val reasons = mutableListOf<String>()
+        val name = file.name.lowercase(Locale.ROOT)
+        val path = file.absolutePath.lowercase(Locale.ROOT)
+        if (!file.isFile || file.length() <= 0L) {
+            return IniCandidate(
+                file, IniDiscoveryState.INCOMPATIBLE_INI,
+                listOf("ملف ini فارغ أو غير قابل للقراءة: ${file.name}")
+            )
+        }
+        val text = runCatching {
+            file.readText(StandardCharsets.ISO_8859_1)
+        }.getOrNull()
+        if (text.isNullOrBlank()) {
+            return IniCandidate(
+                file, IniDiscoveryState.INCOMPATIBLE_INI,
+                listOf("تعذرت قراءة محتوى ini: ${file.name}")
+            )
+        }
+
+        val substitute = isSubstituteIniContent(text)
+        if (substitute) {
+            reasons += "تهيئة مختصرة/مولّدة/بديلة أو غير متوافقة " +
+                "(لا تُعتمد بديلاً عن التهيئة الأصلية الكاملة)"
+        }
+        val substantial = hasSubstantialVoiceDirectives(text)
+        if (!substantial && !substitute) {
+            reasons += "لا تحتوي توجيهات تهيئة أصلية كافية مطلوبة للصوت"
+        }
+
+        val expectedToken = tokenOfIdentity(expectedIdentity)
+        val fileTokens = KNOWN_VOICE_TOKENS.filter {
+            name.contains(it) || path.contains(it)
+        }.toSet()
+        val contentTokens = KNOWN_VOICE_TOKENS.filter {
+            text.lowercase(Locale.ROOT).contains(it)
+        }.toSet()
+        val allTokens = fileTokens + contentTokens
+        if (expectedToken != null) {
+            val foreign = allTokens - expectedToken
+            if (foreign.isNotEmpty() && expectedToken !in allTokens) {
+                reasons += "التهيئة تخص صوتاً آخر (${foreign.joinToString()}) " +
+                    "لا الصوت المطلوب ($expectedToken)"
+                return IniCandidate(
+                    file, IniDiscoveryState.INCOMPATIBLE_INI, reasons
+                )
+            }
+            if (foreign.isNotEmpty() && expectedToken in allTokens) {
+                reasons += "التهيئة تخلط هوية الصوت المطلوب مع " +
+                    "(${foreign.joinToString()})"
+                return IniCandidate(
+                    file, IniDiscoveryState.INCOMPATIBLE_INI, reasons
+                )
+            }
+        } else if (fileTokens.size > 1) {
+            reasons += "هوية صوت غير محددة في المرشح: ${fileTokens.joinToString()}"
+        }
+
+        val incompatible = substitute || !substantial
+        if (incompatible) {
+            return IniCandidate(
+                file, IniDiscoveryState.INCOMPATIBLE_INI, reasons
+            )
+        }
+
+        var score = 0
+        if (expectedToken != null) {
+            if (name.contains(expectedToken)) score += 5
+            if (path.contains(expectedToken)) score += 3
+            if (contentTokens.contains(expectedToken)) score += 4
+        }
+        score += dataVersionAffinityScore(file, expectedToken)
+        reasons += "تهيئة أصلية بمحتوى وتوجيهات صوتية فعلية"
+        return IniCandidate(
+            file, IniDiscoveryState.AUTHENTIC, reasons, score
+        )
+    }
+
+    /**
+     * هل النص يحوي توجيهات تهيئة أصلية جوهرية مطلوبة للصوت؟
+     * بديل MODE/FILEMAP وحدهما (أو FILEMAP بلا بنية أصلية) لا يُعدّ
+     * تهيئة أصلية كاملة متوافقة.
+     */
+    private fun hasSubstantialVoiceDirectives(text: String): Boolean {
+        val hasPro = Regex("""(?im)^\s*PRO\b""").containsMatchIn(text)
+        val hasSlv = Regex("""(?im)^\s*SLV\b""").containsMatchIn(text)
+        val hasNlpRef = text.contains("NLP/", ignoreCase = true) ||
+            text.contains("NLP\\", ignoreCase = true)
+        if (hasPro || hasSlv || hasNlpRef) return true
+        // توجيهات لغوية/صوتية غنية (ليست MODE/FILEMAP/FILE وحدها).
+        val richKeys = listOf(
+            "BNF", "PHM", "IVX", "MBR", "ALF", "ERF", "LPC", "ANN",
+            "POM", "HPA", "STL", "DIC", "DCA", "PITCH", "HMM", "DUR",
+            "SEL", "F0", "LEX", "GRI", "FST", "SLL", "DCT", "PROSODY"
+        )
+        return richKeys.any { k ->
+            Regex("""(?im)^\s*$k\b""").containsMatchIn(text)
+        }
+    }
+
+    /**
+     * هل يمثل المحتوى تهيئة بديلة/مختصرة/مولّدة غير متوافقة
+     * (مثل MODE/FILEMAP وحدهما) لا تُعتمد بديلاً عن الأصلية؟
+     */
+    private fun isSubstituteIniContent(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return true
+        val hasMode = Regex("""(?im)^\s*#?\s*MODE\s*=""")
+            .containsMatchIn(trimmed) ||
+            trimmed.contains("MODE=", ignoreCase = true)
+        val hasFileMap = Regex("""(?im)^\s*#?\s*\d*\s*FILEMAP\b""")
+            .containsMatchIn(trimmed) ||
+            trimmed.contains("FILEMAP", ignoreCase = true)
+        val hasFileOnlyMap = Regex("""(?im)^\s*#?\s*\d*\s*FILE\b""")
+            .containsMatchIn(trimmed)
+        val hasPro = Regex("""(?im)^\s*PRO\b""").containsMatchIn(trimmed)
+        val hasSlv = Regex("""(?im)^\s*SLV\b""").containsMatchIn(trimmed)
+        val hasNlp = trimmed.contains("NLP/", ignoreCase = true) ||
+            trimmed.contains("NLP\\", ignoreCase = true)
+        val hasOriginalSignals = hasPro || hasSlv || hasNlp
+        val substantial = hasSubstantialVoiceDirectives(trimmed)
+        // MODE/FILEMAP/FILE-ربط دون توجيهات أصلية جوهرية = بديل/غير متوافق.
+        if ((hasMode || hasFileMap || hasFileOnlyMap) &&
+            !hasOriginalSignals && !substantial
+        ) {
+            return true
+        }
+        // تهيئة تفتقر كلياً للتوجيهات الجوهرية تُعدّ ناقصة/غير متوافقة.
+        return !substantial
+    }
+
+    /**
+     * تقارب نسخة البيانات: يفضّل ini التي تتطابق تسميتها/موقعها مع
+     * ملفات بيانات الصوت الظاهرة (bvcu/dat) في مجلدها/الحزمة.
+     */
+    private fun dataVersionAffinityScore(
+        ini: File,
+        expectedToken: String?
+    ): Int {
+        val dir = ini.parentFile ?: return 0
+        val stem = ini.nameWithoutExtension.lowercase(Locale.ROOT)
+        var score = 0
+        val data = dir.listFiles { f ->
+            f.isFile && f.extension.lowercase(Locale.ROOT) in DATA_EXTENSIONS
+        }.orEmpty()
+        if (data.any { stem.contains(it.nameWithoutExtension.lowercase(Locale.ROOT)) ||
+                it.nameWithoutExtension.lowercase(Locale.ROOT).contains(
+                    stem.take(12)
+                )
+        }) score += 3
+        if (expectedToken != null && dir.name.lowercase(Locale.ROOT)
+                .contains(expectedToken)
+        ) score += 2
+        // وجود تبعيات معلنة قابلة للحل من نفس المجلد مؤشر نسخة متطابقة.
+        val deps = runCatching { parseIniDependencies(ini) }.getOrDefault(emptyList())
+        if (deps.isNotEmpty()) {
+            val resolved = deps.count {
+                resolveRelativeFile(dir, it.relativePath) != null
+            }
+            if (resolved == deps.size && resolved > 0) score += 4
+            else if (resolved > 0) score += 1
+        }
+        return score
+    }
+
+    /** حسم التعارض بين تهيئات أصلية: تطابق هوية/نسخة، وإلا تعارض واضح. */
+    private fun resolveAuthenticConflict(
+        candidates: List<IniCandidate>,
+        expectedIdentity: String
+    ): Pair<String, IniCandidate?> {
+        val maxScore = candidates.maxOf { it.identityScore }
+        val top = candidates.filter { it.identityScore == maxScore }
+        if (top.size == 1 && maxScore > 0) {
+            return "اختيرت التهيئة الأكثر تطابقاً مع هوية الصوت " +
+                "ونسخة بياناته" to top.first()
+        }
+        val expectedToken = tokenOfIdentity(expectedIdentity)
+        if (expectedToken != null) {
+            val byName = top.filter {
+                it.file.name.lowercase(Locale.ROOT).contains(expectedToken)
+            }
+            if (byName.size == 1) {
+                return "اختيرت التهيئة المطابقة لهوية الصوت ونسخة " +
+                    "بياناته (بالاسم والمحتوى)" to byName.first()
+            }
+        }
+        // تطابق تام في المحتوى؟ لا تعارض فعلي.
+        val byContent = top.groupBy { c ->
+            runCatching { fingerprintContent(c.file) }.getOrDefault(c.file.name)
+        }
+        if (byContent.size == 1) {
+            return "التهيئات الأصلية المتعددة متطابقة المحتوى؛ " +
+                "اختيرت إحداها حتماً" to top.first()
+        }
+        return "تعارض: وُجدت أكثر من تهيئة أصلية متوافقة داخل الحزمة " +
+            "دون حسم آمن لهوية الصوت/نسخة البيانات" to null
+    }
+
+    private fun fingerprintContent(file: File): String = runCatching {
+        file.readText(StandardCharsets.ISO_8859_1)
+            .replace("\r\n", "\n").trim()
+    }.getOrDefault("")
+
+    private fun bestVoiceDirForHint(
+        packageRoot: File,
+        hint: String
+    ): File? {
+        val token = tokenOfIdentity(hint) ?: return null
+        return runCatching {
+            packageRoot.walkTopDown().maxDepth(4).firstOrNull { f ->
+                f.isDirectory &&
+                    f.name.lowercase(Locale.ROOT).contains(token)
+            }
+        }.getOrNull()
+    }
 
     /**
      * استخراج تبعيات الملفات المُعلنة في تهيئة ini أصلية. لا تُخمَّن
@@ -121,28 +536,55 @@ object AcapelaVoiceManifest {
 
     /**
      * إيجاد ملف داخل [baseDir] لمسار نسبي مع مراعاة اختلاف حالة الأحرف
-     * وفواصل المسار دون تخمين مسارات بديلة.
+     * وفواصل المسار دون تخمين مسارات بديلة ودون الخروج عن [baseDir].
+     * يحترم دلالة المسار كما ورد (بما فيه `..`) بشرط البقاء داخل الحد.
      */
     fun resolveRelativeFile(baseDir: File, relativePath: String): File? {
-        val cleaned = relativePath.replace('\\', '/').trimStart('/')
+        if (!baseDir.exists()) return null
+        val basePath = runCatching { baseDir.canonicalPath }
+            .getOrDefault(baseDir.absolutePath)
+        fun withinBase(f: File): File? {
+            val p = runCatching { f.canonicalPath }
+                .getOrDefault(f.absolutePath)
+            val inside = p == basePath ||
+                p.startsWith(basePath + File.separator)
+            return if (inside) f else null
+        }
+
+        val cleaned = relativePath.replace('\\', '/').trim()
         if (cleaned.isEmpty()) return null
-        val direct = File(baseDir, cleaned)
-        if (direct.exists()) return direct
         val parts = cleaned.split('/').filter { it.isNotEmpty() }
         if (parts.isEmpty()) return null
+
+        // محاولة مباشرة (تحافظ على المسار كما ورد قدر الإمكان).
+        val direct = File(baseDir, cleaned)
+        if (direct.exists()) {
+            return withinBase(direct)?.takeIf { it.exists() }
+        }
+
+        // مطابقة مكوّنات مع تجاهل حالة الأحرف، مع دعم "." و".."
+        // والتحقق من البقاء داخل [baseDir] بعد كل خطوة.
         var current = baseDir
         for (part in parts) {
-            if (!current.isDirectory) return null
-            val exact = File(current, part)
-            if (exact.exists()) {
-                current = exact
+            if (part == ".") continue
+            if (part == "..") {
+                val parent = current.parentFile ?: return null
+                val bounded = withinBase(parent) ?: return null
+                current = bounded
                 continue
             }
-            current = current.listFiles()?.firstOrNull {
-                it.name.equals(part, ignoreCase = true)
-            } ?: return null
+            if (!current.isDirectory) return null
+            val exact = File(current, part)
+            current = if (exact.exists()) {
+                exact
+            } else {
+                current.listFiles()?.firstOrNull {
+                    it.name.equals(part, ignoreCase = true)
+                } ?: return null
+            }
+            if (withinBase(current) == null) return null
         }
-        return current.takeIf { it.exists() }
+        return withinBase(current)?.takeIf { it.exists() }
     }
 
     /**
@@ -383,42 +825,56 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * هل يحوي المجلد صوتاً مكتملاً لـ Acapela؟
-     * يتطلب وجود ملف تهيئة (.ini أو .inf)
-     * أو ملف بيانات واحد على الأقل.
+     * هل يحوي المجلد صوت Acapela بتهيئة أصلية متوافقة قابلة للاعتماد؟
+     * (لا يكفي وجود ملف بيانات أو تهيئة بديلة/مختصرة/غير متوافقة).
      */
     fun isCompleteVoiceDir(dir: File): Boolean {
         if (!dir.exists() || !dir.isDirectory) return false
-        val files = dir.listFiles() ?: return false
-        val hasConfig = files.any { f ->
-            f.isFile && f.extension.lowercase(Locale.ROOT) in
-                CONFIG_EXTENSIONS
-        }
-        val hasData = files.any { f ->
-            f.isFile && f.length() > MIN_DATA_FILE_BYTES &&
-                f.extension.lowercase(Locale.ROOT) in DATA_EXTENSIONS
-        }
-        return hasConfig || hasData
+        val discovery = runCatching {
+            discoverVoiceConfig(dir, expectedSpeakerHint = dir.name, maxDepth = 4)
+        }.getOrNull() ?: return false
+        if (discovery.state != IniDiscoveryState.AUTHENTIC) return false
+        val iniDir = discovery.iniFile?.parentFile ?: return false
+        val dPath = runCatching { dir.canonicalPath }
+            .getOrDefault(dir.absolutePath)
+        val iPath = runCatching { iniDir.canonicalPath }
+            .getOrDefault(iniDir.absolutePath)
+        return iPath == dPath || iPath.startsWith(dPath + File.separator)
     }
 
     /**
-     * قائمة المجلدات التي تحوي أصوات Acapela
-     * تحت المجلد الأساسي.
+     * مجلدات الأصوات التي تملك تهيئة أصلية متوافقة تحت المجلد الأساسي.
      */
     fun completeVoiceDirs(baseDir: File): List<File> {
         if (!baseDir.exists() || !baseDir.isDirectory) return emptyList()
-        val result = mutableSetOf<File>()
-
-        if (isCompleteVoiceDir(baseDir)) {
-            result.add(baseDir)
-        }
-
-        baseDir.walkTopDown().maxDepth(6).forEach { f ->
-            if (f.isDirectory && isCompleteVoiceDir(f)) {
-                result.add(f)
+        val result = linkedSetOf<File>()
+        val inis = collectIniFiles(baseDir, 6)
+        for (ini in inis) {
+            val c = classifyIniCandidate(ini, "")
+            if (c.state != IniDiscoveryState.AUTHENTIC) continue
+            val vDir = ini.parentFile ?: continue
+            val hint = voiceHintFromIni(ini, vDir)
+            val d = discoverVoiceConfig(vDir, expectedSpeakerHint = hint, maxDepth = 2)
+            if (d.state == IniDiscoveryState.AUTHENTIC &&
+                d.iniFile?.absolutePath == ini.absolutePath
+            ) {
+                result.add(vDir)
             }
         }
-        return result.distinctBy { it.absolutePath }
+        return result.distinctBy {
+            runCatching { it.canonicalPath }.getOrDefault(it.absolutePath)
+        }
+    }
+
+    /** تلميح هوية الصوت المستخلص من اسم/محتوى ini ومجلده. */
+    private fun voiceHintFromIni(ini: File, dir: File): String {
+        val text = runCatching {
+            ini.readText(StandardCharsets.ISO_8859_1)
+        }.getOrDefault("")
+        val lower = (ini.name + " " + dir.name + " " + text.take(4000))
+            .lowercase(Locale.ROOT)
+        return KNOWN_VOICE_TOKENS.firstOrNull { lower.contains(it) }
+            ?: dir.name
     }
 
     /**
@@ -488,66 +944,41 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * تهيئة ini مصطنعة/بديلة (مثل MODE+FILEMAP فقط) لا تُعدّ دليلاً على
-     * صحة الصوت ولا يجوز توليدها أو حشوها أو الاعتماد عليها. نكشفها
-     * بمحتواها لا بحجمها وحده.
+     * تهيئة ini مصطنعة/بديلة/مختصرة (مثل MODE+FILEMAP فقط) لا تُعدّ
+     * دليلاً على صحة الصوت ولا يجوز توليدها أو حشوها أو الاعتماد عليها.
+     * الكشف بالمحتوى لا بالحجم.
      */
     internal fun isFabricatedIni(file: File): Boolean {
         if (!file.isFile) return false
         if (!file.extension.equals("ini", ignoreCase = true)) return false
         val text = runCatching {
             file.readText(StandardCharsets.ISO_8859_1)
-        }.getOrNull()?.trim().orEmpty()
-        if (text.isEmpty()) return true
-        val hasMode = text.contains("MODE=", ignoreCase = true)
-        val hasFileMap = text.contains("FILEMAP", ignoreCase = true)
-        val hasPro = text.contains("PRO", ignoreCase = true)
-        val hasSlv = text.contains("SLV", ignoreCase = true)
-        val hasNlp = text.contains("NLP/", ignoreCase = true)
-        // بديل مختصر/مولّد: MODE و/أو FILEMAP بلا توجيهات صوتية أصلية
-        // (PRO/SLV/NLP). الحجم ليس معياراً.
-        return hasMode && hasFileMap && !hasPro && !hasSlv && !hasNlp
+        }.getOrNull() ?: return true
+        return isSubstituteIniContent(text)
     }
 
     /**
-     * هل هذا `.ini` تهيئة أصلية صالحة من الحزمة (لا مصطنعة)؟
+     * هل هذا `.ini` تهيئة أصلية صالحة قابلة للاعتماد (لا مصطنعة/بديلة)؟
      * لا يُحكم بالحجم، ولا يُستبدل بملف صوت آخر.
      */
     internal fun isAuthenticIni(file: File): Boolean {
         if (!file.isFile || file.length() <= 0L) return false
-        if (isFabricatedIni(file)) return false
         val text = runCatching {
             file.readText(StandardCharsets.ISO_8859_1)
         }.getOrNull() ?: return false
-        return text.isNotBlank()
+        if (text.isBlank()) return false
+        if (isSubstituteIniContent(text)) return false
+        return hasSubstantialVoiceDirectives(text)
     }
 
-    /** وجود تهيئة أصلية (غير مصطنعة) في مجلد الصوت يمنع أي توليد/تسطيح. */
+    /** وجود تهيئة أصلية متوافقة قابلة للاعتماد في مجلد/نطاق الصوت. */
     fun hasVerbatimOriginalConfig(dir: File): Boolean =
-        dir.listFiles { f ->
-            f.isFile && f.extension.equals("ini", ignoreCase = true) &&
-                isAuthenticIni(f)
-        }?.isNotEmpty() == true
+        discoverVoiceConfig(dir, expectedSpeakerHint = dir.name, maxDepth = 4)
+            .state == IniDiscoveryState.AUTHENTIC
 
-    fun normalizeExtensionsCase(dir: File) {
-        val files = dir.listFiles() ?: return
-        for (f in files) {
-            if (f.isFile) {
-                val ext = f.extension
-                val lowerExt = ext.lowercase(Locale.ROOT)
-                if (ext != lowerExt && (lowerExt in CONFIG_EXTENSIONS ||
-                        lowerExt in DATA_EXTENSIONS)
-                ) {
-                    val target = File(
-                        dir,
-                        "${f.nameWithoutExtension}.$lowerExt"
-                    )
-                    if (!target.exists()) {
-                        runCatching { f.copyTo(target, overwrite = false) }
-                    }
-                }
-            }
-        }
+    /** ممنوع تغيير حالة أحرف المسارات/الامتدادات أو تعديل المصدر. */
+    fun normalizeExtensionsCase(@Suppress("UNUSED_PARAMETER") dir: File) {
+        // متعمّد: دون تغيير حالة أحرف أو نسخ/تعديل (عقد req 3).
     }
 
     /**
@@ -567,107 +998,34 @@ object AcapelaVoiceManifest {
      * **حماية الصوت العامل:** لا يُحذف شيء إذا لم يوجد `.inf` غنيّ في
      * المجلد نفسه.
      */
-    fun pruneSyntheticConfigs(baseDir: File) {
-        if (!baseDir.exists() || !baseDir.isDirectory) return
-        for (dir in completeVoiceDirs(baseDir)) {
-            runCatching {
-                if (hasVerbatimOriginalConfig(dir)) return@runCatching
-                val infFiles = dir.listFiles { f ->
-                    f.isFile && f.extension.equals("inf", ignoreCase = true)
-                } ?: emptyArray()
-                if (infFiles.size < 2) return@runCatching
-                // لا حذف بلا بديل سليم في المجلد نفسه.
-                if (infFiles.none { isRichConfig(it) }) return@runCatching
-                for (inf in infFiles) {
-                    if (!isContentlessConfig(inf)) continue
-                    val corrIni = File(
-                        dir,
-                        "${inf.nameWithoutExtension}.ini"
-                    )
-                    if (corrIni.exists() && isRichConfig(corrIni)) continue
-                    runCatching { inf.delete() }
-                }
-            }
-        }
+    /**
+     * لا حذف ولا توليد ولا تعديل تهيئة: الاكتشاف الموحّد يصنّف
+     * التهيئة المصطنعة/غير المتوافقة ويرفضها دون لمس الملفات.
+     */
+    fun pruneSyntheticConfigs(@Suppress("UNUSED_PARAMETER") baseDir: File) {
+        // متعمّد: دون حذف/توليد/تعديل (عقد req 2).
+    }
+    /** ممنوع تسطيح المسارات أو تعديل المصدر/المرجع. */
+    fun flattenNestedVoiceFiles(@Suppress("UNUSED_PARAMETER") dir: File) {
+        // متعمّد: دون تسطيح أو نسخ/تعديل (عقد req 3).
+    }
+
+
+    /**
+     * لا توليد/حشو/تعديل تسمية لملفات التهيئة: الاكتشاف الموحّد
+     * يحدّد التهيئة الأصلية الكاملة المتوافقة أو يبلّغ بغيابها.
+     * تُبقي الواجهة للتوافق دون أي كتابة.
+     */
+    fun ensureVoiceConfigs(@Suppress("UNUSED_PARAMETER") baseDir: File) {
+        // متعمّد: دون توليد/حشو/تعديل تسمية/تسطيح/نسخ (عقد req 2,3).
     }
 
     /**
-     * تجهيز مجلدات الأصوات بما تحتاجه المكتبة الأصلية:
-     *
-     * 1. تطبيع امتدادات الملفات (`Inf` ← `inf`) بنسخةٍ لا تحذف الأصل.
-     * 2. إنشاء `userdicos` لأن المكتبة تكتب فيه قواميس المستخدم.
-     * 3. نسخ ملف مفتاح الحزمة `0x...` إلى مجلد الصوت نفسه؛ عقد
-     *    MultiTTS يفحص مجلد ملف `.inf` بحثاً عنه، وهو مسار ملفٍ لا
-     *    بيانات تسجيل.
-     * 4. إكمال مفاتيح `.inf` الناقصة فقط (`speaker` و`ISOCode`
-     *    و`NAME` و`freq`) بصيغة `KEY = "value"` التي يقرأها المحمّل.
-     * 5. توليد `<stem>.ini` **عند غيابه فقط** — انظر [ensureIniFor]؛
-     *    فغيابه وحده يجعل `load_voice` يعيد `-10` ثم `nSpeak` بـ`-2`.
-     *
-     * **لا يُولَّد `.inf` مصطنع أبداً:** ملف `.inf` بلا مسارات بيانات
-     * يُشغّل المكتبة على مجلدٍ خالٍ فيفشل `nInit`. الحزم الحقيقية تحمل
-     * `.inf` بنفسها، والتوليد هنا محصورٌ في `.ini` المشتقّ من محتوى
-     * `.inf` ومن ملفات البيانات الموجودة فعلاً.
+     * يُحظَر توليد أو حشو ملف ini بديل. واجهة توافق بلا كتابة.
      */
-    /**
-     * تسطيح الملفات المتداخلة في المجلدات الفرعية (مثل salma_lf)
-     * إلى جذر مجلد الصوت مباشرة، لضمان عثور المكتبة الأصلية على
-     * ملف المفتاح 0x... وملفات .bvcu و .inf و .ini دون حواجز مجلدات.
-     *
-     * لا يُطبَّق على مجلدات تحمل تهيئة أصلية (غير مصطنعة) حتى لا تُكسر
-     * المسارات النسبية الأصلية.
-     */
-    fun flattenNestedVoiceFiles(dir: File) {
-        if (!dir.exists() || !dir.isDirectory) return
-        if (hasVerbatimOriginalConfig(dir)) return
-        val subDirs = dir.listFiles { f -> f.isDirectory } ?: return
-        for (sub in subDirs) {
-            if (sub.name.equals("userdicos", ignoreCase = true)) continue
-            val subFiles = sub.listFiles { f -> f.isFile } ?: continue
-            for (f in subFiles) {
-                val target = File(dir, f.name)
-                if (!target.exists()) {
-                    runCatching {
-                        f.copyTo(target, overwrite = false)
-                    }
-                }
-            }
-        }
+    internal fun ensureIniFor(@Suppress("UNUSED_PARAMETER") inf: File) {
+        // لا توليد ولا حشو لملف ini بديل.
     }
-
-    fun ensureVoiceConfigs(baseDir: File) {
-        if (!baseDir.exists() || !baseDir.isDirectory) return
-        for (dir in completeVoiceDirs(baseDir)) {
-            runCatching {
-                // تهيئة أصلية (غير مصطنعة) هي مصدر الحقيقة: لا تسطيح ولا
-                // إعادة كتابة ولا توليد ini بديل حتى لا تُكسر المسارات
-                // النسبية ولا تُستبدل تهيئة الصوت بغيرها.
-                if (hasVerbatimOriginalConfig(dir)) {
-                    diagLog(
-                        "تهيئة أصلية في ${dir.name}: " +
-                            "لا تسطيح ولا توليد ini"
-                    )
-                    File(dir, "userdicos").mkdirs()
-                    copyRegistrationKeyInto(dir)
-                    return@runCatching
-                }
-                flattenNestedVoiceFiles(dir)
-                normalizeExtensionsCase(dir)
-                File(dir, "userdicos").mkdirs()
-                copyRegistrationKeyInto(dir)
-                val infFiles = dir.listFiles { f ->
-                    f.isFile && f.extension.equals("inf", ignoreCase = true)
-                } ?: emptyArray()
-                for (inf in infFiles) {
-                    completeInfProperties(inf)
-                }
-                // لا يُولَّد ini بديل (MODE+FILEMAP فقط) ولا يُحشى:
-                // غياب التهيئة الأصلية المطابقة يُبلَّغ عنه عند التحقق
-                // والتشغيل بدلاً من اختلاق تهيئة.
-            }
-        }
-    }
-
     /** سطر توجيه في `<stem>.ini`: مفتاحٌ وقيمةٌ وقسمُ تحميل. */
     private data class IniEntry(
         val key: String,
@@ -675,18 +1033,6 @@ object AcapelaVoiceManifest {
         val section: String
     )
 
-    /**
-     * يُحظَر توليد أو حشو ملف ini بديل (لا سيما MODE+FILEMAP فقط) كبديل
-     * عن تهيئة الصوت الأصلية المطابقة. وجود تهيئة أصلية صالحة من الحزمة
-     * هو المطلوب؛ وغيابها/عدم توافقها يُكتشف ويُبلَّغ عنه عند التحقق
-     * والتشغيل برسالة تحدد الأصل المطلوب، دون اختلاق تهيئة.
-     *
-     * تُبقي هذه الدالة الواجهة للتوافق مع المستدعين، لكنها لا تكتب
-     * أي ملف.
-     */
-    internal fun ensureIniFor(@Suppress("UNUSED_PARAMETER") inf: File) {
-        // لا توليد ولا حشو لملف ini بديل.
-    }
 
     /** التوجيهات المقروءة من `.inf` والموجودة ملفاتها فعلاً. */
     private fun directivesFromInf(
@@ -760,60 +1106,16 @@ object AcapelaVoiceManifest {
         return byName
     }
 
-    /** نسخ ملف المفتاح `0x...` إلى مجلد الصوت نفسه (عقد MultiTTS). */
+    /** ممنوع نسخ/تعديل ملفات المصدر (مفتاح التسجيل). */
+    @Suppress("UNUSED_PARAMETER")
     private fun copyRegistrationKeyInto(dir: File) {
-        val hex = findHexRegistrationFile(dir) ?: return
-        if (hex.parentFile?.canonicalPath == dir.canonicalPath) return
-        val target = File(dir, hex.name)
-        if (target.exists()) return
-        runCatching { hex.copyTo(target, overwrite = false) }
+        // متعمّد: دون نسخ/تعديل المصدر (عقد req 3).
     }
 
-    /**
-     * إكمال مفاتيح `.inf` الناقصة وحدها. وجود المفتاح أصلاً يمنع أي
-     * كتابة، فلا يتغير محتوى حزمةٍ سليمة أبداً.
-     */
+    /** ممنوع حشو/تعديل تهيئة المصدر. */
+    @Suppress("UNUSED_PARAMETER")
     private fun completeInfProperties(inf: File) {
-        val text = runCatching {
-            inf.readText(StandardCharsets.ISO_8859_1)
-        }.getOrNull() ?: return
-        val pairs = readPairs(text)
-        val speaker = firstValue(pairs, "speaker")
-        val isoValue = firstValue(pairs, "isocode")
-        val nameValue = firstValue(pairs, "name")
-        val freqValue = firstValue(pairs, "freq")
-        // المكتبة تقرأ `freq` وحده؛ فإن غاب ووُجد معدلٌ بصيغة أخرى
-        // (`frequency`/`SampleRate`) اشتُقّ منه بدل افتراض 22k.
-        val rateText = freqValue
-            ?: firstValue(pairs, "samplerate", "frequency")
-
-        val stem = inf.nameWithoutExtension
-        val locale = resolveLocale(isoValue, speaker ?: stem, stem)
-        val cleanSpeaker = cleanAcapelaSpeaker(speaker ?: stem).take(80)
-        val isoCode = if (locale == Locale.ROOT) "" else isoCodeOf(locale)
-        val freq = parseSampleRate(rateText)
-            ?: sampleRateFromName(stem)
-            ?: DEFAULT_SAMPLE_RATE
-
-        val additions = buildString {
-            if (speaker.isNullOrBlank()) {
-                append("speaker = \"$cleanSpeaker\"\n")
-            }
-            if (isoValue.isNullOrBlank() && isoCode.isNotEmpty()) {
-                append("ISOCode = \"$isoCode\"\n")
-            }
-            if (nameValue.isNullOrBlank()) {
-                append("NAME = \"${asciiResourceName(cleanSpeaker)}\"\n")
-            }
-            if (freqValue.isNullOrBlank()) {
-                append("freq = \"$freq\"\n")
-            }
-        }
-        if (additions.isEmpty()) return
-        val prefix = if (text.isEmpty() || text.endsWith("\n")) "" else "\n"
-        runCatching {
-            inf.appendText(prefix + additions, StandardCharsets.ISO_8859_1)
-        }
+        // متعمّد: دون حشو/تعديل المصدر (عقد req 2,3).
     }
 
     /**
@@ -1881,50 +2183,29 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * قائمة الأصوات المفروزة من كل المجلدات
-     * والمجلدات الفرعية.
-     *
-     * **لا تُكتب أي ملفات هنا:** مكتبة Acapela الأصلية تبني مسار `.ini`
-     * من اسم `.inf`، فأي `.inf` مُصطنع بلا `.ini` مقابل يُفسد تحميل
-     * الصوت. التعداد قراءةٌ خالصة.
-     *
-     * هذه هي النواة المتزامنة (للاختبارات وسياقات الخيوط الخلفية فقط).
-     * أي مستدعٍ على الخيط الرئيسي يستعمل [cachedVoices] بدلاً منها.
+     * تعداد الأصوات ذات التهيئة الأصلية المتوافقة فقط (اكتشاف موحّد).
+     * قراءة خالصة: لا توليد/حشو/تعديل/تسطيح/نسخ.
      */
     fun listVoices(baseDir: File): List<VoiceInfo> {
         if (!baseDir.exists() || !baseDir.isDirectory) return emptyList()
+        val dirs = completeVoiceDirs(baseDir)
         val result = mutableListOf<VoiceInfo>()
-        val configsByDir = linkedMapOf<File, MutableList<File>>()
-
-        baseDir.walkTopDown().maxDepth(6).forEach { f ->
-            if (f.isFile &&
-                f.extension.lowercase(Locale.ROOT) in CONFIG_EXTENSIONS
-            ) {
-                val dir = f.parentFile ?: return@forEach
-                configsByDir.getOrPut(dir) { mutableListOf() }.add(f)
-            }
+        for (dir in dirs) {
+            val discovery = discoverVoiceConfig(
+                dir, expectedSpeakerHint = dir.name, maxDepth = 4
+            )
+            if (discovery.state != IniDiscoveryState.AUTHENTIC) continue
+            val ini = discovery.iniFile ?: continue
+            val info = runCatching {
+                val parsed = parseVoice(dir)
+                parsed.copy(
+                    dir = ini.parentFile ?: dir,
+                    configFile = ini
+                )
+            }.getOrNull() ?: continue
+            if (isNonVoiceConfig(info, dir)) continue
+            result.add(info)
         }
-
-        for ((dir, files) in configsByDir) {
-            val infFiles = files.filter {
-                it.extension.equals("inf", ignoreCase = true)
-            }
-            val chosen = if (infFiles.isNotEmpty()) infFiles else files
-            for (cf in chosen) {
-                val info = runCatching {
-                    parseConfigFile(cf)
-                }.getOrNull() ?: continue
-                if (isNonVoiceConfig(info, dir)) continue
-                result.add(info)
-            }
-        }
-
-        if (result.isEmpty()) {
-            for (dir in completeVoiceDirs(baseDir)) {
-                runCatching { result.add(parseVoice(dir)) }
-            }
-        }
-
         return result.distinctBy {
             "${it.dir.absolutePath}|${it.id.lowercase(Locale.ROOT)}"
         }

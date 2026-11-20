@@ -37,18 +37,30 @@ class AcapelaVoiceManifestTest {
     }
 
     @Test
-    fun isCompleteVoiceDir_validatesPresenceOfConfigOrData() {
+    fun isCompleteVoiceDir_requiresAuthenticCompatibleIni() {
         val emptyDir = tempFolder.newFolder("empty")
         assertFalse(AcapelaVoiceManifest.isCompleteVoiceDir(emptyDir))
 
+        // تهيئة غير جوهرية لا تُعدّ أصيلة متوافقة.
         val configDir = tempFolder.newFolder("configOnly")
         File(configDir, "voice.ini").writeText("Speaker=Salma")
-        assertTrue(AcapelaVoiceManifest.isCompleteVoiceDir(configDir))
+        assertFalse(AcapelaVoiceManifest.isCompleteVoiceDir(configDir))
 
+        // بيانات بلا تهيئة أصلية متوافقة لا تكفي.
         val dataDir = tempFolder.newFolder("dataOnly")
-        val bigData = File(dataDir, "voice.dat")
-        bigData.writeBytes(ByteArray(20_000))
-        assertTrue(AcapelaVoiceManifest.isCompleteVoiceDir(dataDir))
+        File(dataDir, "voice.dat").writeBytes(ByteArray(20_000))
+        assertFalse(AcapelaVoiceManifest.isCompleteVoiceDir(dataDir))
+
+        // تهيئة أصلية جوهرية متوافقة = صوت مكتمل.
+        val authentic = tempFolder.newFolder("authentic")
+        File(authentic, "salma.ini").writeText(
+            "PRO \"NLP/ar_sa.oso\" [ PROSODY ]\n" +
+                "SLV \"salma.bvcu\" [ FILE ]\n"
+        )
+        File(authentic, "salma.bvcu").writeBytes(ByteArray(20_000))
+        File(authentic, "NLP").mkdirs()
+        File(authentic, "NLP/ar_sa.oso").writeBytes(ByteArray(64))
+        assertTrue(AcapelaVoiceManifest.isCompleteVoiceDir(authentic))
     }
 
     @Test
@@ -56,11 +68,23 @@ class AcapelaVoiceManifestTest {
         val baseDir = tempFolder.newFolder("Acapela")
         val v1 = File(baseDir, "mehdi").apply { mkdirs() }
         File(v1, "mehdi.inf").writeText("Speaker=Mehdi\nIsoCode=ara")
+        File(v1, "mehdi.ini").writeText(
+            "PRO \"NLP/mehdi.oso\" [ PROSODY ]\n" +
+                "SLV \"mehdi.bvcu\" [ FILE ]\n"
+        )
         File(v1, "mehdi.dat").writeBytes(ByteArray(15_000))
+        File(v1, "NLP").mkdirs()
+        File(v1, "NLP/mehdi.oso").writeBytes(ByteArray(32))
 
         val v2 = File(baseDir, "salma").apply { mkdirs() }
         File(v2, "salma.inf").writeText("Speaker=Salma\nIsoCode=ara")
+        File(v2, "salma.ini").writeText(
+            "PRO \"NLP/salma.oso\" [ PROSODY ]\n" +
+                "SLV \"salma.bvcu\" [ FILE ]\n"
+        )
         File(v2, "salma.dat").writeBytes(ByteArray(15_000))
+        File(v2, "NLP").mkdirs()
+        File(v2, "NLP/salma.oso").writeBytes(ByteArray(32))
 
         val voices = AcapelaVoiceManifest.listVoices(baseDir)
         assertEquals(2, voices.size)
@@ -109,11 +133,11 @@ class AcapelaVoiceManifestTest {
 
         AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
 
-        // لا كتابة إطلاقاً: الملف المصطنع كان يُفسد تحميل الصوت.
+        // لا كتابة إطلاقاً: لا توليد تهيئة ولا تعديل مصدر.
         assertFalse(File(voiceFolder, "salma.inf").exists())
         assertFalse(File(voiceFolder, "salma.ini").exists())
-        // الصوت ما زال يُعدّ من البيانات الخام.
-        assertEquals(1, AcapelaVoiceManifest.listVoices(baseDir).size)
+        // بلا تهيئة أصلية متوافقة لا يُعدّ الصوت مكتملاً.
+        assertEquals(0, AcapelaVoiceManifest.listVoices(baseDir).size)
     }
 
     @Test
@@ -197,22 +221,25 @@ class AcapelaVoiceManifestTest {
     }
 
     @Test
-    fun pruneSyntheticConfigs_removesStubInfWhenNoAuthenticIni() {
+    fun pruneSyntheticConfigs_neverDeletesOrModifiesSource() {
         val baseDir = tempFolder.newFolder("voices_stubs_no_ini")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
         File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
         val mainInf = File(voiceFolder, "salma.inf")
-        mainInf.writeText(
-            "[Voice]\nspeaker = \" Salma\"\n" +
-                "FILE \"salma.bvcu\" [ RAM ]\n"
-        )
+        val mainText = "[Voice]\nspeaker = \" Salma\"\n" +
+            "FILE \"salma.bvcu\" [ RAM ]\n"
+        mainInf.writeText(mainText)
         val stubInf = File(voiceFolder, "salma_22k.inf")
-        stubInf.writeText("[Voice]\nspeaker = \" Salma\"\n")
+        val stubText = "[Voice]\nspeaker = \" Salma\"\n"
+        stubInf.writeText(stubText)
 
         AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
 
+        // حياد تام: لا حذف ولا تعديل لمصدر الصوت.
         assertTrue(mainInf.exists())
-        assertFalse(stubInf.exists())
+        assertTrue(stubInf.exists())
+        assertEquals(mainText, mainInf.readText())
+        assertEquals(stubText, stubInf.readText())
     }
 
     @Test
@@ -226,43 +253,34 @@ class AcapelaVoiceManifestTest {
 
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
 
-        // بلا `.inf` لا يرى `find_voices` المجلد أصلاً، فلا قيمة لـ`.ini`.
+        // حياد تام: لا توليد ولا حشو ولا تعديل لأي ملف/مجلد.
         assertFalse(File(voiceFolder, "Salma.inf").exists())
         assertFalse(File(voiceFolder, "Salma.ini").exists())
         assertFalse(File(voiceFolder, "Salma.cfg").exists())
-        assertTrue(File(voiceFolder, "userdicos").isDirectory)
+        assertFalse(File(voiceFolder, "userdicos").exists())
     }
 
     @Test
-    fun ensureVoiceConfigs_completesOnlyMissingInfKeys() {
+    fun ensureVoiceConfigs_neverModifiesExistingInf() {
         val baseDir = tempFolder.newFolder("rich_existing")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
         File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
         val inf = File(voiceFolder, "salma.inf")
-        inf.writeText(
-            "[Voice]\n" +
-                "speaker = \" Salma\"\n" +
-                "frequency = 22050\n" +
-                "PATH my_special_path\n" +
-                "BNF \"salma.bnf\" [ RAM ]\n"
-        )
+        val original = "[Voice]\n" +
+            "speaker = \" Salma\"\n" +
+            "frequency = 22050\n" +
+            "PATH my_special_path\n" +
+            "BNF \"salma.bnf\" [ RAM ]\n"
+        inf.writeText(original)
 
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
 
-        val text = inf.readText()
-        // المحتوى الأصلي لا يُمحى ولا يُعاد كتابته.
-        assertTrue(text.contains("PATH my_special_path"))
-        assertTrue(text.contains("BNF \"salma.bnf\""))
-        assertTrue(text.contains("speaker = \" Salma\""))
-        // المفاتيح الناقصة وحدها تُضاف.
-        assertTrue(text.contains("ISOCode = \"ar-SA\""))
-        assertTrue(text.contains("NAME = \"Salma\""))
-        assertTrue(text.contains("freq = \"22050\""))
-        assertEquals(1, Regex("speaker\\s*=").findAll(text).count())
+        // حياد تام: لا حشو ولا تعديل لمحتوى المصدر.
+        assertEquals(original, inf.readText())
     }
 
     @Test
-    fun ensureVoiceConfigs_copiesRegistrationKeyIntoVoiceFolder() {
+    fun ensureVoiceConfigs_neverCopiesRegistrationKey() {
         val baseDir = tempFolder.newFolder("pack_root")
         File(baseDir, "0x1A2B3C4D").writeText("key")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
@@ -272,7 +290,8 @@ class AcapelaVoiceManifestTest {
 
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
 
-        assertTrue(File(voiceFolder, "0x1A2B3C4D").isFile)
+        // حياد تام: لا نسخ/تعديل للمصدر.
+        assertFalse(File(voiceFolder, "0x1A2B3C4D").exists())
     }
 
     @Test
@@ -667,8 +686,16 @@ class AcapelaVoiceManifestTest {
         EmbeddedStorage.resetBumpTimeForTest(1_000L)
         AcapelaVoiceManifest.invalidateVoicesCache()
         val baseDir = tempFolder.newFolder("cache_hit")
-        val inf = File(baseDir, "salma.inf")
-        inf.writeText("[Voice]\nspeaker = \"Salma\"\nISOCode = \"ara-SAU\"\n")
+        File(baseDir, "salma.inf").writeText(
+            "[Voice]\nspeaker = \"Salma\"\nISOCode = \"ara-SAU\"\n"
+        )
+        File(baseDir, "salma.ini").writeText(
+            "PRO \"NLP/ar_sa.oso\" [ PROSODY ]\n" +
+                "SLV \"salma.bvcu\" [ FILE ]\n"
+        )
+        File(baseDir, "NLP").mkdirs()
+        File(baseDir, "NLP/ar_sa.oso").writeBytes(ByteArray(16))
+        File(baseDir, "salma.bvcu").writeBytes(ByteArray(16))
 
         var clock = 0L
         val first = AcapelaVoiceManifest.readVoicesCached(
@@ -676,7 +703,8 @@ class AcapelaVoiceManifestTest {
         ) { clock }
         assertEquals(1, first.size)
 
-        assertTrue(inf.delete())
+        // حذف تهيئة أصلية جوهرية يُبطل الاكتمال عند القراءة الطازجة.
+        assertTrue(File(baseDir, "salma.ini").delete())
 
         val second = AcapelaVoiceManifest.readVoicesCached(
             baseDir, 30_000L
@@ -696,8 +724,14 @@ class AcapelaVoiceManifestTest {
         EmbeddedStorage.resetBumpTimeForTest(5_000L)
         AcapelaVoiceManifest.invalidateVoicesCache()
         val baseDir = tempFolder.newFolder("cache_bump")
-        val inf = File(baseDir, "salma.inf")
-        inf.writeText("[Voice]\nspeaker = \"Salma\"\n")
+        File(baseDir, "salma.inf").writeText("[Voice]\nspeaker = \"Salma\"\n")
+        File(baseDir, "salma.ini").writeText(
+            "PRO \"NLP/ar_sa.oso\" [ PROSODY ]\n" +
+                "SLV \"salma.bvcu\" [ FILE ]\n"
+        )
+        File(baseDir, "NLP").mkdirs()
+        File(baseDir, "NLP/ar_sa.oso").writeBytes(ByteArray(16))
+        File(baseDir, "salma.bvcu").writeBytes(ByteArray(16))
 
         val clock = { 0L }
         val cached = AcapelaVoiceManifest.readVoicesCached(
@@ -705,7 +739,7 @@ class AcapelaVoiceManifestTest {
         )
         assertEquals(1, cached.size)
 
-        assertTrue(inf.delete())
+        assertTrue(File(baseDir, "salma.ini").delete())
         EmbeddedStorage.resetBumpTimeForTest(6_000L)
 
         val afterBump = AcapelaVoiceManifest.readVoicesCached(
@@ -720,8 +754,14 @@ class AcapelaVoiceManifestTest {
         EmbeddedStorage.resetBumpTimeForTest(7_000L)
         AcapelaVoiceManifest.invalidateVoicesCache()
         val baseDir = tempFolder.newFolder("cache_invalidate")
-        val inf = File(baseDir, "salma.inf")
-        inf.writeText("[Voice]\nspeaker = \"Salma\"\n")
+        File(baseDir, "salma.inf").writeText("[Voice]\nspeaker = \"Salma\"\n")
+        File(baseDir, "salma.ini").writeText(
+            "PRO \"NLP/ar_sa.oso\" [ PROSODY ]\n" +
+                "SLV \"salma.bvcu\" [ FILE ]\n"
+        )
+        File(baseDir, "NLP").mkdirs()
+        File(baseDir, "NLP/ar_sa.oso").writeBytes(ByteArray(16))
+        File(baseDir, "salma.bvcu").writeBytes(ByteArray(16))
 
         val clock = { 0L }
         assertEquals(
@@ -731,7 +771,7 @@ class AcapelaVoiceManifestTest {
             ).size
         )
 
-        assertTrue(inf.delete())
+        assertTrue(File(baseDir, "salma.ini").delete())
         AcapelaVoiceManifest.invalidateVoicesCache()
 
         assertTrue(
@@ -752,6 +792,13 @@ class AcapelaVoiceManifestTest {
         val baseDir = tempFolder.newFolder("snapshot")
         File(baseDir, "salma.inf")
             .writeText("[Voice]\nspeaker = \"Salma\"\n")
+        File(baseDir, "salma.ini").writeText(
+            "PRO \"NLP/ar_sa.oso\" [ PROSODY ]\n" +
+                "SLV \"salma.bvcu\" [ FILE ]\n"
+        )
+        File(baseDir, "NLP").mkdirs()
+        File(baseDir, "NLP/ar_sa.oso").writeBytes(ByteArray(16))
+        File(baseDir, "salma.bvcu").writeBytes(ByteArray(16))
 
         var clock = 1_000L
         assertFalse(

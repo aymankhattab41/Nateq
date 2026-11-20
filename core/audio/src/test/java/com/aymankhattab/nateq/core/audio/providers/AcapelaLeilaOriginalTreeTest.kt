@@ -106,7 +106,7 @@ class AcapelaLeilaOriginalTreeTest {
         assertTrue(report.contains("غير مقيسة"))
         // لا يُعرض أي كود قديم (-34/-27/-2) بوصفه قياساً حياً.
         assertFalse(report.contains("nlpInitError=-34"))
-        assertTrue(report.contains("لم تُرصد"))
+        assertTrue(report.contains("غير مقيس"))
         val measured = AcapelaLeilaOriginalTree.trialReport(
             verification,
             AcapelaVoiceDiagnostics.MeasuredNInitCodes(

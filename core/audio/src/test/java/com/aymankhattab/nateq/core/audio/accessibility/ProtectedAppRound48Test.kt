@@ -304,6 +304,7 @@ class ProtectedAppRound48Test {
             )
             settings.setSuspendedProtectedApp(null)
             ProtectedAppManager.handleAppEntry(context, null, app)
+            shadowOf(Looper.getMainLooper()).idle()
 
             assertEquals("com.instapay", settings.getSuspendedProtectedApp())
             assertTrue(settings.getSuspendedProtectedAppTimestamp() > 0L)
@@ -314,6 +315,7 @@ class ProtectedAppRound48Test {
                 "com.instapay",
                 "إنستاباي"
             )
+            shadowOf(Looper.getMainLooper()).idle()
             assertEquals(null, settings.getSuspendedProtectedApp())
         } finally {
             AccessibilityBridge.unregisterService(service)

@@ -55,12 +55,23 @@ class AcapelaHostSessionVoiceResolutionTest {
         val baseDir = tempFolder.newFolder("Acapela")
 
         val mehdiDir = File(baseDir, "mehdi").apply { mkdirs() }
+        // تهيئة أصلية متوافقة مطلوبة للاكتشاف (عقد ini الأصيل).
+        File(mehdiDir, "mehdi.ini").writeText(
+            "PRO \"NLP/ar.oso\"\n" +
+                "SLV \"mehdi.bvcu\"\n" +
+                "VOICE \"Mehdi\"\n"
+        )
         File(mehdiDir, "mehdi.inf").writeText(
             "speaker = \"mehdi22k\"\nISOCode = \"ar-SA\"\nfreq = \"22050\""
         )
         File(mehdiDir, "mehdi.dat").writeBytes(ByteArray(10_000))
 
         val salmaDir = File(baseDir, "salma").apply { mkdirs() }
+        File(salmaDir, "salma.ini").writeText(
+            "PRO \"NLP/ar.oso\"\n" +
+                "SLV \"salma.bvcu\"\n" +
+                "VOICE \"Salma\"\n"
+        )
         File(salmaDir, "salma.inf").writeText(
             "speaker = \"salma22k\"\nISOCode = \"ar-EG\"\nfreq = \"22050\""
         )
@@ -104,6 +115,11 @@ class AcapelaHostSessionVoiceResolutionTest {
         val session = AcapelaHostSession(context)
         val baseDir = tempFolder.newFolder("CacheTest")
         val mehdiDir = File(baseDir, "mehdi").apply { mkdirs() }
+        File(mehdiDir, "mehdi.ini").writeText(
+            "PRO \"NLP/ar.oso\"\n" +
+                "SLV \"mehdi.bvcu\"\n" +
+                "VOICE \"Mehdi\"\n"
+        )
         File(mehdiDir, "mehdi.inf").writeText(
             "speaker = \"mehdi22k\"\nISOCode = \"ar-SA\"\nfreq = \"22050\""
         )
@@ -113,6 +129,11 @@ class AcapelaHostSessionVoiceResolutionTest {
         assertNotNull(first)
 
         val laylaDir = File(baseDir, "layla").apply { mkdirs() }
+        File(laylaDir, "layla.ini").writeText(
+            "PRO \"NLP/ar.oso\"\n" +
+                "SLV \"layla.bvcu\"\n" +
+                "VOICE \"Layla\"\n"
+        )
         File(laylaDir, "layla.inf").writeText(
             "speaker = \"layla22k\"\nISOCode = \"ar-EG\"\nfreq = \"22050\""
         )

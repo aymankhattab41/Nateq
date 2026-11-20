@@ -421,10 +421,6 @@ object AcapelaLeilaOriginalTree {
         if (codes == null) {
             appendLine("- nInit/nSpeak: $executionNote")
             appendLine("- عيّنات PCM جديدة: غير مقيسة")
-            appendLine(
-                "- آخر مقيس معلوم (تجربة Salma السابقة): " +
-                    AcapelaVoiceDiagnostics.observedRoot109Codes.asLine()
-            )
         } else {
             appendLine("- nInit/nSpeak: ${codes.asLine()}")
         }
@@ -517,7 +513,9 @@ object AcapelaVoiceFileComparison {
         zip: File,
         copiedRoot: File,
         codes: AcapelaVoiceDiagnostics.MeasuredNInitCodes =
-            AcapelaVoiceDiagnostics.observedRoot109Codes
+            AcapelaVoiceDiagnostics.MeasuredNInitCodes(
+                note = "غير مقيس (لا قياس حي)"
+            )
     ): Report {
         val copied = if (copiedRoot.isDirectory) {
             copiedRoot.walkTopDown().filter { it.isFile }

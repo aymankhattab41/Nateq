@@ -72,6 +72,12 @@ class VoicePackageImporterTest {
         createZip(
             zipFile,
             mapOf(
+                // تهيئة أصلية متوافقة مطلوبة للاكتشاف/الاكتمال (عقد ini الأصيل).
+                "mehdi.ini" to (
+                    "PRO \"NLP/ar.oso\"\n" +
+                        "SLV \"mehdi.bvcu\"\n" +
+                        "VOICE \"Mehdi\"\n"
+                    ).toByteArray(),
                 "mehdi.inf" to "Speaker=Mehdi\nIsoCode=ara".toByteArray(),
                 "mehdi.dat" to ByteArray(15_000)
             )

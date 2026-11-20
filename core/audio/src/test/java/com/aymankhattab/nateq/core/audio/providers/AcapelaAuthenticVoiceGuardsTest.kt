@@ -267,4 +267,199 @@ class AcapelaAuthenticVoiceGuardsTest {
         assertFalse(report.contains("-27"))
         assertFalse(report.contains("PCM=0"))
     }
+
+    @Test
+    fun discoverVoiceConfig_reportsNoIniWhenPackageHasNone() {
+        val root = tempDir()
+        try {
+            val voice = File(root, "Salma/salma_lf").apply { mkdirs() }
+            File(voice, "NLP").mkdirs()
+            File(voice, "NLP/ar_sa.oso").writeBytes(ByteArray(16))
+            File(voice, "salma_lf").mkdirs()
+            File(voice, "salma_lf/salma_22k_lf.bvcu")
+                .writeBytes(ByteArray(16))
+
+            val discovery = AcapelaVoiceManifest.discoverVoiceConfig(
+                startDir = voice,
+                expectedSpeakerHint = "Salma"
+            )
+            assertEquals(
+                AcapelaVoiceManifest.IniDiscoveryState.NO_INI,
+                discovery.state
+            )
+            assertEquals(null, discovery.iniFile)
+
+            val verify = AcapelaVoiceDiagnostics
+                .verifyAuthenticVoicePackage(
+                    voiceDir = voice,
+                    expectedSpeakerHint = "Salma"
+                )
+            assertFalse(verify.ok)
+            assertEquals(
+                AcapelaVoiceDiagnostics.VoiceVerificationState.NO_INI,
+                verify.state
+            )
+            assertTrue(
+                verify.issues.any { it.dependency == "ini" }
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun shortOrIncompleteIni_isIncompatibleNotAccepted() {
+        val root = tempDir()
+        try {
+            val voice = File(root, "Salma").apply { mkdirs() }
+            // ini قصير/ناقص بلا توجيهات أصلية جوهرية.
+            File(voice, "ar_sa_hd_salma_22k_lf.ini")
+                .writeText("Salma\n")
+
+            val discovery = AcapelaVoiceManifest.discoverVoiceConfig(
+                startDir = voice,
+                expectedSpeakerHint = "Salma"
+            )
+            assertEquals(
+                AcapelaVoiceManifest.IniDiscoveryState.INCOMPATIBLE_INI,
+                discovery.state
+            )
+            assertEquals(null, discovery.iniFile)
+
+            val verify = AcapelaVoiceDiagnostics
+                .verifyAuthenticVoicePackage(
+                    voiceDir = voice,
+                    expectedSpeakerHint = "Salma"
+                )
+            assertFalse(verify.ok)
+            assertEquals(
+                AcapelaVoiceDiagnostics.VoiceVerificationState
+                    .INCOMPATIBLE_INI,
+                verify.state
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun conflictingAuthenticIni_reportsConflictWithoutGuessing() {
+        val root = tempDir()
+        try {
+            val voice = File(root, "Salma").apply { mkdirs() }
+            File(voice, "NLP").mkdirs()
+            File(voice, "NLP/ar_sa.oso").writeBytes(ByteArray(16))
+            File(voice, "salma_lf").mkdirs()
+            File(voice, "salma_lf/salma_22k_lf.bvcu")
+                .writeBytes(ByteArray(16))
+            val iniA = "PRO \"NLP/ar_sa.oso\" [ PROSODY ]\n" +
+                "SLV \"salma_lf/salma_22k_lf.bvcu\" [ FILE ]\n" +
+                "VOICE \"Alpha\"\n"
+            val iniB = "PRO \"NLP/ar_sa.oso\" [ PROSODY ]\n" +
+                "SLV \"salma_lf/salma_22k_lf.bvcu\" [ FILE ]\n" +
+                "VOICE \"Beta\"\n"
+            File(voice, "alpha.ini").writeText(iniA)
+            File(voice, "beta.ini").writeText(iniB)
+
+            val discovery = AcapelaVoiceManifest.discoverVoiceConfig(
+                startDir = voice,
+                expectedSpeakerHint = "Salma"
+            )
+            assertEquals(
+                AcapelaVoiceManifest.IniDiscoveryState.CONFLICT,
+                discovery.state
+            )
+            assertEquals(null, discovery.iniFile)
+
+            val verify = AcapelaVoiceDiagnostics
+                .verifyAuthenticVoicePackage(
+                    voiceDir = voice,
+                    expectedSpeakerHint = "Salma"
+                )
+            assertFalse(verify.ok)
+            assertEquals(
+                AcapelaVoiceDiagnostics.VoiceVerificationState.CONFLICT,
+                verify.state
+            )
+            assertTrue(
+                verify.issues.any { it.dependency == "ini" }
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun resolveRelativeFile_preventsPathTraversalOutsideBase() {
+        val root = tempDir()
+        try {
+            val base = File(root, "base").apply { mkdirs() }
+            val outside = File(root, "outside.txt")
+            outside.writeText("secret")
+            File(base, "inside.txt").writeText("ok")
+
+            val escaped = AcapelaVoiceManifest.resolveRelativeFile(
+                base, "../outside.txt"
+            )
+            assertEquals(null, escaped)
+
+            val deepEscape = AcapelaVoiceManifest.resolveRelativeFile(
+                base, "sub/../../outside.txt"
+            )
+            assertEquals(null, deepEscape)
+
+            val inside = AcapelaVoiceManifest.resolveRelativeFile(
+                base, "inside.txt"
+            )
+            assertNotNull(inside)
+            assertTrue(inside!!.isFile)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun stageAuthenticVoiceForRun_matchesSourceTreeVerbatim() {
+        val root = tempDir()
+        try {
+            val voice = writeSalmaPackage(
+                root, "ar_sa_hd_salma_22k_lf.ini"
+            )
+            // ملف إضافي للتحقق من تطابق البنية/المحتوى.
+            File(voice, "extra/readme.txt").apply {
+                parentFile?.mkdirs()
+                writeText("payload")
+            }
+            val staged = AcapelaVoiceDiagnostics
+                .stageAuthenticVoiceForRun(context, voice, "run-compare")
+
+            val sourceFiles = voice.walkTopDown()
+                .filter { it.isFile }
+                .map { it.relativeTo(voice).path.replace('\\', '/') }
+                .toList()
+                .sorted()
+            assertTrue(sourceFiles.isNotEmpty())
+            for (rel in sourceFiles) {
+                val src = File(voice, rel)
+                val dst = File(staged, rel)
+                assertTrue("مفقود في المرحلي: $rel", dst.isFile)
+                assertEquals(
+                    "اختلاف حجم/محتوى: $rel",
+                    src.readBytes().toList(),
+                    dst.readBytes().toList()
+                )
+            }
+
+            val check = AcapelaVoiceDiagnostics
+                .verifyAuthenticVoicePackage(
+                    voiceDir = voice,
+                    stagedDir = staged,
+                    expectedSpeakerHint = "Salma"
+                )
+            assertTrue(check.report, check.ok)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
 }
