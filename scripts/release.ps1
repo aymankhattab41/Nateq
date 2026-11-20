@@ -335,20 +335,40 @@ if ($newRaw -cne $gradleRaw) {
 # — حتى لا يُنشر إصدار بمحرّك نطق معطوب دون أن تكتشفه الاختبارات.
 Push-Location $repoRoot
 try {
-    & .\gradlew.bat `
-        :core:common:testDebugUnitTest `
-        :core:engine:testDebugUnitTest `
-        :core:audio:testDebugUnitTest `
-        :core:data:testDebugUnitTest `
-        :feature:settings:testDebugUnitTest `
-        :app:testDebugUnitTest `
-        --console=plain
-    if ($LASTEXITCODE -ne 0) {
+    $prevEfGradle = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & .\gradlew.bat `
+            :core:common:testDebugUnitTest `
+            :core:engine:testDebugUnitTest `
+            :core:audio:testDebugUnitTest `
+            :core:data:testDebugUnitTest `
+            :feature:settings:testDebugUnitTest `
+            :app:testDebugUnitTest `
+            --console=plain
+        $gradleExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEfGradle
+    }
+    if ($gradleExit -ne 0) {
         throw 'فشلت الاختبارات — أُلغيت عملية الإصدار.'
     }
-    & .\gradlew.bat --stop
-    & .\gradlew.bat :app:assembleRelease --console=plain
-    if ($LASTEXITCODE -ne 0) {
+    $prevEfGradle = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & .\gradlew.bat --stop
+    } finally {
+        $ErrorActionPreference = $prevEfGradle
+    }
+    $prevEfGradle = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & .\gradlew.bat :app:assembleRelease --console=plain
+        $gradleExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEfGradle
+    }
+    if ($gradleExit -ne 0) {
         throw 'فشل بناء Release — أُلغيت عملية الإصدار.'
     }
 } finally {
