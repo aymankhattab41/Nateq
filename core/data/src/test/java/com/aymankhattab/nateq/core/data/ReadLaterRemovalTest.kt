@@ -13,9 +13,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * اختبارات إزالة ميزة «اقرأ لاحقاً»: حذف مفتاح الطابور القديم فقط مع
- * بقاء المفاتيح غير المرتبطة، وأمان التكرار، وتجاهل الاستيراد/الاستعادة
- * القديمة للمفتاح المحذوف.
+ * اختبارات عقد ميزة «اقرأ لاحقاً»: بقاء البيانات القديمة الفعلية، والحفظ الدائم،
+ * ومنع التكرار، والنسخ الاحتياطي/الاستعادة الآمنة.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
@@ -37,12 +36,14 @@ class ReadLaterRemovalTest {
     }
 
     @Test
-    fun init_purgesObsoleteReadLaterQueue_butKeepsUnrelatedKeys() {
+    fun init_keepsExistingReadLaterData_andOtherKeys() {
         val sp = context.getSharedPreferences(
             "nateq_settings", Context.MODE_PRIVATE
         )
+        val payload =
+            "[{\"id\":1,\"text\":\"نص قديم\",\"ts\":100}]"
         sp.edit()
-            .putString("read_later_queue", "[{\"text\":\"x\"}]")
+            .putString("read_later_queue", payload)
             .putInt("default_speech_rate", 150)
             .putString("unrelated_key_keep", "keep-me")
             .commit()
@@ -52,7 +53,10 @@ class ReadLaterRemovalTest {
         val raw = context.getSharedPreferences(
             "nateq_settings", Context.MODE_PRIVATE
         )
-        assertFalse(raw.contains("read_later_queue"))
+        assertTrue(raw.contains("read_later_queue"))
+        val items = repo.getReadLaterItems()
+        assertEquals(1, items.size)
+        assertEquals("نص قديم", items[0].text)
         assertEquals(150, raw.getInt("default_speech_rate", -1))
         assertEquals("keep-me", raw.getString("unrelated_key_keep", null))
 
@@ -60,20 +64,14 @@ class ReadLaterRemovalTest {
     }
 
     @Test
-    fun init_purgeIsIdempotent_andSafeWhenKeyAbsent() {
+    fun init_isIdempotent_whenNoReadLaterKey() {
         val sp = context.getSharedPreferences(
             "nateq_settings", Context.MODE_PRIVATE
         )
-        sp.edit()
-            .putString("keep_only", "v")
-            .commit()
+        sp.edit().putString("keep_only", "v").commit()
 
         val repo1 = SettingsRepository(context)
-        assertFalse(
-            context.getSharedPreferences(
-                "nateq_settings", Context.MODE_PRIVATE
-            ).contains("read_later_queue")
-        )
+        assertTrue(repo1.getReadLaterItems().isEmpty())
         repo1.unregister()
 
         SettingsRepository.resetInstanceForTesting()
@@ -87,48 +85,91 @@ class ReadLaterRemovalTest {
     }
 
     @Test
-    fun import_ignoresReadLaterQueue_andKeepsOtherKeys() {
+    fun addReadLater_persistsAcrossRepositoryInstances() {
+        val repo1 = SettingsRepository(context)
+        assertTrue(repo1.addReadLaterText("مرحبا"))
+        assertTrue(repo1.addReadLaterText("Hello"))
+        repo1.unregister()
+
+        SettingsRepository.resetInstanceForTesting()
+        val repo2 = SettingsRepository(context)
+        val items = repo2.getReadLaterItems()
+        assertEquals(2, items.size)
+        // الأحدث يُضاف في المقدمة
+        assertEquals("Hello", items[0].text)
+        assertEquals("مرحبا", items[1].text)
+        repo2.unregister()
+    }
+
+    @Test
+    fun addReadLater_preventsDuplicateSameText() {
         val repo = SettingsRepository(context)
-        val backup = mapOf<String, Any>(
-            "read_later_queue" to "[{\"text\":\"old\"}]",
-            "default_speech_rate" to 140,
-            "unrelated_imported" to "yes"
-        )
-
-        val ok = repo.importSettings(backup)
-        assertTrue(ok)
-
-        val raw = context.getSharedPreferences(
-            "nateq_settings", Context.MODE_PRIVATE
-        )
-        assertFalse(raw.contains("read_later_queue"))
-        assertEquals("yes", raw.getString("unrelated_imported", null))
-        // معدل الكلام قد يُطبَّق عبر منطق الاستيراد (sanitize) إن كان
-        // مفتاحاً معروفاً؛ الأهم هنا عدم استعادة الطابور وبقاء المفاتيح
-        // الأخرى.
-        assertTrue(
-            raw.contains("unrelated_imported") ||
-                raw.contains("default_speech_rate")
-        )
-
+        assertTrue(repo.addReadLaterText("نفس النص"))
+        val countAfterFirst = repo.getReadLaterItems().size
+        assertTrue(repo.addReadLaterText("نفس النص"))
+        assertEquals(countAfterFirst, repo.getReadLaterItems().size)
         repo.unregister()
     }
 
     @Test
-    fun import_oldBackupWithOnlyReadLaterQueue_doesNotRestoreIt() {
+    fun removeAndClear_workAsExpected() {
+        val repo = SettingsRepository(context)
+        repo.addReadLaterText("واحد")
+        repo.addReadLaterText("اثنان")
+        val items = repo.getReadLaterItems()
+        assertEquals(2, items.size)
+        val removedId = items[0].id
+        assertTrue(repo.removeReadLaterItem(removedId))
+        assertEquals(1, repo.getReadLaterItems().size)
+
+        assertTrue(repo.clearReadLater())
+        assertTrue(repo.getReadLaterItems().isEmpty())
+        repo.unregister()
+    }
+
+    @Test
+    fun exportImport_preservesReadLaterItems() {
+        val repo1 = SettingsRepository(context)
+        repo1.addReadLaterText("عنصر محفوظ")
+        val exported = repo1.exportSettings()
+        assertTrue(exported.containsKey("read_later_queue"))
+        repo1.unregister()
+
+        SettingsRepository.resetInstanceForTesting()
+        context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+            .edit().clear().commit()
+        val repo2 = SettingsRepository(context)
+        assertTrue(repo2.importSettings(exported))
+        val restored = repo2.getReadLaterItems()
+        assertEquals(1, restored.size)
+        assertEquals("عنصر محفوظ", restored[0].text)
+        repo2.unregister()
+    }
+
+    @Test
+    fun import_oldBackupWithOnlyReadLaterQueue_restoresIfValid() {
         val repo = SettingsRepository(context)
         val backup = mapOf<String, Any>(
-            "read_later_queue" to "[{\"text\":\"old\"}]"
+            "read_later_queue" to
+                "[{\"id\":5,\"text\":\"قديم\",\"ts\":50}]"
         )
 
-        // قد تُعتبر بلا إعدادات ذات معنى؛ في كل الأحوال لا يُستعاد المفتاح.
         repo.importSettings(backup)
 
-        val raw = context.getSharedPreferences(
-            "nateq_settings", Context.MODE_PRIVATE
-        )
-        assertFalse(raw.contains("read_later_queue"))
+        val items = repo.getReadLaterItems()
+        assertEquals(1, items.size)
+        assertEquals("قديم", items[0].text)
+        repo.unregister()
+    }
 
+    @Test
+    fun import_ignoresMalformedReadLaterQueue_withoutFakeItems() {
+        val repo = SettingsRepository(context)
+        val backup = mapOf<String, Any>(
+            "read_later_queue" to "not-json"
+        )
+        repo.importSettings(backup)
+        assertTrue(repo.getReadLaterItems().isEmpty())
         repo.unregister()
     }
 }

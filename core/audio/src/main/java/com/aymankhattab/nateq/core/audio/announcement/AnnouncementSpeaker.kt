@@ -1951,13 +1951,12 @@ class AnnouncementSpeaker(
                 }
             )
         }
-        val executeSpeech = executeSpeech@ {
+                val executeSpeech = executeSpeech@ {
             if (gen != speechGeneration.get()) {
                 releaseAudioFocus()
                 notifySpeechComplete()
                 return@executeSpeech
             }
-            // VZ2: Warm instances (wasWarm) don't wait for warmup polling
             if (immediate && wasWarm) {
                 doSpeakParts(
                     gen,
@@ -1966,17 +1965,40 @@ class AnnouncementSpeaker(
                 )
                 return@executeSpeech
             }
-            // VZ2: Warmup polling — بعد onInit(SUCCESS) وقبل أول نطق فقط
-            // استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable
-            // >= LANG_AVAILABLE، مهلة 1500ms — عند انتهائها يُنطق على أي حال
-            // مرة واحدة + سجل "انتهاء مهلة الجاهزية" بلا نص منطوق
-            if (!HostProtocol.isEmbeddedEngine(boundEngine) &&
+            val needsWarmup = !HostProtocol.isEmbeddedEngine(boundEngine) &&
                 !warmupDoneForCurrentTts
-            ) {
-                warmupTtsIfNeeded(locale)
-                warmupDoneForCurrentTts = true
+            if (needsWarmup) {
+                warmupExecutor.execute {
+                    val ready = awaitWarmupReady(locale, gen)
+                    if (gen != speechGeneration.get()) {
+                        releaseAudioFocus()
+                        notifySpeechComplete()
+                        return@execute
+                    }
+                    if (ready) {
+                        warmupDoneForCurrentTts = true
+                    } else {
+                        Log.w(
+                            TAG,
+                            "[Warmup] not ready " +
+                                "engine=${boundEngine ?: "unknown"}"
+                        )
+                    }
+                    mainHandler.post {
+                        if (gen != speechGeneration.get()) {
+                            releaseAudioFocus()
+                            notifySpeechComplete()
+                            return@post
+                        }
+                        doSpeakParts(
+                            gen,
+                            text, locale, speechRate, pitch, volume,
+                            emojiCfg, parts, attempt = 1
+                        )
+                    }
+                }
+                return@executeSpeech
             }
-            // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد onInit
             val delayMs = if (immediate) 60L else 80L
             mainHandler.postDelayed({
                 if (gen != speechGeneration.get()) {
@@ -2031,35 +2053,48 @@ class AnnouncementSpeaker(
      *  استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable
      *  >= LANG_AVAILABLE، مهلة 1500ms — عند انتهائها يُنطق على أي حال
      *  مرة واحدة + سجل بدون نص منطوق. */
-    private fun warmupTtsIfNeeded(locale: Locale) {
-        if (warmupDoneForCurrentTts) return
-        val currentTts = tts ?: return
+    /**
+     * جاهزية منتظَرة فعلية (محرك/أصوات/لغة متاحة) قبل النطق.
+     * تُستدعى على خيط خلفي: تستطلع بمهلة محدودة وترتبط بدورة النطق
+     * (جيل) لتكون قابلة للإلغاء دون حجب الواجهة. */
+    private fun awaitWarmupReady(
+        locale: Locale,
+        gen: Long,
+        timeoutMs: Long = 1500L
+    ): Boolean {
+        if (HostProtocol.isEmbeddedEngine(boundEngine)) return true
         val startTime = SystemClock.elapsedRealtime()
-        val maxWaitMs = 1500L
-        val pollIntervalMs = 100L
-
-        // ننفذ الاستطلاع على خيط خلفي لعدم حجب Main thread
-        warmupExecutor.execute(Runnable {
-            while (SystemClock.elapsedRealtime() - startTime < maxWaitMs) {
-                val ttsInstance = tts ?: return@Runnable
-                val voicesOk = ttsInstance.voices?.isNotEmpty() == true
-                val langAvail = ttsInstance.isLanguageAvailable(locale)
-                if (voicesOk && langAvail >= TextToSpeech.LANG_AVAILABLE) {
-                    return@Runnable
-                }
-                try {
-                    Thread.sleep(pollIntervalMs)
-                } catch (e: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    return@Runnable
-                }
+        val pollIntervalMs = 50L
+        while (SystemClock.elapsedRealtime() - startTime < timeoutMs) {
+            if (gen != speechGeneration.get()) return false
+            val ttsInstance = tts ?: return false
+            val voicesOk = ttsInstance.voices?.isNotEmpty() == true
+            val langAvail = runCatching {
+                ttsInstance.isLanguageAvailable(locale)
+            }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+            if (voicesOk && langAvail >= TextToSpeech.LANG_AVAILABLE) {
+                Log.d(
+                    TAG,
+                    "[Warmup] ready engine=${boundEngine ?: "unknown"} " +
+                        "dtMs=${SystemClock.elapsedRealtime() - startTime}"
+                )
+                return true
             }
-            // مهلة الانتهاء — يُنطق على أي حال مرة واحدة + سجل بدون نص منطوق
-            Log.w(TAG, "[VZ2] انتهاء مهلة الجاهزية — يُنطق على أي حال")
-        })
+            try {
+                Thread.sleep(pollIntervalMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+        Log.w(
+            TAG,
+            "[Warmup] timeout engine=${boundEngine ?: "unknown"} " +
+                "locale=$locale (proceeding)"
+        )
+        return gen == speechGeneration.get() && tts != null
     }
 
-    /** VZ2: إعادة تعيين علامة warmup عند تبديل المحرك أو إغلاقه */
     private fun resetWarmupFlag() {
         warmupDoneForCurrentTts = false
     }
@@ -2901,84 +2936,91 @@ speechCycle.incrementAndGet()
                 TAG,
                 "[Speaker] setting voice: ${chosen.name} (${effectiveLocale})"
             )
-            if (tts.setVoice(chosen) == TextToSpeech.SUCCESS) {
-                voiceApplied = true
-                // ع٢٩-ج: تحقق من تطبيق الصوت فعلياً (VoiceApplyMismatch)
-                // بعض المحركات (خاصة Vocalizer) تُعيد SUCCESS لكن لا تطبق الصوت
-                val appliedVoice = runCatching { tts.voice }
+            var voiceVerified = false
+            var attempts = 0
+            val voiceGen = speechGeneration.get()
+            val applyDeadline = SystemClock.uptimeMillis() + 250L
+            // محاولات متسلسلة محدودة مرتبطة بالجيل وقابلة للإلغاء (غير حاجزة
+            // للواجهة: بلا انتظار/نوم؛ محاولات سريعة متتالية ضمن مهلة قصيرة).
+            while (attempts < 3 &&
+                SystemClock.uptimeMillis() < applyDeadline
+            ) {
+                if (voiceGen != speechGeneration.get()) {
+                    return
+                }
+                attempts++
+                val setOk = runCatching { tts.setVoice(chosen) }
+                    .getOrDefault(TextToSpeech.ERROR) ==
+                    TextToSpeech.SUCCESS
+                val appliedVoiceNow = runCatching { tts.voice }
                     .getOrNull()?.name
-                if (appliedVoice != null && appliedVoice != chosen.name) {
+                val langOk = runCatching {
+                    tts.voice?.locale?.language
+                }.getOrNull()?.let {
+                    it.equals(locale.language, true)
+                } != false
+                if (setOk && appliedVoiceNow == chosen.name && langOk) {
+                    voiceApplied = true
+                    voiceVerified = true
+                    if (attempts > 1) {
+                        Log.i(
+                            TAG,
+                            "[VoiceApply] verified after $attempts attempts " +
+                                "requested=${chosen.name} " +
+                                "engine=${boundEngine ?: "unknown"}"
+                        )
+                    }
+                    break
+                }
+                if (attempts == 1) {
                     Log.w(
                         TAG,
                         "[VoiceApplyMismatch] requested=${chosen.name} " +
-                            "applied=$appliedVoice — retry after 100ms"
+                            "actual=${appliedVoiceNow ?: "unknown"} " +
+                            "engine=${boundEngine ?: "unknown"}"
                     )
-                    mainHandler.postDelayed({
-                        if (tts.setVoice(chosen) == TextToSpeech.SUCCESS) {
-                            voiceApplied = true
-                            Log.i(
-                                TAG,
-                                "[VoiceApplyMismatch] retry succeeded " +
-                                    "for ${chosen.name}"
-                            )
-                        } else {
-                            Log.w(
-                                TAG,
-                                "[VoiceApplyMismatch] retry failed " +
-                                    "for ${chosen.name}"
-                            )
-                        }
-                    }, 100)
-                } else {
-                    voiceApplied = true
-                    // تحديث الاسم المحفوظ إن اختلف (Vocalizer يُغيّر الأسماء)
-                    val enginePkg = boundEngine
-                    val knownVoices = voices?.map { it.name }
-                    val partBelongsToEngine = enginePkg.isNullOrBlank() ||
+                }
+            }
+            if (voiceVerified) {
+                val enginePkg = boundEngine
+                val knownVoices = voices?.map { it.name }
+                val partBelongsToEngine =
+                    enginePkg.isNullOrBlank() ||
                         VoiceIdContract.isVoiceBelongingToEngine(
                             enginePkg, partVoice, knownVoices
                         )
-                    if (partVoice != null &&
-                        chosen.name != partVoice &&
-                        partBelongsToEngine &&
-                        VoiceIdContract.isVoiceBelongingToEngine(
-                            enginePkg, chosen.name, knownVoices
+                if (partVoice != null &&
+                    chosen.name != partVoice &&
+                    partBelongsToEngine &&
+                    VoiceIdContract.isVoiceBelongingToEngine(
+                        enginePkg, chosen.name, knownVoices
+                    )
+                ) {
+                    Log.w(
+                        TAG,
+                        "[doSpeak] voice name drift: " +
+                            "saved=$partVoice → actual=${chosen.name}"
+                    )
+                    runCatching {
+                        settings?.updateSavedVoiceNameIfNeeded(
+                            partVoice,
+                            chosen.name
                         )
-                    ) {
-                        Log.w(
-                            TAG,
-                            "[doSpeak] voice name drift: saved=$partVoice → " +
-                                "actual=${chosen.name}"
-                        )
-                        runCatching {
-                            settings?.updateSavedVoiceNameIfNeeded(
-                                partVoice,
-                                chosen.name
-                            )
-                        }
                     }
                 }
             } else {
+                val actual = runCatching { tts.voice?.name }.getOrNull()
                 Log.w(
                     TAG,
-                    "[Speaker] engine refused voice " +
-                        "(name=${chosen.name}) — نبحث بديلاً باللسان ذاته"
+                    "[VoiceApply] not verified " +
+                        "requested=${chosen.name} " +
+                        "actual=${actual ?: "unknown"} " +
+                        "engine=${boundEngine ?: "unknown"}"
                 )
-                var nameToSkip: String? = chosen.name
-                while (!voiceApplied) {
-                    val next = fallbackVoiceFor(voices, locale, nameToSkip)
-                        ?: break
-                    runCatching {
-                        next.locale?.let { tts.setLanguage(it) }
-                    }
-                    if (tts.setVoice(next) == TextToSpeech.SUCCESS) {
-                        voiceApplied = true
-                    } else {
-                        nameToSkip = next.name
-                    }
-                }
-                if (!voiceApplied) {
-                    Log.w(TAG, "[Speaker] no usable voice — نحو setLanguage")
+                if (partVoice != null && partVoice == chosen.name) {
+                    voiceApplied = false
+                } else {
+                    voiceApplied = actual != null
                 }
             }
         }

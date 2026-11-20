@@ -647,9 +647,7 @@
 <string name="first_run_default_engine">Make Lord TTS the default engine</string>
 <string name="first_run_default_engine_hint">Open the speech settings and choose Lord TTS as the system default engine</string>
 <string name="voice_categories_title">Voice categories</string>
-<string name="reading_voice_per_language_title">Reading voice per language</string>
-<string name="reading_voice_per_language_summary">Choose an engine and voice for each reading language</string>
-<string name="reading_voice_per_language_button">Set up language voices</string>
+
 <string name="categories_selector_label">Choose a category</string>
 <string name="categories_unsaved_dialog_title">Unsaved changes</string>
 <string name="categories_unsaved_dialog_message">You have unsaved changes to this category. Discard them?</string>
@@ -717,7 +715,22 @@
 <string name="time_alarm_max_precision_title">Maximum alarm precision (shows an alarm icon)</string>
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
+    <string name="read_later_title">Read later</string>
+    <string name="read_later_summary">Save texts from apps to read them later inside the app.</string>
+    <string name="read_later_open">Open Read later</string>
+    <string name="read_later_open_desc">Open the saved texts list for reading later</string>
+    <string name="read_later_saved_toast">Saved to Read later</string>
+    <string name="read_later_empty">No texts saved for reading later.</string>
+    <string name="read_later_play">Read</string>
+    <string name="read_later_stop">Stop</string>
+    <string name="read_later_delete">Delete</string>
+    <string name="read_later_clear_all">Delete all</string>
+    <string name="read_later_back">Back</string>
+    <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+? Unified the languages/auto-convert entry: removed the duplicate per-language reading voice entry and kept the original Convert Languages/auto-convert path with all its settings and language selection in the correct place.
+? Improved voice stability and speech cache after Accessibility Service detach/reconnect for both reader and announcements: wait for readiness before speech, set language before voice, verify voice application sequentially tied to the speech cycle with safe cancellation, and prevent storing/retrieving unverified PCM cache results or results from cancelled/stale cycles, with logging of requested/actual engine and voice, cache outcome, and reasons without private text.
+? Fully restored "Read later": an independent card after the Text reading section to save texts from apps and read/stop/delete them with persistent storage and history, deduplication on redelivery, removal of queue purging, and backup/restore support while keeping only real existing data.
 • Acapela (Salma) voice-path fix: unified config.yaml lookup in speech and diagnostics in order (voice dir → parent → files/Acapela root) to prevent false CONFIG_YAML_MISSING when it exists only at the root and reach native nInit/nSpeak calls, removed the “re-import the package” message, and copy config.yaml into the voice package folder on new imports while keeping the root fallback for existing packages, while narrowing lookup to the voice package and the named Acapela root to avoid picking external config.yaml/param. Unified the diagnostic registration check and Salma registration status to the engine’s resolveRegistration to remove inconsistency. Log every Acapela speech attempt (success/failure/fallback) in the Lord TTS speech log with requested and actual/substitute engine and voice and the failure reason code (e.g. CONFIG_YAML_MISSING) without hiding failures when a fallback exists.
 • Comprehensive Acapela voice-package path fix (discovery/verification/execution/diagnostics): unified discovery classifies missing ini, short/generated/incompatible ini, and conflicts, selecting by identity from content or reporting clearly; only a substantive, compatible authentic ini is accepted (no generation/filling/modification/flattening/case-normalization/key-copying), with PRO/SLV/NLP dependency, relative-path/case, read/size/fingerprint checks, path-traversal and voice-mixing prevention, and source↔unique per-run verbatim staged-tree comparison. Diagnostics run as a single fresh attempt (runId, start time, actual build info), recreating acapela_full_diagnostic.txt truncated with no append/inheritance, and logging root/ini/reasons/dependencies before invocation; verification failure ⇒ "not invoked/unmeasured" (nullable + invoked=false, no fake -1/0), and success only on init→select→speak with real callback, packets/bytes/PCM samples, first error, result, and flush. Complete multiline secret redaction on every write/display/export/share, with aligned import and display/copy/share paths and aligned/added synthetic tests without licenses.
 Version %1$s

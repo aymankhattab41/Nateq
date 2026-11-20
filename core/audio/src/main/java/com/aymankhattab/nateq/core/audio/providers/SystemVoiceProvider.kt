@@ -547,16 +547,43 @@ class SystemVoiceProvider(
             // كاش الذاكرة (بند 19.1): إن وُجدت نسخة جاهزة لنفس النص بذات
             // وسائط الصوت، نُبثّها فوراً من الذاكرة بلا أي تلامس مع القرص أو
             // ربط محرك — يلغي تماماً دورة WAV للعبارات المتكررة لدى TalkBack.
+            // لا تُسترجَع نتيجةُ دورةٍ ملغاة/قديمة من الكاش.
+            if (cancelled.get()) {
+                cont.resume(Unit)
+                return@suspendCancellableCoroutine
+            }
             val cacheKey = buildCacheKey(
                 text, effectiveVoice, speechRate,
                 pitch, volume, resolvedEngine, desiredVoiceName
             )
-            val cached = if (cacheKey != null) pcmCache.get(cacheKey) else null
+            val cached = if (cacheKey != null && !cancelled.get()) {
+                pcmCache.get(cacheKey)
+            } else {
+                null
+            }
             if (cached != null) {
+                if (cancelled.get()) {
+                    cont.resume(Unit)
+                    return@suspendCancellableCoroutine
+                }
+                Log.d(
+                    TAG,
+                    "[ProviderCache] hit " +
+                        "engine=${resolvedEngine ?: "unknown"} " +
+                        "requested=${desiredVoiceName ?: "<auto>"}"
+                )
                 onFormatInfo(cached.sampleRateInHz, 1)
                 onAudioChunk(cached.pcm, cached.validLength)
                 cont.resume(Unit)
                 return@suspendCancellableCoroutine
+            }
+            if (cacheKey != null) {
+                Log.d(
+                    TAG,
+                    "[ProviderCache] miss " +
+                        "engine=${resolvedEngine ?: "unknown"} " +
+                        "requested=${desiredVoiceName ?: "<auto>"}"
+                )
             }
 
             synthesizeWithEngine(
@@ -1113,29 +1140,7 @@ class SystemVoiceProvider(
             return false
         }
         // ع٢٩-ج: تطبيق EngineQuirks قبل setVoice
-        val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
-        val needsRegion = quirks?.requiresLocaleWithRegion == true
-        val rejectsSilently = quirks?.rejectsVoiceSilently == true
 
-        // needsSetLanguageBeforeSetVoice: تعيين اللغة قبل الصوت
-        if (needsLangFirst) {
-            runCatching { engine.setLanguage(voice.locale) }
-        }
-        // requiresLocaleWithRegion: استخدام ar-AE الفعلي من أصوات المحرك
-        val effectiveLocale = if (needsRegion) {
-            engine.voices?.firstOrNull {
-                it.locale.language == voice.locale.language
-            }?.locale ?: voice.locale
-        } else {
-            voice.locale
-        }
-        if (needsLangFirst) {
-            runCatching { engine.setLanguage(effectiveLocale) }
-        }
-
-        // إن اختار المستخدم صوتاً محدداً من حوار التحويل (اسم صوت في محرك
-        // خارجي مثل MultiTTS) نطبّقه هنا عبر `voice`، مع التراجع الصامت إلى
-        // اللغة إذا لم يجده المحرك (تجنّباً لكسر النطق لمجرد اسم غير مطابق).
         val targetLang = normalizeLanguage(voice.locale.language)
         val isGenericVoice = desiredVoiceName.isNullOrBlank() ||
             desiredVoiceName.equals("Device Default", ignoreCase = true) ||
@@ -1144,115 +1149,206 @@ class SystemVoiceProvider(
             desiredVoiceName.equals("ar", ignoreCase = true) ||
             desiredVoiceName.equals("en", ignoreCase = true)
 
+        val requestedVoiceName = desiredVoiceName?.trim().orEmpty()
+        val specificVoiceRequested = requestedVoiceName.isNotBlank() &&
+            !isGenericVoice
         var voiceApplied = false
+        var actualVoiceName: String? = null
+        // لمنع تخزين بديل تحت مفتاح صوت مطلوب/محفوظ محدد.
+        var voiceVerifiedForRequest = false
+
+        fun awaitVoiceReadyForLocale(timeoutMs: Long): Boolean {
+            val deadline = SystemClock.uptimeMillis() + timeoutMs
+            while (SystemClock.uptimeMillis() < deadline) {
+                if (cancelled.get()) return false
+                val voicesReady = runCatching {
+                    engine.voices?.isNotEmpty() == true
+                }.getOrDefault(false)
+                val langReady = runCatching {
+                    engine.isLanguageAvailable(voice.locale)
+                }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED) >=
+                    TextToSpeech.LANG_AVAILABLE
+                if (voicesReady && langReady) return true
+                try {
+                    Thread.sleep(40)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return false
+                }
+            }
+            return false
+        }
+
+        fun applyAndVerifyVoice(
+            target: android.speech.tts.Voice,
+            targetLocale: java.util.Locale
+        ): Boolean {
+            val needsLangFirstQ = quirks?.needsSetLanguageBeforeSetVoice == true
+            val needsRegionQ = quirks?.requiresLocaleWithRegion == true
+            val effectiveLocale = if (needsRegionQ) {
+                engine.voices?.firstOrNull {
+                    it.locale.language == targetLocale.language
+                }?.locale ?: target.locale ?: targetLocale
+            } else {
+                target.locale ?: targetLocale
+            }
+            val targetLang = normalizeLanguage(effectiveLocale.language)
+            awaitVoiceReadyForLocale(600L)
+            val deadline = SystemClock.uptimeMillis() + 900L
+            while (SystemClock.uptimeMillis() < deadline) {
+                if (cancelled.get()) return false
+                if (needsLangFirstQ) {
+                    runCatching { engine.setLanguage(effectiveLocale) }
+                }
+                runCatching { engine.language = effectiveLocale }
+                runCatching { engine.setLanguage(effectiveLocale) }
+                val setResult = runCatching {
+                    engine.setVoice(target)
+                }.getOrDefault(TextToSpeech.ERROR)
+                val currentName = runCatching { engine.voice?.name }
+                    .getOrNull()
+                val currentLang = runCatching {
+                    engine.voice?.locale?.language
+                }.getOrNull()
+                val langOk = currentLang == null ||
+                    normalizeLanguage(currentLang) == targetLang
+                if (setResult == TextToSpeech.SUCCESS &&
+                    currentName == target.name &&
+                    langOk
+                ) {
+                    actualVoiceName = currentName
+                    return true
+                }
+                try {
+                    Thread.sleep(50)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return false
+                }
+            }
+            val current = runCatching { engine.voice?.name }.getOrNull()
+            actualVoiceName = current
+            Log.w(
+                TAG,
+                "[VoiceApplyMismatch] requested=${target.name} " +
+                    "actual=$current engine=${enginePackage ?: "unknown"} " +
+                    "reqLang=$targetLang"
+            )
+            return false
+        }
+
         val isAutoTts = enginePackage == "com.vnspeak.autotts" ||
             enginePackage?.contains("autotts", ignoreCase = true) == true
         if (isAutoTts) {
             val allVoices = runCatching {
                 engine.voices
             }.getOrNull().orEmpty()
-            val matched = if (!desiredVoiceName.isNullOrBlank()) {
-                matchVoice(allVoices, desiredVoiceName)
+            val matched = if (requestedVoiceName.isNotBlank()) {
+                matchVoice(allVoices, requestedVoiceName)
             } else {
                 null
             }
             if (matched != null) {
-                engine.voice = matched
-                voiceApplied = true
+                val ok = applyAndVerifyVoice(matched, matched.locale ?: voice.locale)
+                if (ok) {
+                    voiceApplied = true
+                    voiceVerifiedForRequest = specificVoiceRequested
+                } else if (specificVoiceRequested) {
+                    Log.w(
+                        TAG,
+                        "[Provider] specific voice not ready " +
+                            "req=$requestedVoiceName " +
+                            "actual=$actualVoiceName " +
+                            "engine=${enginePackage ?: "unknown"}"
+                    )
+                    return false
+                } else {
+                    actualVoiceName = runCatching { engine.voice?.name }
+                        .getOrNull()
+                    voiceApplied = actualVoiceName != null
+                }
             } else {
                 val arabic = allVoices.firstOrNull { v ->
                     v.locale.language.equals("ar", ignoreCase = true) ||
                         v.name.startsWith("ar", ignoreCase = true)
                 }
                 if (arabic != null) {
+                    if (specificVoiceRequested) {
+                        Log.w(
+                            TAG,
+                            "[Provider] requested voice missing " +
+                                "req=$requestedVoiceName " +
+                                "engine=${enginePackage ?: "unknown"}"
+                        )
+                        return false
+                    }
                     Log.i(
                         TAG,
-                        "[AutoTTS] voice '$desiredVoiceName' missing," +
-                            " fallback to Arabic: ${arabic.name}"
+                        "[AutoTTS] fallback(auto) req=$requestedVoiceName " +
+                            "actual=${arabic.name}"
                     )
-                    engine.voice = arabic
-                    voiceApplied = true
+                    val ok = applyAndVerifyVoice(arabic, arabic.locale ?: voice.locale)
+                    voiceApplied = ok || runCatching { engine.voice != null }
+                        .getOrDefault(false)
+                    actualVoiceName = runCatching { engine.voice?.name }
+                        .getOrNull()
                 } else {
                     Log.w(
                         TAG,
-                        "[AutoTTS] no Arabic voice in AutoTTS —" +
-                            " skipping to default engine"
+                        "[AutoTTS] no Arabic voice in AutoTTS — " +
+                            "skipping to default engine"
                     )
                     return false
                 }
             }
         }
 
-        if (!voiceApplied && !desiredVoiceName.isNullOrBlank() &&
-            !desiredVoiceName.equals("Device Default", ignoreCase = true)
-        ) {
-            runCatching {
-                val matching = matchVoice(engine.voices, desiredVoiceName)
-                if (matching != null) {
-                    if (matching.isNetworkConnectionRequired &&
-                        !connectivity.isOnlineNow()
-                    ) {
-                        Log.w(
-                            TAG,
-                            "[Provider] offline & voice requires network" +
-                                " ($desiredVoiceName) — فوري محلي"
-                        )
-                        return false
-                    }
-                    engine.voice = matching
-                    val appliedVoice = runCatching {
-                        engine.voice
-                    }.getOrNull()?.name
-                    if (appliedVoice != null &&
-                        appliedVoice != matching.name
-                    ) {
-                        Log.w(
-                            TAG,
-                            "[VoiceApplyMismatch] requested=${matching.name} " +
-                                "applied=$appliedVoice — retry"
-                        )
-                        runCatching { engine.voice = matching }
-                    }
-                    voiceApplied = true
-                } else if (!isGenericVoice) {
-                    Log.w(
-                        TAG,
-                        "[Provider] desired voice ($desiredVoiceName) " +
-                            "not found in engine $enginePackage — fallback"
-                    )
-                }
+        if (!voiceApplied && specificVoiceRequested) {
+            val matching = runCatching {
+                matchVoice(engine.voices, requestedVoiceName)
+            }.getOrNull()
+            if (matching == null) {
+                Log.w(
+                    TAG,
+                    "[Provider] desired voice not found " +
+                        "req=$requestedVoiceName " +
+                        "engine=${enginePackage ?: "unknown"}"
+                )
+                return false
             }
+            if (matching.isNetworkConnectionRequired &&
+                !connectivity.isOnlineNow()
+            ) {
+                Log.w(
+                    TAG,
+                    "[Provider] offline & voice requires network " +
+                        "req=$requestedVoiceName"
+                )
+                return false
+            }
+            val ok = applyAndVerifyVoice(matching, matching.locale ?: voice.locale)
+            if (!ok) {
+                Log.w(
+                    TAG,
+                    "[Provider] desired voice not ready/applied " +
+                        "req=$requestedVoiceName actual=$actualVoiceName " +
+                        "engine=${enginePackage ?: "unknown"}"
+                )
+                return false
+            }
+            voiceApplied = true
+            voiceVerifiedForRequest = true
         }
 
-        if (!voiceApplied) {
-            val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
-            val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
-            val needsRegion = quirks?.requiresLocaleWithRegion == true
-
-            if (needsLangFirst) {
-                runCatching { engine.setLanguage(voice.locale) }
+        if (!voiceApplied && !specificVoiceRequested) {
+            val currentVoice = runCatching { engine.voice }.getOrNull()
+            val curLang = currentVoice?.locale?.language?.let {
+                normalizeLanguage(it)
             }
-            val effectiveLocale = if (needsRegion) {
-                engine.voices?.firstOrNull {
-                    normalizeLanguage(it.locale.language) == targetLang
-                }?.locale ?: voice.locale
-            } else {
-                voice.locale
-            }
-            if (needsLangFirst) {
-                runCatching { engine.setLanguage(effectiveLocale) }
-            }
-
-            runCatching {
-                val current = engine.voice
-                val curLang = current?.locale?.language?.let {
-                    normalizeLanguage(it)
-                }
-                if (current == null ||
-                    curLang != targetLang ||
-                    !voiceApplied
-                ) {
-                    val matching = engine.voices
+            val needsPick = currentVoice == null || curLang != targetLang
+            if (needsPick) {
+                val matching = runCatching {
+                    engine.voices
                         ?.filter {
                             normalizeLanguage(it.locale.language) == targetLang
                         }
@@ -1265,27 +1361,26 @@ class SystemVoiceProvider(
                                 }
                             )
                         )?.firstOrNull()
-                    if (matching != null) {
-                        engine.voice = matching
-                        val appliedVoice = runCatching {
-                            engine.voice
-                        }.getOrNull()?.name
-                        if (appliedVoice != null &&
-                            appliedVoice != matching.name
-                        ) {
-                            Log.w(
-                                TAG,
-                                "[VoiceApplyMismatch] " +
-                                    "requested=${matching.name} " +
-                                    "applied=$appliedVoice — retry"
-                            )
-                            runCatching { engine.voice = matching }
-                        }
+                }.getOrNull()
+                if (matching != null) {
+                    val ok = applyAndVerifyVoice(matching, matching.locale ?: voice.locale)
+                    if (ok) {
                         voiceApplied = true
+                        actualVoiceName = matching.name
                     } else {
-                        runCatching { engine.setLanguage(effectiveLocale) }
+                        runCatching { engine.setLanguage(voice.locale) }
+                        actualVoiceName = runCatching { engine.voice?.name }
+                            .getOrNull()
+                        voiceApplied = actualVoiceName != null || !needsPick
                     }
+                } else {
+                    runCatching { engine.setLanguage(voice.locale) }
+                    actualVoiceName = runCatching { engine.voice?.name }
+                        .getOrNull()
                 }
+            } else {
+                voiceApplied = true
+                actualVoiceName = currentVoice?.name
             }
         }
         // إن لم يُحدَّد اسم صوت (المحرك الافتراضي)
@@ -1616,9 +1711,12 @@ class SystemVoiceProvider(
                             "[Provider] stream remainder flush failed", e)
                     }
                 }
-                if (cacheKey != null && cachedParts.isNotEmpty() &&
-                    totalCacheBytes[0] <= PCM_CACHE_MAX_BYTES
-                ) {
+                val canStoreCache = cacheKey != null &&
+                    cachedParts.isNotEmpty() &&
+                    totalCacheBytes[0] <= PCM_CACHE_MAX_BYTES &&
+                    !cancelled.get() &&
+                    (!specificVoiceRequested || voiceVerifiedForRequest)
+                if (canStoreCache) {
                     val all = ByteArray(totalCacheBytes[0])
                     var pos = 0
                     for (part in cachedParts) {
@@ -1626,8 +1724,25 @@ class SystemVoiceProvider(
                         pos += part.size
                     }
                     storeInCache(
-                        cacheKey, all,
+                        cacheKey!!, all,
                         streamMeta.sampleRateInHz, totalCacheBytes[0]
+                    )
+                    Log.d(
+                        TAG,
+                        "[ProviderCache] store hitable=true " +
+                            "engine=${enginePackage ?: "unknown"} " +
+                            "requested=${requestedVoiceName.ifBlank { "<auto>" }} " +
+                            "actual=${actualVoiceName ?: "<none>"}"
+                    )
+                } else if (cacheKey != null && specificVoiceRequested &&
+                    !voiceVerifiedForRequest
+                ) {
+                    Log.w(
+                        TAG,
+                        "[ProviderCache] skip store (unverified request) " +
+                            "engine=${enginePackage ?: "unknown"} " +
+                            "requested=$requestedVoiceName " +
+                            "actual=${actualVoiceName ?: "<none>"}"
                     )
                 }
                 success = true
@@ -1676,10 +1791,32 @@ class SystemVoiceProvider(
                         // من البيانات (بند 19.1): المتلقي
                         // والمسبح قد يعيدان استخدام المخزن،
                         // فنسخة الكاش ثابتة.
-                        cacheKey?.let {
+                        val canStoreFull = cacheKey != null &&
+                            validLength > 0 &&
+                            validLength <= PCM_CACHE_MAX_BYTES &&
+                            !cancelled.get() &&
+                            (!specificVoiceRequested || voiceVerifiedForRequest)
+                        if (canStoreFull) {
                             storeInCache(
-                                it, scaledData,
+                                cacheKey!!, scaledData,
                                 extracted.sampleRateInHz, validLength
+                            )
+                            Log.d(
+                                TAG,
+                                "[ProviderCache] store(full)=true " +
+                                    "engine=${enginePackage ?: "unknown"} " +
+                                    "requested=${requestedVoiceName.ifBlank { "<auto>" }} " +
+                                    "actual=${actualVoiceName ?: "<none>"}"
+                            )
+                        } else if (cacheKey != null && specificVoiceRequested &&
+                            !voiceVerifiedForRequest
+                        ) {
+                            Log.w(
+                                TAG,
+                                "[ProviderCache] skip store(full, unverified) " +
+                                    "engine=${enginePackage ?: "unknown"} " +
+                                    "requested=$requestedVoiceName " +
+                                    "actual=${actualVoiceName ?: "<none>"}"
                             )
                         }
                         // الطول الصالح صريح عبر المعامل الثاني:

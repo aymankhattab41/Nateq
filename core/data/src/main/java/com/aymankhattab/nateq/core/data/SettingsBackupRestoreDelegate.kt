@@ -211,9 +211,7 @@ internal class SettingsBackupRestoreDelegate(
             var meaningful = 0
             for ((key, value) in map) {
                 if (key.startsWith("_")) continue
-                // مفتاح ميزة محذوفة (اقرأ لاحقاً): تجاهله واحذفه حتى لا تعود
-                // بيانات الميزة من نسخة قديمة.
-                if (key == "read_later_queue") continue
+
                 when (value) {
                     is Int -> {
                         val v = sanitizeInt(key, value)

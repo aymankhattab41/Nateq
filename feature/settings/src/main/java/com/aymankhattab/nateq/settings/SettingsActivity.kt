@@ -127,12 +127,28 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
             return
         }
 
-        // نية نصية قديمة/صريحة (كانت لميزة «اقرأ لاحقاً» المحذوفة): تجاهل آمن
-        // بلا حفظ أو نطق أو محاولة اعتبارها ملف ZIP، ولا انهيار.
+        // استقبال نص مشارَك وحفظه في «اقرأ لاحقاً» (مع منع التكرار عند
+        // إعادة تسليم النية/الدوران). لا يُكسر استيراد ZIP.
         if (action == Intent.ACTION_SEND) {
             val mime = intent.type ?: ""
             if (mime.startsWith("text/")) {
+                val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+                    ?.trim().orEmpty()
+                // استهلاك النية فوراً لمنع إعادة المعالجة عند إعادة التسليم.
                 intent.removeExtra(Intent.EXTRA_TEXT)
+                intent.type = null
+                if (sharedText.isNotEmpty()) {
+                    val saved = runCatching {
+                        settingsRepository.addReadLaterText(sharedText)
+                    }.getOrDefault(false)
+                    if (saved) {
+                        android.widget.Toast.makeText(
+                            this,
+                            R.string.read_later_saved_toast,
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
                 return
             }
         }
