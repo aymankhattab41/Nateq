@@ -1535,7 +1535,7 @@ object AcapelaVoiceManifest {
                 (pickedHex?.absolutePath ?: "لا يوجد")
         )
 
-        // 1. قراءة param من config.yaml أولاً واعتماده لتسجيل HD
+        // 1. قراءة param من config.yaml أولاً (مجلد الصوت ← الأب ← جذر Acapela)
         val yamlParam = readParamFromConfigYaml(dir)
         if (!yamlParam.isNullOrBlank()) {
             val regFromParam = extractRegistrationFromParam(yamlParam)
@@ -1566,8 +1566,6 @@ object AcapelaVoiceManifest {
                 return yamlParam
             }
         }
-
-        // 2. فحص registration الصريح في ملفات YAML
         findRegistrationInYaml(dir)?.let {
             diagLog("[نتيجة التسجيل] تم اعتماد التسجيل من ملف YAML")
             return it
@@ -2030,84 +2028,99 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * العثور على مجلد Acapela الأساسي صعوداً أو هبوطاً من [dir].
+     * أقرب جذر Acapela مسمّى صعوداً من [dir] (الأبعد/الأعلى في الشجرة)،
+     * أو null إن لم يوجد.
      */
-    fun findAcapelaRootDir(dir: File): File {
+    private fun findNamedAcapelaRoot(dir: File): File? {
         var cur: File? = dir
+        var found: File? = null
         while (cur != null) {
             if (cur.name.equals("Acapela", ignoreCase = true)) {
-                return cur
+                found = cur
             }
             cur = cur.parentFile
         }
+        if (found != null) return found
         val sub = File(dir, "Acapela")
-        if (sub.isDirectory) return sub
+        return if (sub.isDirectory) sub else null
+    }
+
+    /**
+     * العثور على مجلد Acapela الأساسي صعوداً أو هبوطاً من [dir].
+     * إن لم يوجد جذر Acapela مسمّى يُعاد المجلد الأب (أو [dir]) كحد أدنى
+     * دون صعود عشوائي إلى جذور واسعة.
+     */
+    fun findAcapelaRootDir(dir: File): File {
+        findNamedAcapelaRoot(dir)?.let { return it }
         return dir.parentFile ?: dir
     }
 
     /**
-     * بحث متكرر عن ملف config.yaml داخل كل المجلدات والمجلدات الفرعية
-     * تحت مجلد Acapela، واستخدام أول ملف يحتوي على سطر param.
-     * يُعيد الزوج (الملف، قيمة param الخام).
+     * بحث عن config.yaml الحاوي على param بالترتيب:
+     * مجلد الصوت ← المجلد الأب ← جذر Acapela (ملف config.yaml في الجذر).
+     * عند عدم إيجاده مباشرة يُفحَص ضمن شجرة Acapela (أو ضمن نطاق الحزمة
+     * المحدود بالمجلد/أبيه عند غياب جذر Acapela مسمّى) دون مسح جذور واسعة.
      */
     fun findConfigYamlWithParam(dir: File): Pair<File, String>? {
-        val root = findAcapelaRootDir(dir)
         val paramRegex = Regex(
             """(?:^|\n)\s*"?param"?\s*[:=]\s*"?([^"\r\n#]+)"?""",
             setOf(RegexOption.MULTILINE)
         )
 
-        val candidates = LinkedHashSet<File>()
-        listOfNotNull(dir, dir.parentFile, root).forEach { d ->
-            val direct = File(d, "config.yaml")
-            if (direct.isFile && direct.exists()) candidates.add(direct)
-        }
-
-        if (root.exists() && root.isDirectory) {
-            runCatching {
-                root.walkTopDown().maxDepth(6).forEach { f ->
-                    if (f.isFile &&
-                        f.name.equals("config.yaml", ignoreCase = true)
-                    ) {
-                        candidates.add(f)
-                    }
-                }
-            }
-        }
-
-        if (dir.exists() && dir.isDirectory && dir != root) {
-            runCatching {
-                dir.walkTopDown().maxDepth(6).forEach { f ->
-                    if (f.isFile &&
-                        f.name.equals("config.yaml", ignoreCase = true)
-                    ) {
-                        candidates.add(f)
-                    }
-                }
-            }
-        }
-
-        for (file in candidates) {
-            if (!file.isFile || !file.exists()) continue
+        fun paramFrom(file: File): Pair<File, String>? {
+            if (!file.isFile || !file.exists()) return null
             val content = runCatching {
                 file.readText(StandardCharsets.UTF_8)
-            }.getOrNull() ?: continue
-            val match = paramRegex.find(content) ?: continue
+            }.getOrNull() ?: return null
+            val match = paramRegex.find(content) ?: return null
             val raw = match.groupValues.getOrNull(1)?.trim().orEmpty()
-            if (raw.isNotBlank()) {
-                diagLog(
-                    "[config.yaml] عُثر على param في ${file.absolutePath} " +
-                        "(حجم=${file.length()} بايت، طول=${raw.length})"
-                )
-                return file to raw
-            }
+            if (raw.isBlank()) return null
+            diagLog(
+                "[config.yaml] عُثر على param في ${file.absolutePath} " +
+                    "(حجم=${file.length()} بايت، طول=${raw.length})"
+            )
+            return file to raw
         }
-        diagLog("[config.yaml] لم يُعثر على param في أي ملف config.yaml")
+
+        val namedRoot = findNamedAcapelaRoot(dir)
+        val direct = LinkedHashSet<File>()
+        direct.add(File(dir, "config.yaml"))
+        dir.parentFile?.let { direct.add(File(it, "config.yaml")) }
+        namedRoot?.let { direct.add(File(it, "config.yaml")) }
+        for (f in direct) {
+            paramFrom(f)?.let { return it }
+        }
+
+        val scanRoots = LinkedHashSet<File>()
+        if (namedRoot != null) {
+            scanRoots.add(namedRoot)
+        } else {
+            scanRoots.add(dir)
+            dir.parentFile?.let { scanRoots.add(it) }
+        }
+        for (scanRoot in scanRoots) {
+            if (!scanRoot.exists() || !scanRoot.isDirectory) continue
+            val depth = if (namedRoot != null) 6 else 4
+            val found = runCatching {
+                scanRoot.walkTopDown().maxDepth(depth)
+                    .firstNotNullOfOrNull { f ->
+                        if (f.isFile &&
+                            f.name.equals("config.yaml", ignoreCase = true)
+                        ) {
+                            paramFrom(f)
+                        } else {
+                            null
+                        }
+                    }
+            }.getOrNull()
+            if (found != null) return found
+        }
+        diagLog("[config.yaml] لم يُعثر على param في أي config.yaml")
         return null
     }
 
     /**
-     * بحث متكرر عن ملف config.yaml عبر مجموعة من مسارات البحث.
+     * بحث عن config.yaml الحاوي على param عبر مجموعة مجلدات بحث.
      */
     fun findConfigYamlWithParam(
         dirs: Collection<File>

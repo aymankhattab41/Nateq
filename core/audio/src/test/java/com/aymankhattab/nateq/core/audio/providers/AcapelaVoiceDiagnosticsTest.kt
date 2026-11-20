@@ -1624,7 +1624,13 @@ class AcapelaVoiceDiagnosticsTest {
             .associate { relativePath(source, it) to it }
         val targetFiles = target.walkTopDown().filter { it.isFile }
             .associate { relativePath(target, it) to it }
-        assertEquals(sourceFiles.keys, targetFiles.keys)
+        val expectedTargetKeys = sourceFiles.keys.filterNot {
+            it.substringAfterLast('/').equals(
+                AcapelaVoiceDiagnostics.LOG_FILE_NAME,
+                ignoreCase = true
+            )
+        }.toSet()
+        assertEquals(expectedTargetKeys, targetFiles.keys)
         assertFalse(targetFiles.keys.any {
             it.substringAfterLast('/').equals(
                 AcapelaVoiceDiagnostics.LOG_FILE_NAME,
@@ -1641,7 +1647,7 @@ class AcapelaVoiceDiagnosticsTest {
         assertEquals(sourceInis, targetInis)
 
         for ((rel, src) in sourceFiles) {
-            val dst = targetFiles.getValue(rel)
+            val dst = targetFiles[rel] ?: continue
             when {
                 rel.endsWith(".ini", ignoreCase = true) ->
                     org.junit.Assert.assertArrayEquals(
