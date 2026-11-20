@@ -74,6 +74,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
@@ -154,6 +155,7 @@ tasks.matching { it.name == "preBuild" }.configureEach {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     // البند 4 — الوحدات التي تفكّك إليها :app شفرة المصدر تدرّجياً:
     // تتبنى :app كل الوحدات وتوزّع الشفرة عليها لاحقاً (تبقى الملفات في
     // مكانها الحالي حتى تُنقل بالكامل في مراحل لاحقة).

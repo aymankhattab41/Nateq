@@ -44,6 +44,7 @@ playIntegrity = "1.2.0"
 # لاختبارات SDK 36+؛ الإصدار 4.14.1 كان محدوداً حتى SDK 35.
 junit = "4.13.2"
 robolectric = "4.17"
+desugarJdkLibs = "2.1.4"
 
 [libraries]
 # AndroidX أساسية
@@ -69,6 +70,8 @@ gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 play-integrity = { group = "com.google.android.play", name = "integrity", version.ref = "playIntegrity" }
 
 # اختبارات
+desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
+
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }

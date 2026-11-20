@@ -13,6 +13,7 @@ android {
         minSdk = 24
     }
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
@@ -39,6 +40,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(project(":core:common"))
     implementation(project(":core:engine"))
     implementation(project(":core:data"))

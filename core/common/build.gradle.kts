@@ -11,6 +11,7 @@ android {
         minSdk = 24
     }
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
@@ -21,6 +22,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     // المفوّضون الموحّدون (AppDispatchers) — Dispatchers.Main يحتاج منصة أندرويد.
     implementation(libs.kotlinx.coroutines.android)
     // Gson — واجهة NateqJson المركزية والـ ParameterizedType (GsonTypes) تعتمدان عليه.
