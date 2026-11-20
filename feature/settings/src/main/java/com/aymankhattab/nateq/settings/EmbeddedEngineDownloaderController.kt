@@ -44,6 +44,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.aymankhattab.nateq.core.common.AppDispatchers
 import java.io.File
 import java.util.Locale
 
@@ -200,10 +202,23 @@ internal class EmbeddedEngineDownloaderController(
         acapelaWarmJob?.cancel()
     }
 
+    private var cachedSummaryText: String? = null
+    private var lastSummaryStorageVersion: Int = -1
+    private var lastSummaryTimestampMs: Long = 0L
+
     /**
-     * بناء نص ملخص حالة الأصوات المثبتة للبطاقة
+     * بناء نص ملخص حالة الأصوات المثبتة للبطاقة مع كاش
+     * يمنع الفحص المتكرر (ع٣٢-2).
      */
     fun buildStatusSummary(): String {
+        val now = android.os.SystemClock.uptimeMillis()
+        val curVersion = EmbeddedStorage.version
+        if (cachedSummaryText != null &&
+            curVersion == lastSummaryStorageVersion &&
+            (now - lastSummaryTimestampMs) < 10000L
+        ) {
+            return cachedSummaryText!!
+        }
         val ctx = fragment.context ?: return ""
 
         val vocDir = VocalizerDownloader.getVocalizerBaseDir(ctx)
@@ -231,7 +246,7 @@ internal class EmbeddedEngineDownloaderController(
         if (acSnapshots.any { !it.fresh }) warmAcapelaCache()
         val total = vocCount + msCount + acCount
         val isAr = LanguageCode.isArabic(Locale.getDefault().language)
-        return if (total > 0) {
+        val result = if (total > 0) {
             if (isAr) {
                 "$total أصوات مثبتة"
             } else {
@@ -244,6 +259,10 @@ internal class EmbeddedEngineDownloaderController(
                 "No voices installed"
             }
         }
+        cachedSummaryText = result
+        lastSummaryStorageVersion = curVersion
+        lastSummaryTimestampMs = now
+        return result
     }
 
     private fun renderVoicesList(root: View) {
@@ -287,9 +306,11 @@ internal class EmbeddedEngineDownloaderController(
         acapelaRenderJob?.cancel()
         val generation = ++acapelaRenderGeneration
         acapelaRenderJob = fragment.viewLifecycleOwner.lifecycleScope.launch {
-            val voices = searchDirs
-                .flatMap { AcapelaVoiceManifest.cachedVoices(it) }
-                .distinctBy { it.id }
+            val voices = withContext(AppDispatchers.io) {
+                searchDirs
+                    .flatMap { AcapelaVoiceManifest.cachedVoices(it) }
+                    .distinctBy { it.id }
+            }
             if (generation != acapelaRenderGeneration) return@launch
             if (!fragment.isAdded) return@launch
             paintAcapelaVoices(container, emptyView, voices)
@@ -339,8 +360,12 @@ internal class EmbeddedEngineDownloaderController(
             EmbeddedStorage.Engine.ACAPELA
         )
         acapelaWarmJob = fragment.viewLifecycleOwner.lifecycleScope.launch {
-            searchDirs.forEach { AcapelaVoiceManifest.cachedVoices(it) }
-            onStatusChanged()
+            withContext(AppDispatchers.io) {
+                searchDirs.forEach { AcapelaVoiceManifest.cachedVoices(it) }
+            }
+            if (fragment.isAdded) {
+                onStatusChanged()
+            }
         }
     }
 

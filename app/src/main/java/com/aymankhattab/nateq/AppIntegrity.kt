@@ -116,7 +116,18 @@ object AppIntegrity {
     )
 
     // ===== نقطة الدخول الرئيسية =====
+    @Volatile
+    private var cachedResult: Boolean? = null
+
+    @Volatile
+    private var cachedChecksum: Boolean? = null
+
     fun verify(context: Context, onResult: (Boolean) -> Unit) {
+        val cached = cachedResult
+        if (cached != null) {
+            onResult(cached)
+            return
+        }
         CoroutineScope(Dispatchers.IO).launch {
             val signatureOk = checkSignature(context)
             val debuggableOk = !isDebuggable(context)
@@ -127,6 +138,7 @@ object AppIntegrity {
 
             val allOk = signatureOk && debuggableOk && rootOk &&
                 hookOk && integrityOk && checksumOk
+            cachedResult = allOk
 
             Log.i(
                 TAG,
@@ -415,6 +427,7 @@ object AppIntegrity {
 
     // ===== 6. Anti-tamper: APK self-checksum (إلزامي) =====
     private fun verifyApkChecksum(context: Context): Boolean {
+        cachedChecksum?.let { return it }
         return try {
             val apkPath = context.applicationInfo.sourceDir
             val file = File(apkPath)
@@ -424,7 +437,7 @@ object AppIntegrity {
             }
             // حساب SHA-256 للملف
             val digest = MessageDigest.getInstance("SHA-256")
-            val buffer = ByteArray(8192)
+            val buffer = ByteArray(256 * 1024)
             var bytesRead: Int
             file.inputStream().use { input ->
                 while (input.read(buffer).also { bytesRead = it } != -1) {
@@ -436,7 +449,8 @@ object AppIntegrity {
             // في الإنتاج: قارن بـ hash معروف ومخزن بأمان (KeyStore/Keystore)
             // حالياً: نحسب ونسجل فقط — المقارنة تحتاج hash مرجعي مخزن بأمان
             Log.i(TAG, "APK SHA-256: $hex")
-            true // حالياً نمرر — إضافة مقارنة فعلية تحتاج hash مرجعي مخزن
+            cachedChecksum = true
+            true
         } catch (e: Exception) {
             Log.e(TAG, "APK checksum verification FAILED: ${e.message}")
             false

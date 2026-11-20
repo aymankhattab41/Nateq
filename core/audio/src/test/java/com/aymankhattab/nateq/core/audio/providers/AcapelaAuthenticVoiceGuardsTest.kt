@@ -462,4 +462,105 @@ class AcapelaAuthenticVoiceGuardsTest {
         }
     }
 
+    @Test
+    fun userdicoDependency_isTreatedAsOptionalAndCreatesSiblingDir() {
+        val root = tempDir()
+        try {
+            val voice = File(root, "Salma/salma_lf").apply { mkdirs() }
+            val iniContent = buildString {
+                appendLine("PRO \"NLP/ar_sa.oso\" [ PROSODY ]")
+                appendLine("SLV \"salma_lf/salma_22k_lf.bvcu\" [ FILE ]")
+                appendLine("userdico \"../userdicos/ara-sau.userdico\"")
+            }
+            File(voice, "ar_sa_hd_salma_22k_lf.ini").writeText(iniContent)
+            File(voice, "0x00169729").writeText("COMMERCIAL")
+            File(voice, "NLP").mkdirs()
+            File(voice, "NLP/ar_sa.oso").writeBytes(ByteArray(64))
+            File(voice, "salma_lf").mkdirs()
+            File(voice, "salma_lf/salma_22k_lf.bvcu").writeBytes(ByteArray(128))
+
+            val verify = AcapelaVoiceDiagnostics.verifyAuthenticVoicePackage(
+                voiceDir = voice,
+                expectedSpeakerHint = "Salma"
+            )
+            assertTrue(verify.report, verify.ok)
+            assertEquals(
+                AcapelaVoiceDiagnostics.VoiceVerificationState.AUTHENTIC_READY,
+                verify.state
+            )
+            val siblingUserdicos = File(voice.parentFile, "userdicos")
+            assertTrue(
+                "مجلد userdicos الشقيق يجب أن يُنشأ",
+                siblingUserdicos.isDirectory
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun userdicoInsidePackage_isCopiedToSiblingUserdicos() {
+        val root = tempDir()
+        try {
+            val voice = File(root, "Salma/salma_lf").apply { mkdirs() }
+            val iniContent = buildString {
+                appendLine("PRO \"NLP/ar_sa.oso\" [ PROSODY ]")
+                appendLine("SLV \"salma_lf/salma_22k_lf.bvcu\" [ FILE ]")
+                appendLine("userdico \"../userdicos/ara-sau.userdico\"")
+            }
+            File(voice, "ar_sa_hd_salma_22k_lf.ini").writeText(iniContent)
+            File(voice, "0x00169729").writeText("COMMERCIAL")
+            File(voice, "NLP").mkdirs()
+            File(voice, "NLP/ar_sa.oso").writeBytes(ByteArray(64))
+            File(voice, "salma_lf").mkdirs()
+            File(voice, "salma_lf/salma_22k_lf.bvcu").writeBytes(ByteArray(128))
+            File(voice, "ara-sau.userdico").writeBytes(ByteArray(32))
+
+            val verify = AcapelaVoiceDiagnostics.verifyAuthenticVoicePackage(
+                voiceDir = voice,
+                expectedSpeakerHint = "Salma"
+            )
+            assertTrue(verify.report, verify.ok)
+            val siblingDico = File(
+                voice.parentFile, "userdicos/ara-sau.userdico"
+            )
+            assertTrue(
+                "ملف userdico يجب أن يُنسخ للمجلد الشقيق",
+                siblingDico.isFile
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun missingBvcu_failsStrictlyWithMissingDependencies() {
+        val root = tempDir()
+        try {
+            val voice = File(root, "Salma/salma_lf").apply { mkdirs() }
+            val iniContent = buildString {
+                appendLine("PRO \"NLP/ar_sa.oso\" [ PROSODY ]")
+                appendLine("SLV \"salma_lf/salma_22k_lf.bvcu\" [ FILE ]")
+            }
+            File(voice, "ar_sa_hd_salma_22k_lf.ini").writeText(iniContent)
+            File(voice, "0x00169729").writeText("COMMERCIAL")
+            File(voice, "NLP").mkdirs()
+            File(voice, "NLP/ar_sa.oso").writeBytes(ByteArray(64))
+            // salma_22k_lf.bvcu غائب عمداً
+
+            val verify = AcapelaVoiceDiagnostics.verifyAuthenticVoicePackage(
+                voiceDir = voice,
+                expectedSpeakerHint = "Salma"
+            )
+            assertFalse(verify.ok)
+            assertEquals(
+                AcapelaVoiceDiagnostics.VoiceVerificationState
+                    .MISSING_DEPENDENCIES,
+                verify.state
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
 }

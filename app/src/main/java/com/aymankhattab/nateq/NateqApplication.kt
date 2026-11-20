@@ -67,21 +67,21 @@ class NateqApplication : Application(), AnnouncementAppContext {
 
         // ===== التحقق من سلامة التطبيق
         // (Anti-tamper / Anti-debug / Play Integrity) =====
-        // يعمل غير حاصر — الفشل يسجّل خطأ ويقرر السلوك لاحقاً (لا يُسقط
-        // الإقلاع صامتاً).
+        // يعمل غير حاصر ومؤجل — الفشل يسجّل خطأ دون منافسة أول إطار
+        // لشاشة الإعدادات عند الإقلاع البارد (ع٣٢-2).
         // في بناء Release حقيقي: EXPECTED_SIGNATURE_SHA256 تُستبدل بالقيمة
         // الفعلية.
-        verifyAppIntegrity(this) { ok ->
-            if (!ok) {
-                Log.e(
-                    "NATEQ_APP",
-                    "App integrity check FAILED — "
-                        + "بيئة غير موثوقة"
-                )
-                // هنا يمكن: إيقاف الميزات الحساسة، إظهار تحذير، إغلاق
-                // التطبيق، إلخ.
-                // حالياً: تسجّل الخطأ وتستمر لتفادي
-                // false-positive على أجهزة نادرة.
+        appScope.launch {
+            kotlinx.coroutines.delay(3000L)
+            verifyAppIntegrity(this@NateqApplication) { ok ->
+                if (!ok) {
+                    Log.e(
+                        "NATEQ_APP",
+                        "App integrity check FAILED — " +
+                            "بيئة غير موثوقة"
+                    )
+                    // حالياً: تسجّل الخطأ وتستمر لتفادي false-positive.
+                }
             }
         }
 

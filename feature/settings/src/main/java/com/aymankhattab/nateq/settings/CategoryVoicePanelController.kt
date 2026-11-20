@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import com.aymankhattab.nateq.core.audio.accessibility.A11ySpeechCoordinator
+import com.aymankhattab.nateq.util.ToastDebouncer
 
 /**
  * فئات السبnner العلوي في «الصوت الافتراضي»: خمس فئات صوتية + إعلان المتصل.
@@ -182,27 +183,33 @@ internal class CategoryVoicePanelController(
     // **بند 6.2:** علم الربط البرمجي — يُسنَّع حول setSelection وsetProgress
     // حتى لا يُسجَّل اختيارٌ برمجي أو يُفسَّر إسنادُ الشريط تعديلَ مستخدم.
     private var bindingInputs = false
+    private var lastSelectedEnginePkg: String? = null
 
     /** يربط العرض: سبnner الفئة واللوحتين ومستمعي كل تحكّم، ثم يفتح
      *  على فئة «صوت الساعة» (أول الفئات). */
     fun setup(view: View) {
-        spinnerSelector =
-            view.findViewWithTag<Spinner>("spinner_category_selector")
-        llCategoryPanel =
-            view.findViewWithTag<View>("ll_category_panel")
-        llCallerPanel =
-            view.findViewWithTag<View>("ll_caller_default_voice_panel")
-        llCallerArGroup =
-            view.findViewWithTag<View>("ll_caller_voice_ar_group")
-        llCallerEnGroup =
-            view.findViewWithTag<View>("ll_caller_voice_en_group")
-        spinnerCallerLang =
-            view.findViewWithTag<Spinner>("spinner_caller_default_lang")
-        inflateVoicePanelRow()
-        bindSelector(view)
-        bindCallerPanel(view)
-        currentEntry = CategoryPanelEntry.TIME
-        bindEntry(currentEntry)
+        bindingInputs = true
+        try {
+            spinnerSelector =
+                view.findViewWithTag<Spinner>("spinner_category_selector")
+            llCategoryPanel =
+                view.findViewWithTag<View>("ll_category_panel")
+            llCallerPanel =
+                view.findViewWithTag<View>("ll_caller_default_voice_panel")
+            llCallerArGroup =
+                view.findViewWithTag<View>("ll_caller_voice_ar_group")
+            llCallerEnGroup =
+                view.findViewWithTag<View>("ll_caller_voice_en_group")
+            spinnerCallerLang =
+                view.findViewWithTag<Spinner>("spinner_caller_default_lang")
+            inflateVoicePanelRow()
+            bindSelector(view)
+            bindCallerPanel(view)
+            currentEntry = CategoryPanelEntry.TIME
+            bindEntry(currentEntry)
+        } finally {
+            bindingInputs = false
+        }
     }
 
     /** يضخ صف الفئة الواحدة (item_category_voice) ويُثبّت مستمعيه مرة
@@ -262,6 +269,8 @@ internal class CategoryVoicePanelController(
                     if (currentEntry.isCaller) return
                     val engine = categoryEngines.getOrNull(pos)
                     val enginePkg = engine?.packageName
+                    if (enginePkg == lastSelectedEnginePkg) return
+                    lastSelectedEnginePkg = enginePkg
                     updateLanguagesForEngine(enginePkg)
                     if (engine != null &&
                         isEmbeddedEngine(engine.packageName)
@@ -276,11 +285,11 @@ internal class CategoryVoicePanelController(
 
                             val reason = status.lastError
                                 ?: EngineStatusRegistry.labelAr(status.state)
-                            Toast.makeText(
+                            ToastDebouncer.show(
                                 fragment.requireContext(),
                                 "${engine.label}: $reason",
                                 Toast.LENGTH_LONG
-                            ).show()
+                            )
                         }
                     }
                     markDirty()
@@ -662,6 +671,7 @@ if (!dirtyPanel) {
             spinnerEngine?.selectedItemPosition ?: 0
         )?.packageName
         val chosenEngine = if (hasEngine) displayedEngine else null
+        lastSelectedEnginePkg = chosenEngine ?: displayedEngine
         updateLanguagesForEngine(chosenEngine)
 
         refreshVoiceSpinner(effectiveEngine)
@@ -733,11 +743,6 @@ if (!dirtyPanel) {
             return
         }
         catalog.setLoading(enginePkg, true)
-        Toast.makeText(
-            context,
-            R.string.loading_voices_indicator,
-            Toast.LENGTH_SHORT
-        ).show()
 
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             val voices = withContext(AppDispatchers.io) {
@@ -1055,9 +1060,9 @@ if (!dirtyPanel) {
 
     /** فشل الحفظ يُعلَن بصرياً وسمعياً بسبب واضح — بلا إيهام بالنجاح. */
     private fun announceSaveFailure(reason: String) {
-        Toast.makeText(
+        ToastDebouncer.show(
             fragment.requireContext(), reason, Toast.LENGTH_LONG
-        ).show()
+        )
         A11ySpeechCoordinator.speakAnnouncement(
             context = fragment.requireContext(),
             text = reason,

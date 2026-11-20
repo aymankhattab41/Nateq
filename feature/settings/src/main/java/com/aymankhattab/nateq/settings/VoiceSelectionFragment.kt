@@ -83,6 +83,7 @@ import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.settings.OemVendor
 import com.aymankhattab.nateq.core.audio.accessibility.A11ySpeechCoordinator
+import com.aymankhattab.nateq.util.ToastDebouncer
 import com.aymankhattab.nateq.settings.SettingsViewModel.SettingsOperation
 
 /**
@@ -302,7 +303,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     }
 
     internal fun toast(message: String) {
-        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+        ToastDebouncer.show(requireContext(), message)
     }
 
     /** Ù†ØªÙŠØ¬Ø© Ù‚Ø±Ø§Ø¡Ø© Ù…Ù„Ù Ø§Ù„Ù‚Ø§Ù…ÙˆØ³ â€” ØªÙÙ…ÙŠÙ‘Ø² Ø³Ø¨Ø¨ÙŽ Ø§Ù„Ø±ÙØ¶ Ù„ÙŠÙÙ‚Ø§Ù„ Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù…. */
@@ -654,7 +655,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ).apply {
                 onStatusChanged = { accordion.updateSectionStatuses() }
             }
-        engineSection.setupEngineDiscovery()
+        engineSection.setupEngineDiscovery(viewLifecycleOwner.lifecycleScope)
 
         // Ù„ÙˆØ­Ø© ÙØ¦Ø§Øª Ø§Ù„Ø£ØµÙˆØ§Øª Ø¨Ø¹Ø¯ Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„ØªØµÙ…ÙŠÙ…: ÙØ¦Ø© ÙˆØ§Ø­Ø¯Ø© Ù…Ø¹Ø±ÙˆØ¶Ø© ÙÙŠ ÙƒÙ„
         // Ù…Ø±Ø© (Ù„ØºØ©/Ù…Ø­Ø±Ùƒ/ØµÙˆØª/Ø£Ø´Ø±Ø·Ø©) ØªØ®ØªØ§Ø±Ù‡Ø§ Ù…Ù† Ø³Ø¨nner Ø¹Ù„ÙˆÙŠ ÙˆØ§Ø­Ø¯ØŒ Ø£Ùˆ Ù„ÙˆØ­Ø©
@@ -1188,7 +1189,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         EnginePicker.invalidateAfterStorageChange()
         if (::engineSection.isInitialized) {
-            engineSection.setupEngineDiscovery()
+            engineSection.setupEngineDiscovery(
+                viewLifecycleOwner.lifecycleScope
+            )
         }
         if (::categoryVoicePanel.isInitialized) {
             categoryVoicePanel.refreshCategoryEngines()
@@ -1470,7 +1473,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
         val duration = if (event is SettingsOperation.Restored)
             Toast.LENGTH_LONG else Toast.LENGTH_SHORT
-        Toast.makeText(requireContext(), stats, duration).show()
+        ToastDebouncer.show(requireContext(), stats, duration)
         view?.announceCompat(getString(stats))
     }
 

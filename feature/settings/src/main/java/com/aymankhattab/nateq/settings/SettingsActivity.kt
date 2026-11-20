@@ -82,11 +82,16 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
             startActivity(Intent(this, FirstRunSetupActivity::class.java))
         }
 
-        // عرض واجهة خفيفة فوراً، والفصيل الثقيل يُحمّل في الخلفية
+        setContentView(R.layout.activity_settings)
+
         if (savedInstanceState == null) {
-            showLoadingPlaceholder()
-            // تأخير بسيط للسماح برسم الواجهة أولاً، ثم إنشاء الفصيل
-            mainHandler.postDelayed({ attachSettingsFragment() }, 50L)
+            val fragment = VoiceSelectionFragment()
+            supportFragmentManager.commit {
+                replace(R.id.settings_container, fragment)
+            }
+            lifecycleScope.launch(Dispatchers.IO) {
+                EnginePicker.warmupCache(applicationContext)
+            }
         }
 
         // طلب الأذونات عند أول تشغيل بعد اكتمال الإعداد الأولي
@@ -266,44 +271,6 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
                     .setMessage(err)
                     .setPositiveButton(android.R.string.ok, null)
                     .show()
-            }
-        }
-    }
-
-    private val mainHandler = Handler(Looper.getMainLooper())
-
-    private fun showLoadingPlaceholder() {
-        setContentView(R.layout.activity_settings_loading)
-    }
-
-    private fun attachSettingsFragment() {
-        setContentView(R.layout.activity_settings)
-        val fragment = VoiceSelectionFragment()
-        supportFragmentManager.commit {
-            replace(R.id.settings_container, fragment)
-        }
-
-        // تهيئة المحركات في الخلفية (لا تمنع رسم الواجهة)
-        lifecycleScope.launch(Dispatchers.IO) {
-            EnginePicker.warmupCache(applicationContext)
-        }
-
-        // طلب الأذونات عند أول تشغيل بعد اكتمال الإعداد الأولي
-        val isFirstRun = runCatching {
-            !settingsRepository.isFirstRunSetupCompleted()
-        }.getOrDefault(false)
-        if (!isFirstRun) {
-            permissionsChecked = true
-            checkAndRequestPermissions()
-        }
-
-        // إعادة تشغيل خدمة إعلانات الوقت/البطارية
-        val started = runCatching {
-            AnnouncementSchedulerService.startIfNeeded(this)
-        }.getOrDefault(false)
-        if (!started) {
-            runCatching {
-                AnnouncementSchedulerService.ensureTimeAlarm(this)
             }
         }
     }

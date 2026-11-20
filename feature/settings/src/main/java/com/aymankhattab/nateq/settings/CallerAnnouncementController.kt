@@ -32,6 +32,7 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.util.LanguageCode
+import com.aymankhattab.nateq.util.ToastDebouncer
 
 /** شفافيةُ الضابط المعطّل — لا يُعتمَل على قيمة المنصّة فالتعتيم يختلف
  *  فيها، والأرقام في هذا الملف. */
@@ -947,11 +948,11 @@ etCallerPrefix =
                     ) {
                         val reason = status.lastError
                             ?: EngineStatusRegistry.labelAr(status.state)
-                        Toast.makeText(
+                        ToastDebouncer.show(
                             fragment.requireContext(),
                             "${engine.label}: $reason",
                             Toast.LENGTH_LONG
-                        ).show()
+                        )
                         return
                     }
                 }
@@ -1253,7 +1254,7 @@ etCallerPrefix =
             } else {
                 R.string.caller_permission_granted_contacts_only
             }
-            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+            ToastDebouncer.show(ctx, msg, Toast.LENGTH_LONG)
             if (fragment.isAdded) {
                 fragment.view?.announceCompat(fragment.getString(msg))
             }
@@ -1267,11 +1268,11 @@ etCallerPrefix =
             runCatching { settings.setCallerAnnouncementEnabled(false) }
             AnnouncementSchedulerService.syncIfRunning(ctx)
             onStatusChanged()
-            Toast.makeText(
+            ToastDebouncer.show(
                 ctx,
                 R.string.caller_permission_needed,
                 Toast.LENGTH_LONG
-            ).show()
+            )
             if (fragment.isAdded) {
                 fragment.view?.announceCompat(
                     fragment.getString(R.string.caller_permission_needed)

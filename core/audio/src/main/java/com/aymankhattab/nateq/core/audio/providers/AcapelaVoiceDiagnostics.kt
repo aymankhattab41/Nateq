@@ -557,8 +557,34 @@ object AcapelaVoiceDiagnostics {
                         )
                     }
                     val refRoot = ini.parentFile ?: effectiveVoiceDir
-                    File(refRoot.parentFile ?: refRoot, "userdicos").mkdirs()
+                    val siblingUserdicos = File(
+                        refRoot.parentFile ?: refRoot, "userdicos"
+                    ).apply { mkdirs() }
                     File(refRoot, "userdicos").mkdirs()
+                    runCatching {
+                        val searchRoots = listOfNotNull(
+                            refRoot,
+                            discovery.packageRoot,
+                            effectiveVoiceDir
+                        ).distinct()
+                        val foundDicos = searchRoots.flatMap { root ->
+                            if (root.isDirectory) {
+                                root.walkTopDown().maxDepth(4).filter {
+                                    it.isFile && it.name.endsWith(
+                                        ".userdico", ignoreCase = true
+                                    )
+                                }.toList()
+                            } else emptyList()
+                        }.distinctBy { it.name }
+                        for (dico in foundDicos) {
+                            val target = File(siblingUserdicos, dico.name)
+                            if (!target.exists() &&
+                                dico.canonicalPath != target.canonicalPath
+                            ) {
+                                dico.copyTo(target, overwrite = false)
+                            }
+                        }
+                    }
                     for (dep in deps) {
                         val resolved = AcapelaVoiceManifest.resolveRelativeFile(
                             refRoot, dep.relativePath
@@ -567,47 +593,96 @@ object AcapelaVoiceDiagnostics {
                             File(refRoot, dep.relativePath).absolutePath
                         val isUserDico = dep.relativePath.endsWith(
                             ".userdico", ignoreCase = true
-                        ) || dep.key.equals("userdico", ignoreCase = true) ||
-                            dep.relativePath.contains(
-                                "userdicos", ignoreCase = true
-                            )
+                        ) || dep.key.contains(
+                            "userdico", ignoreCase = true
+                        ) || dep.relativePath.contains(
+                            "userdico", ignoreCase = true
+                        )
+                        val isBvcu = dep.relativePath.endsWith(
+                            ".bvcu", ignoreCase = true
+                        ) || dep.key.equals(
+                            "SLV", ignoreCase = true
+                        ) || dep.key.equals(
+                            "BVCU", ignoreCase = true
+                        )
+                        val isNlp = dep.relativePath.contains(
+                            "NLP/", ignoreCase = true
+                        ) || dep.key.equals(
+                            "PRO", ignoreCase = true
+                        )
+                        val isStrictRequired = isBvcu || isNlp
+
                         if (resolved == null || !resolved.exists()) {
                             if (isUserDico) {
-                                checked += "userdico-optional-missing:" +
-                                    "${dep.key} -> ${dep.relativePath}"
+                                val dName = File(dep.relativePath).name
+                                val cand = File(siblingUserdicos, dName)
+                                if (cand.exists() && cand.isFile) {
+                                    checked += "userdico-sibling:$dName " +
+                                        "(${fingerprintOf(cand)})"
+                                } else {
+                                    checked += "userdico-optional-missing:" +
+                                        "${dep.key} -> ${dep.relativePath}"
+                                }
                                 continue
                             }
-                            issues += VoiceDependencyIssue(
-                                dependency = dep.key,
-                                expectedPath = expected,
-                                reason = "تبعية ناقصة معلنة في " +
-                                    "${ini.name}: ${dep.relativePath}"
-                            )
+                            if (isStrictRequired) {
+                                issues += VoiceDependencyIssue(
+                                    dependency = dep.key,
+                                    expectedPath = expected,
+                                    reason = "تبعية ناقصة معلنة في " +
+                                        "${ini.name}: ${dep.relativePath}"
+                                )
+                            } else {
+                                checked += "optional-missing:" +
+                                    "${dep.key} -> ${dep.relativePath}"
+                            }
                             continue
                         }
                         if (!resolved.isFile) {
-                            issues += VoiceDependencyIssue(
-                                dependency = dep.key,
-                                expectedPath = resolved.absolutePath,
-                                reason = "المسار المعلن ليس ملفاً"
-                            )
+                            if (isUserDico) continue
+                            if (isStrictRequired) {
+                                issues += VoiceDependencyIssue(
+                                    dependency = dep.key,
+                                    expectedPath = resolved.absolutePath,
+                                    reason = "المسار المعلن ليس ملفاً"
+                                )
+                            }
                             continue
                         }
                         val readable = runCatching {
                             resolved.inputStream().use { it.read() }
                         }.isSuccess
                         if (!readable) {
-                            issues += VoiceDependencyIssue(
-                                dependency = dep.key,
-                                expectedPath = resolved.absolutePath,
-                                reason = "الملف غير قابل للقراءة"
-                            )
+                            if (isUserDico) continue
+                            if (isStrictRequired) {
+                                issues += VoiceDependencyIssue(
+                                    dependency = dep.key,
+                                    expectedPath = resolved.absolutePath,
+                                    reason = "الملف غير قابل للقراءة"
+                                )
+                            }
                             continue
                         }
                         val fp = fingerprintOf(resolved)
                         checked += "${dep.key}:${dep.relativePath} " +
                             "-> ${resolved.absolutePath} ($fp)"
                         if (stagedDir != null) {
+                            val stagedSibling = File(
+                                stagedDir.parentFile ?: stagedDir, "userdicos"
+                            ).apply { mkdirs() }
+                            File(stagedDir, "userdicos").mkdirs()
+                            runCatching {
+                                siblingUserdicos.listFiles()?.filter {
+                                    it.isFile && it.name.endsWith(
+                                        ".userdico", ignoreCase = true
+                                    )
+                                }?.forEach { f ->
+                                    val dst = File(stagedSibling, f.name)
+                                    if (!dst.exists()) {
+                                        f.copyTo(dst, overwrite = false)
+                                    }
+                                }
+                            }
                             val staged =
                                 AcapelaVoiceManifest.resolveRelativeFile(
                                 stagedDir, dep.relativePath
@@ -616,25 +691,41 @@ object AcapelaVoiceDiagnostics {
                                 File(stagedDir, dep.relativePath).absolutePath
                             if (staged == null || !staged.exists()) {
                                 if (isUserDico) {
-                                    checked += "staged-userdico-optional:" +
-                                        "${dep.key} -> ${dep.relativePath}"
-                                } else {
+                                    val dName = File(dep.relativePath).name
+                                    val cand = File(stagedSibling, dName)
+                                    if (cand.exists() && cand.isFile) {
+                                        checked += "staged-userdico-ok:$dName"
+                                    } else {
+                                        checked +=
+                                            "staged-userdico-optional:" +
+                                            "${dep.key} -> ${dep.relativePath}"
+                                    }
+                                } else if (isStrictRequired) {
                                     issues += VoiceDependencyIssue(
                                         dependency = dep.key,
                                         expectedPath = stagedExpected,
                                         reason = "الملف غير موجود " +
                                             "في النسخة المرحلية"
                                     )
+                                } else {
+                                    checked += "staged-optional-missing:" +
+                                        "${dep.key} -> ${dep.relativePath}"
                                 }
                             } else {
                                 val sfp = fingerprintOf(staged)
                                 if (sfp != fp) {
-                                    issues += VoiceDependencyIssue(
-                                        dependency = dep.key,
-                                        expectedPath = staged.absolutePath,
-                                        reason = "اختلاف بصمة/حجم بين " +
-                                            "المصدر والنسخة المرحلية"
-                                    )
+                                    if (isUserDico) {
+                                        checked +=
+                                            "staged-userdico-fp-mismatch:" +
+                                            dep.key
+                                    } else {
+                                        issues += VoiceDependencyIssue(
+                                            dependency = dep.key,
+                                            expectedPath = staged.absolutePath,
+                                            reason = "اختلاف بصمة/حجم بين " +
+                                                "المصدر والنسخة المرحلية"
+                                        )
+                                    }
                                 } else {
                                     checked += "staged-ok:${dep.key} " +
                                         "(${staged.absolutePath})"
@@ -817,12 +908,22 @@ object AcapelaVoiceDiagnostics {
         val stageParent = stageDir.parentFile ?: stageDir
         File(stageParent, "userdicos").mkdirs()
         File(stageDir, "userdicos").mkdirs()
+        val stageUserdicos = File(stageParent, "userdicos").apply { mkdirs() }
         val sourceRoot = voiceDir.parentFile ?: voiceDir
         val srcUserdicos = File(sourceRoot, "userdicos")
         if (srcUserdicos.isDirectory) {
-            val dstUserdicos = File(stageParent, "userdicos")
             runCatching {
-                srcUserdicos.copyRecursively(dstUserdicos, overwrite = true)
+                srcUserdicos.copyRecursively(stageUserdicos, overwrite = true)
+            }
+        }
+        runCatching {
+            voiceDir.walkTopDown().maxDepth(4).filter {
+                it.isFile && it.name.endsWith(".userdico", ignoreCase = true)
+            }.forEach { ud ->
+                val target = File(stageUserdicos, ud.name)
+                if (!target.exists()) {
+                    ud.copyTo(target, overwrite = false)
+                }
             }
         }
         sourceRoot.listFiles()?.forEach { sib ->

@@ -729,6 +729,9 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Make *.userdico user dictionaries optional in Acapela before nInit, automatically creating the sibling userdicos folder and continuing without failure, copying any internal userdico, and restricting strict failure to .bvcu and NLP/ files.
+• Eliminate frame drops and Davey UI lag on opening Settings: defer heavy APK integrity checks off cold startup, move TTS engine discovery and Acapela voice parsing to background threads, and cache status summaries.
+• Prevent Toast message storms in Settings: add ToastDebouncer to enforce a 1-second rate limit, cancel active toasts, drop duplicates within a 2-second window, and prevent spinner listeners from firing during initial layout.
 • Accept extended Acapela HD voice packages (.inf + voice data + config.yaml with param) as authentic and complete in discovery, listing, readiness, and import, while maintaining strict .ini validation for classic packages and preventing accidental deletion of sole config files.
 • Make *.userdico user dictionaries optional in Acapela, automatically creating the sibling userdicos folder when missing and proceeding to nInit/nSpeak, restricting pre-nInit blocking issues to strict .bvcu and NLP/ files.
 • Caller announcement: prohibit passing voice IDs to unowning engines, fall back safely within the same engine (category voice, Tarik High, or engine default), reject external TTS voices (Gryphon/Eloquence), and record diagnostic fallback failures.

@@ -51,10 +51,24 @@ internal class EngineSectionController(
      * أي محرك. لا يوجد «محرك افتراضي» عام: محرك كل لغة وكل فئة يُحسم
      * وقت النطق فقط في [AnnouncementSpeaker] و [SystemVoiceProvider].
      */
-    fun setupEngineDiscovery() {
-        engines.clear()
-        engines.addAll(discoverEngines())
-        bindNoEnginesUi()
+    fun setupEngineDiscovery(
+        coroutineScope: kotlinx.coroutines.CoroutineScope? = null
+    ) {
+        if (coroutineScope != null) {
+            coroutineScope.launch(AppDispatchers.io) {
+                val list = discoverEngines()
+                withContext(AppDispatchers.main) {
+                    if (!fragment.isAdded) return@withContext
+                    engines.clear()
+                    engines.addAll(list)
+                    bindNoEnginesUi()
+                }
+            }
+        } else {
+            engines.clear()
+            engines.addAll(discoverEngines())
+            bindNoEnginesUi()
+        }
     }
 
     /** عند غياب أي محرك TTS إطلاقاً: يُظهر رسالة توجيهية

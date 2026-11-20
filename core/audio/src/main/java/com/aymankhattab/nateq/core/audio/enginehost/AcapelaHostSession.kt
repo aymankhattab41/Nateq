@@ -2519,8 +2519,24 @@ internal class AcapelaHostSession(
                 appendLine("المعرّف: ${voice.id}")
             }.trimEnd()
             appendAcapelaFullDiagnostic(preInvoke)
-            File(voice.dir.parentFile ?: voice.dir, "userdicos").mkdirs()
+            val siblingUserdicos = File(
+                voice.dir.parentFile ?: voice.dir, "userdicos"
+            ).apply { mkdirs() }
             File(voice.dir, "userdicos").mkdirs()
+            runCatching {
+                voice.dir.walkTopDown().maxDepth(4).filter {
+                    it.isFile && it.name.endsWith(
+                        ".userdico", ignoreCase = true
+                    )
+                }.forEach { ud ->
+                    val target = File(siblingUserdicos, ud.name)
+                    if (!target.exists() &&
+                        ud.canonicalPath != target.canonicalPath
+                    ) {
+                        ud.copyTo(target, overwrite = false)
+                    }
+                }
+            }
             val verification = AcapelaVoiceDiagnostics
                 .verifyAuthenticVoicePackage(
                     voiceDir = voice.dir,
