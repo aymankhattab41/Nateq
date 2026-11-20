@@ -109,8 +109,10 @@ object MicrosoftDownloader {
                 )
             }
 
-            onProgress(96)
-            val unzipResult = unzipToDirectory(partZipFile, destination)
+            onProgress(91)
+            val unzipResult = unzipToDirectory(
+                partZipFile, destination, onProgress = onProgress
+            )
 
             if (unzipResult.count == 0) {
                 partZipFile.delete()
@@ -158,13 +160,52 @@ object MicrosoftDownloader {
         }
     }
 
-    private fun unzipToDirectory(zipFile: File, outputDir: File): UnzipResult {
+    private fun unzipToDirectory(
+        zipFile: File,
+        outputDir: File,
+        onProgress: ((Int) -> Unit)? = null
+    ): UnzipResult {
         var count = 0
         val extractedNames = mutableListOf<String>()
-        val buffer = ByteArray(8192)
+        val totalZipLen = zipFile.length().coerceAtLeast(1L)
+        var compressedBytesRead = 0L
 
-        ZipInputStream(BufferedInputStream(zipFile.inputStream())).use { zis ->
+        val countingInput = object : java.io.FilterInputStream(
+            zipFile.inputStream().buffered()
+        ) {
+            private var lastPct = 0
+
+            override fun read(): Int {
+                val b = super.read()
+                if (b != -1) {
+                    compressedBytesRead++
+                    report()
+                }
+                return b
+            }
+
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                val r = super.read(b, off, len)
+                if (r > 0) {
+                    compressedBytesRead += r
+                    report()
+                }
+                return r
+            }
+
+            private fun report() {
+                val ratio = (compressedBytesRead * 8) / totalZipLen
+                val pct = (91 + ratio.toInt()).coerceIn(91, 99)
+                if (pct != lastPct) {
+                    lastPct = pct
+                    onProgress?.invoke(pct)
+                }
+            }
+        }
+
+        ZipInputStream(countingInput).use { zis ->
             var entry = zis.nextEntry
+            val buffer = ByteArray(256 * 1024)
             while (entry != null) {
                 val entryName = entry.name
                 if (entryName.contains("..")) {

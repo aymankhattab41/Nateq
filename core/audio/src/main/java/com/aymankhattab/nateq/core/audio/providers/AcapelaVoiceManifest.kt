@@ -129,8 +129,23 @@ object AcapelaVoiceManifest {
     ): VoiceDiscoveryResult {
         val packageRoot = findPackageRoot(startDir)
         val reasons = mutableListOf<String>()
+        val isHd = isHdExtendedVoiceDir(startDir) ||
+            isHdExtendedVoiceDir(packageRoot)
         val iniFiles = collectIniFiles(packageRoot, maxDepth)
         if (iniFiles.isEmpty()) {
+            if (isHd) {
+                val vDir = if (isHdExtendedVoiceDir(startDir)) startDir
+                else packageRoot
+                reasons += "حزمة HD أصلية معتمدة " +
+                    "(.inf + بيانات + config.yaml)"
+                return VoiceDiscoveryResult(
+                    packageRoot = packageRoot,
+                    voiceDir = vDir,
+                    iniFile = null,
+                    state = IniDiscoveryState.AUTHENTIC,
+                    reasons = reasons
+                )
+            }
             reasons += "لم يُعثر على أي ملف ini داخل الحزمة: " +
                 packageRoot.absolutePath
             return VoiceDiscoveryResult(
@@ -152,10 +167,17 @@ object AcapelaVoiceManifest {
         val state: IniDiscoveryState
         when {
             authentic.isEmpty() -> {
-                selected = null
-                state = IniDiscoveryState.INCOMPATIBLE_INI
-                reasons += "وُجدت ملفات ini لكنها مختصرة/مولّدة أو " +
-                    "غير متوافقة مع الصوت المطلوب"
+                if (isHd) {
+                    selected = null
+                    state = IniDiscoveryState.AUTHENTIC
+                    reasons += "حزمة HD أصلية معتمدة " +
+                        "(.inf + بيانات + config.yaml)"
+                } else {
+                    selected = null
+                    state = IniDiscoveryState.INCOMPATIBLE_INI
+                    reasons += "وُجدت ملفات ini لكنها مختصرة/مولّدة أو " +
+                        "غير متوافقة مع الصوت المطلوب"
+                }
             }
             authentic.size == 1 -> {
                 selected = authentic.first()
@@ -850,13 +872,23 @@ object AcapelaVoiceManifest {
             )
         }.getOrNull()
         if (discovery?.state == IniDiscoveryState.AUTHENTIC) {
-            val iniDir = discovery.iniFile?.parentFile ?: return false
-            val dPath = runCatching { dir.canonicalPath }
-                .getOrDefault(dir.absolutePath)
-            val iPath = runCatching { iniDir.canonicalPath }
-                .getOrDefault(iniDir.absolutePath)
-            if (iPath == dPath ||
-                iPath.startsWith(dPath + File.separator)
+            val ini = discovery.iniFile
+            if (ini != null) {
+                val iniDir = ini.parentFile
+                if (iniDir != null) {
+                    val dPath = runCatching { dir.canonicalPath }
+                        .getOrDefault(dir.absolutePath)
+                    val iPath = runCatching { iniDir.canonicalPath }
+                        .getOrDefault(iniDir.absolutePath)
+                    if (iPath == dPath ||
+                        iPath.startsWith(dPath + File.separator)
+                    ) {
+                        return true
+                    }
+                }
+            } else if (isHdExtendedVoiceDir(dir) ||
+                (discovery.voiceDir != null &&
+                    isHdExtendedVoiceDir(discovery.voiceDir))
             ) {
                 return true
             }
@@ -1259,8 +1291,14 @@ object AcapelaVoiceManifest {
         val rawParam = firstValue(pairs, "param")
         val parentDir = cf.parentFile ?: cf
         val hexFile = findHexRegistrationFile(parentDir)
-        val isValidRegistered = (sampleRate == 22050) &&
-            (hexFile != null && hexFile.length() > 0L)
+        val hasAnyHex = parentDir.listFiles()?.any { f ->
+            f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)
+        } == true
+        val hasYamlParam = findConfigYamlWithParam(parentDir) != null
+        val isValidRegistered = (sampleRate == 22050) && (
+            (hexFile != null && hexFile.length() > 0L) ||
+                (!hasAnyHex && hasYamlParam)
+        )
         val reg = if (isValidRegistered) {
             resolveRegistration(parentDir, rawReg, rawParam)
         } else {
@@ -1304,7 +1342,13 @@ object AcapelaVoiceManifest {
         val voiceName = cleanAcapelaSpeaker(rawName)
         val locale = resolveLocale(null, voiceName, rawName)
         val hexFile = findHexRegistrationFile(dir)
-        val reg = if (hexFile != null && hexFile.length() > 0L) {
+        val hasAnyHex = dir.listFiles()?.any { f ->
+            f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)
+        } == true
+        val hasYamlParam = findConfigYamlWithParam(dir) != null
+        val reg = if ((hexFile != null && hexFile.length() > 0L) ||
+            (!hasAnyHex && hasYamlParam)
+        ) {
             resolveRegistration(dir, null, null)
         } else {
             ""
@@ -2266,14 +2310,26 @@ object AcapelaVoiceManifest {
             )
             val candidate: VoiceInfo? =
                 if (discovery.state == IniDiscoveryState.AUTHENTIC) {
-                    val ini = discovery.iniFile ?: continue
-                    runCatching {
-                        val parsed = parseVoice(dir)
-                        parsed.copy(
-                            dir = ini.parentFile ?: dir,
-                            configFile = ini
-                        )
-                    }.getOrNull()
+                    val ini = discovery.iniFile
+                    if (ini != null) {
+                        runCatching {
+                            val parsed = parseVoice(dir)
+                            parsed.copy(
+                                dir = ini.parentFile ?: dir,
+                                configFile = ini
+                            )
+                        }.getOrNull()
+                    } else if (isHdExtendedVoiceDir(dir)) {
+                        runCatching { parseVoice(dir) }.getOrNull()
+                    } else if (discovery.voiceDir != null &&
+                        isHdExtendedVoiceDir(discovery.voiceDir)
+                    ) {
+                        runCatching {
+                            parseVoice(discovery.voiceDir)
+                        }.getOrNull()
+                    } else {
+                        null
+                    }
                 } else if (isHdExtendedVoiceDir(dir)) {
                     runCatching { parseVoice(dir) }.getOrNull()
                 } else {

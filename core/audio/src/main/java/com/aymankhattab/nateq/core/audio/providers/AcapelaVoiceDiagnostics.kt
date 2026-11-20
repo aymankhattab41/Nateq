@@ -557,13 +557,26 @@ object AcapelaVoiceDiagnostics {
                         )
                     }
                     val refRoot = ini.parentFile ?: effectiveVoiceDir
+                    File(refRoot.parentFile ?: refRoot, "userdicos").mkdirs()
+                    File(refRoot, "userdicos").mkdirs()
                     for (dep in deps) {
                         val resolved = AcapelaVoiceManifest.resolveRelativeFile(
                             refRoot, dep.relativePath
                         )
                         val expected =
                             File(refRoot, dep.relativePath).absolutePath
+                        val isUserDico = dep.relativePath.endsWith(
+                            ".userdico", ignoreCase = true
+                        ) || dep.key.equals("userdico", ignoreCase = true) ||
+                            dep.relativePath.contains(
+                                "userdicos", ignoreCase = true
+                            )
                         if (resolved == null || !resolved.exists()) {
+                            if (isUserDico) {
+                                checked += "userdico-optional-missing:" +
+                                    "${dep.key} -> ${dep.relativePath}"
+                                continue
+                            }
                             issues += VoiceDependencyIssue(
                                 dependency = dep.key,
                                 expectedPath = expected,
@@ -602,12 +615,17 @@ object AcapelaVoiceDiagnostics {
                             val stagedExpected =
                                 File(stagedDir, dep.relativePath).absolutePath
                             if (staged == null || !staged.exists()) {
-                                issues += VoiceDependencyIssue(
-                                    dependency = dep.key,
-                                    expectedPath = stagedExpected,
-                                    reason = "الملف غير موجود " +
-                                        "في النسخة المرحلية"
-                                )
+                                if (isUserDico) {
+                                    checked += "staged-userdico-optional:" +
+                                        "${dep.key} -> ${dep.relativePath}"
+                                } else {
+                                    issues += VoiceDependencyIssue(
+                                        dependency = dep.key,
+                                        expectedPath = stagedExpected,
+                                        reason = "الملف غير موجود " +
+                                            "في النسخة المرحلية"
+                                    )
+                                }
                             } else {
                                 val sfp = fingerprintOf(staged)
                                 if (sfp != fp) {
@@ -675,16 +693,21 @@ object AcapelaVoiceDiagnostics {
                 f.name.matches(Regex("^0x[0-9a-fA-F]+$")) &&
                 f.length() > 0L
         } ?: AcapelaVoiceManifest.findHexRegistrationFile(effectiveVoiceDir)
-        if (hex == null) {
+        val hasYamlParam = AcapelaVoiceManifest
+            .findConfigYamlWithParam(effectiveVoiceDir) != null
+        if (hex == null && !hasYamlParam) {
             issues += VoiceDependencyIssue(
                 dependency = "registration-key",
                 expectedPath = effectiveVoiceDir.absolutePath,
-                reason = "ملف مفتاح الترخيص (0x...) غير موجود ضمن حزمة الصوت"
+                reason = "ملف مفتاح الترخيص (0x...) أو سطر param " +
+                    "غير موجود ضمن حزمة الصوت"
             )
-        } else {
+        } else if (hex != null) {
             checked +=
                 "registration-key=${hex.absolutePath}" +
                     "(size=${hex.length()})"
+        } else {
+            checked += "registration-param=found in config.yaml"
         }
 
         if (issues.any {
@@ -791,7 +814,17 @@ object AcapelaVoiceDiagnostics {
                 copyRec(child, File(stageDir, child.name))
             }
         }
+        val stageParent = stageDir.parentFile ?: stageDir
+        File(stageParent, "userdicos").mkdirs()
+        File(stageDir, "userdicos").mkdirs()
         val sourceRoot = voiceDir.parentFile ?: voiceDir
+        val srcUserdicos = File(sourceRoot, "userdicos")
+        if (srcUserdicos.isDirectory) {
+            val dstUserdicos = File(stageParent, "userdicos")
+            runCatching {
+                srcUserdicos.copyRecursively(dstUserdicos, overwrite = true)
+            }
+        }
         sourceRoot.listFiles()?.forEach { sib ->
             if (!sib.isFile) return@forEach
             if (isStaleLog(sib.name)) return@forEach

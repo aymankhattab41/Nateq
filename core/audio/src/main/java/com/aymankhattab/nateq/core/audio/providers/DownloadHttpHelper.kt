@@ -5,6 +5,7 @@ import android.os.StatFs
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
@@ -268,98 +269,129 @@ object DownloadHttpHelper {
             percent: Int
         ) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
-        try {
-            partFile.parentFile?.mkdirs()
-            val initialBytes = if (partFile.exists()) partFile.length() else 0L
+        val maxAttempts = 3
+        var lastError: Throwable? = null
 
-            var conn: HttpURLConnection
-            var isResume = false
+        for (attempt in 1..maxAttempts) {
             try {
-                conn = openWithManualRedirects(
-                    urlString = urlString,
-                    rangeBytes = initialBytes
-                )
-                if (conn.responseCode == 206) {
-                    isResume = true
-                } else if (conn.responseCode == 416) {
-                    // النطاق غير صالح -> بدء من الصفر
-                    conn.disconnect()
-                    partFile.delete()
+                partFile.parentFile?.mkdirs()
+                val initialBytes =
+                    if (partFile.exists()) partFile.length() else 0L
+
+                var conn: HttpURLConnection
+                var isResume = false
+                try {
                     conn = openWithManualRedirects(
                         urlString = urlString,
-                        rangeBytes = 0L
+                        rangeBytes = initialBytes
                     )
-                }
-            } catch (e: DownloadError) {
-                if (e.code == "HTTP_416") {
-                    partFile.delete()
-                    conn = openWithManualRedirects(
-                        urlString = urlString,
-                        rangeBytes = 0L
-                    )
-                } else {
-                    throw e
-                }
-            }
-
-            try {
-                val appendMode = isResume && (conn.responseCode == 206)
-                val baseDownloaded = if (appendMode) initialBytes else 0L
-                if (!appendMode && partFile.exists()) {
-                    partFile.delete()
-                }
-
-                val contentLen = conn.contentLengthLong
-                val totalBytes = if (contentLen > 0) {
-                    baseDownloaded + contentLen
-                } else {
-                    -1L
-                }
-
-                var currentDownloaded = baseDownloaded
-
-                BufferedInputStream(
-                    conn.inputStream,
-                    32 * 1024
-                ).use { input ->
-                    FileOutputStream(partFile, appendMode).use { output ->
-                        val buffer = ByteArray(32 * 1024)
-                        var read: Int
-                        while (
-                            input.read(buffer).also { read = it } != -1
-                        ) {
-                            if (!currentCoroutineContext().isActive) {
-                                output.flush()
-                                throw DownloadError(
-                                    DownloadError.NETWORK,
-                                    "Download cancelled"
-                                )
-                            }
-                            output.write(buffer, 0, read)
-                            currentDownloaded += read
-                            val pct = if (totalBytes > 0) {
-                                ((currentDownloaded * 100) / totalBytes)
-                                    .toInt().coerceIn(0, 99)
-                            } else {
-                                0
-                            }
-                            onProgress(currentDownloaded, totalBytes, pct)
-                        }
-                        output.flush()
+                    if (conn.responseCode == 206) {
+                        isResume = true
+                    } else if (conn.responseCode == 416) {
+                        // النطاق غير صالح -> بدء من الصفر
+                        conn.disconnect()
+                        partFile.delete()
+                        conn = openWithManualRedirects(
+                            urlString = urlString,
+                            rangeBytes = 0L
+                        )
+                    } else if (conn.responseCode == 200 && initialBytes > 0L) {
+                        Log.w(
+                            TAG,
+                            "الخادم رد بـ 200 بدل 206 لطلب استئناف؛ " +
+                                "الخادم لا يدعم الاستئناف، البدء من الصفر"
+                        )
+                        isResume = false
+                    }
+                } catch (e: DownloadError) {
+                    if (e.code == "HTTP_416") {
+                        partFile.delete()
+                        conn = openWithManualRedirects(
+                            urlString = urlString,
+                            rangeBytes = 0L
+                        )
+                    } else {
+                        throw e
                     }
                 }
-                Result.success(partFile)
-            } finally {
-                conn.disconnect()
+
+                try {
+                    val appendMode = isResume && (conn.responseCode == 206)
+                    val baseDownloaded = if (appendMode) initialBytes else 0L
+                    if (!appendMode && partFile.exists()) {
+                        partFile.delete()
+                    }
+
+                    val contentLen = conn.contentLengthLong
+                    val totalBytes = if (contentLen > 0) {
+                        baseDownloaded + contentLen
+                    } else {
+                        -1L
+                    }
+
+                    var currentDownloaded = baseDownloaded
+
+                    BufferedInputStream(
+                        conn.inputStream,
+                        256 * 1024
+                    ).use { input ->
+                        FileOutputStream(partFile, appendMode).use { output ->
+                            val buffer = ByteArray(256 * 1024)
+                            var read: Int
+                            while (
+                                input.read(buffer).also { read = it } != -1
+                            ) {
+                                if (!currentCoroutineContext().isActive) {
+                                    output.flush()
+                                    throw DownloadError(
+                                        DownloadError.NETWORK,
+                                        "Download cancelled"
+                                    )
+                                }
+                                output.write(buffer, 0, read)
+                                currentDownloaded += read
+                                val pct = if (totalBytes > 0) {
+                                    ((currentDownloaded * 100) / totalBytes)
+                                        .toInt().coerceIn(0, 99)
+                                } else {
+                                    0
+                                }
+                                onProgress(currentDownloaded, totalBytes, pct)
+                            }
+                            output.flush()
+                        }
+                    }
+                    return@withContext Result.success(partFile)
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (t: Throwable) {
+                if (!currentCoroutineContext().isActive) {
+                    return@withContext Result.failure(
+                        DownloadError(
+                            DownloadError.NETWORK,
+                            "Download cancelled"
+                        )
+                    )
+                }
+                lastError = t
+                if (attempt < maxAttempts) {
+                    Log.w(
+                        TAG,
+                        "محاولة تنزيل $attempt فشلت: ${t.message}؛ " +
+                            "إعادة المحاولة تلقائياً بعد مهلة قصيرة"
+                    )
+                    delay(attempt * 500L)
+                }
             }
-        } catch (t: Throwable) {
-            val err = if (t is DownloadError) t else {
-                DownloadError(
-                    DownloadError.NETWORK,
-                    t.message ?: "Network error"
-                )
-            }
-            Result.failure(err)
         }
+
+        val err = if (lastError is DownloadError) lastError else {
+            DownloadError(
+                DownloadError.NETWORK,
+                lastError?.message ?: "Network error"
+            )
+        }
+        Result.failure(err)
     }
 }

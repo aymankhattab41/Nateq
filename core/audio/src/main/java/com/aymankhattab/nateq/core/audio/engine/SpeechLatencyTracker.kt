@@ -24,7 +24,8 @@ object SpeechLatencyTracker {
         val endUptimeMs: Long,
         val durationMs: Long,
         val attempts: Int,
-        val success: Boolean
+        val success: Boolean,
+        val gapBeforeMs: Long = 0L
     )
 
     data class UtteranceMetric(
@@ -144,6 +145,27 @@ object SpeechLatencyTracker {
                         "${item.planningDurationMs}ms, أول بايت: " +
                         "$itemTtfb, " +
                         "${item.segments.size} مقاطع)"
+                )
+            }
+        }
+
+        val allSegmentsWithGap = list.flatMap { utt ->
+            utt.segments.map { seg -> utt to seg }
+        }.filter { it.second.gapBeforeMs > 0L }
+            .sortedByDescending { it.second.gapBeforeMs }
+            .take(5)
+
+        if (allSegmentsWithGap.isNotEmpty()) {
+            sb.appendLine("• أطول الفجوات بين المقاطع:")
+            allSegmentsWithGap.forEachIndexed { idx, (_, seg) ->
+                val segPreview = if (seg.text.length > 20) {
+                    seg.text.take(20) + "…"
+                } else {
+                    seg.text
+                }
+                sb.appendLine(
+                    "  ${idx + 1}. \"$segPreview\" — فجوة: " +
+                        "${seg.gapBeforeMs}ms (تخليق: ${seg.durationMs}ms)"
                 )
             }
         }

@@ -2073,13 +2073,29 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
             ignoreCase = true
         ) || resolvedEngine.contains("vocalizer", ignoreCase = true)
-        val fallbackVoice = if (isArabic && isVocalizer) {
+        val catVoice = if (isArabic) {
+            settings.getCallerAnnouncementArabicVoiceId()
+        } else {
+            settings.getCallerAnnouncementEnglishVoiceId()
+        }
+        val safeCatVoice = if (!catVoice.isNullOrBlank() &&
+            !catVoice.equals(requestedVoice, ignoreCase = true) &&
+            VoiceIdContract.isVoiceBelongingToEngine(
+                resolvedEngine, catVoice
+            )
+        ) {
+            catVoice
+        } else {
+            null
+        }
+        val fallbackVoice = safeCatVoice ?: if (isArabic && isVocalizer) {
             "Tarik"
         } else {
             null
         }
         val reason =
-            "صوت المتصل لا يتبع المحرك ($resolvedEngine) — بديل آمن"
+            "صوت المتصل لا يتبع المحرك ($resolvedEngine) — " +
+                "بديل آمن ($fallbackVoice)"
         runCatching {
             SpeechFallbackTracker.record(
                 text = text,
@@ -2100,7 +2116,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         }
         Log.w(TAG, "caller voice fallback: $reason voice=$requestedVoice")
         return CallerSpeechSelection(
-            requestedEngine, fallbackVoice, true, reason
+            resolvedEngine, fallbackVoice, true, reason
         )
     }
 

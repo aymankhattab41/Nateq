@@ -217,7 +217,18 @@ object VoiceIdContract {
                 voiceId.contains("acapela", ignoreCase = true)
             val isSamsung = voiceId.contains("_f00") ||
                 voiceId.contains("_m00")
-            if (isGoogle || isAcapela || isSamsung) return false
+            val isForeignTts = voiceId.equals("aaron", ignoreCase = true) ||
+                voiceId.equals("reed", ignoreCase = true) ||
+                voiceId.equals("shelley", ignoreCase = true) ||
+                voiceId.equals("eddy", ignoreCase = true) ||
+                voiceId.equals("flo", ignoreCase = true) ||
+                voiceId.equals("grandpa", ignoreCase = true) ||
+                voiceId.equals("grandma", ignoreCase = true) ||
+                voiceId.equals("rocko", ignoreCase = true) ||
+                voiceId.equals("sandy", ignoreCase = true) ||
+                voiceId.contains("eloquence", ignoreCase = true) ||
+                voiceId.contains("gryphon", ignoreCase = true)
+            if (isGoogle || isAcapela || isSamsung || isForeignTts) return false
             return true
         }
 
@@ -239,7 +250,18 @@ object VoiceIdContract {
                 voiceId.contains("acapela", ignoreCase = true)
             val isSamsung = voiceId.contains("_f00") ||
                 voiceId.contains("_m00")
-            if (isGoogle || isAcapela || isSamsung) return false
+            val isForeignTts = voiceId.equals("aaron", ignoreCase = true) ||
+                voiceId.equals("reed", ignoreCase = true) ||
+                voiceId.equals("shelley", ignoreCase = true) ||
+                voiceId.equals("eddy", ignoreCase = true) ||
+                voiceId.equals("flo", ignoreCase = true) ||
+                voiceId.equals("grandpa", ignoreCase = true) ||
+                voiceId.equals("grandma", ignoreCase = true) ||
+                voiceId.equals("rocko", ignoreCase = true) ||
+                voiceId.equals("sandy", ignoreCase = true) ||
+                voiceId.contains("eloquence", ignoreCase = true) ||
+                voiceId.contains("gryphon", ignoreCase = true)
+            if (isGoogle || isAcapela || isSamsung || isForeignTts) return false
             return true
         }
 

@@ -15,6 +15,8 @@ import com.aymankhattab.nateq.util.optString
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
@@ -467,20 +469,29 @@ object UpdateChecker {
             request.setNotificationVisibility(notificationVisibility)
         }
 
-        val publicOk = runCatching {
-            request.setDestinationInExternalPublicDir(
-                android.os.Environment.DIRECTORY_DOWNLOADS,
-                APK_NAME
-            )
+        val destination = downloadedApk(context)
+        if (destination.exists()) destination.delete()
+        destination.parentFile?.mkdirs()
+        val directOk = runCatching {
+            request.setDestinationUri(Uri.fromFile(destination))
         }.isSuccess
 
-        if (!publicOk) {
-            val extFiles = context.getExternalFilesDir(null)
-            if (extFiles != null) {
-                val destination = File(downloadsDir(context), APK_NAME)
-                if (destination.exists()) destination.delete()
-                runCatching {
-                    request.setDestinationUri(Uri.fromFile(destination))
+        if (!directOk) {
+            val publicOk = runCatching {
+                request.setDestinationInExternalPublicDir(
+                    android.os.Environment.DIRECTORY_DOWNLOADS,
+                    APK_NAME
+                )
+            }.isSuccess
+
+            if (!publicOk) {
+                val extFiles = context.getExternalFilesDir(null)
+                if (extFiles != null) {
+                    val dest = File(downloadsDir(context), APK_NAME)
+                    if (dest.exists()) dest.delete()
+                    runCatching {
+                        request.setDestinationUri(Uri.fromFile(dest))
+                    }
                 }
             }
         }
@@ -532,24 +543,36 @@ object UpdateChecker {
                 srcFile.canonicalPath == targetApk.canonicalPath
             }.getOrDefault(false)
 
+        val computedDigest: String?
         if (!isSameFile) {
             if (targetApk.exists()) targetApk.delete()
-            val copied = copyDownloadToFile(
+            computedDigest = copyDownloadToFileWithDigest(
                 context, dm, downloadId, localUriStr, targetApk
             )
-            if (!copied || !targetApk.isFile || targetApk.length() == 0L) {
+            if (computedDigest == null || !targetApk.isFile ||
+                targetApk.length() == 0L
+            ) {
                 runCatching { dm.remove(downloadId) }
                 return DownloadResult.Failed(status, reason)
             }
         } else {
+            computedDigest = null
             if (!targetApk.isFile || targetApk.length() == 0L) {
                 runCatching { dm.remove(downloadId) }
                 return DownloadResult.Failed(status, reason)
             }
         }
 
-        val matches = expectedSha256Hex == null ||
+        val matches = if (expectedSha256Hex == null) {
+            true
+        } else if (computedDigest != null) {
+            constantTimeEquals(
+                computedDigest.lowercase(),
+                expectedSha256Hex.trim().lowercase()
+            )
+        } else {
             verifyApkSha256(targetApk, expectedSha256Hex)
+        }
 
         if (!matches) {
             targetApk.delete()
@@ -563,63 +586,71 @@ object UpdateChecker {
         return DownloadResult.Success(targetApk)
     }
 
-    private fun copyDownloadToFile(
+    private fun copyDownloadToFileWithDigest(
         context: Context,
         dm: DownloadManager,
         downloadId: Long,
         localUriStr: String?,
         targetFile: File
-    ): Boolean {
+    ): String? {
+        val md = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(256 * 1024)
+
+        fun copyStream(input: java.io.InputStream): Boolean = runCatching {
+            DigestInputStream(input, md).use { dis ->
+                targetFile.outputStream().use { fos ->
+                    var r: Int
+                    while (dis.read(buffer).also { r = it } != -1) {
+                        fos.write(buffer, 0, r)
+                    }
+                }
+            }
+            true
+        }.getOrDefault(false)
+
         // المحاولة 1: عبر openDownloadedFile المعتمدة رسمياً
         val pfdSuccess = runCatching {
             dm.openDownloadedFile(downloadId)?.use { pfd ->
                 java.io.FileInputStream(pfd.fileDescriptor).use { input ->
-                    targetFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
+                    copyStream(input)
                 }
-                true
-            }
-        }.getOrNull() ?: false
+            } ?: false
+        }.getOrDefault(false)
 
-        if (pfdSuccess && targetFile.length() > 0L) return true
+        if (pfdSuccess && targetFile.length() > 0L) {
+            return md.digest().joinToString("") { "%02x".format(it) }
+        }
 
         // المحاولة 2: عبر مسار ملف محلي من COLUMN_LOCAL_URI
         if (!localUriStr.isNullOrBlank()) {
-            val fileSuccess = runCatching {
-                val uri = Uri.parse(localUriStr)
-                val srcFile = if (uri.scheme == "file") {
-                    uri.path?.let { File(it) }
-                } else null
+            val uri = Uri.parse(localUriStr)
+            if (uri.scheme == "file") {
+                val srcFile = uri.path?.let { File(it) }
                 if (srcFile != null && srcFile.isFile &&
                     srcFile.length() > 0L
                 ) {
-                    srcFile.inputStream().use { input ->
-                        targetFile.outputStream().use { output ->
-                            input.copyTo(output)
+                    val ok = runCatching {
+                        srcFile.inputStream().use { input -> copyStream(input) }
+                    }.getOrDefault(false)
+                    if (ok && targetFile.length() > 0L) {
+                        return md.digest().joinToString("") {
+                            "%02x".format(it)
                         }
                     }
-                    true
-                } else false
-            }.getOrNull() ?: false
-            if (fileSuccess && targetFile.length() > 0L) return true
-        }
-
-        // المحاولة 3: عبر ContentResolver إن كان المسار content://
-        if (!localUriStr.isNullOrBlank()) {
-            val contentSuccess = runCatching {
-                val uri = Uri.parse(localUriStr)
+                }
+            }
+            // المحاولة 3: عبر ContentResolver إن كان المسار content://
+            val contentOk = runCatching {
                 context.contentResolver.openInputStream(uri)?.use { input ->
-                    targetFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                    true
+                    copyStream(input)
                 } ?: false
-            }.getOrNull() ?: false
-            if (contentSuccess && targetFile.length() > 0L) return true
+            }.getOrDefault(false)
+            if (contentOk && targetFile.length() > 0L) {
+                return md.digest().joinToString("") { "%02x".format(it) }
+            }
         }
 
-        return false
+        return null
     }
 
     /** فتح شاشة تثبيت النظام لملف APK محلي عبر FileProvider. */

@@ -580,9 +580,16 @@ internal class VocalizerHostSession(
         for (ev in engineVoices) {
             val eName = ev.voiceName ?: continue
             val eCanon = VoiceIdContract.canonicalVoiceName(eName)
-            val langTag = LocaleUtils.toBcp47Tag(ev.language)
+            val rawLangTag = LocaleUtils.toBcp47Tag(ev.language)
                 ?: LocaleUtils.toBcp47Tag(ev.languageTLW)
                 ?: ev.language.orEmpty()
+            val langTag = if (rawLangTag.isBlank() &&
+                eName.contains("mariam", ignoreCase = true)
+            ) {
+                "ar"
+            } else {
+                rawLangTag
+            }
             val installedVariants = if (dataDir != null) {
                 VocalizerModelCatalog.ITEMS.filter { item ->
                     VoiceIdContract.sameVoiceName(
@@ -623,9 +630,16 @@ internal class VocalizerHostSession(
         for (ev in engineVoices) {
             val eName = ev.voiceName ?: continue
             if (eName.lowercase(Locale.ROOT) in coveredEngineNames) continue
-            val langTag = LocaleUtils.toBcp47Tag(ev.language)
+            val rawLangTag = LocaleUtils.toBcp47Tag(ev.language)
                 ?: LocaleUtils.toBcp47Tag(ev.languageTLW)
                 ?: ev.language.orEmpty()
+            val langTag = if (rawLangTag.isBlank() &&
+                eName.contains("mariam", ignoreCase = true)
+            ) {
+                "ar"
+            } else {
+                rawLangTag
+            }
             val hv = HostVoice(
                 id = "vocalizer_${eName.lowercase(Locale.ROOT)}",
                 name = eName,

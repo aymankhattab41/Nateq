@@ -2519,6 +2519,8 @@ internal class AcapelaHostSession(
                 appendLine("المعرّف: ${voice.id}")
             }.trimEnd()
             appendAcapelaFullDiagnostic(preInvoke)
+            File(voice.dir.parentFile ?: voice.dir, "userdicos").mkdirs()
+            File(voice.dir, "userdicos").mkdirs()
             val verification = AcapelaVoiceDiagnostics
                 .verifyAuthenticVoicePackage(
                     voiceDir = voice.dir,

@@ -419,14 +419,25 @@ object AcapelaVoiceImporter {
                 val targetUserdicos = File(targetDir, "userdicos").apply {
                     mkdirs()
                 }
-                if (sharedUserdicos != null &&
-                    sharedUserdicos != targetUserdicos
-                ) {
-                    runCatching {
-                        sharedUserdicos.copyRecursively(
-                            targetUserdicos,
-                            overwrite = true
-                        )
+                if (sharedUserdicos != null) {
+                    val siblingUserdicos = File(
+                        targetDir.parentFile ?: targetDir, "userdicos"
+                    ).apply { mkdirs() }
+                    if (sharedUserdicos != targetUserdicos) {
+                        runCatching {
+                            sharedUserdicos.copyRecursively(
+                                targetUserdicos,
+                                overwrite = true
+                            )
+                        }
+                    }
+                    if (sharedUserdicos != siblingUserdicos) {
+                        runCatching {
+                            sharedUserdicos.copyRecursively(
+                                siblingUserdicos,
+                                overwrite = true
+                            )
+                        }
                     }
                 }
                 if (hexFile != null) {

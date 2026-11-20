@@ -305,14 +305,26 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                     }
                     appendLine("")
                 }
-                // **كان `takeLast(150)`** يطبع التقرير آخر 150 سطراً فقط
-                // مهما بلغ ما التقطه الجامع (20 ألف سطر)، فتضيع
-                // الأسطرُ المفيدة وسط الصمت. الآن يُطبع المخزنُ كلُّه
-                // وقد حُدَّت سعته بسقفٍ آمن في ذاكرة الجهاز.
+                val appLogLines = logLines.filter { line ->
+                    line.contains("NATEQ") ||
+                        line.contains("Lord") ||
+                        line.contains("Acapela") ||
+                        line.contains("Vocalizer") ||
+                        line.contains("Microsoft") ||
+                        line.contains("TTS") ||
+                        line.contains("Audio") ||
+                        line.contains("Voice") ||
+                        line.contains("EngineHost") ||
+                        line.contains("Speech") ||
+                        DiagnosticLogRecorder.isDiagnosticLine(line) ||
+                        DiagnosticLogRecorder.severityOf(line) in
+                        listOf('E', 'F', 'W')
+                }.takeLast(250)
                 appendLine(
-                    "--- سجل نشاط التطبيق (${logLines.size} سطر) ---"
+                    "--- سجل نشاط التطبيق والصوت " +
+                        "(${appLogLines.size} سطر) ---"
                 )
-                logLines.forEach {
+                appLogLines.forEach {
                     appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it))
                 }
             }
@@ -335,14 +347,20 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                         line.contains("acattsandroid") ||
                         line.contains("tts_function") ||
                         line.contains("BABILE") ||
-                        line.contains("eb=-")
+                        line.contains("eb=-") ||
+                        line.contains("Acapela") ||
+                        line.contains("Vocalizer") ||
+                        line.contains("Microsoft") ||
+                        line.contains("TTS") ||
+                        line.contains("Audio") ||
+                        line.contains("Voice")
                 }
                 if (ttsFiltered.isNotEmpty()) {
                     appendLine(
                         "--- أسطر :tts المستهدفة " +
                             "(${ttsFiltered.size}) ---"
                     )
-                    ttsFiltered.takeLast(300).forEach {
+                    ttsFiltered.takeLast(250).forEach {
                         appendLine(
                             AcapelaVoiceDiagnostics
                                 .redactSensitiveLine(it)
@@ -350,11 +368,19 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                     }
                     appendLine("")
                 }
+                val ttsRecent = ttsLogLines.filter { line ->
+                    line.contains("NATEQ") ||
+                        line.contains("TTS") ||
+                        line.contains("Audio") ||
+                        line.contains("Voice") ||
+                        DiagnosticLogRecorder.severityOf(line) in
+                        listOf('E', 'F', 'W')
+                }.takeLast(250)
                 appendLine(
                     "--- أحدث أسطر عملية :tts " +
-                        "(${ttsLogLines.size}) ---"
+                        "(${ttsRecent.size}) ---"
                 )
-                ttsLogLines.takeLast(300).forEach {
+                ttsRecent.forEach {
                     appendLine(AcapelaVoiceDiagnostics.redactSensitiveLine(it))
                 }
             }

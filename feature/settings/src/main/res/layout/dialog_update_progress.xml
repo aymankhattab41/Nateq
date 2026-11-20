@@ -46,4 +46,13 @@
         android:textColor="?attr/colorError"
         android:visibility="gone" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_resume_metered"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/update_dialog_resume_mobile"
+        android:visibility="gone" />
+
 </LinearLayout>

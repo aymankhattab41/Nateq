@@ -804,12 +804,21 @@ class NateqTtsService : TextToSpeechService() {
         if (request == null || callback == null) return
         val incomingText = request.charSequenceText?.toString()
             ?: request.text
-        // إلغاء التركيب السابق فقط عند وصول نص جديد يستبدله
-        if (!incomingText.isNullOrBlank()) {
-            val prevGen = requestGeneration.get()
-            if (activeJobGeneration == prevGen) {
-                activeJob?.cancel()
+        if (incomingText.isNullOrBlank()) {
+            runCatching {
+                callback.start(
+                    EMPTY_TEXT_SAMPLE_RATE,
+                    PCM_16BIT,
+                    1
+                )
+                callback.done()
             }
+            return
+        }
+        // إلغاء التركيب السابق فقط عند وصول نص جديد يستبدله
+        val prevGen = requestGeneration.get()
+        if (activeJobGeneration == prevGen) {
+            activeJob?.cancel()
         }
         val myGen = requestGeneration.incrementAndGet()
         // طلبُ تخليقٍ حقيقيّ وصل — ألغِ التدفئة الخلفية الجارية (اكتشاف
@@ -2798,8 +2807,14 @@ class NateqTtsService : TextToSpeechService() {
         var hadCriticalDrop = false
         val maxBytes = callback.maxBufferSize
         val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
+        var lastSegmentEndUptime = -1L
         for (segment in segments) {
             val segStart = SystemClock.uptimeMillis()
+            val gap = if (lastSegmentEndUptime > 0L) {
+                (segStart - lastSegmentEndUptime).coerceAtLeast(0L)
+            } else {
+                0L
+            }
             val params = resolveSegmentParams(
                 segment, readerRate, appVoice, reqVoiceName, effectCategory
             )
@@ -2884,6 +2899,7 @@ class NateqTtsService : TextToSpeechService() {
                 }
             }
             val segEnd = SystemClock.uptimeMillis()
+            lastSegmentEndUptime = segEnd
             onSegmentMetric?.invoke(
                 SpeechLatencyTracker.SegmentMetric(
                     text = segment.text,
@@ -2893,7 +2909,8 @@ class NateqTtsService : TextToSpeechService() {
                     endUptimeMs = segEnd,
                     durationMs = segEnd - segStart,
                     attempts = 1,
-                    success = !hadCriticalDrop
+                    success = !hadCriticalDrop,
+                    gapBeforeMs = gap
                 )
             )
         }

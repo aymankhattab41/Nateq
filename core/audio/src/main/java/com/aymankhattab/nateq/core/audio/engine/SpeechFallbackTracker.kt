@@ -95,6 +95,7 @@ object SpeechFallbackTracker {
         acapelaPcmBytes: Long? = null,
         exception: Throwable? = null
     ) {
+        if (text.isBlank()) return
         val reqEng = requestedEngine?.ifBlank { "default" } ?: "default"
         val reqV = requestedVoice?.ifBlank { "default" } ?: "default"
         val actEng = actualEngine?.ifBlank { "default" } ?: "default"

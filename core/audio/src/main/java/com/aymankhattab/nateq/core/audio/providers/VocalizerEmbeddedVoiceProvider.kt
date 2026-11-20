@@ -7,6 +7,7 @@ import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.announcement.LoudnessStage
+import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
@@ -442,6 +443,27 @@ class VocalizerEmbeddedVoiceProvider(
                         PROVIDER_ID, "VOICE_NOT_FOUND", msg
                     )
                     announceVoiceFailureAudibly(context, msg)
+                    val failureReason =
+                        "فشل نطق Vocalizer [VOICE_NOT_FOUND]: $msg"
+                    runCatching {
+                        SpeechFallbackTracker.record(
+                            text = text,
+                            languageTag = "ar",
+                            requestedEngine = PROVIDER_ID,
+                            requestedVoice = requestedId,
+                            actualEngine = PROVIDER_ID,
+                            actualVoice = null,
+                            isFallback = true,
+                            fallbackReason = failureReason,
+                            source = category ?: "VocalizerEmbedded"
+                        )
+                    }
+                    runCatching {
+                        SettingsRepository.create(context)
+                            .setLastFallbackFailureInfo(
+                                "$failureReason | requested=$requestedId"
+                            )
+                    }
                     return@withContext
                 }
                 else -> resolution.name.ifBlank { requestedId }
@@ -494,6 +516,27 @@ class VocalizerEmbeddedVoiceProvider(
                     synthResult.code == "LOAD_VOICE_FAILED"
                 ) {
                     announceVoiceFailureAudibly(context, msg)
+                }
+                val failureReason =
+                    "فشل نطق Vocalizer [${synthResult.code}]: $msg"
+                runCatching {
+                    SpeechFallbackTracker.record(
+                        text = text,
+                        languageTag = "ar",
+                        requestedEngine = PROVIDER_ID,
+                        requestedVoice = requestedId,
+                        actualEngine = PROVIDER_ID,
+                        actualVoice = null,
+                        isFallback = true,
+                        fallbackReason = failureReason,
+                        source = category ?: "VocalizerEmbedded"
+                    )
+                }
+                runCatching {
+                    SettingsRepository.create(context)
+                        .setLastFallbackFailureInfo(
+                            "$failureReason | requested=$requestedId"
+                        )
                 }
             }
         }

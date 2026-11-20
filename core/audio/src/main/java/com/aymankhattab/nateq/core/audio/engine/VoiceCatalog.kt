@@ -528,9 +528,23 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                                 "voice=${voice.name} pkg=$pkg " +
                                 "derived=$derived"
                         )
+                        val effectiveVoice = if (voice.locale == null ||
+                            voice.locale.language.isBlank()
+                        ) {
+                            Voice(
+                                voice.name,
+                                Locale.forLanguageTag(derived),
+                                voice.quality,
+                                voice.latency,
+                                voice.isNetworkConnectionRequired,
+                                voice.features
+                            )
+                        } else {
+                            voice
+                        }
                         grouped.getOrPut(derived) { LinkedHashMap() }
                             .getOrPut(pkg) { mutableListOf() }
-                            .add(voice)
+                            .add(effectiveVoice)
                         continue
                     }
                     val lang = LocaleUtils.normalizeLanguageCode(rawLang)

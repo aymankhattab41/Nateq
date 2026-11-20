@@ -1169,7 +1169,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             categoryVoicePanel.onResume()
         }
         refreshEmbeddedUiIfStorageChanged()
-        refreshVoiceCatalogDiscovery()
+        ensureVoiceCatalogDiscovered()
         resumeUpdateDownloadIfNeeded()
         refreshToolsShortcuts()
     }
@@ -1436,7 +1436,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     }
 
     internal fun ensureVoiceCatalogDiscovered() {
-        refreshVoiceCatalogDiscovery()
+        if (!::engineCatalog.isInitialized ||
+            !engineCatalog.hasDiscoveredData()
+        ) {
+            refreshVoiceCatalogDiscovery()
+        }
     }
 
     /** ÙŠØ¹Ø§Ù„Ø¬ Ø£Ø­Ø¯Ø§Ø« Ø§Ù„Ø¹Ù…Ù„ÙŠØ§Øª ØºÙŠØ± Ø§Ù„Ù…ØªØ²Ø§Ù…Ù†Ø© Ø§Ù„Ù‚Ø§Ø¯Ù…Ø© Ù…Ù† Ø§Ù„ÙÙŠ Ø¥Ù… (ØªØ¬Ø±ÙŠ ÙƒÙ„Ù‡Ø§ Ø¹Ù„Ù‰

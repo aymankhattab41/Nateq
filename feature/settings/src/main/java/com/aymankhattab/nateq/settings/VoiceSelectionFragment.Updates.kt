@@ -340,6 +340,9 @@ internal fun VoiceSelectionFragment.showUpdateProgressDialog(
     val tvStatusMessage = dialogView.findViewById<TextView>(
         R.id.tv_update_status_message
     )
+    val btnResumeMetered = dialogView.findViewById<View>(
+        R.id.btn_resume_metered
+    )
 
     tvFileName.text = getString(
         R.string.update_dialog_file_name,
@@ -348,6 +351,9 @@ internal fun VoiceSelectionFragment.showUpdateProgressDialog(
     progressBar.isIndeterminate = true
     tvProgressText.text = getString(R.string.update_dialog_starting)
     tvStatusMessage.visibility = View.GONE
+    btnResumeMetered?.visibility = View.GONE
+
+    var activeDownloadId = downloadId
 
     val dialog = MaterialAlertDialogBuilder(ctx)
         .setTitle(R.string.update_dialog_title)
@@ -357,7 +363,7 @@ internal fun VoiceSelectionFragment.showUpdateProgressDialog(
             updatePollingJob?.cancel()
             updatePollingJob = null
             updateProgressDialog = null
-            UpdateChecker.cancelDownload(ctx, downloadId)
+            UpdateChecker.cancelDownload(ctx, activeDownloadId)
             settings.clearActiveUpdateDownload()
             updateReceiver?.let {
                 runCatching {
@@ -386,7 +392,7 @@ internal fun VoiceSelectionFragment.showUpdateProgressDialog(
     updatePollingJob = viewLifecycleOwner.lifecycleScope.launch {
         while (isActive) {
             val progress = withContext(AppDispatchers.io) {
-                UpdateChecker.queryProgress(ctx, downloadId)
+                UpdateChecker.queryProgress(ctx, activeDownloadId)
             }
 
             if (progress == null || progress.status == -1) {
@@ -398,6 +404,7 @@ internal fun VoiceSelectionFragment.showUpdateProgressDialog(
                 DownloadManager.STATUS_RUNNING,
                 DownloadManager.STATUS_PENDING -> {
                     tvStatusMessage.visibility = View.GONE
+                    btnResumeMetered?.visibility = View.GONE
                     if (progress.totalBytes > 0L) {
                         progressBar.isIndeterminate = false
                         progressBar.progress = progress.percent
@@ -444,19 +451,40 @@ internal fun VoiceSelectionFragment.showUpdateProgressDialog(
                         tvStatusMessage.text = getString(
                             R.string.update_dialog_paused_wifi
                         )
+                        btnResumeMetered?.visibility = View.VISIBLE
+                        btnResumeMetered?.setOnClickListener {
+                            btnResumeMetered.visibility = View.GONE
+                            val dm = ctx.getSystemService(
+                                Context.DOWNLOAD_SERVICE
+                            ) as? DownloadManager
+                            dm?.remove(activeDownloadId)
+                            val newId = UpdateChecker.enqueueDownload(
+                                context = ctx,
+                                apkUrl = apkUrl,
+                                allowMetered = true
+                            )
+                            activeDownloadId = newId
+                            settings.setActiveUpdateDownload(
+                                newId,
+                                apkUrl,
+                                expectedSha256Hex
+                            )
+                        }
                     } else {
+                        btnResumeMetered?.visibility = View.GONE
                         tvStatusMessage.text = getString(
                             R.string.update_dialog_paused_network
                         )
                     }
                 }
                 DownloadManager.STATUS_SUCCESSFUL -> {
+                    btnResumeMetered?.visibility = View.GONE
                     progressBar.isIndeterminate = false
                     progressBar.progress = 100
                     val res = withContext(AppDispatchers.io) {
                         UpdateChecker.processCompletedDownload(
                             ctx,
-                            downloadId,
+                            activeDownloadId,
                             expectedSha256Hex
                         )
                     }

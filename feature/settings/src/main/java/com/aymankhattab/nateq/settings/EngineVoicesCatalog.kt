@@ -53,6 +53,9 @@ internal class EngineVoicesCatalog(
         unavailable = unavailableMap
     }
 
+    /** يتحقق من وجود بيانات مكتشفة مسبقاً في الكتالوج. */
+    fun hasDiscoveredData(): Boolean = byLanguage.isNotEmpty()
+
     /** يُسجّل أو يُلغي حالة جارٍ التحميل لمحرك معين. */
     fun setLoading(engine: String, loading: Boolean) {
         if (loading) {
