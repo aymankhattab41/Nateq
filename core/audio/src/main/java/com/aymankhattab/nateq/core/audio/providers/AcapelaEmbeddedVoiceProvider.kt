@@ -271,6 +271,9 @@ class AcapelaEmbeddedVoiceProvider(
                     result.message
                 )
             } else {
+                com.aymankhattab.nateq.core.audio.engine
+                    .SpeechFallbackTracker.clearAcapelaFallbackState()
+                EngineStatusRegistry.noteReady(PROVIDER_ID)
                 EngineStatusRegistry.noteSpeakSuccess(PROVIDER_ID)
             }
         }

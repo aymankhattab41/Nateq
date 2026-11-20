@@ -64,6 +64,10 @@ object AcapelaVoiceDiagnostics {
      */
     const val ACAPELA_FULL_DIAGNOSTIC_FILE = "acapela_full_diagnostic.txt"
 
+    /** اسم ملف آخر محاولة نطق حقيقية فاشلة مع أسطر المكتبة الأصلية. */
+    const val ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE =
+        "acapela_last_real_speech_failure.txt"
+
     /** السقف الأقصى لأحرف التقرير المنسوخ/المُشارَك (بناء 10729). */
     const val MAX_SHARED_REPORT_CHARS = 60_000
 
@@ -2532,7 +2536,7 @@ object AcapelaVoiceDiagnostics {
             }
 
             val voiceIdToPass = if (voice.id.isNotBlank()) voice.id else "Salma"
-            EngineHostClient.synthesize(
+            val synthRes = EngineHostClient.synthesize(
                 context = context,
                 engineId = HostProtocol.ENGINE_ACAPELA,
                 voiceId = voiceIdToPass,
@@ -2543,6 +2547,16 @@ object AcapelaVoiceDiagnostics {
                 onFormatInfo = { _, _ -> },
                 onAudioChunk = { _, _ -> }
             )
+            if (synthRes.ok) {
+                com.aymankhattab.nateq.core.audio.engine
+                    .SpeechFallbackTracker.clearAcapelaFallbackState()
+                EngineStatusRegistry.noteReady(
+                    AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+                )
+                EngineStatusRegistry.noteSpeakSuccess(
+                    AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+                )
+            }
         } catch (t: Throwable) {
             val sw = java.io.StringWriter()
             t.printStackTrace(java.io.PrintWriter(sw))
@@ -2569,24 +2583,76 @@ object AcapelaVoiceDiagnostics {
     /**
      * يبني تقرير تشخيص Acapela للمحاولة الحالية فقط: يقرأ الملف المستقر
      * [ACAPELA_FULL_DIAGNOSTIC_FILE] المقطوع لكل محاولة، وينقّيه من الأسرار
-     * (متعدد الأسطر) بلا إلحاق/إرث بيانات قديمة.
+     * (متعدد الأسطر) بلا إلحاق/إرث بيانات قديمة، مع إلحاق آخر محاولة نطق
+     * حقيقية فاشلة إن وجدت.
      */
     fun buildAcapelaFullReport(context: Context): String {
         val diagFile = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
-        if (diagFile.isFile && diagFile.length() > 0L) {
+        val mainReport = if (diagFile.isFile && diagFile.length() > 0L) {
             val text = runCatching {
                 diagFile.readText(StandardCharsets.UTF_8)
             }.getOrNull().orEmpty()
             if (text.isNotBlank()) {
-                return redactSensitiveText(text).trimEnd()
-            }
+                redactSensitiveText(text).trimEnd()
+            } else ""
+        } else ""
+
+        val failureFile = File(
+            context.cacheDir,
+            ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE
+        )
+        val failureText = if (failureFile.isFile && failureFile.length() > 0L) {
+            runCatching {
+                failureFile.readText(StandardCharsets.UTF_8)
+            }.getOrNull().orEmpty()
+        } else ""
+
+        val baseReport = if (mainReport.isNotBlank()) {
+            mainReport
+        } else {
+            buildString {
+                appendLine("=== تشخيص Acapela ===")
+                appendLine("لا يوجد سجل لمحاولة حالية.")
+                appendLine("nSpeak: غير مقيس")
+                appendLine("PCM: غير مقيس")
+            }.trimEnd()
         }
-        return buildString {
-            appendLine("=== تشخيص Acapela ===")
-            appendLine("لا يوجد سجل لمحاولة حالية.")
-            appendLine("nSpeak: غير مقيس")
-            appendLine("PCM: غير مقيس")
-        }.trimEnd()
+
+        return if (failureText.isNotBlank()) {
+            if (!baseReport.contains("=== آخر محاولة نطق حقيقية فاشلة ===")) {
+                baseReport + "\n\n" + redactSensitiveText(failureText).trimEnd()
+            } else {
+                baseReport
+            }
+        } else {
+            baseReport
+        }
+    }
+
+    /**
+     * قراءة آخر محاولة نطق حقيقية فاشلة إن وُجدت.
+     */
+    fun readLastRealSpeechFailure(context: Context): String? {
+        val file = File(
+            context.cacheDir,
+            ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE
+        )
+        return if (file.isFile && file.length() > 0L) {
+            runCatching {
+                file.readText(StandardCharsets.UTF_8)
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+        } else null
+    }
+
+    /**
+     * مسح ملف آخر محاولة نطق حقيقية فاشلة.
+     */
+    fun clearLastRealSpeechFailure(context: Context) {
+        val file = File(
+            context.cacheDir,
+            ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE
+        )
+        runCatching { file.delete() }
     }
 
     /**

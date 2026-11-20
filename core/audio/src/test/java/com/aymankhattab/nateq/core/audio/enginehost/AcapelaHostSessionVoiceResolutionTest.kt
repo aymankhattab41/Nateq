@@ -148,4 +148,110 @@ class AcapelaHostSessionVoiceResolutionTest {
         assertNotNull(afterBump)
         assertEquals("Layla", afterBump?.voiceName)
     }
+
+    @Test
+    fun handleRealSpeechFailure_writesToPersistentFileAndReportsDetails() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val session = AcapelaHostSession(context)
+        val voiceDir = tempFolder.newFolder("salma_fail_test")
+        val voice = AcapelaVoiceManifest.VoiceInfo(
+            id = "Salma",
+            voiceName = "Salma",
+            displayName = "Salma (العربية)",
+            locale = Locale.forLanguageTag("ar-SA"),
+            sampleRate = 22050,
+            dir = voiceDir,
+            rawSpeaker = "salma22k",
+            registration = "test@domain.com|0123456789abcdef"
+        )
+
+        val failFile = File(
+            context.cacheDir,
+            com.aymankhattab.nateq.core.audio.providers
+                .AcapelaVoiceDiagnostics.ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE
+        )
+        failFile.delete()
+
+        val startMarker = "=== START_REAL_SPEAK_Salma_test ==="
+        val endMarker = "=== END_REAL_SPEAK_Salma_test ==="
+
+        val result = session.handleRealSpeechFailure(
+            voice = voice,
+            path = "extended",
+            chunk = "مرحبا بكم في الاختبار",
+            speakRes = -2,
+            startMarker = startMarker,
+            endMarker = endMarker
+        )
+
+        org.junit.Assert.assertFalse(result.ok)
+        assertEquals("SPEAK_ERROR", result.code)
+        assertTrue(result.message?.contains("-2") == true)
+
+        assertTrue(failFile.exists())
+        val content = failFile.readText()
+        assertTrue(content.contains("=== آخر محاولة نطق حقيقية فاشلة ==="))
+        assertTrue(content.contains("كود nSpeak: -2"))
+        assertTrue(content.contains("Salma"))
+        assertTrue(content.contains("أول خطأ أصلي:"))
+    }
+
+    @Test
+    fun trialLock_softerPolicy_allowsUpToThreeFailuresBeforeLocking() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val session = AcapelaHostSession(context)
+        val voiceDir = tempFolder.newFolder("salma_lock_test")
+        val voice = AcapelaVoiceManifest.VoiceInfo(
+            id = "Salma",
+            voiceName = "Salma",
+            displayName = "Salma",
+            locale = Locale.forLanguageTag("ar-SA"),
+            sampleRate = 22050,
+            dir = voiceDir,
+            rawSpeaker = "salma22k",
+            registration = "reg_test_123"
+        )
+        val trialKey = "${voiceDir.absolutePath}|salma22k|reg_test_123"
+
+        // محاولة أولى فاشلة: لا يتم قفل الجلسة
+        session.handleRealSpeechFailure(
+            voice, "extended", "chunk1", -2, "s1", "e1"
+        )
+        assertEquals(1, session.consecutiveTrialFailures[trialKey])
+        org.junit.Assert.assertNull(session.failedTrialKey)
+
+        // محاولة ثانية فاشلة: ما زالت لا تُقفل
+        session.handleRealSpeechFailure(
+            voice, "extended", "chunk2", -2, "s2", "e2"
+        )
+        assertEquals(2, session.consecutiveTrialFailures[trialKey])
+        org.junit.Assert.assertNull(session.failedTrialKey)
+
+        // محاولة ثالثة فاشلة: الآن فقط يُثبت القفل
+        session.handleRealSpeechFailure(
+            voice, "extended", "chunk3", -2, "s3", "e3"
+        )
+        assertEquals(3, session.consecutiveTrialFailures[trialKey])
+        assertEquals(trialKey, session.failedTrialKey)
+
+        // نجاح يصفّر العداد ويزيل القفل
+        session.onRealSpeechSuccess(voice)
+        org.junit.Assert.assertNull(
+            session.consecutiveTrialFailures[trialKey]
+        )
+        org.junit.Assert.assertNull(session.failedTrialKey)
+    }
+
+    @Test
+    fun trialLock_resetTrialLock_clearsLockImmediately() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val session = AcapelaHostSession(context)
+        val key = "/path/to/voice|speaker|reg"
+        session.consecutiveTrialFailures[key] = 3
+        session.failedTrialKey = key
+
+        session.resetTrialLock()
+        org.junit.Assert.assertNull(session.failedTrialKey)
+        assertTrue(session.consecutiveTrialFailures.isEmpty())
+    }
 }

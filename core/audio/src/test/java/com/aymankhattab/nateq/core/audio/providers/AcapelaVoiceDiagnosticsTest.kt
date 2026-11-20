@@ -281,8 +281,14 @@ class AcapelaVoiceDiagnosticsTest {
             assertTrue(File(minDir, "bvcu.inf").exists())
             assertEquals("ini", File(minDir, "bvcu.ini").readText())
             assertTrue(File(minDir, "ar_sa.dca").exists())
-            assertEquals("extra", File(minDir, "unwanted_extra.txt").readText())
-            assertEquals("dico", File(minDir, "userdicos/user.userdico").readText())
+            assertEquals(
+                "extra",
+                File(minDir, "unwanted_extra.txt").readText()
+            )
+            assertEquals(
+                "dico",
+                File(minDir, "userdicos/user.userdico").readText()
+            )
         } finally {
             root.deleteRecursively()
         }
@@ -1343,6 +1349,37 @@ class AcapelaVoiceDiagnosticsTest {
         } finally {
             stable.delete()
             legacy.delete()
+        }
+    }
+
+    @Test
+    fun buildAcapelaFullReport_appendsLastRealSpeechFailureWhenPresent() {
+        val cache = context.cacheDir
+        val stable = File(
+            cache,
+            AcapelaVoiceDiagnostics.ACAPELA_FULL_DIAGNOSTIC_FILE
+        )
+        val failureFile = File(
+            cache,
+            AcapelaVoiceDiagnostics.ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE
+        )
+        val stableMarker = "=== تشخيص Acapela ===\nالمحاولة الحالية ناجحة"
+        val failureMarker =
+            "=== آخر محاولة نطق حقيقية فاشلة ===\nكود nSpeak: -2"
+        try {
+            stable.writeText(stableMarker, StandardCharsets.UTF_8)
+            failureFile.writeText(failureMarker, StandardCharsets.UTF_8)
+
+            val report = AcapelaVoiceDiagnostics.buildAcapelaFullReport(
+                context
+            )
+
+            assertTrue(report.contains(stableMarker))
+            assertTrue(report.contains("=== آخر محاولة نطق حقيقية فاشلة ==="))
+            assertTrue(report.contains("كود nSpeak: -2"))
+        } finally {
+            stable.delete()
+            failureFile.delete()
         }
     }
 
