@@ -963,7 +963,8 @@ object AcapelaVoiceDiagnostics {
         ) to "REDACTED_CALL",
         Regex(
             """(?i)\b(pass(?:wd|word)?|pwd|license|licence|""" +
-                """registration|token|secret|api[_-]?key)\b\s*[:=]\s*""" +
+                """registration|token|secret|api[_-]?key|""" +
+                """param)\b\s*[:=]\s*""" +
                 """("([^"]*)"|'([^']*)'|[^\s,;|]+)"""
         ) to "REDACTED_KV",
         Regex(
@@ -971,8 +972,47 @@ object AcapelaVoiceDiagnostics {
                 """\s*("([^"]*)"|'([^']*)'|[^\s,;|]+)"""
         ) to "REDACTED_KV",
         Regex("""(?i)\b0x[0-9a-f]{10,}\b""") to "REDACTED_HEX",
-        Regex("""\b[A-Za-z0-9+/]{48,}={0,2}\b""") to "REDACTED_BLOB"
+        Regex(
+            """(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{48,}={0,2}""" +
+                """(?![A-Za-z0-9+/])"""
+        ) to "REDACTED_BLOB"
     )
+
+    /**
+     * التحقق مما إذا كان النص مسار ملف آمن لا يجوز إتلافه كحمولة ثنائية.
+     */
+    fun isSafeFilePath(s: String): Boolean {
+        val lower = s.lowercase(Locale.ROOT)
+        return s.startsWith("/") || s.startsWith("\\") ||
+            s.contains(":\\") || s.contains(":/") ||
+            lower.contains("/data/") || lower.contains("/storage/") ||
+            lower.contains("/files/") || lower.contains("/cache/") ||
+            lower.contains("/documents/") ||
+            lower.endsWith(".so") || lower.endsWith(".ini") ||
+            lower.endsWith(".inf") || lower.endsWith(".bvcu") ||
+            lower.endsWith(".dat") || lower.endsWith(".txt") ||
+            lower.endsWith(".apk")
+    }
+
+    /**
+     * التحقق مما إذا كان النص حمولة ثنائية مشفرة تستوجب الحجب،
+     * مع استبعاد المسارات الآمنة والسلاسل غير المشفرة.
+     */
+    fun isLikelyBlob(s: String): Boolean {
+        if (s.length < 48) return false
+        if (isSafeFilePath(s)) return false
+        if (s.toSet().size < 6) return false
+        val maxFreq = s.groupingBy { it }.eachCount().values
+            .maxOrNull() ?: 0
+        if (maxFreq > s.length / 2) return false
+        val hasUpper = s.any { it in 'A'..'Z' }
+        val hasLower = s.any { it in 'a'..'z' }
+        val hasDigit = s.any { it in '0'..'9' }
+        val variety = (if (hasUpper) 1 else 0) +
+            (if (hasLower) 1 else 0) +
+            (if (hasDigit) 1 else 0)
+        return variety >= 2
+    }
 
     /**
      * إخفاء القيم الحساسة في سطر واحد (ترخيص/كلمات مرور/ndInit/رموز) قبل
@@ -988,7 +1028,13 @@ object AcapelaVoiceDiagnostics {
                         "$name([مُقنَّع])"
                     }
                     "REDACTED_HEX" -> "[HEX_مُقنَّع:${match.value.length}]"
-                    "REDACTED_BLOB" -> "[BLOB_مُقنَّع:${match.value.length}]"
+                    "REDACTED_BLOB" -> {
+                        if (isLikelyBlob(match.value)) {
+                            "[BLOB_مُقنَّع:${match.value.length}]"
+                        } else {
+                            match.value
+                        }
+                    }
                     else -> {
                         val rawKey = match.value.substringBefore('=')
                             .substringBefore(':')
@@ -1015,28 +1061,45 @@ object AcapelaVoiceDiagnostics {
         return out.substring(0, start) + "$key: ${redactSensitive(value)}"
     }
 
-    /**
-     * تنقية قائمة أسطر من البيانات الحساسة مع تتبع حمولة الترخيص متعددة
-     * الأسطر. الأسطر التابعة لحمولة babParam.license تُقنَّع كاملة.
-     */
-    fun redactSensitiveLines(lines: List<String>): List<String> {
-        val result = ArrayList<String>(lines.size)
-        var inLicensePayload = false
-        val payloadChunks = mutableListOf<String>()
-        var licenseHeaderIndex = -1
-        var licenseHeaderPrefix = ""
-
-        fun finishLicenseBlock() {
-            if (licenseHeaderIndex >= 0) {
-                val fullPayload = payloadChunks.joinToString("\n").trim()
-                val maskedVal = redactSensitive(fullPayload)
-                result[licenseHeaderIndex] =
-                    licenseHeaderPrefix + "babParam.license: $maskedVal"
-            }
+    /** جلسة تتبع حجب التراخيص متعددة الأسطر عبر الرسائل والأجزاء. */
+    class RedactionSession(
+        @Volatile var inLicensePayload: Boolean = false,
+        @Volatile var licenseHeaderPrefix: String = "",
+        val payloadChunks: MutableList<String> = mutableListOf()
+    ) {
+        fun reset() {
             inLicensePayload = false
-            licenseHeaderIndex = -1
             licenseHeaderPrefix = ""
             payloadChunks.clear()
+        }
+    }
+
+    val defaultRedactionSession = RedactionSession()
+
+    /**
+     * تنقية قائمة أسطر من البيانات الحساسة مع تتبع حمولة الترخيص متعددة
+     * الأسطر وحفظ حالة القناع عبر الأجزاء دون إعادة ضبط.
+     */
+    fun redactSensitiveLines(
+        lines: List<String>,
+        session: RedactionSession = RedactionSession()
+    ): List<String> {
+        val result = ArrayList<String>(lines.size)
+        var licenseHeaderIndex = -1
+
+        fun finishLicenseBlock() {
+            if (licenseHeaderIndex >= 0 && licenseHeaderIndex < result.size) {
+                val fullPayload = session.payloadChunks
+                    .joinToString("\n").trim()
+                val maskedVal = redactSensitive(fullPayload)
+                result[licenseHeaderIndex] =
+                    session.licenseHeaderPrefix +
+                        "babParam.license: $maskedVal"
+            }
+            session.inLicensePayload = false
+            session.licenseHeaderPrefix = ""
+            session.payloadChunks.clear()
+            licenseHeaderIndex = -1
         }
 
         for (line in lines) {
@@ -1047,14 +1110,14 @@ object AcapelaVoiceDiagnostics {
             )
 
             if (isLicHeader) {
-                if (inLicensePayload) finishLicenseBlock()
-                inLicensePayload = true
+                if (session.inLicensePayload) finishLicenseBlock()
+                session.inLicensePayload = true
                 licenseHeaderIndex = result.size
                 val keyIdx = line.indexOf(
                     "babParam.license",
                     ignoreCase = true
                 )
-                licenseHeaderPrefix = if (keyIdx > 0) {
+                session.licenseHeaderPrefix = if (keyIdx > 0) {
                     line.substring(0, keyIdx)
                 } else {
                     ""
@@ -1064,17 +1127,40 @@ object AcapelaVoiceDiagnostics {
                 ).trimStart(':', '=', ' ', '\t', '"', '\'')
                     .trimEnd('"', '\'')
                 if (rawVal.isNotBlank() && rawVal != "[مُقنَّع]") {
-                    payloadChunks.add(rawVal)
+                    session.payloadChunks.add(rawVal)
                 }
                 result.add(redactSensitiveLine(line))
                 continue
             }
 
-            if (inLicensePayload) {
-                val tagEnd = if (line.contains("acattsandroid")) {
-                    val atIdx = line.indexOf("acattsandroid")
-                    val colIdx = line.indexOf(':', atIdx)
-                    if (colIdx > 0) colIdx + 1 else 0
+            if (session.inLicensePayload) {
+                val isNewField = line.contains("tts_function_") ||
+                    line.contains("BABILE_") ||
+                    line.contains("===") ||
+                    line.contains("---") ||
+                    line.contains("Default voice") ||
+                    line.contains("acattsandroid-extended-native") ||
+                    line.contains("nSpeak") ||
+                    line.contains("nInit") ||
+                    line.contains("nStop") ||
+                    line.contains("nShutdown") ||
+                    line.contains("initLanguage") ||
+                    line.contains("userdico") ||
+                    line.contains("nlpInitError") ||
+                    line.contains("sNLPConfig") ||
+                    line.contains("ExitReason") ||
+                    line.contains("runId") ||
+                    sensitiveLogKeys.any { k ->
+                        k != "babParam.license" &&
+                            line.contains(k, ignoreCase = true)
+                    }
+
+                val lastColon = line.lastIndexOf(':')
+                val tagEnd = if (lastColon >= 0 &&
+                    lastColon < line.length - 1 &&
+                    line[lastColon + 1].isWhitespace()
+                ) {
+                    lastColon + 1
                 } else {
                     0
                 }
@@ -1089,23 +1175,6 @@ object AcapelaVoiceDiagnostics {
                     trimmed
                 }
 
-                val isNewField = line.contains("tts_function_") ||
-                    line.contains("BABILE_") ||
-                    line.contains("===") ||
-                    line.contains("---") ||
-                    line.contains("Default voice") ||
-                    line.contains("acattsandroid-extended-native") ||
-                    line.contains("nSpeak") ||
-                    line.contains("nInit") ||
-                    line.contains("initLanguage") ||
-                    line.contains("userdico") ||
-                    line.contains("nlpInitError") ||
-                    line.contains("sNLPConfig") ||
-                    sensitiveLogKeys.any { k ->
-                        k != "babParam.license" &&
-                            line.contains(k, ignoreCase = true)
-                    }
-
                 val isLikelyPayloadLine = !isNewField &&
                     content.isNotEmpty() &&
                     !content.contains(' ') &&
@@ -1119,7 +1188,7 @@ object AcapelaVoiceDiagnostics {
                     result.add(redactSensitiveLine(line))
                 } else {
                     if (content.isNotBlank()) {
-                        payloadChunks.add(content.trim('\'', '"'))
+                        session.payloadChunks.add(content.trim('\'', '"'))
                     }
                     result.add("$logcatPfx[حمولة ترخيص مُقنَّعة]")
                 }
@@ -1127,8 +1196,15 @@ object AcapelaVoiceDiagnostics {
                 result.add(redactSensitiveLine(line))
             }
         }
-        if (inLicensePayload) {
-            finishLicenseBlock()
+        if (session.inLicensePayload && licenseHeaderIndex >= 0 &&
+            licenseHeaderIndex < result.size
+        ) {
+            val fullPayload = session.payloadChunks
+                .joinToString("\n").trim()
+            val maskedVal = redactSensitive(fullPayload)
+            result[licenseHeaderIndex] =
+                session.licenseHeaderPrefix +
+                    "babParam.license: $maskedVal"
         }
         return result
     }
@@ -1137,7 +1213,10 @@ object AcapelaVoiceDiagnostics {
      * ينقّي النص من مواد حساسة: مفاتيح/رموز، توقيعات، معرّفات، مسارات.
      * تنقية كاملة متعددة الأسطر بلا ذيول/أجزاء متبقية.
      */
-    fun redactSensitiveText(text: String?): String {
+    fun redactSensitiveText(
+        text: String?,
+        session: RedactionSession = RedactionSession()
+    ): String {
         if (text.isNullOrEmpty()) return text.orEmpty()
         val blockRedacted = text
             .replace(
@@ -1148,7 +1227,7 @@ object AcapelaVoiceDiagnostics {
                 "[REDACTED_BLOCK]"
             )
         val lines = blockRedacted.lines()
-        val redacted = redactSensitiveLines(lines)
+        val redacted = redactSensitiveLines(lines, session)
         return redacted.joinToString("\n")
     }
 
@@ -1520,7 +1599,8 @@ object AcapelaVoiceDiagnostics {
         samples: Long?,
         nativeLines: List<String>,
         callbackConnected: Boolean = true,
-        invoked: Boolean = true
+        invoked: Boolean = true,
+        speaker: String? = null
     ): Boolean {
         if (!invoked) return false
         val code = speakCode ?: return false
@@ -1530,7 +1610,13 @@ object AcapelaVoiceDiagnostics {
                 line.contains("not loaded", ignoreCase = true) ||
                 line.contains("load error", ignoreCase = true)
         }
-        return callbackConnected && code == 0 && pcm > 0L && !hasLangError
+        val speakerLoaded = if (speaker != null) {
+            isSpeakerLoadedInLogs(speaker, nativeLines)
+        } else {
+            true
+        }
+        return callbackConnected && code == 0 && pcm > 0L &&
+            !hasLangError && speakerLoaded
     }
 
     fun evaluateTrialSuccess10723(
@@ -2720,6 +2806,37 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
+     * التحقق الصارم من تحميل الصوت المطلوب حصراً في سجلات المكتبة الأصلية،
+     * مع استبعاد أسطر lang_name واستبعاد نجاح أصوات أخرى.
+     */
+    fun isSpeakerLoadedInLogs(
+        speaker: String,
+        logs: List<String>
+    ): Boolean {
+        val speakerNorm = speaker.trim().lowercase(Locale.ROOT)
+        val loadVoiceLines = logs.filter { line ->
+            line.contains("tts_function_load_voice", ignoreCase = true) &&
+                !line.contains("lang_name", ignoreCase = true)
+        }
+        val matchingLines = loadVoiceLines.filter { line ->
+            val foundSpeaker = Regex(
+                """tts_function_load_voice\s*:\s*([^\s-]+)"""
+            ).find(line)?.groupValues?.get(1)?.trim()
+                ?.lowercase(Locale.ROOT)
+            foundSpeaker == speakerNorm
+        }
+        if (matchingLines.isEmpty()) return false
+        val lastLine = matchingLines.last()
+        val isDone = lastLine.contains("- done", ignoreCase = true) &&
+            !lastLine.contains("- error", ignoreCase = true)
+        val hasError = matchingLines.any {
+            it.contains("- error", ignoreCase = true) ||
+                it.contains("eb -", ignoreCase = true)
+        }
+        return isDone && !hasError
+    }
+
+    /**
      * سجل أول فشل أصلي محدد بالمرحلة لتوثيق السبب الحقيقي قبل التنظيف.
      */
     data class FirstFailureRecord(
@@ -2742,7 +2859,10 @@ object AcapelaVoiceDiagnostics {
         val samples: Long,
         val bytes: Long,
         val exitReasonDesc: String,
-        val isConfirmedNativeCrash: Boolean
+        val isConfirmedNativeCrash: Boolean,
+        val pid: Int = android.os.Process.myPid(),
+        val attemptStartMs: Long = 0L,
+        val attemptEndMs: Long = 0L
     )
 
     val sessionStartWallMs: Long = System.currentTimeMillis()
@@ -2772,6 +2892,13 @@ object AcapelaVoiceDiagnostics {
         )
         sb.appendLine("الوقت: ${record.timestamp}")
         sb.appendLine("runId: ${record.runId}")
+        sb.appendLine("PID: ${record.pid}")
+        if (record.attemptStartMs > 0L) {
+            sb.appendLine("بداية المحاولة: ${record.attemptStartMs}")
+        }
+        if (record.attemptEndMs > 0L) {
+            sb.appendLine("نهاية المحاولة: ${record.attemptEndMs}")
+        }
         sb.appendLine("جيل الاتصال: ${record.connectionGeneration}")
         sb.appendLine("المحرك: ${record.engineName}")
         sb.appendLine("المرحلة: ${record.stage}")
@@ -2804,13 +2931,44 @@ object AcapelaVoiceDiagnostics {
             sb.appendLine("--- سجل logfile.txt ---")
             sb.appendLine(redactSensitiveText(logFileContent).trimEnd())
         }
-        if (nativeTail.isNotEmpty()) {
+        val priorCrashLines = mutableListOf<String>()
+        val currentAttemptLines = mutableListOf<String>()
+        val currPid = record.pid
+        val pidTagRegex = Regex("""\s+(\d{3,6})\s+\d{3,6}\s+[VDIWEF]\s+""")
+
+        for (line in nativeTail) {
+            val linePid = pidTagRegex.find(line)?.groupValues?.get(1)
+                ?.toIntOrNull()
+            val isCrashLine =
+                line.contains("Fatal signal", ignoreCase = true) ||
+                line.contains("SIGSEGV", ignoreCase = true) ||
+                line.contains("SIGABRT", ignoreCase = true) ||
+                line.contains("DEBUG   :", ignoreCase = true) ||
+                line.contains("crash_dump", ignoreCase = true)
+
+            if (linePid != null && linePid != currPid) {
+                priorCrashLines.add(line)
+            } else if (isCrashLine && linePid == null) {
+                priorCrashLines.add(line)
+            } else {
+                currentAttemptLines.add(line)
+            }
+        }
+
+        if (priorCrashLines.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("=== انهيار سابق سياقي (PID سابق) ===")
+            redactSensitiveLines(priorCrashLines).forEach { line ->
+                sb.appendLine(line)
+            }
+        }
+        if (currentAttemptLines.isNotEmpty()) {
             sb.appendLine()
             sb.appendLine(
                 "--- أسطر المكتبة الأصلية (acattsandroid) " +
-                    "(${nativeTail.size} سطر) ---"
+                    "(${currentAttemptLines.size} سطر) ---"
             )
-            redactSensitiveLines(nativeTail).forEach { line ->
+            redactSensitiveLines(currentAttemptLines).forEach { line ->
                 sb.appendLine(line)
             }
         }

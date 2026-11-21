@@ -301,7 +301,7 @@ object AcapelaVoiceManifest {
         "laura", "julia", "claire", "zoe", "peter", "kenny"
     )
 
-    private fun tokenOfIdentity(identity: String): String? {
+    internal fun tokenOfIdentity(identity: String): String? {
         val id = identity.lowercase(Locale.ROOT)
         return KNOWN_VOICE_TOKENS.firstOrNull { id.contains(it) }
     }
@@ -504,7 +504,9 @@ object AcapelaVoiceManifest {
         }
         // تطابق تام في المحتوى؟ لا تعارض فعلي.
         val byContent = top.groupBy { c ->
-            runCatching { fingerprintContent(c.file) }.getOrDefault(c.file.name)
+            runCatching {
+                fingerprintContent(c.file)
+            }.getOrDefault(c.file.name)
         }
         if (byContent.size == 1) {
             return "التهيئات الأصلية المتعددة متطابقة المحتوى؛ " +
@@ -1615,7 +1617,8 @@ object AcapelaVoiceManifest {
                 (pickedHex?.absolutePath ?: "لا يوجد")
         )
 
-        // 1. قراءة param من config.yaml أولاً (مجلد الصوت ← الأب ← جذر Acapela)
+        // 1. قراءة param من config.yaml أولاً
+        // (مجلد الصوت ← الأب ← جذر Acapela)
         val yamlParam = readParamFromConfigYaml(dir)
         if (!yamlParam.isNullOrBlank()) {
             val regFromParam = extractRegistrationFromParam(yamlParam)

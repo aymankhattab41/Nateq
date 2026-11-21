@@ -732,6 +732,7 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Bound Acapela initialization and warmup strictly to the actual verified subpackage result, prohibited invoking nInit with file paths or copying NLP to root, governed service lifecycle via explicit states (VOICE_LOADED/POISONED/CLOSED) with safe sequential cleanup preventing native unloading crashes, documented first failures with PID and attempt boundaries, and hardened multiline license redaction while preserving safe paths and report capping.
 • Break reconnection loop in EngineHostClient by decoupling intentional invalidate from death events with unified single recovery job and monotonic generations, unify AcapelaHostSession initialization and warmup under verified voice loading contracts preventing speech on unready services, and record accurate immutable first-failure records while masking multiline license payloads.
 • Direct Acapela initialization strictly to the verified package folder, exclude failed voice copies while selecting only the successfully loaded copy, and extend multiline license redaction in diagnostics.
 • Permanently eliminate Acapela cache staging and load directly from authentic package root preventing file corruption and memory pressure, serialize engine operations via a single mutex, and run one-time silent warmup.
