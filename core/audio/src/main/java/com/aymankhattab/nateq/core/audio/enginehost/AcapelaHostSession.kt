@@ -540,11 +540,26 @@ internal class AcapelaHostSession(
         val recentLogs = AcapelaVoiceDiagnostics
             .readNativeLogcatLines(60)
         val hasNotLoaded = recentLogs.any { line ->
-            (line.contains("voice $speaker", ignoreCase = true) &&
-                line.contains("not loaded", ignoreCase = true)) ||
-                line.contains("error eb", ignoreCase = true)
+            line.contains("voice $speaker", ignoreCase = true) &&
+                line.contains("not loaded", ignoreCase = true)
         }
-        return !hasNotLoaded
+        val lastLoadLine = recentLogs.lastOrNull { line ->
+            line.contains("tts_function_load_voice") &&
+                line.contains(speaker, ignoreCase = true)
+        }
+        val isLastDone = lastLoadLine?.contains("- done") == true &&
+            !lastLoadLine.contains("- error")
+        val isLastError = lastLoadLine?.let {
+            it.contains("- error") || it.contains("error eb")
+        } == true
+
+        if (hasNotLoaded || isLastError) {
+            return false
+        }
+        return isLastDone || recentLogs.none {
+            it.contains("tts_function_load_voice") &&
+                it.contains(speaker, ignoreCase = true)
+        }
     }
 
     private fun performSilentWarmup(
@@ -591,12 +606,21 @@ internal class AcapelaHostSession(
 
             val acapelaRoot =
                 AcapelaVoiceManifest.findAcapelaRootDir(voice.dir)
-            val warmupDir =
-                if (acapelaRoot.exists() && acapelaRoot.isDirectory) {
-                    acapelaRoot
-                } else {
-                    voice.dir
+            if (acapelaRoot.exists() && acapelaRoot.isDirectory &&
+                acapelaRoot.canonicalPath != voice.dir.canonicalPath
+            ) {
+                val rootNlp = File(acapelaRoot, "NLP")
+                val voiceNlp = File(voice.dir, "NLP")
+                if (!rootNlp.exists() &&
+                    voiceNlp.exists() &&
+                    voiceNlp.isDirectory
+                ) {
+                    runCatching {
+                        voiceNlp.copyRecursively(rootNlp, overwrite = false)
+                    }
                 }
+            }
+            val warmupDir = voice.dir
             val stagePath = directoryArgument(warmupDir)
 
             val audioHandler = TrialAudio { _, _ -> }
@@ -642,6 +666,18 @@ internal class AcapelaHostSession(
                     srv.nSetLanguage(iso3.language, iso3.country, "")
                     srv.nSetCurrentVoice(expectedSpeaker)
                 }
+            }
+
+            if (!isVoiceActuallyLoaded(srv, expectedSpeaker)) {
+                Log.w(TAG, "صوت الإحماء $expectedSpeaker غير محمل بعد المحاولة")
+                recordWarmupDiagnostic(
+                    runId = runId,
+                    speakCode = -1,
+                    samples = 0L,
+                    attempts = 1,
+                    status = "الصوت غير محمل في المحرك"
+                )
+                return
             }
 
             var speakRes = runCatching {
@@ -1363,14 +1399,7 @@ internal class AcapelaHostSession(
                 "الصوت $speaker غير محمل قبل nSpeak في المسار الحقيقي؛ " +
                     "إعادة التهيئة..."
             )
-            val acapelaRoot =
-                AcapelaVoiceManifest.findAcapelaRootDir(voice.dir)
-            val targetDir =
-                if (acapelaRoot.exists() && acapelaRoot.isDirectory) {
-                    acapelaRoot
-                } else {
-                    voice.dir
-                }
+            val targetDir = voice.dir
             val retryPath = directoryArgument(targetDir)
             runCatching { srv.nStop() }
             val reInit = runCatching {
@@ -1384,6 +1413,13 @@ internal class AcapelaHostSession(
                     srv.nSetLanguage(it.language, it.country, "")
                 }
                 srv.nSetCurrentVoice(speaker)
+            }
+            if (!isVoiceActuallyLoaded(srv, speaker)) {
+                Log.e(TAG, "تعذر تحميل الصوت $speaker بعد إعادة التهيئة")
+                return HostResult.failure(
+                    "VOICE_LOAD_FAILED",
+                    "الصوت $speaker غير محمل في محرك Acapela"
+                )
             }
         }
 
@@ -1529,7 +1565,9 @@ internal class AcapelaHostSession(
         }
         val logFileContent = if (effectiveLogFile != null) {
             runCatching {
-                effectiveLogFile.readText(StandardCharsets.ISO_8859_1)
+                AcapelaVoiceDiagnostics.redactSensitiveText(
+                    effectiveLogFile.readText(StandardCharsets.ISO_8859_1)
+                )
             }.getOrDefault("(تعذر قراءة logfile.txt)")
         } else {
             "(لم يُنشأ ملف logfile.txt أو فارغ)"
@@ -1575,7 +1613,11 @@ internal class AcapelaHostSession(
                 "غير موجود"
             }
             appendLine("--- سجل logfile.txt ($logFileSizeDesc) ---")
-            appendLine(logFileContent.trimEnd())
+            appendLine(
+                AcapelaVoiceDiagnostics.redactSensitiveText(
+                    logFileContent
+                ).trimEnd()
+            )
             appendLine()
             appendLine(
                 "--- أسطر المكتبة الأصلية (acattsandroid) " +
@@ -1584,11 +1626,10 @@ internal class AcapelaHostSession(
             if (nativeLines.isEmpty()) {
                 appendLine("(لم يُعثر على أسطر في سجل المكتبة الأصلية)")
             } else {
-                nativeLines.forEach { line ->
-                    appendLine(
-                        AcapelaVoiceDiagnostics.redactSensitiveLine(line)
-                    )
-                }
+                AcapelaVoiceDiagnostics.redactSensitiveLines(nativeLines)
+                    .forEach { line ->
+                        appendLine(line)
+                    }
             }
         }.trimEnd()
 
@@ -1677,7 +1718,11 @@ internal class AcapelaHostSession(
             }
             appendLine()
             appendLine("--- سجل logfile.txt ---")
-            appendLine(logFileContent.trimEnd())
+            appendLine(
+                AcapelaVoiceDiagnostics.redactSensitiveText(
+                    logFileContent
+                ).trimEnd()
+            )
             appendLine()
             appendLine(
                 "--- أسطر المكتبة الأصلية (acattsandroid) " +
@@ -1686,10 +1731,10 @@ internal class AcapelaHostSession(
             if (trial.nativeLines.isEmpty()) {
                 appendLine("(لم يُعثر على أسطر في سجل المكتبة الأصلية)")
             } else {
-                trial.nativeLines.forEach { line ->
-                    appendLine(
-                        AcapelaVoiceDiagnostics.redactSensitiveLine(line)
-                    )
+                AcapelaVoiceDiagnostics.redactSensitiveLines(
+                    trial.nativeLines
+                ).forEach { line ->
+                    appendLine(line)
                 }
             }
         }.trimEnd()
@@ -2470,13 +2515,41 @@ internal class AcapelaHostSession(
         }
 
         val earlyLogs = AcapelaVoiceDiagnostics.readNativeLogcatLines(100)
-        val earlyLoadLine = earlyLogs.lastOrNull {
+        val loadVoiceLines = earlyLogs.filter {
             it.contains("tts_function_load_voice")
-        }.orEmpty()
+        }
+        val doneLines = loadVoiceLines.filter {
+            it.contains("- done") && !it.contains("- error")
+        }
+        val errorLines = loadVoiceLines.filter {
+            it.contains("- error") || it.contains("eb -")
+        }
+        val earlyLoadLine = doneLines.lastOrNull()
+            ?: loadVoiceLines.lastOrNull().orEmpty()
         val earlyEbMatch = Regex("eb\\s+(-?\\d+)").find(earlyLoadLine)
         val earlyEbVal = earlyEbMatch?.groupValues?.get(1)?.toIntOrNull()
-        val isVoiceLoaded = earlyLoadLine.contains("- done") &&
-            (earlyEbVal == null || earlyEbVal == 0)
+
+        val successfulVoiceNames = doneLines.mapNotNull { line ->
+            Regex("""tts_function_load_voice\s*:\s*([^\s-]+)""")
+                .find(line)?.groupValues?.get(1)?.trim()
+        }.distinct()
+
+        val failedVoiceNames = errorLines.mapNotNull { line ->
+            Regex("""tts_function_load_voice\s*:\s*([^\s-]+)""")
+                .find(line)?.groupValues?.get(1)?.trim()
+        }.distinct()
+
+        val isVoiceLoaded = successfulVoiceNames.isNotEmpty() ||
+            (doneLines.isNotEmpty() && errorLines.isEmpty())
+
+        val chosenSpeaker = when {
+            speaker in successfulVoiceNames -> speaker
+            successfulVoiceNames.isNotEmpty() -> successfulVoiceNames.first()
+            trialDir.name in successfulVoiceNames -> trialDir.name
+            speaker !in failedVoiceNames -> speaker
+            else -> null
+        }
+        val effectiveSpeaker = chosenSpeaker ?: speaker
 
         var utf8Invoked = false
         var utf8Res: Int? = null
@@ -2485,8 +2558,8 @@ internal class AcapelaHostSession(
         var voiceInvoked = false
         var voiceRes: Int? = null
 
-        if ((initRes == 0 && (forceCallVoice || isVoiceLoaded)) ||
-            forceVoiceEvenIfInitFailed
+        if ((initRes == 0 && (forceCallVoice || isVoiceLoaded) &&
+            chosenSpeaker != null) || forceVoiceEvenIfInitFailed
         ) {
             when (order) {
                 AcapelaSequenceOrder.UTF8_LANG_VOICE -> {
@@ -2497,7 +2570,7 @@ internal class AcapelaHostSession(
                         iso3.language, iso3.country, ""
                     )
                     voiceInvoked = true
-                    voiceRes = srv.nSetCurrentVoice(speaker)
+                    voiceRes = srv.nSetCurrentVoice(effectiveSpeaker)
                 }
                 AcapelaSequenceOrder.LANG_VOICE_UTF8 -> {
                     langInvoked = true
@@ -2505,7 +2578,7 @@ internal class AcapelaHostSession(
                         iso3.language, iso3.country, ""
                     )
                     voiceInvoked = true
-                    voiceRes = srv.nSetCurrentVoice(speaker)
+                    voiceRes = srv.nSetCurrentVoice(effectiveSpeaker)
                     utf8Invoked = true
                     utf8Res = srv.nUtf8Mode(iso3.language, iso3.country)
                 }
@@ -2517,11 +2590,11 @@ internal class AcapelaHostSession(
                     utf8Invoked = true
                     utf8Res = srv.nUtf8Mode(iso3.language, iso3.country)
                     voiceInvoked = true
-                    voiceRes = srv.nSetCurrentVoice(speaker)
+                    voiceRes = srv.nSetCurrentVoice(effectiveSpeaker)
                 }
                 AcapelaSequenceOrder.VOICE_LANG_UTF8 -> {
                     voiceInvoked = true
-                    voiceRes = srv.nSetCurrentVoice(speaker)
+                    voiceRes = srv.nSetCurrentVoice(effectiveSpeaker)
                     langInvoked = true
                     langRes = srv.nSetLanguage(
                         iso3.language, iso3.country, ""
@@ -2531,7 +2604,7 @@ internal class AcapelaHostSession(
                 }
                 AcapelaSequenceOrder.VOICE_UTF8_LANG -> {
                     voiceInvoked = true
-                    voiceRes = srv.nSetCurrentVoice(speaker)
+                    voiceRes = srv.nSetCurrentVoice(effectiveSpeaker)
                     utf8Invoked = true
                     utf8Res = srv.nUtf8Mode(iso3.language, iso3.country)
                     langInvoked = true
@@ -2545,11 +2618,11 @@ internal class AcapelaHostSession(
                         iso3.language, iso3.country, ""
                     )
                     voiceInvoked = true
-                    voiceRes = srv.nSetCurrentVoice(speaker)
+                    voiceRes = srv.nSetCurrentVoice(effectiveSpeaker)
                 }
                 AcapelaSequenceOrder.NO_UTF8_VOICE_LANG -> {
                     voiceInvoked = true
-                    voiceRes = srv.nSetCurrentVoice(speaker)
+                    voiceRes = srv.nSetCurrentVoice(effectiveSpeaker)
                     langInvoked = true
                     langRes = srv.nSetLanguage(
                         iso3.language, iso3.country, ""
@@ -2572,15 +2645,24 @@ internal class AcapelaHostSession(
 
         var triedAltVoice: String? = null
         var altVoiceRes: Int? = null
-        if (initRes == 0 && isVoiceLoaded && (voiceRes ?: -1) != 0 &&
-            speaker != trialDir.name
-        ) {
-            val alt = trialDir.name
-            triedAltVoice = alt
-            voiceInvoked = true
-            val res = srv.nSetCurrentVoice(alt)
-            altVoiceRes = res
-            if (res == 0) voiceRes = res
+        if (initRes == 0 && isVoiceLoaded && (voiceRes ?: -1) != 0) {
+            val altCandidates = listOfNotNull(
+                chosenSpeaker,
+                successfulVoiceNames.firstOrNull(),
+                trialDir.name
+            ).filter { it !in failedVoiceNames && it != effectiveSpeaker }
+                .distinct()
+
+            for (alt in altCandidates) {
+                triedAltVoice = alt
+                voiceInvoked = true
+                val res = srv.nSetCurrentVoice(alt)
+                altVoiceRes = res
+                if (res == 0) {
+                    voiceRes = res
+                    break
+                }
+            }
         }
 
         val pauseRes = if (initRes == 0) {
@@ -2632,11 +2714,16 @@ internal class AcapelaHostSession(
         recordAcapelaBreadcrumb(
             "[$label] nSpeak(text='$probeText', cb=$cbName)"
         )
-        val canSpeak = initRes == 0 || forceVoiceEvenIfInitFailed
-        if (canSpeak && !isVoiceActuallyLoaded(srv, speaker) && allowRetry) {
+        val canSpeak = ((initRes == 0 && isVoiceLoaded &&
+            (voiceRes == 0 || chosenSpeaker != null)) ||
+            forceVoiceEvenIfInitFailed)
+        if (canSpeak &&
+            !isVoiceActuallyLoaded(srv, effectiveSpeaker) &&
+            allowRetry
+        ) {
             Log.w(
                 TAG,
-                "[$label] الصوت $speaker غير محمل قبل nSpeak؛ " +
+                "[$label] الصوت $effectiveSpeaker غير محمل قبل nSpeak؛ " +
                     "إعادة التهيئة..."
             )
             runCatching { srv.nStop() }
@@ -2647,12 +2734,12 @@ internal class AcapelaHostSession(
                 srv.nSetVoiceMode(voiceMode)
                 srv.nUtf8Mode(iso3.language, iso3.country)
                 srv.nSetLanguage(iso3.language, iso3.country, "")
-                srv.nSetCurrentVoice(speaker)
+                srv.nSetCurrentVoice(effectiveSpeaker)
             }
         }
         var speakInvoked = false
         var speakRes: Int? = null
-        if (canSpeak) {
+        if (canSpeak && isVoiceActuallyLoaded(srv, effectiveSpeaker)) {
             speakInvoked = true
             speakRes = runCatching {
                 srv.nSpeak(probeText, cbToPass)
@@ -2660,6 +2747,12 @@ internal class AcapelaHostSession(
                 Log.w(TAG, "[$label] استثناء أثناء nSpeak", t)
                 -2
             }
+        } else if (!canSpeak) {
+            val firstEb = errorLines.firstNotNullOfOrNull { line ->
+                Regex("eb\\s+(-?\\d+)").find(line)?.groupValues
+                    ?.get(1)?.toIntOrNull()
+            } ?: -27
+            speakRes = firstEb
         }
         Log.i("acattsandroid-extended-native", endMarker)
         recordAcapelaBreadcrumb(
@@ -2676,7 +2769,7 @@ internal class AcapelaHostSession(
             ) {
                 delay(150L)
                 retryVoiceRes = runCatching {
-                    srv.nSetCurrentVoice(speaker)
+                    srv.nSetCurrentVoice(effectiveSpeaker)
                 }.getOrElse { -99 }
                 val retryStart =
                     "=== RETRY_NSPEAK_${cleanLabel}_$attempt ==="
@@ -2753,7 +2846,9 @@ internal class AcapelaHostSession(
             .maxByOrNull { it.lastModified() }
         val logFileContent = if (effectiveLogFile != null) {
             runCatching {
-                effectiveLogFile.readText(StandardCharsets.ISO_8859_1)
+                AcapelaVoiceDiagnostics.redactSensitiveText(
+                    effectiveLogFile.readText(StandardCharsets.ISO_8859_1)
+                )
             }.getOrDefault("(تعذر قراءة logfile.txt)")
         } else {
             "(لم يُنشأ ملف logfile.txt أو فارغ)"
@@ -2933,13 +3028,17 @@ internal class AcapelaHostSession(
             it.contains("babParam.uid.userId", ignoreCase = true) ||
                 it.contains("babParam.uid.passwd", ignoreCase = true)
         }
-        val babParamLicLines = nativeTail.filter {
-            it.contains("babParam.license", ignoreCase = true)
-        }
-        val generalLicLines = nativeTail.filter {
-            it.contains("error license", ignoreCase = true) ||
-                it.contains("license", ignoreCase = true)
-        }
+        val babParamLicLines = AcapelaVoiceDiagnostics.redactSensitiveLines(
+            nativeTail.filter {
+                it.contains("babParam.license", ignoreCase = true)
+            }
+        )
+        val generalLicLines = AcapelaVoiceDiagnostics.redactSensitiveLines(
+            nativeTail.filter {
+                it.contains("error license", ignoreCase = true) ||
+                    it.contains("license", ignoreCase = true)
+            }
+        )
         sb.appendLine(
             "  - أسطر babParam.uid.userId / passwd " +
                 "(${babParamUidLines.size} سطر):"
@@ -2960,9 +3059,7 @@ internal class AcapelaHostSession(
             sb.appendLine("    (لم يظهر أي سطر يطابق babParam.license)")
         } else {
             babParamLicLines.forEach {
-                sb.appendLine(
-                    "    ${AcapelaVoiceDiagnostics.redactSensitiveLine(it)}"
-                )
+                sb.appendLine("    $it")
             }
         }
         sb.appendLine(
@@ -2972,9 +3069,7 @@ internal class AcapelaHostSession(
             sb.appendLine("    (لم يظهر أي سطر يطابق license)")
         } else {
             generalLicLines.forEach {
-                sb.appendLine(
-                    "    ${AcapelaVoiceDiagnostics.redactSensitiveLine(it)}"
-                )
+                sb.appendLine("    $it")
             }
         }
 
@@ -3005,13 +3100,15 @@ internal class AcapelaHostSession(
             }
         }
 
-        sb.appendLine(
-            "  - سجل المكتبة الأصلية لهذه التوليفة (${nativeTail.size} سطر):"
+        val sanitizedTail = AcapelaVoiceDiagnostics.redactSensitiveLines(
+            nativeTail
         )
-        nativeTail.forEach {
-            sb.appendLine(
-                "    ${AcapelaVoiceDiagnostics.redactSensitiveLine(it)}"
-            )
+        sb.appendLine(
+            "  - سجل المكتبة الأصلية لهذه التوليفة " +
+                "(${sanitizedTail.size} سطر):"
+        )
+        sanitizedTail.forEach {
+            sb.appendLine("    $it")
         }
 
         val logOutput = sb.toString().trimEnd()
@@ -3199,12 +3296,21 @@ internal class AcapelaHostSession(
             } else {
                 val acapelaRoot =
                     AcapelaVoiceManifest.findAcapelaRootDir(voice.dir)
-                val targetDir =
-                    if (acapelaRoot.exists() && acapelaRoot.isDirectory) {
-                        acapelaRoot
-                    } else {
-                        voice.dir
+                if (acapelaRoot.exists() && acapelaRoot.isDirectory &&
+                    acapelaRoot.canonicalPath != voice.dir.canonicalPath
+                ) {
+                    val rootNlp = File(acapelaRoot, "NLP")
+                    val voiceNlp = File(voice.dir, "NLP")
+                    if (!rootNlp.exists() &&
+                        voiceNlp.exists() &&
+                        voiceNlp.isDirectory
+                    ) {
+                        runCatching {
+                            voiceNlp.copyRecursively(rootNlp, overwrite = false)
+                        }
                     }
+                }
+                val targetDir = voice.dir
                 executeVoiceLoadTrial(
                     label = "AuthenticVoice (تحميل مباشر من الحزمة)",
                     runId = runId,
@@ -3218,7 +3324,7 @@ internal class AcapelaHostSession(
                     order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
                     useRealCallback = true,
                     trailingSlash = true,
-                    forceCallVoice = true,
+                    forceCallVoice = false,
                     forceVoiceEvenIfInitFailed = false,
                     allowRetry = true,
                     probeFiles = true

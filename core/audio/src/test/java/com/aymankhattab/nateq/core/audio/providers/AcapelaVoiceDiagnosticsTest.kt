@@ -1736,4 +1736,53 @@ class AcapelaVoiceDiagnosticsTest {
             AcapelaVoiceDiagnostics.readLastRealSpeechFailure(context)
         )
     }
+
+    @Test
+    fun redactSensitiveLines_multilineLicensePayloadMaskedFully() {
+        val lines = listOf(
+            "05-23 12:34:56.789 1234 1234 I acattsandroid: " +
+                "\tbabParam.license MIIEvgIBADANBgkqhkiG9w0BAQEFAASC",
+            "05-23 12:34:56.789 1234 1234 I acattsandroid: /VwPChunkOne==",
+            "05-23 12:34:56.789 1234 1234 I acattsandroid: x+JdChunkTwo==",
+            "05-23 12:34:56.790 1234 1234 I acattsandroid: " +
+                "\tbabParam.uid.userId 12345",
+            "05-23 12:34:56.791 1234 1234 I acattsandroid: " +
+                "tts_function_load_voice : Salma - done"
+        )
+
+        val redacted = AcapelaVoiceDiagnostics.redactSensitiveLines(lines)
+
+        assertEquals(lines.size, redacted.size)
+        // لا تظهر الحمولة الخام في أي سطر
+        assertFalse(
+            redacted.any { it.contains("MIIEvgIBADANBgkqhkiG9w0BAQEFAASC") }
+        )
+        assertFalse(redacted.any { it.contains("/VwPChunkOne==") })
+        assertFalse(redacted.any { it.contains("x+JdChunkTwo==") })
+        assertFalse(redacted.any { it.contains("12345") })
+
+        // السطر الأول يحوي الطول المنقى
+        assertTrue(redacted[0].contains("babParam.license: الطول="))
+        assertTrue(redacted[0].contains("...wo=="))
+
+        // الأسطر التالية مقنعة بصيغة واضحة
+        assertTrue(redacted[1].contains("[حمولة ترخيص مُقنَّعة]"))
+        assertTrue(redacted[2].contains("[حمولة ترخيص مُقنَّعة]"))
+
+        // السطر التالي لـ tts_function_load_voice يبقى كما هو بلا إفساد
+        assertTrue(
+            redacted[4].contains("tts_function_load_voice : Salma - done")
+        )
+
+        // فحص redactSensitiveText لنفس الكتلة كنص كامل
+        val textBlock = lines.joinToString("\n")
+        val cleanedText = AcapelaVoiceDiagnostics.redactSensitiveText(
+            textBlock
+        )
+        assertFalse(cleanedText.contains("/VwPChunkOne=="))
+        assertFalse(cleanedText.contains("x+JdChunkTwo=="))
+        assertTrue(
+            cleanedText.contains("tts_function_load_voice : Salma - done")
+        )
+    }
 }

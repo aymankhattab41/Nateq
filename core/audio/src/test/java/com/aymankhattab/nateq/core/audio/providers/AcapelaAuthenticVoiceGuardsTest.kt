@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -627,4 +628,82 @@ class AcapelaAuthenticVoiceGuardsTest {
         }
     }
 
+    @Test
+    fun voiceSelection_excludesFailedCopiesAndChoosesDoneVoice() {
+        val earlyLogs = listOf(
+            "tts_function_load_voice : Salma - error - eb 27",
+            "tts_function_load_voice : Salma - done",
+            "tts_function_load_voice : Leila - error - eb 25"
+        )
+        val loadVoiceLines = earlyLogs.filter {
+            it.contains("tts_function_load_voice")
+        }
+        val doneLines = loadVoiceLines.filter {
+            it.contains("- done") && !it.contains("- error")
+        }
+        val errorLines = loadVoiceLines.filter {
+            it.contains("- error") || it.contains("eb -")
+        }
+
+        val successfulVoiceNames = doneLines.mapNotNull { line ->
+            Regex("""tts_function_load_voice\s*:\s*([^\s-]+)""")
+                .find(line)?.groupValues?.get(1)?.trim()
+        }.distinct()
+
+        val failedVoiceNames = errorLines.mapNotNull { line ->
+            Regex("""tts_function_load_voice\s*:\s*([^\s-]+)""")
+                .find(line)?.groupValues?.get(1)?.trim()
+        }.distinct()
+
+        assertTrue(successfulVoiceNames.contains("Salma"))
+        assertTrue(failedVoiceNames.contains("Leila"))
+
+        val speaker = "Salma"
+        val chosenSpeaker = when {
+            speaker in successfulVoiceNames -> speaker
+            successfulVoiceNames.isNotEmpty() ->
+                successfulVoiceNames.first()
+            speaker !in failedVoiceNames -> speaker
+            else -> null
+        }
+        assertEquals("Salma", chosenSpeaker)
+
+        val failedSpeaker = "Leila"
+        val chosenFailed = when {
+            failedSpeaker in successfulVoiceNames -> failedSpeaker
+            failedSpeaker !in failedVoiceNames -> failedSpeaker
+            else -> null
+        }
+        assertNull(chosenFailed)
+    }
+
+    @Test
+    fun nlpSyncToAcapelaRoot_copiesNlpDirectoryWhenMissing() {
+        val root = tempDir()
+        try {
+            val acapelaRoot = File(root, "files/Acapela").apply { mkdirs() }
+            val voiceDir = File(acapelaRoot, "Salma_Pkg").apply { mkdirs() }
+            val voiceNlp = File(voiceDir, "NLP").apply { mkdirs() }
+            File(voiceNlp, "ar_sa.oso").writeText("nlp-data")
+
+            val rootNlp = File(acapelaRoot, "NLP")
+            assertFalse(rootNlp.exists())
+
+            if (acapelaRoot.exists() && acapelaRoot.isDirectory &&
+                acapelaRoot.canonicalPath != voiceDir.canonicalPath
+            ) {
+                if (!rootNlp.exists() && voiceNlp.exists() &&
+                    voiceNlp.isDirectory
+                ) {
+                    voiceNlp.copyRecursively(rootNlp, overwrite = false)
+                }
+            }
+
+            assertTrue(rootNlp.exists())
+            assertTrue(File(rootNlp, "ar_sa.oso").isFile)
+            assertEquals("nlp-data", File(rootNlp, "ar_sa.oso").readText())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }

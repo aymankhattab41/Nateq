@@ -1006,6 +1006,124 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
+     * تنقية قائمة أسطر من البيانات الحساسة مع تتبع حمولة الترخيص متعددة الأسطر.
+     * الأسطر التابعة لحمولة babParam.license تُقنَّع كاملة ولا تمر خاماً.
+     */
+    fun redactSensitiveLines(lines: List<String>): List<String> {
+        val result = ArrayList<String>(lines.size)
+        var inLicensePayload = false
+        val payloadChunks = mutableListOf<String>()
+        var licenseHeaderIndex = -1
+        var licenseHeaderPrefix = ""
+
+        fun finishLicenseBlock() {
+            if (licenseHeaderIndex >= 0) {
+                val fullPayload = payloadChunks.joinToString("\n").trim()
+                val maskedVal = redactSensitive(fullPayload)
+                result[licenseHeaderIndex] =
+                    licenseHeaderPrefix + "babParam.license: $maskedVal"
+            }
+            inLicensePayload = false
+            licenseHeaderIndex = -1
+            licenseHeaderPrefix = ""
+            payloadChunks.clear()
+        }
+
+        for (line in lines) {
+            val trimmed = line.trim()
+            val isLicHeader = trimmed.contains(
+                "babParam.license",
+                ignoreCase = true
+            )
+
+            if (isLicHeader) {
+                if (inLicensePayload) finishLicenseBlock()
+                inLicensePayload = true
+                licenseHeaderIndex = result.size
+                val keyIdx = line.indexOf(
+                    "babParam.license",
+                    ignoreCase = true
+                )
+                licenseHeaderPrefix = if (keyIdx > 0) {
+                    line.substring(0, keyIdx)
+                } else {
+                    ""
+                }
+                val rawVal = line.substring(
+                    keyIdx + "babParam.license".length
+                ).trimStart(':', '=', ' ', '\t', '"', '\'')
+                    .trimEnd('"', '\'')
+                if (rawVal.isNotBlank() && rawVal != "[مُقنَّع]") {
+                    payloadChunks.add(rawVal)
+                }
+                result.add(redactSensitiveLine(line))
+                continue
+            }
+
+            if (inLicensePayload) {
+                val tagEnd = if (line.contains("acattsandroid")) {
+                    val atIdx = line.indexOf("acattsandroid")
+                    val colIdx = line.indexOf(':', atIdx)
+                    if (colIdx > 0) colIdx + 1 else 0
+                } else {
+                    0
+                }
+                val logcatPfx = if (tagEnd > 0) {
+                    line.substring(0, tagEnd) + " "
+                } else {
+                    line.takeWhile { it.isWhitespace() }
+                }
+                val content = if (tagEnd > 0) {
+                    line.substring(tagEnd).trim()
+                } else {
+                    trimmed
+                }
+
+                val isNewField = line.contains("tts_function_") ||
+                    line.contains("BABILE_") ||
+                    line.contains("===") ||
+                    line.contains("---") ||
+                    line.contains("Default voice") ||
+                    line.contains("acattsandroid-extended-native") ||
+                    line.contains("nSpeak") ||
+                    line.contains("nInit") ||
+                    line.contains("initLanguage") ||
+                    line.contains("userdico") ||
+                    line.contains("nlpInitError") ||
+                    line.contains("sNLPConfig") ||
+                    sensitiveLogKeys.any { k ->
+                        k != "babParam.license" &&
+                            line.contains(k, ignoreCase = true)
+                    }
+
+                val isLikelyPayloadLine = !isNewField &&
+                    content.isNotEmpty() &&
+                    !content.contains(' ') &&
+                    !content.contains(':') &&
+                    content.all { ch ->
+                        ch.isLetterOrDigit() || ch in "+/=_-'\""
+                    }
+
+                if (!isLikelyPayloadLine) {
+                    finishLicenseBlock()
+                    result.add(redactSensitiveLine(line))
+                } else {
+                    if (content.isNotBlank()) {
+                        payloadChunks.add(content.trim('\'', '"'))
+                    }
+                    result.add("$logcatPfx[حمولة ترخيص مُقنَّعة]")
+                }
+            } else {
+                result.add(redactSensitiveLine(line))
+            }
+        }
+        if (inLicensePayload) {
+            finishLicenseBlock()
+        }
+        return result
+    }
+
+    /**
      * ينقّي النص من مواد حساسة: مفاتيح/رموز، توقيعات، معرّفات، مسارات.
      * تنقية كاملة متعددة الأسطر بلا ذيول/أجزاء متبقية.
      */
@@ -1019,15 +1137,9 @@ object AcapelaVoiceDiagnostics {
                 ),
                 "[REDACTED_BLOCK]"
             )
-        return buildString(blockRedacted.length) {
-            val seq = blockRedacted.lineSequence().iterator()
-            if (!seq.hasNext()) return@buildString
-            while (true) {
-                append(redactSensitiveLine(seq.next()))
-                if (!seq.hasNext()) break
-                append('\n')
-            }
-        }
+        val lines = blockRedacted.lines()
+        val redacted = redactSensitiveLines(lines)
+        return redacted.joinToString("\n")
     }
 
     /**
@@ -2668,7 +2780,7 @@ object AcapelaVoiceDiagnostics {
             }
         }.getOrElse { t ->
             listOf("(تعذر قراءة logcat للمكتبة الأصلية: ${t.message})")
-        }.map(::redactSensitiveLine)
+        }.let(::redactSensitiveLines)
     }
 
     /**
@@ -2696,7 +2808,7 @@ object AcapelaVoiceDiagnostics {
             }
         }.getOrElse { t ->
             listOf("(تعذر قراءة logcat :engine_host: ${t.message})")
-        }.map(::redactSensitiveLine)
+        }.let(::redactSensitiveLines)
     }
 
     /**
@@ -2778,7 +2890,7 @@ object AcapelaVoiceDiagnostics {
             }
         }.getOrElse { t ->
             listOf("(تعذر قراءة logcat للمحاولة: ${t.message})")
-        }.map(::redactSensitiveLine)
+        }.let(::redactSensitiveLines)
     }
 
     /**
