@@ -1714,4 +1714,26 @@ class AcapelaVoiceDiagnosticsTest {
             )
         }
     }
+
+    @Test
+    fun lastRealSpeechFailure_readAndClear_worksCorrectly() {
+        val failFile = File(
+            context.cacheDir,
+            AcapelaVoiceDiagnostics.ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE
+        )
+        failFile.writeText(
+            "=== آخر محاولة نطق حقيقية فاشلة ===\nrunId: test1234\n"
+        )
+        val content = AcapelaVoiceDiagnostics
+            .readLastRealSpeechFailure(context)
+        assertNotNull(content)
+        assertTrue(content!!.contains("runId: test1234"))
+
+        AcapelaVoiceDiagnostics.clearLastRealSpeechFailure(context)
+        assertFalse(failFile.exists())
+        assertEquals(
+            null,
+            AcapelaVoiceDiagnostics.readLastRealSpeechFailure(context)
+        )
+    }
 }

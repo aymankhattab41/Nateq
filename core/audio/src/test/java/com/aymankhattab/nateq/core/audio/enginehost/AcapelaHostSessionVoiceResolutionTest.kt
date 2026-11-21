@@ -254,4 +254,47 @@ class AcapelaHostSessionVoiceResolutionTest {
         org.junit.Assert.assertNull(session.failedTrialKey)
         assertTrue(session.consecutiveTrialFailures.isEmpty())
     }
+
+    @Test
+    fun handleRealSpeechFailure_writesDiagnosticWithRunIdAndNativeLines() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val session = AcapelaHostSession(context)
+        val voiceDir = tempFolder.newFolder("salma_fail_diag")
+        val voice = AcapelaVoiceManifest.VoiceInfo(
+            id = "Salma",
+            voiceName = "Salma",
+            displayName = "Salma",
+            locale = Locale.forLanguageTag("ar-SA"),
+            sampleRate = 22050,
+            dir = voiceDir,
+            rawSpeaker = "salma22k",
+            registration = "reg_test_123"
+        )
+        val testRunId = "run_fail_99"
+        session.handleRealSpeechFailure(
+            voice = voice,
+            path = "extended",
+            chunk = "اختبار النطق الفاشل",
+            speakRes = -2,
+            startMarker = "start_marker",
+            endMarker = "end_marker",
+            runId = testRunId
+        )
+
+        val failFile = File(
+            context.cacheDir,
+            com.aymankhattab.nateq.core.audio.providers
+                .AcapelaVoiceDiagnostics
+                .ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE
+        )
+        assertTrue(failFile.isFile)
+        val content = failFile.readText()
+        assertTrue(content.contains("runId: $testRunId"))
+        assertTrue(content.contains("كود رجوع nSpeak الرقمي: -2"))
+        assertTrue(content.contains("كود nSpeak: -2"))
+        assertTrue(content.contains("عدد العينات:"))
+        assertTrue(content.contains("عينات PCM:"))
+        assertTrue(content.contains("أول خطأ أصلي في الأسطر:"))
+        assertTrue(content.contains("=== آخر محاولة نطق حقيقية فاشلة ==="))
+    }
 }

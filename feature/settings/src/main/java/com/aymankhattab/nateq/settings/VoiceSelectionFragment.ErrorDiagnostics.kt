@@ -247,6 +247,16 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
             appendLine("")
             appendLine(diagnostics)
             appendLine("")
+            val lastRealFail = AcapelaVoiceDiagnostics
+                .readLastRealSpeechFailure(context)
+            if (!lastRealFail.isNullOrBlank() &&
+                !diagnostics.contains("=== آخر محاولة نطق حقيقية فاشلة ===")
+            ) {
+                appendLine(
+                    AcapelaVoiceDiagnostics.redactSensitiveText(lastRealFail)
+                )
+                appendLine("")
+            }
             appendLine("==========================================")
             appendLine("=== أحدث أسطر السجل التقني (Logcat) ===")
             if (logLines.isEmpty()) {

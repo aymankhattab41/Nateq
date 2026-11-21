@@ -729,6 +729,9 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Treat nSpeak=0 with positive PCM samples as genuine success in Acapela embedded path, clearing engine failure state, showing engine as ready, canceling fallback to substitute voice, and recording successful speech.
+• Perform silent background engine warmup for Acapela embedded engine on initialization with automatic retries to eliminate cold-boot first-call nSpeak -2 errors and log warmup results in diagnostics.
+• Capture native library logs (acattsandroid and logfile.txt) for failed real speech attempts and present them in a dedicated diagnostics section ahead of Logcat without truncation, including runId, nSpeak code, samples, and first native error.
 • Capture native library logs (acattsandroid and logfile.txt) in the real speech path for the built-in engine, logging complete failure details (nSpeak code, PCM samples, first native error) in diagnostics without truncation.
 • Soften the VOICE_TRIAL_ALREADY_FAILED session lock to allow up to 3 consecutive retries with automatic internal reinitialization, clearing the lock upon any successful trial or file changes.
 • Make *.userdico user dictionaries optional in Acapela before nInit, automatically creating the sibling userdicos folder and continuing without failure, copying any internal userdico, and restricting strict failure to .bvcu and NLP/ files.
