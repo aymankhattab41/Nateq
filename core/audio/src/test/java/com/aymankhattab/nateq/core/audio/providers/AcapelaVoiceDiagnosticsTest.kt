@@ -1762,12 +1762,11 @@ class AcapelaVoiceDiagnosticsTest {
         assertFalse(redacted.any { it.contains("12345") })
 
         // السطر الأول يحوي الطول المنقى
-        assertTrue(redacted[0].contains("babParam.license: الطول="))
-        assertTrue(redacted[0].contains("...wo=="))
+        assertTrue(redacted[0].contains("babParam.license: [محجوب]"))
 
         // الأسطر التالية مقنعة بصيغة واضحة
-        assertTrue(redacted[1].contains("[حمولة ترخيص مُقنَّعة]"))
-        assertTrue(redacted[2].contains("[حمولة ترخيص مُقنَّعة]"))
+        assertTrue(redacted[1].contains("[حمولة ترخيص محجوبة]"))
+        assertTrue(redacted[2].contains("[حمولة ترخيص محجوبة]"))
 
         // السطر التالي لـ tts_function_load_voice يبقى كما هو بلا إفساد
         assertTrue(

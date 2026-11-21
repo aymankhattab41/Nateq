@@ -129,13 +129,13 @@ class AcapelaLeilaOriginalTreeTest {
         assertTrue(report.contains("محظور"))
         assertTrue(report.contains("مقنّعة فقط"))
         val masked = AcapelaVoiceDiagnostics.redactSensitive("abcdefgh")
-        assertTrue(masked.contains("الطول=8"))
+        assertEquals("[محجوب]", masked)
         assertFalse(masked.contains("abcdefgh"))
         val maskedLine = AcapelaVoiceDiagnostics.redactSensitiveLine(
             "babParam.license secret-value-here"
         )
         assertFalse(maskedLine.contains("secret-value-here"))
-        assertTrue(maskedLine.contains("الطول="))
+        assertTrue(maskedLine.contains("[محجوب]"))
     }
 
     @Test

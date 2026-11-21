@@ -134,7 +134,9 @@ class EngineHostRecoveryAndWarmupGuardsTest {
 
         val saved = AcapelaVoiceDiagnostics.readLastRealSpeechFailure(context)
         assertNotNull(saved)
-        assertTrue(saved!!.contains("nSpeak: مستدعى=false | كود=لم يُستدعَ"))
+        assertTrue(
+            saved!!.contains("nSpeak: مستدعى=false | كود=null (لم يُستدعَ)")
+        )
         assertTrue(saved.contains("وصف nSpeak: لم يُستدعَ"))
         assertNull(record.speakCode)
         assertFalse(saved.contains("nSpeak: مستدعى=false | كود=-27"))
@@ -220,7 +222,7 @@ class EngineHostRecoveryAndWarmupGuardsTest {
         assertTrue(report!!.contains("المرحلة: AuthenticVoice"))
         assertFalse(report.contains("SecondaryCleanupWarning"))
         assertFalse(report.contains("ContinuationPayloadLineOne=="))
-        assertTrue(report.contains("[حمولة ترخيص مُقنَّعة]"))
+        assertTrue(report.contains("[حمولة ترخيص محجوبة]"))
     }
 
     @Test
@@ -366,11 +368,11 @@ class EngineHostRecoveryAndWarmupGuardsTest {
         val red2 = AcapelaVoiceDiagnostics.redactSensitiveText(msg2, session)
 
         assertFalse(red1.contains("ContinuationOne=="))
-        assertTrue(red1.contains("[حمولة ترخيص مُقنَّعة]"))
+        assertTrue(red1.contains("[حمولة ترخيص محجوبة]"))
 
         // استمرار القناع في الرسالة الثانية دون إعادة ضبط
         assertFalse(red2.contains("ContinuationTwo=="))
-        assertTrue(red2.contains("[حمولة ترخيص مُقنَّعة]"))
+        assertTrue(red2.contains("[حمولة ترخيص محجوبة]"))
         assertTrue(red2.contains("tts_function_load_voice: Salma - done"))
 
         // بقاء مسار الملف العادي سليماً ومقروءاً دون إتلاف بقناع BLOB
@@ -380,5 +382,215 @@ class EngineHostRecoveryAndWarmupGuardsTest {
                     "ara-sau-salma-embedded-22khz/NLP/ara-sau.dat"
             )
         )
+    }
+
+    @Test
+    fun rootWithDifferentMetadata_resolvesVerifiedSubpackageExclusively() {
+        val rootDir = File(
+            context.cacheDir,
+            "test_acapela_subpackage_resolution"
+        )
+        rootDir.deleteRecursively()
+        rootDir.mkdirs()
+        val rootConfig = File(rootDir, "config.yaml")
+        rootConfig.writeText(
+            "name: Heather\nspeaker: Heather\nparam: heather_secret_param",
+            StandardCharsets.UTF_8
+        )
+        val salmaDir = File(rootDir, "Salma")
+        salmaDir.mkdirs()
+        val salmaConfig = File(salmaDir, "config.yaml")
+        salmaConfig.writeText(
+            "name: Salma\nspeaker: Salma\nparam: salma_secret_param",
+            StandardCharsets.UTF_8
+        )
+        val salmaIni = File(salmaDir, "Salma22k_embedded.ini")
+        salmaIni.writeText(
+            "salma authentic content directives with voice parameters",
+            StandardCharsets.ISO_8859_1
+        )
+
+        val verification = AcapelaVoiceDiagnostics
+            .verifyAuthenticVoicePackage(
+                voiceDir = rootDir,
+                expectedSpeakerHint = "Salma"
+            )
+        assertNotNull(verification.voiceDir)
+        assertEquals(
+            salmaDir.canonicalPath,
+            verification.voiceDir?.canonicalPath
+        )
+
+        val verifiedDir = verification.voiceDir!!
+        val verifiedYaml = File(verifiedDir, "config.yaml")
+            .takeIf { it.isFile }
+        assertNotNull(verifiedYaml)
+        assertEquals(
+            salmaConfig.canonicalPath,
+            verifiedYaml!!.canonicalPath
+        )
+
+        val resolved = ResolvedVerifiedPackage(
+            voiceDir = verifiedDir,
+            iniFile = verification.iniFile,
+            speaker = "Salma",
+            dependencies = verification.checked,
+            metadataFile = verifiedYaml,
+            rawParam = "salma_secret_param",
+            registration = "salma_reg"
+        )
+        assertEquals("Salma", resolved.speaker)
+        assertEquals(
+            salmaConfig.canonicalPath,
+            resolved.metadataFile?.canonicalPath
+        )
+        assertEquals("salma_secret_param", resolved.rawParam)
+    }
+
+    @Test
+    fun conflictingIdentityOrMissingMetadata_failsValidationFast() {
+        val emptyDir = File(context.cacheDir, "test_empty_metadata_voice")
+        emptyDir.mkdirs()
+        val ini = File(emptyDir, "Salma22k_embedded.ini")
+        ini.writeText("content", StandardCharsets.ISO_8859_1)
+
+        val verifiedYaml = File(emptyDir, "config.yaml").takeIf { it.isFile }
+        val hexFile = com.aymankhattab.nateq.core.audio.providers
+            .AcapelaVoiceManifest.findHexRegistrationFile(emptyDir)
+        assertNull(verifiedYaml)
+        assertNull(hexFile)
+
+        val heatherIni = File(emptyDir, "Heather22k_embedded.ini")
+        heatherIni.writeText("content", StandardCharsets.ISO_8859_1)
+        val iniToken = com.aymankhattab.nateq.core.audio.providers
+            .AcapelaVoiceManifest.tokenOfIdentity(heatherIni.name)
+        val speakerToken = com.aymankhattab.nateq.core.audio.providers
+            .AcapelaVoiceManifest.tokenOfIdentity("Salma")
+        assertNotNull(iniToken)
+        assertNotNull(speakerToken)
+        assertTrue(iniToken != speakerToken)
+    }
+
+    @Test
+    fun idempotentRedaction_zeroSecretLeakage_andMultilineChunking() {
+        val secret = "SuperSecretAcapelaLicense123456789"
+        val firstRedact = AcapelaVoiceDiagnostics.redactSensitive(secret)
+        assertEquals("[محجوب]", firstRedact)
+        val secondRedact = AcapelaVoiceDiagnostics.redactSensitive(firstRedact)
+        assertEquals("[محجوب]", secondRedact)
+
+        val rawLine = "babParam.license: $secret"
+        val line1 = AcapelaVoiceDiagnostics.redactSensitiveLine(rawLine)
+        assertTrue(line1.contains("babParam.license"))
+        assertTrue(line1.contains("[محجوب]"))
+        assertFalse(line1.contains(secret))
+        val line2 = AcapelaVoiceDiagnostics.redactSensitiveLine(line1)
+        assertEquals(line1, line2)
+
+        val hexLine = "ndInit: 0x1234567890abcdef"
+        val hexRedacted = AcapelaVoiceDiagnostics.redactSensitiveLine(hexLine)
+        assertTrue(hexRedacted.contains("[محجوب]"))
+        assertFalse(hexRedacted.contains("1234567890abcdef"))
+    }
+
+    @Test
+    fun logcatMarkersAndPidFiltering_supportsThreadtimeAndTimeFormats() {
+        val threadtimeLine =
+            "05-23 12:34:56.789  1234  5678 I acattsandroid: test"
+        val timeWithSpaces =
+            "05-23 12:34:56.789 I/acattsandroid( 1234): test"
+        val timeWith3Spaces =
+            "05-23 12:34:56.789 I/acattsandroid(   99): test"
+
+        assertEquals(
+            1234,
+            AcapelaVoiceDiagnostics.extractPidFromLogcatLine(threadtimeLine)
+        )
+        assertEquals(
+            1234,
+            AcapelaVoiceDiagnostics.extractPidFromLogcatLine(timeWithSpaces)
+        )
+        assertEquals(
+            99,
+            AcapelaVoiceDiagnostics.extractPidFromLogcatLine(timeWith3Spaces)
+        )
+
+        val mixedPidLogs = listOf(
+            "05-23 12:34:56.780  1000  1000 I acattsandroid: " +
+                "tts_function_load_voice: Salma - error eb -27",
+            "05-23 12:34:56.790  2000  2000 I acattsandroid: " +
+                "tts_function_load_voice: Salma - done"
+        )
+        assertFalse(
+            AcapelaVoiceDiagnostics.isSpeakerLoadedInLogs(
+                speaker = "Salma",
+                logs = mixedPidLogs,
+                expectedPid = 1000
+            )
+        )
+        assertTrue(
+            AcapelaVoiceDiagnostics.isSpeakerLoadedInLogs(
+                speaker = "Salma",
+                logs = mixedPidLogs,
+                expectedPid = 2000
+            )
+        )
+
+        val testLines = listOf(
+            "05-23 12:34:56.780  1000  1000 I acattsandroid: random line",
+            "05-23 12:34:56.790  2000  2000 I acattsandroid: other line"
+        )
+        val missingBoundary = AcapelaVoiceDiagnostics
+            .filterLogcatLinesBetweenMarkers(
+                lines = testLines,
+                startMarker = "NON_EXISTENT_START_MARKER_9999",
+                endMarker = "NON_EXISTENT_END_MARKER_9999"
+            )
+        assertEquals(1, missingBoundary.size)
+        assertTrue(
+            missingBoundary[0].contains("حدود المحاولة غير متاحة")
+        )
+    }
+
+    @Test
+    fun speakInvokedFalse_displaysLoadFailureTitle_andNullCode() {
+        val record = AcapelaVoiceDiagnostics.FirstFailureRecord(
+            buildVersion = "1.6.71",
+            buildCode = 10671L,
+            timestamp = "2026-11-21 12:00:00.000",
+            runId = "run_title_check",
+            connectionGeneration = 1L,
+            engineName = HostProtocol.ENGINE_ACAPELA,
+            stage = "AuthenticVoice",
+            verifiedVoiceDir = "/test/dir",
+            speaker = "Salma",
+            initInvoked = true,
+            initCode = 0,
+            voiceInvoked = true,
+            voiceCode = -25,
+            speakInvoked = false,
+            speakCode = null,
+            speakDesc = "لم يُستدعَ",
+            samples = 0L,
+            bytes = 0L,
+            exitReasonDesc = "none",
+            isConfirmedNativeCrash = false
+        )
+
+        AcapelaVoiceDiagnostics.recordFirstFailure(context, record)
+        val text = AcapelaVoiceDiagnostics.readLastRealSpeechFailure(context)
+        assertNotNull(text)
+        assertTrue(
+            text!!.contains(
+                "=== سجل أول فشل أصلي (فشل تحميل قبل النطق) ==="
+            )
+        )
+        assertTrue(
+            text.contains(
+                "nSpeak: مستدعى=false | كود=null (لم يُستدعَ)"
+            )
+        )
+        assertTrue(text.contains("عينات PCM: غير مقيس"))
+        assertTrue(text.contains("بايتات PCM: غير مقيس"))
     }
 }

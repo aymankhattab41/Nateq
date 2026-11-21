@@ -927,13 +927,13 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * قناع القيم الحساسة: الطول وآخر ٤ أحرف فقط، بلا أي قيمة كاملة.
-     * القيم القصيرة (٤ أحرف أو أقل) تُخفى بالكامل كي لا تظهر قيمة ما.
+     * حجب القيم الحساسة: علامة ثابتة [محجوب] دون بادئة أو ذيل،
+     * مع ضمان idempotent.
      */
     fun redactSensitive(value: String?): String {
         if (value.isNullOrEmpty()) return "(فارغ)"
-        val tail = if (value.length > 4) value.takeLast(4) else "****"
-        return "الطول=${value.length} | ...$tail"
+        if (value == "[محجوب]" || value == "[مُقنَّع]") return "[محجوب]"
+        return "[محجوب]"
     }
 
     /** مفاتيح الأسطر التي قد تحوي قيماً حساسة في السجلات والتقارير. */
@@ -1016,7 +1016,7 @@ object AcapelaVoiceDiagnostics {
 
     /**
      * إخفاء القيم الحساسة في سطر واحد (ترخيص/كلمات مرور/ndInit/رموز) قبل
-     * إدراجه في أي تقرير أو سجل أو تصدير.
+     * إدراجه في أي تقرير أو سجل أو تصدير بعلامة [محجوب] ثابتة وidempotent.
      */
     fun redactSensitiveLine(line: String): String {
         var out = line
@@ -1025,12 +1025,12 @@ object AcapelaVoiceDiagnostics {
                 when (kind) {
                     "REDACTED_CALL" -> {
                         val name = match.value.substringBefore('(').trim()
-                        "$name([مُقنَّع])"
+                        "$name([محجوب])"
                     }
-                    "REDACTED_HEX" -> "[HEX_مُقنَّع:${match.value.length}]"
+                    "REDACTED_HEX" -> "[محجوب]"
                     "REDACTED_BLOB" -> {
                         if (isLikelyBlob(match.value)) {
-                            "[BLOB_مُقنَّع:${match.value.length}]"
+                            "[محجوب]"
                         } else {
                             match.value
                         }
@@ -1038,7 +1038,7 @@ object AcapelaVoiceDiagnostics {
                     else -> {
                         val rawKey = match.value.substringBefore('=')
                             .substringBefore(':')
-                        "$rawKey=[مُقنَّع]"
+                        "$rawKey=[محجوب]"
                     }
                 }
             }
@@ -1057,8 +1057,10 @@ object AcapelaVoiceDiagnostics {
         val value = raw.substringBefore('"')
             .substringBefore('\'')
             .trim()
-        if (value.isEmpty() || value == "[مُقنَّع]") return out
-        return out.substring(0, start) + "$key: ${redactSensitive(value)}"
+        if (value.isEmpty() || value == "[محجوب]" || value == "[مُقنَّع]") {
+            return out
+        }
+        return out.substring(0, start) + "$key: [محجوب]"
     }
 
     /** جلسة تتبع حجب التراخيص متعددة الأسطر عبر الرسائل والأجزاء. */
@@ -1089,12 +1091,9 @@ object AcapelaVoiceDiagnostics {
 
         fun finishLicenseBlock() {
             if (licenseHeaderIndex >= 0 && licenseHeaderIndex < result.size) {
-                val fullPayload = session.payloadChunks
-                    .joinToString("\n").trim()
-                val maskedVal = redactSensitive(fullPayload)
                 result[licenseHeaderIndex] =
                     session.licenseHeaderPrefix +
-                        "babParam.license: $maskedVal"
+                        "babParam.license: [محجوب]"
             }
             session.inLicensePayload = false
             session.licenseHeaderPrefix = ""
@@ -1126,7 +1125,9 @@ object AcapelaVoiceDiagnostics {
                     keyIdx + "babParam.license".length
                 ).trimStart(':', '=', ' ', '\t', '"', '\'')
                     .trimEnd('"', '\'')
-                if (rawVal.isNotBlank() && rawVal != "[مُقنَّع]") {
+                if (rawVal.isNotBlank() && rawVal != "[محجوب]" &&
+                    rawVal != "[مُقنَّع]"
+                ) {
                     session.payloadChunks.add(rawVal)
                 }
                 result.add(redactSensitiveLine(line))
@@ -1187,10 +1188,12 @@ object AcapelaVoiceDiagnostics {
                     finishLicenseBlock()
                     result.add(redactSensitiveLine(line))
                 } else {
-                    if (content.isNotBlank()) {
+                    if (content.isNotBlank() && content != "[محجوب]" &&
+                        content != "[حمولة ترخيص محجوبة]"
+                    ) {
                         session.payloadChunks.add(content.trim('\'', '"'))
                     }
-                    result.add("$logcatPfx[حمولة ترخيص مُقنَّعة]")
+                    result.add("$logcatPfx[حمولة ترخيص محجوبة]")
                 }
             } else {
                 result.add(redactSensitiveLine(line))
@@ -1199,12 +1202,9 @@ object AcapelaVoiceDiagnostics {
         if (session.inLicensePayload && licenseHeaderIndex >= 0 &&
             licenseHeaderIndex < result.size
         ) {
-            val fullPayload = session.payloadChunks
-                .joinToString("\n").trim()
-            val maskedVal = redactSensitive(fullPayload)
             result[licenseHeaderIndex] =
                 session.licenseHeaderPrefix +
-                    "babParam.license: $maskedVal"
+                    "babParam.license: [محجوب]"
         }
         return result
     }
@@ -2806,15 +2806,53 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
+     * استخراج معرّف العملية (PID) من سطر logcat بدعم صيغتي threadtime وtime
+     * مع مراعاة المسافات داخل الأقواس.
+     */
+    fun extractPidFromLogcatLine(line: String): Int? {
+        val threadTimeMatch = Regex(
+            """^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+(\d+)\s+""" +
+                """\d+\s+[VDIWEF]\s+"""
+        ).find(line)
+        if (threadTimeMatch != null) {
+            return threadTimeMatch.groupValues[1].toIntOrNull()
+        }
+        val timeMatch = Regex(
+            """^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+[VDIWEF]/""" +
+                """[^(\s]+\s*\(\s*(\d+)\s*\):"""
+        ).find(line)
+        if (timeMatch != null) {
+            return timeMatch.groupValues[1].toIntOrNull()
+        }
+        val parenMatch = Regex("""\(\s*(\d{1,7})\s*\):""").find(line)
+        if (parenMatch != null) {
+            return parenMatch.groupValues[1].toIntOrNull()
+        }
+        val spacedMatch = Regex(
+            """\s+(\d{1,7})\s+\d{1,7}\s+[VDIWEF]\s+"""
+        ).find(line)
+        return spacedMatch?.groupValues?.get(1)?.toIntOrNull()
+    }
+
+    /**
      * التحقق الصارم من تحميل الصوت المطلوب حصراً في سجلات المكتبة الأصلية،
-     * مع استبعاد أسطر lang_name واستبعاد نجاح أصوات أخرى.
+     * مع استبعاد أسطر lang_name واستبعاد نجاح أصوات أخرى أو PIDs سابقة.
      */
     fun isSpeakerLoadedInLogs(
         speaker: String,
-        logs: List<String>
+        logs: List<String>,
+        expectedPid: Int? = null
     ): Boolean {
         val speakerNorm = speaker.trim().lowercase(Locale.ROOT)
-        val loadVoiceLines = logs.filter { line ->
+        val validLogs = if (expectedPid != null) {
+            logs.filter { line ->
+                val linePid = extractPidFromLogcatLine(line)
+                linePid == null || linePid == expectedPid
+            }
+        } else {
+            logs
+        }
+        val loadVoiceLines = validLogs.filter { line ->
             line.contains("tts_function_load_voice", ignoreCase = true) &&
                 !line.contains("lang_name", ignoreCase = true)
         }
@@ -2886,7 +2924,12 @@ object AcapelaVoiceDiagnostics {
         recordedFirstFailureRunId = record.runId
 
         val sb = StringBuilder()
-        sb.appendLine("=== سجل أول فشل أصلي (First-Failure Record) ===")
+        val failureTitle = if (record.speakInvoked) {
+            "=== سجل أول فشل أصلي (First-Failure Record) ==="
+        } else {
+            "=== سجل أول فشل أصلي (فشل تحميل قبل النطق) ==="
+        }
+        sb.appendLine(failureTitle)
         sb.appendLine(
             "إصدار البناء: ${record.buildVersion} (${record.buildCode})"
         )
@@ -2912,13 +2955,21 @@ object AcapelaVoiceDiagnostics {
             "nSetCurrentVoice: مستدعى=${record.voiceInvoked} | " +
                 "كود=${record.voiceCode ?: "غير مقيس"}"
         )
-        sb.appendLine(
-            "nSpeak: مستدعى=${record.speakInvoked} | " +
-                "كود=${record.speakCode ?: "لم يُستدعَ"}"
-        )
+        if (record.speakInvoked) {
+            sb.appendLine(
+                "nSpeak: مستدعى=true | " +
+                    "كود=${record.speakCode ?: "غير مقيس"}"
+            )
+            sb.appendLine("عينات PCM: ${record.samples}")
+        } else {
+            sb.appendLine("nSpeak: مستدعى=false | كود=null (لم يُستدعَ)")
+            sb.appendLine("عينات PCM: غير مقيس")
+        }
         sb.appendLine("وصف nSpeak: ${record.speakDesc}")
-        sb.appendLine("عينات PCM: ${record.samples}")
-        sb.appendLine("بايتات PCM: ${record.bytes}")
+        sb.appendLine(
+            "بايتات PCM: " +
+                if (record.speakInvoked) "${record.bytes}" else "غير مقيس"
+        )
         sb.appendLine("سبب خروج المضيف: ${record.exitReasonDesc}")
         sb.appendLine(
             "انهيار أصلي مؤكد: " +
@@ -2934,11 +2985,9 @@ object AcapelaVoiceDiagnostics {
         val priorCrashLines = mutableListOf<String>()
         val currentAttemptLines = mutableListOf<String>()
         val currPid = record.pid
-        val pidTagRegex = Regex("""\s+(\d{3,6})\s+\d{3,6}\s+[VDIWEF]\s+""")
 
         for (line in nativeTail) {
-            val linePid = pidTagRegex.find(line)?.groupValues?.get(1)
-                ?.toIntOrNull()
+            val linePid = extractPidFromLogcatLine(line)
             val isCrashLine =
                 line.contains("Fatal signal", ignoreCase = true) ||
                 line.contains("SIGSEGV", ignoreCase = true) ||
@@ -3149,54 +3198,63 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
+     * تصفية أسطر Logcat بين علامتي البداية والنهاية،
+     * مع إعادة إشعار صريح عند غياب الحدود دون رجوع لأسطر عشوائية.
+     */
+    fun filterLogcatLinesBetweenMarkers(
+        lines: List<String>,
+        startMarker: String,
+        endMarker: String? = null
+    ): List<String> {
+        var recording = false
+        var markerFound = false
+        val captured = mutableListOf<String>()
+        for (line in lines) {
+            if (line.contains(startMarker)) {
+                recording = true
+                markerFound = true
+                continue
+            }
+            if (endMarker != null && line.contains(endMarker)) {
+                recording = false
+                break
+            }
+            if (recording) {
+                val trimmed = line.trim()
+                if (trimmed.isNotBlank() &&
+                    !trimmed.startsWith("---------")
+                ) {
+                    captured.add(trimmed)
+                }
+            }
+        }
+        return if (markerFound && captured.isNotEmpty()) {
+            captured
+        } else if (markerFound) {
+            emptyList()
+        } else {
+            listOf("(حدود المحاولة غير متاحة في logcat)")
+        }
+    }
+
+    /**
      * قراءة أسطر Logcat الخاصة بالمكتبة الأصلية بين علامتي البداية والنهاية،
-     * وتضمين كافة أسطر acattsandroid-extended-native كاملة بلا استثناء
-     * (البند 2).
+     * مع دعم threadtime وعدم الرجوع الصامت إلى أسطر عامة عند غياب الحدود.
      */
     fun readLogcatBetweenMarkers(
         startMarker: String,
-        endMarker: String,
+        endMarker: String? = null,
         maxLines: Int = 1000
     ): List<String> {
         return runCatching {
             val fetchCount = maxLines.coerceAtLeast(1000).toString()
             val proc = Runtime.getRuntime().exec(
-                arrayOf("logcat", "-d", "-v", "time", "-t", fetchCount)
+                arrayOf("logcat", "-d", "-v", "threadtime", "-t", fetchCount)
             )
             val lines = proc.inputStream
                 .bufferedReader(StandardCharsets.UTF_8).readLines()
             proc.waitFor()
-            var recording = false
-            val captured = mutableListOf<String>()
-            for (line in lines) {
-                if (line.contains(startMarker)) {
-                    recording = true
-                    continue
-                }
-                if (line.contains(endMarker)) {
-                    recording = false
-                    break
-                }
-                if (recording) {
-                    val trimmed = line.trim()
-                    if (trimmed.isNotBlank() &&
-                        !trimmed.startsWith("---------")
-                    ) {
-                        captured.add(trimmed)
-                    }
-                }
-            }
-            if (captured.isNotEmpty()) {
-                captured
-            } else {
-                lines.filter { line ->
-                    line.contains("acattsandroid", ignoreCase = true) ||
-                        line.contains("initLanguage", ignoreCase = true) ||
-                        line.contains("userdico", ignoreCase = true) ||
-                        line.contains("error", ignoreCase = true) ||
-                        line.contains("fail", ignoreCase = true)
-                }.takeLast(maxLines)
-            }
+            filterLogcatLinesBetweenMarkers(lines, startMarker, endMarker)
         }.getOrElse { t ->
             listOf("(تعذر قراءة logcat للمحاولة: ${t.message})")
         }.let(::redactSensitiveLines)

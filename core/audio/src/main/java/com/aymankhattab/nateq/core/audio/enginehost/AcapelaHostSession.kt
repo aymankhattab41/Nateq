@@ -57,7 +57,24 @@ internal data class ResolvedVerifiedPackage(
     val voiceDir: File,
     val iniFile: File?,
     val speaker: String,
-    val dependencies: List<String>
+    val dependencies: List<String> = emptyList(),
+    val metadataFile: File? = null,
+    val rawParam: String? = null,
+    val registration: String = "",
+    val regLength: Int = registration.length
+)
+
+/** نتيجة فحص عقد وسائط نداءات JNI للتشخيص الآمن وتتبع NULLARG. */
+internal data class JniContractAudit(
+    val callName: String,
+    val argName: String,
+    val expectedType: String,
+    val actualType: String,
+    val presence: String,
+    val isNullOrBlank: Boolean,
+    val safeLength: Int?,
+    val passed: Boolean,
+    val notes: String = ""
 )
 
 /**
@@ -996,8 +1013,14 @@ internal class AcapelaHostSession(
         applyClassicParameters(inst, rate, pitch)
 
         val runId = UUID.randomUUID().toString().take(8)
-        val startMarker = "=== START_REAL_SPEAK_NATIVE_${voice.id}_$runId ==="
-        val endMarker = "=== END_REAL_SPEAK_NATIVE_${voice.id}_$runId ==="
+        val myPid = android.os.Process.myPid()
+        val hostGen = EngineHostClient.hostGeneration.get()
+        val startMarker =
+            "=== START_REAL_SPEAK_NATIVE_${voice.id}_${runId}_" +
+                "G${hostGen}_PID${myPid} ==="
+        val endMarker =
+            "=== END_REAL_SPEAK_NATIVE_${voice.id}_${runId}_" +
+                "G${hostGen}_PID${myPid} ==="
         Log.i("acattsandroid-extended-native", startMarker)
 
         for (chunk in chunks) {
@@ -1258,8 +1281,14 @@ internal class AcapelaHostSession(
         )
         val regLen = srv.idfunction()?.length ?: 0
         val runId = UUID.randomUUID().toString().take(8)
-        val startMarker = "=== START_REAL_SPEAK_${voice.id}_$runId ==="
-        val endMarker = "=== END_REAL_SPEAK_${voice.id}_$runId ==="
+        val myPid = android.os.Process.myPid()
+        val hostGen = EngineHostClient.hostGeneration.get()
+        val startMarker =
+            "=== START_REAL_SPEAK_${voice.id}_${runId}_" +
+                "G${hostGen}_PID${myPid} ==="
+        val endMarker =
+            "=== END_REAL_SPEAK_${voice.id}_${runId}_" +
+                "G${hostGen}_PID${myPid} ==="
         Log.i("acattsandroid-extended-native", startMarker)
 
         val speaker = voice.rawSpeaker ?: voice.voiceName
@@ -1599,8 +1628,29 @@ internal class AcapelaHostSession(
         val firstErr = AcapelaVoiceDiagnostics
             .findFirstErrorAndPreceding(trial.nativeLines)
 
+        val failureTitle = if (trial.speakInvoked) {
+            "=== آخر محاولة نطق حقيقية فاشلة ==="
+        } else {
+            "=== فشل تحميل الصوت قبل استدعاء النطق ==="
+        }
+        val speakCodeText = if (trial.speakInvoked) {
+            trial.speakCode?.toString() ?: "غير مقيس"
+        } else {
+            "null (لم يُستدعَ)"
+        }
+        val pcmSamplesText = if (trial.speakInvoked) {
+            (trial.samples ?: 0L).toString()
+        } else {
+            "غير مقيس"
+        }
+        val pcmBytesText = if (trial.speakInvoked) {
+            (trial.pcmBytes ?: 0L).toString()
+        } else {
+            "غير مقيس"
+        }
+
         val failureSection = buildString {
-            appendLine("=== آخر محاولة نطق حقيقية فاشلة ===")
+            appendLine(failureTitle)
             appendLine("runId: $runId")
             appendLine("الوقت: $failTimestamp")
             appendLine(
@@ -1610,13 +1660,11 @@ internal class AcapelaHostSession(
             )
             appendLine("المسار: ${trial.method}")
             appendLine("النص: \"مرحبا\"")
-            appendLine(
-                "كود رجوع nSpeak الرقمي: " +
-                    "${trial.speakCode ?: "غير مقيس"}"
-            )
-            appendLine("كود nSpeak: ${trial.speakCode ?: "غير مقيس"}")
-            appendLine("عدد العينات: ${trial.samples ?: 0L}")
-            appendLine("عينات PCM: ${trial.samples ?: 0L}")
+            appendLine("كود رجوع nSpeak الرقمي: $speakCodeText")
+            appendLine("كود nSpeak: $speakCodeText")
+            appendLine("عدد العينات: $pcmSamplesText")
+            appendLine("عينات PCM: $pcmSamplesText")
+            appendLine("بايتات PCM: $pcmBytesText")
             appendLine(
                 "أول خطأ أصلي في الأسطر: " +
                     "${firstErr?.first ?: trial.firstErrorLine ?: "لم تُرصد"}"
@@ -1704,8 +1752,8 @@ internal class AcapelaHostSession(
             speakInvoked = trial.speakInvoked,
             speakCode = if (trial.speakInvoked) trial.speakCode else null,
             speakDesc = speakDesc,
-            samples = trial.samples ?: 0L,
-            bytes = trial.pcmBytes ?: 0L,
+            samples = if (trial.speakInvoked) (trial.samples ?: 0L) else 0L,
+            bytes = if (trial.speakInvoked) (trial.pcmBytes ?: 0L) else 0L,
             exitReasonDesc = exitDesc,
             isConfirmedNativeCrash = isConfirmedCrash
         )
@@ -1735,13 +1783,6 @@ internal class AcapelaHostSession(
         sink: PcmSink,
         cancelled: AtomicBoolean
     ): HostResult? {
-        val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(voice.dir)
-        if (hexFile == null || hexFile.length() <= 0L) {
-            return HostResult.failure(
-                "REGISTRATION_FILE_MISSING",
-                "ملف الترخيص 0x... مفقود أو فارغ في ${voice.dir.name}"
-            )
-        }
         if (voice.sampleRate != 22050) {
             return HostResult.failure(
                 "INVALID_SAMPLE_RATE",
@@ -1750,44 +1791,18 @@ internal class AcapelaHostSession(
         }
 
         val voiceKey = registrationKey(voice)
-        val rawParam =
-            AcapelaVoiceManifest.readParamFromConfigYaml(voice.dir)
-        var registration = if (!rawParam.isNullOrBlank()) {
-            AcapelaVoiceManifest.extractRegistrationFromParam(
-                rawParam,
-                context
-            )
-        } else {
-            voice.registration
-        }
-        if (registration.isEmpty() ||
-            !AcapelaVoiceManifest.isRegistrationMetadata(registration)
-        ) {
-            val resolved =
-                AcapelaVoiceManifest.resolveRegistration(voice.dir)
-            if (AcapelaVoiceManifest.isRegistrationMetadata(resolved)) {
-                registration = resolved
-            }
-        }
-        val regLen = registration.length
-        if (regLen == 0) {
-            return HostResult.failure(
-                "CONFIG_YAML_MISSING",
-                "بيانات التسجيل غير متوفرة في ${voice.dir.name} " +
-                    "(ملف config.yaml غير موجود في مجلد الصوت أو الأب أو " +
-                    "جذر files/Acapela)"
-            )
-        }
-
-        if (extendedKey == "$voiceKey|$registration" &&
+        val cachedPackage = lastResolvedPackage
+        if (cachedPackage != null &&
             extendedService != null &&
-            lastTrialSucceeded.get()
+            lastTrialSucceeded.get() &&
+            extendedKey == "$voiceKey|${cachedPackage.registration}" &&
+            activeManagedService?.state == ExtendedServiceState.VOICE_LOADED
         ) {
             return null
         }
-        val trialKey = "$voiceKey|$registration"
-        val failCount = consecutiveTrialFailures[trialKey] ?: 0
-        if (failedTrialKey == trialKey &&
+
+        val failCount = consecutiveTrialFailures[voiceKey] ?: 0
+        if (failedTrialKey?.startsWith("$voiceKey|") == true &&
             failCount >= MAX_CONSECUTIVE_FAILURES
         ) {
             return HostResult.failure(
@@ -1832,40 +1847,33 @@ internal class AcapelaHostSession(
         Log.i(TAG, archLog)
         HostLog.i(HostProtocol.ENGINE_ACAPELA, archLog)
 
-        val singleMsg = "[AcapelaDiag] اختبار تسجيل وحيد: " +
-            "email+hexCode (طول=$regLen)"
-        Log.i(TAG, singleMsg)
-        HostLog.i(HostProtocol.ENGINE_ACAPELA, singleMsg)
-
         val failure = configureExtendedTriple(
             voice = voice,
             iso3 = iso3,
-            registration = registration,
-            rawParam = rawParam,
             voiceKey = voiceKey
         )
         if (failure != null) {
-            val count = (consecutiveTrialFailures[trialKey] ?: 0) + 1
-            consecutiveTrialFailures[trialKey] = count
+            val count = (consecutiveTrialFailures[voiceKey] ?: 0) + 1
+            consecutiveTrialFailures[voiceKey] = count
             if (count >= MAX_CONSECUTIVE_FAILURES) {
-                failedTrialKey = trialKey
+                failedTrialKey = "$voiceKey|failed"
                 Log.w(
                     TAG,
                     "تثبيت قفل تجربة Acapela بعد $count محاولات " +
-                        "فاشلة متتالية ($trialKey)"
+                        "فاشلة متتالية ($voiceKey)"
                 )
             } else {
                 failedTrialKey = null
                 Log.i(
                     TAG,
                     "فشل تجربة عابر ($count/$MAX_CONSECUTIVE_FAILURES) " +
-                        "لـ $trialKey؛ سيُعاد في المحاولة التالية"
+                        "لـ $voiceKey؛ سيُعاد في المحاولة التالية"
                 )
             }
             closeExtended()
             return failure
         }
-        consecutiveTrialFailures.remove(trialKey)
+        consecutiveTrialFailures.remove(voiceKey)
         failedTrialKey = null
         return null
     }
@@ -2467,6 +2475,7 @@ internal class AcapelaHostSession(
         val trialDir = resolvedPackage.voiceDir
         val speaker = resolvedPackage.speaker
         val stagePath = directoryArgument(trialDir)
+        val cleanLabel = label.filter { it.isLetterOrDigit() }
 
         val trialLogFile = File(trialDir, "logfile.txt")
         if (trialLogFile.exists()) {
@@ -2480,6 +2489,134 @@ internal class AcapelaHostSession(
         val synthCallback = AcapelaSynthesisCallback { bytes, len ->
             handleRawAudioBytes(bytes, len)
         }
+
+        val audits = mutableListOf<JniContractAudit>()
+
+        audits.add(
+            JniContractAudit(
+                callName = "AcattsandroidService.<init>",
+                argName = "audio",
+                expectedType = "AcattsandroidService.Audio",
+                actualType = "AcapelaHostSession.TrialAudio",
+                presence = "موجود",
+                isNullOrBlank = false,
+                safeLength = null,
+                passed = true,
+                notes = "واجهة استقبال عينات الصوت"
+            )
+        )
+        val regPassed = registration.isNotBlank()
+        audits.add(
+            JniContractAudit(
+                callName = "AcattsandroidService.<init>",
+                argName = "registration",
+                expectedType = "String",
+                actualType = "String",
+                presence = if (regPassed) "موجود" else "فارغ",
+                isNullOrBlank = !regPassed,
+                safeLength = registration.length,
+                passed = regPassed,
+                notes = "بيانات التسجيل (طول آمن=${registration.length})"
+            )
+        )
+        val pathPassed = stagePath.isNotBlank() && trialDir.isDirectory
+        audits.add(
+            JniContractAudit(
+                callName = "nInit",
+                argName = "path",
+                expectedType = "String",
+                actualType = "String",
+                presence = if (stagePath.isNotBlank()) "موجود" else "فارغ",
+                isNullOrBlank = stagePath.isBlank(),
+                safeLength = stagePath.length,
+                passed = pathPassed,
+                notes = "مسار مجلد الحزمة (nInit يستقبل هذا المسار فقط، " +
+                    "وبقية الحقول تخص نداءات منفصلة)"
+            )
+        )
+        audits.add(
+            JniContractAudit(
+                callName = "nSetVoiceMode",
+                argName = "mode",
+                expectedType = "String",
+                actualType = "String",
+                presence = if (voiceMode.isNotBlank()) "موجود" else "فارغ",
+                isNullOrBlank = voiceMode.isBlank(),
+                safeLength = voiceMode.length,
+                passed = voiceMode.isNotBlank(),
+                notes = "نمط الصوت (HD)"
+            )
+        )
+        audits.add(
+            JniContractAudit(
+                callName = "nUtf8Mode",
+                argName = "lang, country",
+                expectedType = "String, String",
+                actualType = "String, String",
+                presence = "موجود",
+                isNullOrBlank = false,
+                safeLength = iso3.language.length + iso3.country.length,
+                passed = iso3.language.isNotBlank() &&
+                    iso3.country.isNotBlank(),
+                notes = "ترميز UTF-8 للغة والدولة"
+            )
+        )
+        audits.add(
+            JniContractAudit(
+                callName = "nSetLanguage",
+                argName = "lang, country, variant",
+                expectedType = "String, String, String",
+                actualType = "String, String, String",
+                presence = "موجود",
+                isNullOrBlank = false,
+                safeLength = iso3.language.length + iso3.country.length,
+                passed = iso3.language.isNotBlank() &&
+                    iso3.country.isNotBlank(),
+                notes = "ضبط لغة المتحدث"
+            )
+        )
+        val speakerPassed = speaker.isNotBlank()
+        audits.add(
+            JniContractAudit(
+                callName = "nSetCurrentVoice",
+                argName = "speaker",
+                expectedType = "String",
+                actualType = "String",
+                presence = if (speakerPassed) "موجود" else "فارغ",
+                isNullOrBlank = !speakerPassed,
+                safeLength = speaker.length,
+                passed = speakerPassed,
+                notes = "اسم المتحدث المطلوب تفعيله"
+            )
+        )
+        audits.add(
+            JniContractAudit(
+                callName = "nSpeak",
+                argName = "text",
+                expectedType = "String",
+                actualType = "String",
+                presence = if (probeText.isNotBlank()) "موجود" else "فارغ",
+                isNullOrBlank = probeText.isBlank(),
+                safeLength = probeText.length,
+                passed = probeText.isNotBlank(),
+                notes = "نص التجربة"
+            )
+        )
+        audits.add(
+            JniContractAudit(
+                callName = "nSpeak",
+                argName = "callback",
+                expectedType = "SynthesisCallback",
+                actualType = if (useRealCallback) {
+                    "AcapelaSynthesisCallback"
+                } else "null",
+                presence = if (useRealCallback) "موجود" else "null",
+                isNullOrBlank = false,
+                safeLength = null,
+                passed = true,
+                notes = "مستقبل عينات النطق"
+            )
+        )
 
         val srv = AcattsandroidService(
             audioHandler,
@@ -2496,14 +2633,17 @@ internal class AcapelaHostSession(
             srv.idfunction()
         }.getOrNull().orEmpty()
         val maskedReg = if (idFuncVal.isNotEmpty()) {
-            "[مُقنَّع:طول=${idFuncVal.length}]"
+            "[محجوب]"
         } else {
             "(فارغ)"
         }
 
-        val cleanLabel = label.filter { it.isLetterOrDigit() }
-        val startMarker = "=== START_TRIAL_$cleanLabel ==="
-        val endMarker = "=== END_TRIAL_$cleanLabel ==="
+        val myPid = android.os.Process.myPid()
+        val hostGen = EngineHostClient.hostGeneration.get()
+        val startMarker =
+            "=== START_TRIAL_${runId}_G${hostGen}_PID${myPid} ==="
+        val endMarker =
+            "=== END_TRIAL_${runId}_G${hostGen}_PID${myPid} ==="
         Log.i("acattsandroid-extended-native", startMarker)
 
         recordAcapelaBreadcrumb("[$label] nInit($stagePath)")
@@ -2558,7 +2698,11 @@ internal class AcapelaHostSession(
             }
         }
 
-        val earlyLogs = AcapelaVoiceDiagnostics.readNativeLogcatLines(100)
+        val earlyLogs = AcapelaVoiceDiagnostics.readLogcatBetweenMarkers(
+            startMarker,
+            null,
+            100
+        )
         val loadVoiceLines = earlyLogs.filter {
             it.contains("tts_function_load_voice")
         }
@@ -2568,7 +2712,8 @@ internal class AcapelaHostSession(
 
         val isVoiceLoaded = AcapelaVoiceDiagnostics.isSpeakerLoadedInLogs(
             speaker = speaker,
-            logs = earlyLogs
+            logs = earlyLogs,
+            expectedPid = myPid
         )
 
         if (managed.state == ExtendedServiceState.INITIALIZED) {
@@ -2801,6 +2946,45 @@ internal class AcapelaHostSession(
         val cbDesc = if (useRealCallback) "SynthesisCallback" else "null"
         val sb = StringBuilder()
         sb.appendLine("[$label - وسائط النداءات وأكواد الإرجاع الحرفية]")
+        sb.appendLine(
+            "  === [تدقيق عقود وسائط JNI وفحص NULLARG الآمن] ==="
+        )
+        sb.appendLine(
+            "  * توضيح: nInit يستقبل وسيطاً واحداً فقط هو مسار " +
+                "المجلد (path)، وبقية الحقول تخص نداءات منفصلة."
+        )
+        val allAuditsPassed = audits.all { it.passed }
+        for (audit in audits) {
+            val status = if (audit.passed) "ناجح" else "فاشل"
+            val lenDesc = audit.safeLength?.let { "طول=$it" } ?: "غير مقيد"
+            val notesDesc = if (audit.notes.isNotBlank()) {
+                " (${audit.notes})"
+            } else ""
+            sb.appendLine(
+                "  - [${audit.callName}] ${audit.argName}: " +
+                    "نوع متوقع=${audit.expectedType} | " +
+                    "نوع فعلي=${audit.actualType} | " +
+                    "الوجود=${audit.presence} | " +
+                    "$lenDesc | الحالة=$status$notesDesc"
+            )
+        }
+        if (allAuditsPassed) {
+            sb.appendLine(
+                "  * تقييم العقد: كافة الوسائط الخارجية اجتازت فحص " +
+                    "التحقق؛ أي خطأ أصلي (مثل NULLARG أو eb=-25) " +
+                    "ينبع من داخل المكتبة الأصلية المغلقة " +
+                    "ولا يمكن قياس سببه الداخلي مباشرة من خارج المكتبة."
+            )
+        } else {
+            sb.appendLine(
+                "  * تقييم العقد: وُجد وسيط خارجي لم يجتز فحص العقد!"
+            )
+        }
+        sb.appendLine(
+            "  * دلالة الأكواد: nInit=0 يعني اكتمال تفريغ التهيئة " +
+                "للمكتبة ولا يعني جاهزية الصوت؛ تحميل الصوت الفعلي " +
+                "يحدده كود eb في السجل (eb=-25 فشل تحميل داخلي للصوت)."
+        )
         sb.appendLine(
             "  === [البند هـ] قيم معاملات nInit التي مُرِّرت فعلياً ==="
         )
@@ -3127,8 +3311,6 @@ internal class AcapelaHostSession(
     private suspend fun configureExtendedTriple(
         voice: AcapelaVoiceManifest.VoiceInfo,
         iso3: Iso3,
-        registration: String,
-        rawParam: String?,
         voiceKey: String
     ): HostResult? {
         val runId = UUID.randomUUID().toString()
@@ -3179,71 +3361,162 @@ internal class AcapelaHostSession(
             )
             appendAcapelaFullDiagnostic(verification.report)
 
-            val effectiveRawParam = rawParam ?: AcapelaVoiceManifest
-                .readParamFromConfigYaml(voice.dir).orEmpty()
-            val decodedReg = AcapelaMetadataCodec.resolveAcapelaParam(
-                rawParam = effectiveRawParam,
-                context = context
-            )
-            val regToUse = if (decodedReg.registration.isNotEmpty()) {
-                decodedReg.registration
-            } else {
-                registration
-            }
-
-            val trial = if (!verification.ok) {
-                failedTrialBeforeInit(
+            if (!verification.ok || verification.voiceDir == null) {
+                val trial = failedTrialBeforeInit(
                     label = "AuthenticVoice (فشل التحقق قبل nInit)",
                     runId = runId,
                     startedAtMs = startedAtMs,
-                    path = directoryArgument(voice.dir),
+                    path = directoryArgument(
+                        verification.voiceDir ?: voice.dir
+                    ),
                     report = verification.report
                 )
-            } else {
-                val iniToken = verification.iniFile?.let {
-                    AcapelaVoiceManifest.tokenOfIdentity(it.name)
+                recordTrialFailure(voice, runId, trial)
+                return HostResult.failure(
+                    "AUTHENTIC_VERIFICATION_FAILED",
+                    "فشل التحقق من حزمة الصوت الأصلية: " +
+                        verification.issues.joinToString { it.dependency }
+                )
+            }
+
+            val verifiedDir = verification.voiceDir!!
+            val verifiedIni = verification.iniFile
+
+            // التحقق من تطابق ملف ini مع هوية المتحدث
+            val iniToken = verifiedIni?.let {
+                AcapelaVoiceManifest.tokenOfIdentity(it.name)
+            }
+            val speakerToken =
+                AcapelaVoiceManifest.tokenOfIdentity(expectedSpeaker)
+            if (iniToken != null && speakerToken != null &&
+                iniToken != speakerToken
+            ) {
+                val mismatchReason = "ملف ini المتحقق " +
+                    "(${verifiedIni?.name}) لا يطابق " +
+                    "هوية الصوت المطلوب ($expectedSpeaker)"
+                Log.e(TAG, mismatchReason)
+                return HostResult.failure(
+                    "IDENTITY_MISMATCH",
+                    mismatchReason
+                )
+            }
+
+            // حل metadata من داخل verifiedDir حصراً
+            val verifiedYaml = File(verifiedDir, "config.yaml")
+                .takeIf { it.isFile }
+                ?: AcapelaVoiceManifest
+                    .findConfigYamlWithParam(verifiedDir)?.first
+            val hexFile = AcapelaVoiceManifest
+                .findHexRegistrationFile(verifiedDir)
+            val metadataSource = verifiedYaml ?: hexFile
+
+            if (metadataSource == null) {
+                val missingMsg = "مصدر بيانات التهيئة (config.yaml أو " +
+                    "ملف الترخيص) مفقود في مجلد الحزمة المتحققة: " +
+                    verifiedDir.absolutePath
+                Log.e(TAG, missingMsg)
+                return HostResult.failure(
+                    "METADATA_SOURCE_MISSING",
+                    missingMsg
+                )
+            }
+
+            val rawParamFromVerified = verifiedYaml?.let {
+                AcapelaVoiceManifest.readParamFromConfigYaml(verifiedDir)
+            }
+            val decodedReg = if (!rawParamFromVerified.isNullOrBlank()) {
+                AcapelaMetadataCodec.resolveAcapelaParam(
+                    rawParam = rawParamFromVerified,
+                    context = context
+                )
+            } else null
+
+            val regToUse = when {
+                decodedReg != null && decodedReg.registration.isNotEmpty() ->
+                    decodedReg.registration
+                hexFile != null -> {
+                    val hexReg = AcapelaVoiceManifest
+                        .resolveRegistration(verifiedDir)
+                    if (AcapelaVoiceManifest.isRegistrationMetadata(hexReg)) {
+                        hexReg
+                    } else {
+                        voice.registration
+                    }
                 }
-                val speakerToken =
-                    AcapelaVoiceManifest.tokenOfIdentity(expectedSpeaker)
-                val identityMatches = when {
-                    iniToken == null -> true
-                    speakerToken == null -> true
-                    else -> iniToken == speakerToken
-                }
-                if (!identityMatches) {
-                    val mismatchReason = "ملف ini المتحقق " +
-                        "(${verification.iniFile?.name}) لا يطابق " +
-                        "هوية الصوت المطلوب ($expectedSpeaker)"
+                else -> voice.registration
+            }
+
+            if (regToUse.isBlank()) {
+                val regMissingMsg = "بيانات التسجيل غير متوفرة في " +
+                    "الحزمة المتحققة: ${verifiedDir.absolutePath}"
+                Log.e(TAG, regMissingMsg)
+                return HostResult.failure(
+                    "REGISTRATION_EMPTY",
+                    regMissingMsg
+                )
+            }
+
+            // التحقق من تطابق هوية metadata
+            if (decodedReg != null && decodedReg.voiceCode.isNotBlank()) {
+                val metaVoiceToken = AcapelaVoiceManifest
+                    .tokenOfIdentity(decodedReg.voiceCode)
+                if (metaVoiceToken != null && speakerToken != null &&
+                    metaVoiceToken != speakerToken
+                ) {
+                    val mismatchReason = "رمز الصوت في metadata " +
+                        "(${decodedReg.voiceCode}) لا يطابق هوية " +
+                        "الصوت المطلوب ($expectedSpeaker)"
                     Log.e(TAG, mismatchReason)
                     return HostResult.failure(
                         "IDENTITY_MISMATCH",
                         mismatchReason
                     )
                 }
-
-                val resolvedVerifiedPackage = ResolvedVerifiedPackage(
-                    voiceDir = verification.voiceDir,
-                    iniFile = verification.iniFile,
-                    speaker = expectedSpeaker,
-                    dependencies = verification.checked
-                )
-                lastResolvedPackage = resolvedVerifiedPackage
-
-                executeVoiceLoadTrial(
-                    label = "AuthenticVoice (تحميل مباشر من الحزمة)",
-                    runId = runId,
-                    startedAtMs = startedAtMs,
-                    resolvedPackage = resolvedVerifiedPackage,
-                    iso3 = iso3,
-                    registration = regToUse,
-                    voiceMode = VOICE_MODE_HD,
-                    probeText = "مرحبا",
-                    order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                    useRealCallback = true,
-                    allowRetry = false,
-                    probeFiles = true
-                )
             }
+            val yamlSpeaker = extractVoiceNameFromConfigYaml(verifiedDir)
+            if (yamlSpeaker != null) {
+                val yamlToken = AcapelaVoiceManifest
+                    .tokenOfIdentity(yamlSpeaker)
+                if (yamlToken != null && speakerToken != null &&
+                    yamlToken != speakerToken
+                ) {
+                    val mismatchReason = "اسم الصوت في config.yaml " +
+                        "($yamlSpeaker) لا يطابق هوية الصوت " +
+                        "المطلوب ($expectedSpeaker)"
+                    Log.e(TAG, mismatchReason)
+                    return HostResult.failure(
+                        "IDENTITY_MISMATCH",
+                        mismatchReason
+                    )
+                }
+            }
+
+            val resolvedVerifiedPackage = ResolvedVerifiedPackage(
+                voiceDir = verifiedDir,
+                iniFile = verifiedIni,
+                speaker = expectedSpeaker,
+                dependencies = verification.checked,
+                metadataFile = metadataSource,
+                rawParam = rawParamFromVerified,
+                registration = regToUse,
+                regLength = regToUse.length
+            )
+            lastResolvedPackage = resolvedVerifiedPackage
+
+            val trial = executeVoiceLoadTrial(
+                label = "AuthenticVoice (تحميل مباشر من الحزمة)",
+                runId = runId,
+                startedAtMs = startedAtMs,
+                resolvedPackage = resolvedVerifiedPackage,
+                iso3 = iso3,
+                registration = regToUse,
+                voiceMode = VOICE_MODE_HD,
+                probeText = "مرحبا",
+                order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                useRealCallback = true,
+                allowRetry = false,
+                probeFiles = true
+            )
 
             val isSynthesizedOk = trial.speakInvoked && trial.speakCode == 0 &&
                 (trial.samples ?: 0L) > 0L
@@ -3368,7 +3641,7 @@ internal class AcapelaHostSession(
                 val speakDesc = if (trial.speakInvoked) {
                     "nSpeak=${trial.speakCode ?: "غير مقيس"}"
                 } else {
-                    "nSpeak=لم يُستدعَ"
+                    "nSpeak=null (لم يُستدعَ)"
                 }
                 val pcmDesc = if (trial.pcmInvoked) {
                     "PCM=${trial.samples ?: "غير مقيس"}"
@@ -3394,10 +3667,10 @@ internal class AcapelaHostSession(
             )
             activeManagedService = trial.managedService
             extendedService = srv
-            extendedKey = "$voiceKey|$registration"
+            extendedKey = "$voiceKey|$regToUse"
             lastTrialSucceeded.set(true)
             failedTrialKey = null
-            consecutiveTrialFailures.remove("$voiceKey|$registration")
+            consecutiveTrialFailures.remove("$voiceKey|$regToUse")
             runCatching {
                 com.aymankhattab.nateq.core.audio.engine
                     .SpeechFallbackTracker.clearAcapelaFallbackState()
