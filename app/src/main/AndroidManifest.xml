@@ -251,9 +251,29 @@
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
 
+            <!-- استلام النصوص عبر قائمة المشاركة (Share) لحفظها في «اقرأ لاحقاً» -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
             <meta-data
                 android:name="android.shortcuts"
                 android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- نشاط استقبال النصوص المحددة (ACTION_PROCESS_TEXT) لحفظها في «اقرأ لاحقاً» -->
+        <activity
+            android:name="com.aymankhattab.nateq.settings.ReadLaterProcessTextActivity"
+            android:exported="true"
+            android:label="@string/read_later_title"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <!-- معالج الإعداد الأولي القابل للتخطي: يُعرض مرة واحدة (اختيار

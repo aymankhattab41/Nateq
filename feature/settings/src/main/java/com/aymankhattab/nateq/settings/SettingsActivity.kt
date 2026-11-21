@@ -137,23 +137,30 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         if (action == Intent.ACTION_SEND) {
             val mime = intent.type ?: ""
             if (mime.startsWith("text/")) {
-                val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
-                    ?.trim().orEmpty()
+                val raw = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)
+                    ?: intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)
+                val sharedText = raw?.toString()?.trim().orEmpty()
                 // استهلاك النية فوراً لمنع إعادة المعالجة عند إعادة التسليم.
                 intent.removeExtra(Intent.EXTRA_TEXT)
+                intent.removeExtra(Intent.EXTRA_PROCESS_TEXT)
                 intent.type = null
-                if (sharedText.isNotEmpty()) {
-                    val saved = runCatching {
-                        settingsRepository.addReadLaterText(sharedText)
-                    }.getOrDefault(false)
-                    if (saved) {
-                        android.widget.Toast.makeText(
-                            this,
-                            R.string.read_later_saved_toast,
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                val result = settingsRepository.saveReadLaterText(sharedText)
+                val msgRes = when (result) {
+                    SettingsRepository.ReadLaterSaveResult.SAVED ->
+                        R.string.read_later_saved_toast
+                    SettingsRepository.ReadLaterSaveResult.DUPLICATE ->
+                        R.string.read_later_duplicate_toast
+                    SettingsRepository.ReadLaterSaveResult.EMPTY ->
+                        R.string.read_later_empty_toast
+                    SettingsRepository.ReadLaterSaveResult.FAILED ->
+                        R.string.read_later_failed_toast
                 }
+                android.widget.Toast.makeText(
+                    this,
+                    msgRes,
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                openReadLaterScreen()
                 return
             }
         }
@@ -199,6 +206,22 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         intent.removeExtra(Intent.EXTRA_STREAM)
 
         importZipVoicePackage(uri, fileName)
+    }
+
+    private fun openReadLaterScreen() {
+        val fragment = supportFragmentManager
+            .findFragmentById(R.id.settings_container)
+            as? VoiceSelectionFragment
+        if (fragment != null && fragment.isAdded && fragment.view != null) {
+            fragment.openReadLater()
+        } else {
+            Handler(Looper.getMainLooper()).post {
+                val f = supportFragmentManager
+                    .findFragmentById(R.id.settings_container)
+                    as? VoiceSelectionFragment
+                f?.openReadLater()
+            }
+        }
     }
 
     private fun queryDisplayName(uri: Uri): String? {

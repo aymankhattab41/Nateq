@@ -2031,7 +2031,7 @@ class SettingsRepository(context: Context) :
         return null
     }
 
-    // ============ جملتا إعلان المتصل (قبل / بعد) وقالب الرسائل (مفوّض) ============
+    // ==== جملتا إعلان المتصل (قبل / بعد) وقالب الرسائل (مفوّض) ====
     private val announcementTemplateDelegate by lazy {
         SettingsAnnouncementTemplateDelegate(this)
     }
@@ -2070,7 +2070,9 @@ class SettingsRepository(context: Context) :
 
     // ============ إعدادات إعلان الوقت ============
 
-    /** محرك اللغة الفعلي للقراءة/الحفظ (أو LORD_TTS) دون السقوط لمحرك DEFAULT. */
+    /**
+     * محرك اللغة الفعلي للقراءة/الحفظ (أو LORD_TTS) دون السقوط لمحرك DEFAULT.
+     */
     private fun resolveLanguageEngineForRead(languageTag: String): String {
         val engine = getEngineForLanguage(languageTag)
             ?.takeIf {
@@ -4250,6 +4252,13 @@ class SettingsRepository(context: Context) :
 
     // ============ اقرأ لاحقاً ============
 
+    enum class ReadLaterSaveResult {
+        EMPTY,
+        DUPLICATE,
+        SAVED,
+        FAILED
+    }
+
     data class ReadLaterItem(
         val id: Long,
         val text: String,
@@ -4261,6 +4270,9 @@ class SettingsRepository(context: Context) :
 
     fun addReadLaterText(text: String): Boolean =
         readLaterDelegate.addReadLaterText(text)
+
+    fun saveReadLaterText(text: String): ReadLaterSaveResult =
+        readLaterDelegate.saveReadLaterText(text)
 
     fun removeReadLaterItem(id: Long): Boolean =
         readLaterDelegate.removeReadLaterItem(id)

@@ -4,7 +4,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * تفويض طابور «اقرأ لاحقاً» — تخزينٌ دائم لقائمة النصوص المحفوظة للقراءة لاحقاً.
+ * تفويض طابور «اقرأ لاحقاً» — تخزينٌ دائم لقائمة النصوص المحفوظة
+ * للقراءة لاحقاً.
  */
 internal class SettingsReadLaterDelegate(
     private val repo: SettingsRepository
@@ -36,12 +37,18 @@ internal class SettingsReadLaterDelegate(
             }.getOrDefault(emptyList())
         }
 
-    fun addReadLaterText(text: String): Boolean = synchronized(repo) {
+    fun saveReadLaterText(
+        text: String
+    ): SettingsRepository.ReadLaterSaveResult = synchronized(repo) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty()) return false
+        if (trimmed.isEmpty()) {
+            return SettingsRepository.ReadLaterSaveResult.EMPTY
+        }
         val current = getReadLaterItems().toMutableList()
         // منع الحفظ المكرر للنص نفسه (يتحمل إعادة تسليم النية/الدوران).
-        if (current.any { it.text == trimmed }) return true
+        if (current.any { it.text == trimmed }) {
+            return SettingsRepository.ReadLaterSaveResult.DUPLICATE
+        }
         val now = System.currentTimeMillis()
         current.add(
             0,
@@ -60,7 +67,18 @@ internal class SettingsReadLaterDelegate(
         } else {
             current
         }
-        saveReadLaterItems(capped)
+        val saved = saveReadLaterItems(capped)
+        if (saved) {
+            SettingsRepository.ReadLaterSaveResult.SAVED
+        } else {
+            SettingsRepository.ReadLaterSaveResult.FAILED
+        }
+    }
+
+    fun addReadLaterText(text: String): Boolean {
+        val res = saveReadLaterText(text)
+        return res == SettingsRepository.ReadLaterSaveResult.SAVED ||
+            res == SettingsRepository.ReadLaterSaveResult.DUPLICATE
     }
 
     fun removeReadLaterItem(id: Long): Boolean = synchronized(repo) {

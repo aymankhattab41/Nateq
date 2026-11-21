@@ -63,6 +63,7 @@ object EngineHostClient {
 
     /** تذكر نجاح التهيئة لكل محرك (ع٣٠-9) لتفادي نداءات Binder المكررة. */
     private val initializedEngines = ConcurrentHashMap<String, String>()
+    private val engineInitMutexes = ConcurrentHashMap<String, Mutex>()
 
     /** آخر مسار بيانات تم تهيئة المحرك به لإعادة استخدامه عند إعادة الربط. */
     private val lastDataDirs = ConcurrentHashMap<String, String>()
@@ -149,30 +150,33 @@ object EngineHostClient {
         force: Boolean = false
     ): HostResult {
         val id = HostProtocol.normalizeEngineId(engineId)
-        setContext(context)
-        lastDataDirs[id] = dataDir
-        recordCallSent("init(engineId=$id, dataDir=$dataDir, force=$force)")
-        if (!force && initializedEngines[id] == dataDir) {
-            return HostResult(ok = true)
-        }
-        val call = callHost(context, id) { svc ->
-            val decoded = HostProtocol.decodeResult(
-                svc.init(id, dataDir, force)
-            )
-            if (!decoded.ok) {
-                throw HostCallException(
-                    decoded.code ?: "UNKNOWN",
-                    decoded.message ?: ""
-                )
+        val mutex = engineInitMutexes.getOrPut(id) { Mutex() }
+        return mutex.withLock {
+            setContext(context)
+            lastDataDirs[id] = dataDir
+            recordCallSent("init(engineId=$id, dataDir=$dataDir, force=$force)")
+            if (!force && initializedEngines[id] == dataDir) {
+                return@withLock HostResult(ok = true)
             }
+            val call = callHost(context, id) { svc ->
+                val decoded = HostProtocol.decodeResult(
+                    svc.init(id, dataDir, force)
+                )
+                if (!decoded.ok) {
+                    throw HostCallException(
+                        decoded.code ?: "UNKNOWN",
+                        decoded.message ?: ""
+                    )
+                }
+            }
+            val res = call.toHostResult()
+            if (res.ok) {
+                initializedEngines[id] = dataDir
+            } else {
+                initializedEngines.remove(id)
+            }
+            res
         }
-        val res = call.toHostResult()
-        if (res.ok) {
-            initializedEngines[id] = dataDir
-        } else {
-            initializedEngines.remove(id)
-        }
-        return res
     }
 
     /** قائمة أصوات المضيف؛ فشلها سببٌ معنون لا قائمةٌ صامتة. */

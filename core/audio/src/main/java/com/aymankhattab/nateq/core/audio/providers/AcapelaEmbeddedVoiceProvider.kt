@@ -7,7 +7,10 @@ import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
 
@@ -145,9 +148,10 @@ class AcapelaEmbeddedVoiceProvider(
 
     @Volatile
     private var crashRetryDone = false
+    private val initMutex = Mutex()
 
-    private suspend fun ensureInitialized(): Boolean {
-        val base = resolveDataDir() ?: return false
+    private suspend fun ensureInitialized(): Boolean = initMutex.withLock {
+        val base = resolveDataDir() ?: return@withLock false
         val engineId = HostProtocol.ENGINE_ACAPELA
         val dir = base.absolutePath
         val res = EngineHostClient.init(
@@ -157,7 +161,7 @@ class AcapelaEmbeddedVoiceProvider(
         )
         if (res.ok) {
             EngineStatusRegistry.noteReady(PROVIDER_ID)
-            return true
+            return@withLock true
         }
         if (res.code == "CRASHED_LAST_RUN" && !crashRetryDone) {
             crashRetryDone = true
@@ -170,17 +174,17 @@ class AcapelaEmbeddedVoiceProvider(
             )
             if (retried.ok) {
                 EngineStatusRegistry.noteReady(PROVIDER_ID)
-                return true
+                return@withLock true
             }
             EngineStatusRegistry.noteFailure(
                 PROVIDER_ID,
                 retried.code,
                 retried.message
             )
-            return false
+            return@withLock false
         }
         EngineStatusRegistry.noteFailure(PROVIDER_ID, res.code, res.message)
-        return false
+        return@withLock false
     }
 
     override suspend fun synthesize(
@@ -197,11 +201,17 @@ class AcapelaEmbeddedVoiceProvider(
         category: String?
     ) {
         withContext(Dispatchers.IO) {
-            if (!ensureInitialized()) {
-                Log.e(TAG, "Cannot synthesize: Acapela host not initialized")
+            val initOk = withTimeoutOrNull(5000L) {
+                ensureInitialized()
+            } ?: false
+            if (!initOk) {
+                Log.w(
+                    TAG,
+                    "تأخرت تهيئة مضيف Acapela؛ تحويل آمن دون خطأ حرج"
+                )
                 com.aymankhattab.nateq.core.audio.engine
                     .SpeechFallbackTracker.noteAcapelaFailure(
-                        reason = "تعذر تهيئة مضيف Acapela",
+                        reason = "تأخرت تهيئة مضيف Acapela",
                         substituteVoice = null,
                         substituteEngine = null
                     )

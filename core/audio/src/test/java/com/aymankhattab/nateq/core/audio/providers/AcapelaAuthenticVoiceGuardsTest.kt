@@ -165,7 +165,7 @@ class AcapelaAuthenticVoiceGuardsTest {
     }
 
     @Test
-    fun stageAuthenticVoiceForRun_isUniqueAndPreservesRelativeTree() {
+    fun stageAuthenticVoiceForRun_returnsOriginalVoiceDirWithoutStaging() {
         val root = tempDir()
         try {
             val voice = writeSalmaPackage(
@@ -176,11 +176,15 @@ class AcapelaAuthenticVoiceGuardsTest {
             val second = AcapelaVoiceDiagnostics
                 .stageAuthenticVoiceForRun(context, voice, "run-B")
 
-            assertNotEquals(first.absolutePath, second.absolutePath)
+            assertEquals(voice.absolutePath, first.absolutePath)
+            assertEquals(voice.absolutePath, second.absolutePath)
             assertTrue(first.isDirectory)
-            assertTrue(second.isDirectory)
 
-            // البنية النسبية نفسها في المرحلي، بلا ini مولّد جديد.
+            // لا وجود لمجلد acapela_stage_authentic في كاش
+            val stageCache = File(context.cacheDir, "acapela_stage_authentic")
+            assertFalse(stageCache.exists())
+
+            // البنية النسبية نفسها في الحزمة الأصلية، بلا ini مولّد جديد.
             assertTrue(
                 File(first, "NLP/ar_sa.oso").isFile
             )
@@ -581,24 +585,22 @@ class AcapelaAuthenticVoiceGuardsTest {
     }
 
     @Test
-    fun cleanupOldStagingDirectories_deletesOldAndRetainsCurrent() {
+    fun cleanupOldStagingDirectories_deletesBaseDirectoryCompletely() {
         val base = File(context.cacheDir, "acapela_stage_authentic")
         base.mkdirs()
-        val oldDir = File(base, "run_old").apply { mkdirs() }
-        oldDir.setLastModified(System.currentTimeMillis() - 10000L)
-        val activeDir = File(base, "run_active").apply { mkdirs() }
+        File(base, "run_old").apply { mkdirs() }
+        File(base, "run_active").apply { mkdirs() }
 
         AcapelaVoiceDiagnostics.cleanupOldStagingDirectories(
             context = context,
             currentRunSafeId = "run_active"
         )
 
-        assertFalse(oldDir.exists())
-        assertTrue(activeDir.exists())
+        assertFalse(base.exists())
     }
 
     @Test
-    fun stageAuthenticVoiceForRun_preservesPackageStructureAndSiblings() {
+    fun stageAuthenticVoiceForRun_preservesPackageStructureDirectly() {
         val root = tempDir()
         try {
             val voice = writeSalmaPackage(
@@ -609,6 +611,7 @@ class AcapelaAuthenticVoiceGuardsTest {
                 voiceDir = voice,
                 runId = "test_run_structure"
             )
+            assertEquals(voice.absolutePath, staged.absolutePath)
             assertTrue(staged.isDirectory)
             // salma_lf مجلد فرعي محتفظ به
             val stagedSub = File(staged, "salma_lf/salma_22k_lf.bvcu")
@@ -616,9 +619,9 @@ class AcapelaAuthenticVoiceGuardsTest {
             // NLP محتفظ به
             val stagedNlp = File(staged, "NLP/ar_sa.oso")
             assertTrue(stagedNlp.isFile)
-            // userdicos كأخ لمجلد التجهيز
-            val siblingDico = File(staged.parentFile, "userdicos")
-            assertTrue(siblingDico.isDirectory)
+            // لا يتم إنشاء مجلد staging في الكاش
+            val stageCache = File(context.cacheDir, "acapela_stage_authentic")
+            assertFalse(stageCache.exists())
         } finally {
             root.deleteRecursively()
         }

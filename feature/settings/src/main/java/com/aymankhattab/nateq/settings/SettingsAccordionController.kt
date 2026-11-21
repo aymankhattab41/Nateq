@@ -138,6 +138,7 @@ internal class SettingsAccordionController(
     private var tvSectionTitle: TextView? = null
     private var tvBackToList: MaterialButton? = null
     private var switchHome: SwitchMaterial? = null
+    private var readLaterCard: View? = null
 
     /** تحذير لمرة واحدة في الجلسة إذا كان إذن الإشعارات مرفوضاً
  *  (الأزرار لن تظهر). */
@@ -158,6 +159,8 @@ internal class SettingsAccordionController(
         tvSectionTitle = view.findViewById(R.id.tv_detail_section_title)
         tvBackToList = view.findViewById(R.id.btn_back_to_list)
         switchHome = view.findViewById(R.id.switch_all_announcements)
+        readLaterCard = view.findViewById(R.id.ll_read_later_card)
+        readLaterCard?.visibility = View.GONE
         view.findViewById<View>(R.id.btn_back_to_list)
             .setOnClickListener { goBack() }
         fragment.requireActivity().onBackPressedDispatcher
@@ -243,6 +246,7 @@ internal class SettingsAccordionController(
         currentGroup = group
         applyGroupVisibility(false)
         setSectionDividersVisible(false)
+        readLaterCard?.visibility = View.GONE
         onNavigate?.invoke(group.group, content.id)
         svSettingsScroll?.scrollTo(0, 0)
         var sectionName = ""
@@ -291,6 +295,11 @@ internal class SettingsAccordionController(
         llDetailBack?.visibility = View.VISIBLE
         llMasterSwitch?.visibility = View.GONE
         applyGroupVisibility(false)
+        readLaterCard?.visibility = if (group.group == 2) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
         onNavigate?.invoke(group.group, null)
         svSettingsScroll?.scrollTo(0, 0)
         for (e in accordionEntries) {
@@ -375,6 +384,7 @@ internal class SettingsAccordionController(
         llMasterSwitch?.visibility = View.VISIBLE
         applyGroupVisibility(true)
         setSectionDividersVisible(true)
+        readLaterCard?.visibility = View.GONE
         svSettingsScroll?.scrollTo(0, 0)
         // بطاقات الأقسام لا تظهر إلا داخل شاشات مجموعاتها
         for (e in accordionEntries) {
@@ -1095,6 +1105,14 @@ internal class SettingsAccordionController(
         }
     }
 
+    /** فتح شاشة مجموعة برقمها المنطقي (مثلاً 2 للنصوص والأرقام). */
+    fun openGroupByIndex(groupIndex: Int) {
+        val group = groupStates.firstOrNull {
+            it.group == groupIndex
+        } ?: return
+        openGroup(group)
+    }
+
     /** يصفّر كل مراجع العرض (بند 4.1) — يُستدعى من onDestroyView حتى لا
      *  تبقى شجرة العرض القديمة محتجزة عند بقاء الفصيل في الخلفية. */
     fun cleanup() {
@@ -1104,6 +1122,7 @@ internal class SettingsAccordionController(
         tvSectionTitle = null
         tvBackToList = null
         switchHome = null
+        readLaterCard = null
         accordionEntries.clear()
         level = Level.HOME
         currentGroup = null

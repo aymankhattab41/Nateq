@@ -13,8 +13,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * اختبارات عقد ميزة «اقرأ لاحقاً»: بقاء البيانات القديمة الفعلية، والحفظ الدائم،
- * ومنع التكرار، والنسخ الاحتياطي/الاستعادة الآمنة.
+ * اختبارات عقد ميزة «اقرأ لاحقاً»: بقاء البيانات القديمة الفعلية،
+ * والحفظ الدائم، ومنع التكرار، والنسخ الاحتياطي/الاستعادة الآمنة.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
@@ -170,6 +170,26 @@ class ReadLaterRemovalTest {
         )
         repo.importSettings(backup)
         assertTrue(repo.getReadLaterItems().isEmpty())
+        repo.unregister()
+    }
+
+    @Test
+    fun saveReadLaterText_returnsCorrectStatusForEachCase() {
+        val repo = SettingsRepository(context)
+
+        assertEquals(
+            SettingsRepository.ReadLaterSaveResult.EMPTY,
+            repo.saveReadLaterText("   ")
+        )
+        assertEquals(
+            SettingsRepository.ReadLaterSaveResult.SAVED,
+            repo.saveReadLaterText("نص فريد جديد")
+        )
+        assertEquals(
+            SettingsRepository.ReadLaterSaveResult.DUPLICATE,
+            repo.saveReadLaterText("نص فريد جديد")
+        )
+
         repo.unregister()
     }
 }

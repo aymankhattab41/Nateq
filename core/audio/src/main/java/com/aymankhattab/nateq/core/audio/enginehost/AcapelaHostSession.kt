@@ -19,6 +19,9 @@ import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.File
@@ -393,7 +396,16 @@ internal class AcapelaHostSession(
     private val totalAudioBytes = AtomicLong(0L)
     private val lastAudioTime = AtomicLong(0L)
 
-    override fun init(dataDir: String): HostResult {
+    private val sessionMutex = Mutex()
+    private val warmupDone = AtomicBoolean(false)
+
+    override fun init(dataDir: String): HostResult = runBlocking {
+        sessionMutex.withLock {
+            doInit(dataDir)
+        }
+    }
+
+    private fun doInit(dataDir: String): HostResult {
         val dir = File(dataDir)
         dataDirectory = dir
         if (!dir.exists()) {
@@ -448,7 +460,15 @@ internal class AcapelaHostSession(
                     AcapelaVoiceManifest.findHexRegistrationFile(it.dir) != null
                 }
             if (regVoice != null) {
-                performSilentWarmup(regVoice)
+                if (warmupDone.compareAndSet(false, true)) {
+                    Log.i(
+                        TAG,
+                        "بدء إحماء Acapela الصامت الأحادي بعد نجاح التهيئة..."
+                    )
+                    performSilentWarmup(regVoice)
+                } else {
+                    Log.i(TAG, "تم تخطي الإحماء: المحرك سبق إحماؤه بنجاح")
+                }
             }
             return HostResult(ok = true)
         }
@@ -569,13 +589,15 @@ internal class AcapelaHostSession(
                 }
             }
 
-            val stageDir = AcapelaVoiceDiagnostics.stageAuthenticVoiceForRun(
-                context = context,
-                voiceDir = voice.dir,
-                runId = runId
-            )
-            activeStageDir = stageDir
-            val stagePath = directoryArgument(stageDir)
+            val acapelaRoot =
+                AcapelaVoiceManifest.findAcapelaRootDir(voice.dir)
+            val warmupDir =
+                if (acapelaRoot.exists() && acapelaRoot.isDirectory) {
+                    acapelaRoot
+                } else {
+                    voice.dir
+                }
+            val stagePath = directoryArgument(warmupDir)
 
             val audioHandler = TrialAudio { _, _ -> }
             audioHandler.probeOnly = true
@@ -608,20 +630,11 @@ internal class AcapelaHostSession(
                 Log.w(
                     TAG,
                     "صوت الإحماء $expectedSpeaker غير محمل؛ " +
-                        "إعادة التجهيز والتهيئة بالبنية الصحيحة..."
+                        "إعادة التهيئة..."
                 )
-                val retryStageDir = AcapelaVoiceDiagnostics
-                    .stageAuthenticVoiceForRun(
-                        context = context,
-                        voiceDir = voice.dir,
-                        runId = "warmup_retry_" +
-                            UUID.randomUUID().toString().take(6)
-                    )
-                activeStageDir = retryStageDir
-                val retryStagePath = directoryArgument(retryStageDir)
                 runCatching { srv.nStop() }
                 val reInit = runCatching {
-                    srv.nInit(retryStagePath)
+                    srv.nInit(stagePath)
                 }.getOrElse { -1 }
                 if (reInit == 0) {
                     srv.nSetVoiceMode(VOICE_MODE_HD)
@@ -840,6 +853,22 @@ internal class AcapelaHostSession(
         req: SpeakRequest,
         sink: PcmSink,
         cancelled: AtomicBoolean
+    ): HostResult = sessionMutex.withLock {
+        if (dataDirectory == null) {
+            val waitStart = SystemClock.uptimeMillis()
+            while (dataDirectory == null &&
+                SystemClock.uptimeMillis() - waitStart < 3000L
+            ) {
+                delay(100L)
+            }
+        }
+        doSpeak(req, sink, cancelled)
+    }
+
+    private suspend fun doSpeak(
+        req: SpeakRequest,
+        sink: PcmSink,
+        cancelled: AtomicBoolean
     ): HostResult {
         if (cancelled.get()) {
             return HostResult.failure("CANCELLED", "أُلغي الطلب قبل بدئه")
@@ -856,10 +885,16 @@ internal class AcapelaHostSession(
         lastAudioTime.set(SystemClock.uptimeMillis())
 
         try {
-            val dir = dataDirectory ?: return HostResult.failure(
-                "DIR_NOT_FOUND",
-                "مجلد بيانات Acapela لم يُضبط"
-            )
+            val dir = dataDirectory ?: run {
+                Log.w(
+                    TAG,
+                    "تأخرت تهيئة مجلد بيانات Acapela؛ تحويل آمن دون خطأ حرج"
+                )
+                return HostResult.failure(
+                    "DIR_NOT_FOUND",
+                    "مجلد بيانات Acapela لم يُضبط في الوقت المحدد"
+                )
+            }
             val voice = resolveVoice(req.voiceId, dir)
                 ?: return HostResult.failure(
                     "VOICE_NOT_FOUND",
@@ -1326,17 +1361,17 @@ internal class AcapelaHostSession(
             Log.w(
                 TAG,
                 "الصوت $speaker غير محمل قبل nSpeak في المسار الحقيقي؛ " +
-                    "إعادة التجهيز وإعادة التهيئة بالبنية الصحيحة..."
+                    "إعادة التهيئة..."
             )
-            val retryStage = AcapelaVoiceDiagnostics
-                .stageAuthenticVoiceForRun(
-                    context = context,
-                    voiceDir = voice.dir,
-                    runId = "real_retry_" +
-                        UUID.randomUUID().toString().take(6)
-                )
-            activeStageDir = retryStage
-            val retryPath = directoryArgument(retryStage)
+            val acapelaRoot =
+                AcapelaVoiceManifest.findAcapelaRootDir(voice.dir)
+            val targetDir =
+                if (acapelaRoot.exists() && acapelaRoot.isDirectory) {
+                    acapelaRoot
+                } else {
+                    voice.dir
+                }
+            val retryPath = directoryArgument(targetDir)
             runCatching { srv.nStop() }
             val reInit = runCatching {
                 srv.nInit(retryPath)
@@ -2602,19 +2637,11 @@ internal class AcapelaHostSession(
             Log.w(
                 TAG,
                 "[$label] الصوت $speaker غير محمل قبل nSpeak؛ " +
-                    "إعادة التجهيز والتهيئة بالبنية الصحيحة..."
+                    "إعادة التهيئة..."
             )
-            val retryDir = AcapelaVoiceDiagnostics
-                .stageAuthenticVoiceForRun(
-                    context = context,
-                    voiceDir = trialDir,
-                    runId = "trial_retry_" +
-                        UUID.randomUUID().toString().take(6)
-                )
-            val retryPath = directoryArgument(retryDir)
             runCatching { srv.nStop() }
             val reInit = runCatching {
-                srv.nInit(retryPath)
+                srv.nInit(stagePath)
             }.getOrElse { -1 }
             if (reInit == 0) {
                 srv.nSetVoiceMode(voiceMode)
@@ -3170,53 +3197,32 @@ internal class AcapelaHostSession(
                     report = verification.report
                 )
             } else {
-                val stageDir = AcapelaVoiceDiagnostics
-                    .stageAuthenticVoiceForRun(
-                        context = context,
-                        voiceDir = verification.voiceDir,
-                        runId = runId
-                    )
-                activeStageDir = stageDir
-                val stagedCheck = AcapelaVoiceDiagnostics
-                    .verifyAuthenticVoicePackage(
-                        voiceDir = verification.voiceDir,
-                        stagedDir = stageDir,
-                        expectedSpeakerHint = expectedSpeaker
-                    )
-                Log.i(TAG, stagedCheck.report)
-                HostLog.i(
-                    HostProtocol.ENGINE_ACAPELA,
-                    stagedCheck.report
+                val acapelaRoot =
+                    AcapelaVoiceManifest.findAcapelaRootDir(voice.dir)
+                val targetDir =
+                    if (acapelaRoot.exists() && acapelaRoot.isDirectory) {
+                        acapelaRoot
+                    } else {
+                        voice.dir
+                    }
+                executeVoiceLoadTrial(
+                    label = "AuthenticVoice (تحميل مباشر من الحزمة)",
+                    runId = runId,
+                    startedAtMs = startedAtMs,
+                    trialDir = targetDir,
+                    speaker = expectedSpeaker,
+                    iso3 = iso3,
+                    registration = regToUse,
+                    voiceMode = VOICE_MODE_HD,
+                    probeText = "مرحبا",
+                    order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
+                    useRealCallback = true,
+                    trailingSlash = true,
+                    forceCallVoice = true,
+                    forceVoiceEvenIfInitFailed = false,
+                    allowRetry = true,
+                    probeFiles = true
                 )
-                appendAcapelaFullDiagnostic(stagedCheck.report)
-                if (!stagedCheck.ok) {
-                    failedTrialBeforeInit(
-                        label = "AuthenticVoice (فشل تحقق المرحلي)",
-                        runId = runId,
-                        startedAtMs = startedAtMs,
-                        path = directoryArgument(stageDir),
-                        report = stagedCheck.report
-                    )
-                } else {
-                    executeVoiceLoadTrial(
-                        label = "AuthenticVoice (نسخة أصلية حرفية)",
-                        runId = runId,
-                        startedAtMs = startedAtMs,
-                        trialDir = stageDir,
-                        speaker = expectedSpeaker,
-                        iso3 = iso3,
-                        registration = regToUse,
-                        voiceMode = VOICE_MODE_HD,
-                        probeText = "مرحبا",
-                        order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
-                        useRealCallback = true,
-                        trailingSlash = true,
-                        forceCallVoice = true,
-                        forceVoiceEvenIfInitFailed = false,
-                        allowRetry = true,
-                        probeFiles = true
-                    )
-                }
             }
 
             val isSynthesizedOk = (trial.speakCode == 0 &&

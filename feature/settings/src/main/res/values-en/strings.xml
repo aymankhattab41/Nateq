@@ -721,6 +721,9 @@
     <string name="read_later_open">Open Read later</string>
     <string name="read_later_open_desc">Open the saved texts list for reading later</string>
     <string name="read_later_saved_toast">Saved to Read later</string>
+    <string name="read_later_duplicate_toast">Text is already saved in Read later</string>
+    <string name="read_later_empty_toast">Text is empty, not saved</string>
+    <string name="read_later_failed_toast">Failed to save to Read later</string>
     <string name="read_later_empty">No texts saved for reading later.</string>
     <string name="read_later_play">Read</string>
     <string name="read_later_stop">Stop</string>
@@ -729,6 +732,9 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Permanently eliminate Acapela cache staging and load directly from authentic package root preventing file corruption and memory pressure, serialize engine operations via a single mutex, and run one-time silent warmup.
+• Add ACTION_SEND text/plain support for Lord TTS and an exported activity for text selection menu ACTION_PROCESS_TEXT labeled "Read later", storing texts in a unified repository without modifying original text and providing screen-reader accessible confirmations for duplicates, empty, and successful saves.
+• Anchor the "Read later" entry logically and physically strictly inside the Text &amp; Numbers screen right after text reading, ensuring correct visibility across navigation groups without leaking into other sections, with accessible focus order and return button.
 • Unify Acapela voice staging in real speech and warmup paths to preserve authentic package structure (salma_lf, NLP, and sibling userdicos), verify voice is loaded before nSpeak, and restage automatically if needed.
 • Clean up old staging folders under acapela_stage_authentic, close open handles to prevent descriptor leaks, and normalize all paths under /data/user/0.
 • Treat nSpeak=0 with positive PCM samples as genuine success in Acapela embedded path, clearing engine failure state, showing engine as ready, canceling fallback to substitute voice, and recording successful speech.
@@ -749,9 +755,9 @@
 • Speed report: track latency gaps between sequential segments (gapBeforeMs) and display the longest segment gaps section to diagnose cross-sentence pauses.
 • Speech responsiveness: skip empty and blank incoming synthesis requests immediately at the entry of onSynthesizeText without allocating resources or logging false entries.
 • Diagnostic error reports: position critical diagnostic sections, voice file inventory, and fallback logs ahead of Logcat, and filter logcat to application and audio tags only to protect vital diagnostics under the 60,000-character ceiling.
-? Unified the languages/auto-convert entry: removed the duplicate per-language reading voice entry and kept the original Convert Languages/auto-convert path with all its settings and language selection in the correct place.
-? Improved voice stability and speech cache after Accessibility Service detach/reconnect for both reader and announcements: wait for readiness before speech, set language before voice, verify voice application sequentially tied to the speech cycle with safe cancellation, and prevent storing/retrieving unverified PCM cache results or results from cancelled/stale cycles, with logging of requested/actual engine and voice, cache outcome, and reasons without private text.
-? Fully restored "Read later": an independent card after the Text reading section to save texts from apps and read/stop/delete them with persistent storage and history, deduplication on redelivery, removal of queue purging, and backup/restore support while keeping only real existing data.
+• Unified the languages/auto-convert entry: removed the duplicate per-language reading voice entry and kept the original Convert Languages/auto-convert path with all its settings and language selection in the correct place.
+• Improved voice stability and speech cache after Accessibility Service detach/reconnect for both reader and announcements: wait for readiness before speech, set language before voice, verify voice application sequentially tied to the speech cycle with safe cancellation, and prevent storing/retrieving unverified PCM cache results or results from cancelled/stale cycles, with logging of requested/actual engine and voice, cache outcome, and reasons without private text.
+• Fully restored "Read later": an independent card after the Text reading section to save texts from apps and read/stop/delete them with persistent storage and history, deduplication on redelivery, removal of queue purging, and backup/restore support while keeping only real existing data.
 • Acapela (Salma) voice path fix: unified config.yaml lookup preventing false CONFIG_YAML_MISSING, reaching nInit/nSpeak, and recording speech trial logs.
 • Comprehensive Acapela voice path fix: unified discovery, authentic ini verification, dependency checks, single-run live diagnostics, and multiline secret redaction.
 Version %1$s

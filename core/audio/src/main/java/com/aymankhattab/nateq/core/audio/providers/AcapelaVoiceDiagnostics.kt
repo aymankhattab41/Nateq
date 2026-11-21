@@ -877,8 +877,8 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * تنظيف مجلدات التجهيز القديمة تحت cache/acapela_stage_authentic
-     * عدا المجلد الحالي.
+     * حذف مجلدات التجهيز نهائياً تحت cache/acapela_stage_authentic
+     * وما تبقى منها.
      */
     fun cleanupOldStagingDirectories(
         context: Context,
@@ -886,141 +886,22 @@ object AcapelaVoiceDiagnostics {
     ) {
         val cache = normalizeToUser0(context.cacheDir)
         val base = File(cache, "acapela_stage_authentic")
-        if (!base.exists() || !base.isDirectory) return
-        val now = System.currentTimeMillis()
-        base.listFiles()?.forEach { child ->
-            if (child.name == currentRunSafeId) return@forEach
-            if (child.name == "userdicos") return@forEach
-            if (currentRunSafeId == null ||
-                (now - child.lastModified() > 2000L)
-            ) {
-                runCatching { child.deleteRecursively() }
-            }
+        if (base.exists()) {
+            runCatching { base.deleteRecursively() }
         }
     }
 
     /**
-     * نسخ حرفي لمجلد صوت أصيل إلى مجلد staging جديد وفريد لكل تجربة runId،
-     * مع الحفاظ على البنية النسبية وعدم توليد/تعديل تهيئة ini أو المصدر،
-     * ودون نسخ سجلات قديمة.
+     * إلغاء التجهيز نهائياً: حذف مجلدات التجهيز القديمة وإعادة مجلد
+     * الحزمة الأصلي مباشرة بلا نسخ.
      */
     fun stageAuthenticVoiceForRun(
         context: Context,
         voiceDir: File,
         runId: String
     ): File {
-        val cache = normalizeToUser0(context.cacheDir)
-        val safeId = runId.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        cleanupOldStagingDirectories(context, currentRunSafeId = safeId)
-
-        val stageDir = File(File(cache, "acapela_stage_authentic"), safeId)
-        if (stageDir.exists()) runCatching { stageDir.deleteRecursively() }
-        stageDir.mkdirs()
-
-        val parent = voiceDir.parentFile
-        val root = when {
-            File(voiceDir, "NLP").isDirectory -> voiceDir
-            parent != null && File(parent, "NLP").isDirectory -> parent
-            parent != null && (
-                parent.name.equals("Salma", true) ||
-                    parent.name.equals("Leila", true) ||
-                    parent.name.equals("Heather", true)
-            ) && !voiceDir.name.equals("Salma", true) &&
-                !voiceDir.name.equals("Leila", true) &&
-                !voiceDir.name.equals("Heather", true) -> parent
-            else -> {
-                val pkg = AcapelaVoiceManifest.findPackageRoot(voiceDir)
-                if (pkg.exists() && pkg.isDirectory &&
-                    (File(pkg, "NLP").isDirectory || pkg != voiceDir)
-                ) pkg else voiceDir
-            }
-        }
-
-        fun isStaleLog(name: String): Boolean {
-            val n = name.lowercase(Locale.ROOT)
-            return n == LOG_FILE_NAME.lowercase(Locale.ROOT) ||
-                n == "last_acapela_call.txt" ||
-                n == "acapela_trials_progress.txt" ||
-                n == "acapela_diagnostic_report.txt" ||
-                n.startsWith("acapela_full_diagnostic") ||
-                n.endsWith(".log")
-        }
-
-        fun copyRec(src: File, dst: File) {
-            if (src.isDirectory) {
-                dst.mkdirs()
-                src.listFiles()?.forEach { child ->
-                    copyRec(child, File(dst, child.name))
-                }
-            } else if (src.isFile) {
-                if (isStaleLog(src.name)) return
-                dst.parentFile?.mkdirs()
-                runCatching { src.copyTo(dst, overwrite = true) }
-            }
-        }
-
-        if (root.isDirectory) {
-            root.listFiles()?.forEach { child ->
-                copyRec(child, File(stageDir, child.name))
-            }
-        }
-
-        val parentNlp = File(root.parentFile ?: root, "NLP")
-        val stagedNlp = File(stageDir, "NLP")
-        if (parentNlp.isDirectory && !stagedNlp.exists()) {
-            stagedNlp.mkdirs()
-            parentNlp.listFiles()?.forEach { f ->
-                if (f.isFile && !isStaleLog(f.name)) {
-                    val dst = File(stagedNlp, f.name)
-                    if (!dst.exists()) {
-                        runCatching { f.copyTo(dst, overwrite = false) }
-                    }
-                }
-            }
-        }
-
-        val stageParent = stageDir.parentFile ?: stageDir
-        val stageUserdicos = File(stageParent, "userdicos").apply { mkdirs() }
-        File(stageDir, "userdicos").mkdirs()
-
-        val sourceRoot = root.parentFile ?: root
-        val srcUserdicos = File(sourceRoot, "userdicos")
-        if (srcUserdicos.isDirectory) {
-            runCatching {
-                srcUserdicos.copyRecursively(stageUserdicos, overwrite = true)
-            }
-        }
-        root.walkTopDown().maxDepth(4).filter {
-            it.isFile && it.name.endsWith(".userdico", ignoreCase = true)
-        }.forEach { ud ->
-            val target = File(stageUserdicos, ud.name)
-            if (!target.exists()) {
-                runCatching { ud.copyTo(target, overwrite = false) }
-            }
-            val targetInStage = File(stageDir, "userdicos/${ud.name}")
-            if (!targetInStage.exists()) {
-                runCatching { ud.copyTo(targetInStage, overwrite = false) }
-            }
-        }
-
-        sourceRoot.listFiles()?.forEach { sib ->
-            if (!sib.isFile) return@forEach
-            if (isStaleLog(sib.name)) return@forEach
-            if (sib.name.matches(Regex("^0x[0-9a-fA-F]+$")) ||
-                sib.name.equals("config.yaml", ignoreCase = true)
-            ) {
-                val dst = File(stageDir, sib.name)
-                if (!dst.exists()) {
-                    runCatching { sib.copyTo(dst, overwrite = true) }
-                }
-            }
-        }
-
-        stageDir.walkTopDown().filter {
-            it.isFile && it.name.equals(LOG_FILE_NAME, ignoreCase = true)
-        }.forEach { runCatching { it.delete() } }
-
-        return stageDir
+        cleanupOldStagingDirectories(context)
+        return voiceDir
     }
 
     /** إخفاء الجزء الأوسط من المعرّفات وحماية الخصوصية. */

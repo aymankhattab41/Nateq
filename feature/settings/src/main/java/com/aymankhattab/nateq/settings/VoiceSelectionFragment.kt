@@ -1512,17 +1512,29 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     internal val infoDialogs by lazy { SettingsInfoDialogsController(this) }
 
     // ===== اقرأ لاحقاً =====
+    fun openReadLater() {
+        accordion.openGroupByIndex(2)
+        showReadLaterDialog()
+    }
+
     private fun showReadLaterDialog() {
         val items = runCatching { settings.getReadLaterItems() }
             .getOrDefault(emptyList())
         if (items.isEmpty()) {
-            com.google.android.material.dialog.MaterialAlertDialogBuilder(
-                requireContext()
-            )
-                .setTitle(R.string.read_later_title)
-                .setMessage(R.string.read_later_empty)
-                .setPositiveButton(R.string.read_later_back, null)
-                .create().also(::trackDialog).show()
+            val emptyDialog =
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(
+                    requireContext()
+                )
+                    .setTitle(R.string.read_later_title)
+                    .setMessage(R.string.read_later_empty)
+                    .setPositiveButton(R.string.read_later_back, null)
+                    .setOnDismissListener {
+                        view?.findViewById<View>(R.id.btn_read_later_open)
+                            ?.requestFocus()
+                    }
+                    .create()
+            trackDialog(emptyDialog)
+            emptyDialog.show()
             return
         }
         val labels = items.map { item ->
@@ -1534,19 +1546,27 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
         }.toTypedArray()
 
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(
-            requireContext()
-        )
-            .setTitle(R.string.read_later_title)
-            .setItems(labels) { _, which ->
-                val item = items.getOrNull(which) ?: return@setItems
-                showReadLaterItemActions(item)
-            }
-            .setNeutralButton(R.string.read_later_clear_all) { _, _ ->
-                runCatching { settings.clearReadLater() }
-            }
-            .setNegativeButton(R.string.read_later_back, null)
-            .create().also(::trackDialog).show()
+        val listDialog =
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(
+                requireContext()
+            )
+                .setTitle(R.string.read_later_title)
+                .setItems(labels) { _, which ->
+                    val item = items.getOrNull(which) ?: return@setItems
+                    showReadLaterItemActions(item)
+                }
+                .setNeutralButton(R.string.read_later_clear_all) { _, _ ->
+                    runCatching { settings.clearReadLater() }
+                    showReadLaterDialog()
+                }
+                .setNegativeButton(R.string.read_later_back, null)
+                .setOnDismissListener {
+                    view?.findViewById<View>(R.id.btn_read_later_open)
+                        ?.requestFocus()
+                }
+                .create()
+        trackDialog(listDialog)
+        listDialog.show()
     }
 
     private fun showReadLaterItemActions(
@@ -1558,39 +1578,45 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             getString(R.string.read_later_stop),
             getString(R.string.read_later_delete)
         )
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(
-            requireContext()
-        )
-            .setTitle(R.string.read_later_item_actions_title)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        A11ySpeechCoordinator.speakAnnouncement(
-                            context = requireContext(),
-                            text = item.text,
-                            isInterruptAllowed = true,
-                            source = com.aymankhattab.nateq.core.audio
-                                .engine.SpeechEntryPoints.Source
-                                .SCREEN_READER
-                        )
-                    }
-                    1 -> {
-                        runCatching {
-                            com.aymankhattab.nateq.core.audio
-                                .announcement.AnnouncementSpeaker
-                                .getInstance(requireContext())
-                                .stop()
+        val actionsDialog =
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(
+                requireContext()
+            )
+                .setTitle(R.string.read_later_item_actions_title)
+                .setItems(options) { _, which ->
+                    when (which) {
+                        0 -> {
+                            A11ySpeechCoordinator.speakAnnouncement(
+                                context = requireContext(),
+                                text = item.text,
+                                isInterruptAllowed = true,
+                                source = com.aymankhattab.nateq.core.audio
+                                    .engine.SpeechEntryPoints.Source
+                                    .SCREEN_READER
+                            )
                         }
-                    }
-                    2 -> {
-                        runCatching {
-                            settings.removeReadLaterItem(item.id)
+                        1 -> {
+                            runCatching {
+                                com.aymankhattab.nateq.core.audio
+                                    .announcement.AnnouncementSpeaker
+                                    .getInstance(requireContext())
+                                    .stop()
+                            }
+                        }
+                        2 -> {
+                            runCatching {
+                                settings.removeReadLaterItem(item.id)
+                            }
+                            showReadLaterDialog()
                         }
                     }
                 }
-            }
-            .setNegativeButton(R.string.read_later_back, null)
-            .create().also(::trackDialog).show()
+                .setNegativeButton(R.string.read_later_back) { _, _ ->
+                    showReadLaterDialog()
+                }
+                .create()
+        trackDialog(actionsDialog)
+        actionsDialog.show()
     }
 
     internal fun showChangelogDialog() = infoDialogs.showChangelogDialog()
