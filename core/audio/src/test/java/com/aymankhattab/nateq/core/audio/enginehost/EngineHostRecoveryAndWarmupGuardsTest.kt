@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.enginehost
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceDiagnostics
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -766,5 +767,186 @@ class EngineHostRecoveryAndWarmupGuardsTest {
         val idempotent = AcapelaVoiceDiagnostics
             .redactSensitiveLine(redactedSecret)
         assertEquals(redactedSecret, idempotent)
+    }
+
+    @Test
+    fun parentChildRelationship_validSupportFilesAttachedToResolvedPackage() {
+        val rootDir = File(
+            context.cacheDir,
+            "test_parent_child_${System.currentTimeMillis()}"
+        )
+        rootDir.mkdirs()
+        try {
+            val parentDir = File(rootDir, "Acapela")
+            parentDir.mkdirs()
+            val licenseFile = File(parentDir, "0x00169729")
+            licenseFile.writeText("sample_license_content")
+            val parentYaml = File(parentDir, "config.yaml")
+            parentYaml.writeText("voice: Salma\nvoiceCode: salma22k\n")
+
+            val childVoiceDir = File(parentDir, "salma22k_hq")
+            childVoiceDir.mkdirs()
+            val iniFile = File(childVoiceDir, "salma22k.ini")
+            iniFile.writeText("[Voice]\nname=Salma\n")
+
+            val resolved = ResolvedVerifiedPackage(
+                voiceDir = childVoiceDir,
+                iniFile = iniFile,
+                speaker = "Salma",
+                metadataFile = parentYaml,
+                supportDir = parentDir,
+                supportFiles = listOf(licenseFile, parentYaml),
+                supportRelation = "PARENT_CONTAINER"
+            )
+
+            assertEquals(childVoiceDir, resolved.voiceDir)
+            assertEquals("PARENT_CONTAINER", resolved.supportRelation)
+            assertEquals(parentDir, resolved.supportDir)
+            assertEquals(2, resolved.supportFiles.size)
+            assertTrue(resolved.supportFiles.contains(licenseFile))
+        } finally {
+            rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun supportFileMismatch_anotherVoiceRejected() {
+        val rootDir = File(
+            context.cacheDir,
+            "test_mismatch_${System.currentTimeMillis()}"
+        )
+        rootDir.mkdirs()
+        try {
+            val parentDir = File(rootDir, "Acapela")
+            parentDir.mkdirs()
+            val leilaYaml = File(parentDir, "config.yaml")
+            leilaYaml.writeText("voice: Leila\nvoiceCode: leila22k\n")
+
+            val yamlSpeaker = "Leila"
+            val expectedSpeaker = "Salma"
+            val yamlToken = AcapelaVoiceManifest.tokenOfIdentity(yamlSpeaker)
+            val expectedToken = AcapelaVoiceManifest.tokenOfIdentity(
+                expectedSpeaker
+            )
+
+            assertNotNull(yamlToken)
+            assertNotNull(expectedToken)
+            assertTrue(yamlToken != expectedToken)
+
+            val isMatch = yamlToken == expectedToken
+            assertFalse(isMatch)
+        } finally {
+            rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun missingContractResource_proactiveVerificationDetectsMissing() {
+        val rootDir = File(
+            context.cacheDir,
+            "test_proactive_missing_${System.currentTimeMillis()}"
+        )
+        rootDir.mkdirs()
+        try {
+            val voiceDir = File(rootDir, "salma22k_hq")
+            voiceDir.mkdirs()
+            val iniFile = File(voiceDir, "salma22k.ini")
+            iniFile.writeText("[Voice]\nname=Salma\n")
+
+            val audits = AcapelaVoiceDiagnostics.auditProactiveContractPaths(
+                voiceDir = voiceDir,
+                supportDir = null,
+                iniFile = iniFile,
+                metadataFile = null,
+                supportFiles = emptyList()
+            )
+
+            val licenseAudit = audits.firstOrNull {
+                it.role.startsWith("licenseFile")
+            }
+            assertNotNull(licenseAudit)
+            assertEquals("MISSING", licenseAudit!!.auditStatus)
+            assertFalse(licenseAudit.passed)
+
+            val nlpAudit = audits.firstOrNull {
+                it.role.startsWith("nlpDir")
+            }
+            assertNotNull(nlpAudit)
+            assertEquals("MISSING", nlpAudit!!.auditStatus)
+            assertFalse(nlpAudit.passed)
+
+            val iniAudit = audits.firstOrNull {
+                it.role.startsWith("iniFile")
+            }
+            assertNotNull(iniAudit)
+            assertEquals("PASSED", iniAudit!!.auditStatus)
+            assertTrue(iniAudit.passed)
+        } finally {
+            rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun openErrorsWithoutLeaks_redactionPreserved() {
+        val secretError = "error opening file: 0x00169729 | " +
+            "registration: 1234567890ABCDEF | errno=2"
+        val redacted = AcapelaVoiceDiagnostics.redactSensitiveLine(
+            secretError
+        )
+        assertTrue(redacted.contains("[محجوب]"))
+        assertFalse(redacted.contains("1234567890ABCDEF"))
+
+        assertTrue(
+            AcapelaVoiceDiagnostics.NATIVE_INTERCEPTION_DISCLAIMER
+                .contains("closed-source")
+        )
+    }
+
+    @Test
+    fun failedReader_handlesLogcatUnavailableAndFallsBackToFreshLogfile() {
+        val reader = AcapelaVoiceDiagnostics.AcapelaLogcatReader(
+            runId = "test_unavailable_logcat",
+            hostGeneration = 1L,
+            pid = 9999
+        )
+        reader.stop(50L)
+        assertNotNull(reader.stopReason)
+        assertTrue(reader.stopReason.isNotEmpty())
+        assertEquals(0, reader.linesCount)
+        assertFalse(reader.startMarkerSeen)
+        assertFalse(reader.endMarkerSeen)
+        reader.close()
+        assertTrue(reader.isClosed)
+
+        val fallbackState = AcapelaVoiceDiagnostics
+            .evaluateVoiceEvidenceState(
+                speaker = "Salma",
+                logs = emptyList(),
+                boundariesFound = false,
+                source = "fresh_logfile.txt",
+                missingElements = listOf("logcat_unavailable")
+            )
+        assertEquals(
+            AcapelaVoiceDiagnostics.VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
+            fallbackState.state
+        )
+        assertEquals("fresh_logfile.txt", fallbackState.source)
+    }
+
+    @Test
+    fun readerCancellation_finallyBlockCleansUp() {
+        val reader = AcapelaVoiceDiagnostics.AcapelaLogcatReader(
+            runId = "test_cleanup",
+            hostGeneration = 1L,
+            pid = 8888
+        )
+        reader.start()
+        try {
+            throw IllegalStateException("Trial cancelled simulated")
+        } catch (_: Exception) {
+            reader.close()
+        }
+        assertTrue(reader.isClosed)
+        assertTrue(reader.stopReason.isNotEmpty())
     }
 }

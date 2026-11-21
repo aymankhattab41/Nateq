@@ -3031,18 +3031,23 @@ object AcapelaVoiceDiagnostics {
         private var process: java.lang.Process? = null
         private var streamReaderThread: Thread? = null
 
+        val linesCount: Int
+            get() = synchronized(buffer) { buffer.size }
+
         @Volatile var isStarted: Boolean = false
             private set
         @Volatile var isClosed: Boolean = false
             private set
         @Volatile var startMarkerSeen: Boolean = false
-            private set
+            internal set
         @Volatile var endMarkerSeen: Boolean = false
-            private set
+            internal set
         @Volatile var exitCode: Int? = null
             private set
         @Volatile var standardError: String = ""
-            private set
+            internal set
+        @Volatile var stopReason: String = ""
+            internal set
         @Volatile var isLogcatAvailable: Boolean = true
             private set
         @Volatile var releaseLoggingEnabled: Boolean = true
@@ -3092,7 +3097,8 @@ object AcapelaVoiceDiagnostics {
             } catch (t: Throwable) {
                 isLogcatAvailable = false
                 releaseLoggingEnabled = false
-                standardError = t.message ?: t.toString()
+                stopReason = "START_FAILED"
+                standardError = redactSensitiveText(t.message ?: t.toString())
             }
         }
 
@@ -3117,6 +3123,9 @@ object AcapelaVoiceDiagnostics {
                     }
                 }
                 runCatching { Thread.sleep(25L) }
+            }
+            if (!startMarkerSeen && stopReason.isBlank()) {
+                stopReason = "START_MARKER_TIMEOUT"
             }
             return startMarkerSeen
         }
@@ -3170,12 +3179,22 @@ object AcapelaVoiceDiagnostics {
                     runCatching { Thread.sleep(30L) }
                 }
             }
+            if (stopReason.isBlank()) {
+                stopReason = when {
+                    endMarkerSeen -> "END_MARKER_SEEN"
+                    !isLogcatAvailable -> "LOGCAT_UNAVAILABLE"
+                    else -> "STOPPED_BEFORE_END_MARKER"
+                }
+            }
             close()
             return getCapturedLines()
         }
 
         override fun close() {
             isClosed = true
+            if (stopReason.isBlank()) {
+                stopReason = "CLOSED"
+            }
             runCatching {
                 process?.let { p ->
                     p.destroy()
@@ -3186,6 +3205,198 @@ object AcapelaVoiceDiagnostics {
             streamReaderThread?.interrupt()
             streamReaderThread = null
         }
+    }
+
+    /** تدقيق استباقي غير مدمر لمسارات العقد المثبت للمكتبة الأصلية. */
+    data class ProactivePathAudit(
+        val role: String,
+        val expectedPath: String,
+        val exists: Boolean,
+        val isDirectory: Boolean,
+        val isFile: Boolean,
+        val canRead: Boolean,
+        val canonicalPath: String?,
+        val auditStatus: String,
+        val notes: String = ""
+    ) {
+        val passed: Boolean get() = auditStatus == "PASSED"
+    }
+
+    const val NATIVE_INTERCEPTION_DISCLAIMER =
+        "غير متاح (closed-source native syscall interception " +
+            "غير مصرّح به ومحجوب للحفاظ على سلامة التطبيق وعزل البيئة)"
+
+    /**
+     * فحص استباقي غير مدمر لكافة المسارات والموارد التي أثبت تفكيك
+     * المكتبة الأصلية (libttsacattsandroidextended.so) أنها تطلبها:
+     * مسار التهيئة، ملف الترخيص، ملفات ini/inf، دليل NLP،
+     * وبيانات الصوت الثنائية، بلا تسجيل محتوى أو مفاتيح سرية.
+     */
+    fun auditProactiveContractPaths(
+        voiceDir: File,
+        supportDir: File?,
+        iniFile: File?,
+        metadataFile: File?,
+        supportFiles: List<File>
+    ): List<ProactivePathAudit> {
+        val audits = mutableListOf<ProactivePathAudit>()
+
+        // 1. مسار التهيئة الأساسي mVoicesPath
+        audits.add(
+            ProactivePathAudit(
+                role = "mVoicesPath (مجلد التهيئة)",
+                expectedPath = voiceDir.path,
+                exists = voiceDir.exists(),
+                isDirectory = voiceDir.isDirectory,
+                isFile = voiceDir.isFile,
+                canRead = voiceDir.canRead(),
+                canonicalPath = runCatching {
+                    voiceDir.canonicalPath
+                }.getOrNull(),
+                auditStatus = if (voiceDir.exists() && voiceDir.isDirectory &&
+                    voiceDir.canRead()
+                ) "PASSED" else "FAILED",
+                notes = "المجلد الأساسي الممرر إلى nInit"
+            )
+        )
+
+        // 2. ملف الترخيص (0x...)
+        val hexInVoice = voiceDir.listFiles { f ->
+            f.isFile && f.name.matches(
+                AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
+            )
+        }?.firstOrNull()
+        val hexInSupport = supportFiles.firstOrNull {
+            it.name.matches(AcapelaVoiceManifest.HEX_REGISTRATION_REGEX)
+        }
+        val targetHex = hexInVoice ?: hexInSupport
+        audits.add(
+            ProactivePathAudit(
+                role = "licenseFile (ملف الترخيص 0x*)",
+                expectedPath = targetHex?.path ?: "${voiceDir.path}/0x*",
+                exists = targetHex?.exists() == true,
+                isDirectory = targetHex?.isDirectory == true,
+                isFile = targetHex?.isFile == true,
+                canRead = targetHex?.canRead() == true,
+                canonicalPath = targetHex?.let {
+                    runCatching { it.canonicalPath }.getOrNull()
+                },
+                auditStatus = if (targetHex != null && targetHex.exists() &&
+                    targetHex.canRead()
+                ) "PASSED" else "MISSING",
+                notes = if (hexInVoice != null) "موجود داخل مجلد الصوت"
+                else if (hexInSupport != null) "موجود في سياق الدعم"
+                else "مفقود في سياق الحزمة"
+            )
+        )
+
+        // 3. مصدر بيانات التهيئة (config.yaml)
+        val yaml = metadataFile ?: File(voiceDir, "config.yaml")
+        audits.add(
+            ProactivePathAudit(
+                role = "metadataFile (بيانات التهيئة)",
+                expectedPath = yaml.path,
+                exists = yaml.exists(),
+                isDirectory = yaml.isDirectory,
+                isFile = yaml.isFile,
+                canRead = yaml.canRead(),
+                canonicalPath = runCatching {
+                    yaml.canonicalPath
+                }.getOrNull(),
+                auditStatus = if (yaml.exists() && yaml.canRead()) {
+                    "PASSED"
+                } else "MISSING",
+                notes = "مصدر استخراج التسجيل والوسائط"
+            )
+        )
+
+        // 4. ملفات ini و inf
+        if (iniFile != null) {
+            audits.add(
+                ProactivePathAudit(
+                    role = "iniFile (ملف تهيئة الصوت)",
+                    expectedPath = iniFile.path,
+                    exists = iniFile.exists(),
+                    isDirectory = iniFile.isDirectory,
+                    isFile = iniFile.isFile,
+                    canRead = iniFile.canRead(),
+                    canonicalPath = runCatching {
+                        iniFile.canonicalPath
+                    }.getOrNull(),
+                    auditStatus = if (iniFile.exists() && iniFile.canRead()) {
+                        "PASSED"
+                    } else "MISSING",
+                    notes = "ملف تعريف الصوت للمكتبة"
+                )
+            )
+            val infFile = File(
+                voiceDir,
+                iniFile.nameWithoutExtension + ".inf"
+            )
+            audits.add(
+                ProactivePathAudit(
+                    role = "infFile (ملف معلومات الصوت)",
+                    expectedPath = infFile.path,
+                    exists = infFile.exists(),
+                    isDirectory = infFile.isDirectory,
+                    isFile = infFile.isFile,
+                    canRead = infFile.canRead(),
+                    canonicalPath = runCatching {
+                        infFile.canonicalPath
+                    }.getOrNull(),
+                    auditStatus = if (infFile.exists() && infFile.canRead()) {
+                        "PASSED"
+                    } else "MISSING",
+                    notes = "ملف اكتشاف الصوت عبر tts_function_find_voices"
+                )
+            )
+        }
+
+        // 5. دليل المعالجة اللغوية NLP
+        val nlpDir = File(voiceDir, "NLP")
+        audits.add(
+            ProactivePathAudit(
+                role = "nlpDir (دليل المعالجة اللغوية NLP)",
+                expectedPath = nlpDir.path,
+                exists = nlpDir.exists(),
+                isDirectory = nlpDir.isDirectory,
+                isFile = nlpDir.isFile,
+                canRead = nlpDir.canRead(),
+                canonicalPath = runCatching {
+                    nlpDir.canonicalPath
+                }.getOrNull(),
+                auditStatus = if (nlpDir.exists() && nlpDir.isDirectory &&
+                    nlpDir.canRead()
+                ) "PASSED" else "MISSING",
+                notes = "حزمة قواعد النطق والرموز اللغوية"
+            )
+        )
+
+        // 6. ملف العينات الصوتية (.bvcu / .dat)
+        val dataFile = voiceDir.listFiles { f ->
+            f.isFile && (f.extension.equals("bvcu", ignoreCase = true) ||
+                f.extension.equals("dat", ignoreCase = true)) &&
+                f.length() > 0L
+        }?.firstOrNull()
+        audits.add(
+            ProactivePathAudit(
+                role = "voiceData (ملف العينات الصوتية)",
+                expectedPath = dataFile?.path ?: "${voiceDir.path}/*.bvcu",
+                exists = dataFile?.exists() == true,
+                isDirectory = false,
+                isFile = dataFile?.isFile == true,
+                canRead = dataFile?.canRead() == true,
+                canonicalPath = dataFile?.let {
+                    runCatching { it.canonicalPath }.getOrNull()
+                },
+                auditStatus = if (dataFile != null && dataFile.exists() &&
+                    dataFile.canRead() && dataFile.length() > 0L
+                ) "PASSED" else "MISSING",
+                notes = "العينات الصوتية التخليقية للمتحدث"
+            )
+        )
+
+        return audits
     }
 
     /**
@@ -3240,7 +3451,8 @@ object AcapelaVoiceDiagnostics {
         val evidenceState: VoiceEvidenceState =
             VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
         val evidenceSource: String = "none",
-        val missingEvidenceElements: List<String> = emptyList()
+        val missingEvidenceElements: List<String> = emptyList(),
+        val provenFailedResource: String = "غير محدد"
     )
 
     val sessionStartWallMs: Long = System.currentTimeMillis()
