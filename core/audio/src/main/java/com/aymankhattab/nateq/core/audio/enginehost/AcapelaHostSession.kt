@@ -1573,7 +1573,14 @@ internal class AcapelaHostSession(
             samples = samples,
             bytes = bytes,
             exitReasonDesc = exitDesc,
-            isConfirmedNativeCrash = isConfirmedCrash
+            isConfirmedNativeCrash = isConfirmedCrash,
+            evidenceState = if (speakRes == 0 && samples > 0) {
+                AcapelaVoiceDiagnostics.VoiceEvidenceState.LOADED
+            } else {
+                AcapelaVoiceDiagnostics.VoiceEvidenceState.LOAD_FAILED
+            },
+            evidenceSource = "real_speech",
+            missingEvidenceElements = emptyList()
         )
 
         AcapelaVoiceDiagnostics.recordFirstFailure(
@@ -1755,7 +1762,10 @@ internal class AcapelaHostSession(
             samples = if (trial.speakInvoked) (trial.samples ?: 0L) else 0L,
             bytes = if (trial.speakInvoked) (trial.pcmBytes ?: 0L) else 0L,
             exitReasonDesc = exitDesc,
-            isConfirmedNativeCrash = isConfirmedCrash
+            isConfirmedNativeCrash = isConfirmedCrash,
+            evidenceState = trial.evidenceState,
+            evidenceSource = trial.evidenceSource,
+            missingEvidenceElements = trial.missingEvidenceElements
         )
 
         AcapelaVoiceDiagnostics.recordFirstFailure(
@@ -2090,7 +2100,11 @@ internal class AcapelaHostSession(
         val isLangAvailResult: Int? = null,
         val runId: String = "",
         val startedAtMs: Long = 0L,
-        val managedService: ManagedExtendedService? = null
+        val managedService: ManagedExtendedService? = null,
+        val evidenceState: AcapelaVoiceDiagnostics.VoiceEvidenceState =
+            AcapelaVoiceDiagnostics.VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
+        val evidenceSource: String = "none",
+        val missingEvidenceElements: List<String> = emptyList()
     ) {
         val isSuccess: Boolean
             get() = speakInvoked && (speakCode == 0) &&
@@ -2640,11 +2654,16 @@ internal class AcapelaHostSession(
 
         val myPid = android.os.Process.myPid()
         val hostGen = EngineHostClient.hostGeneration.get()
-        val startMarker =
-            "=== START_TRIAL_${runId}_G${hostGen}_PID${myPid} ==="
-        val endMarker =
-            "=== END_TRIAL_${runId}_G${hostGen}_PID${myPid} ==="
-        Log.i("acattsandroid-extended-native", startMarker)
+        val logcatReader = AcapelaVoiceDiagnostics.AcapelaLogcatReader(
+            runId = runId,
+            hostGeneration = hostGen,
+            pid = myPid
+        )
+        logcatReader.start()
+        logcatReader.emitStartMarker()
+        val startMarkerSeen = logcatReader.waitForStartMarker(500L)
+        val startMarker = logcatReader.startMarker
+        val endMarker = logcatReader.endMarker
 
         recordAcapelaBreadcrumb("[$label] nInit($stagePath)")
         val fileProbe = if (probeFiles) {
@@ -2698,11 +2717,7 @@ internal class AcapelaHostSession(
             }
         }
 
-        val earlyLogs = AcapelaVoiceDiagnostics.readLogcatBetweenMarkers(
-            startMarker,
-            null,
-            100
-        )
+        val earlyLogs = logcatReader.getCapturedLines()
         val loadVoiceLines = earlyLogs.filter {
             it.contains("tts_function_load_voice")
         }
@@ -2710,19 +2725,71 @@ internal class AcapelaHostSession(
         val earlyEbMatch = Regex("eb\\s+(-?\\d+)").find(earlyLoadLine)
         val earlyEbVal = earlyEbMatch?.groupValues?.get(1)?.toIntOrNull()
 
-        val isVoiceLoaded = AcapelaVoiceDiagnostics.isSpeakerLoadedInLogs(
+        val isFreshLogFileEarly = trialLogFile.exists() &&
+            trialLogFile.length() > 0L &&
+            trialLogFile.lastModified() >= (startedAtMs - 500L)
+
+        val earlyEvidence = AcapelaVoiceDiagnostics.evaluateVoiceEvidenceState(
             speaker = speaker,
             logs = earlyLogs,
-            expectedPid = myPid
+            expectedPid = myPid,
+            source = if (startMarkerSeen && earlyLogs.isNotEmpty()) {
+                "logcat"
+            } else "none",
+            boundariesFound = startMarkerSeen
         )
 
         if (managed.state == ExtendedServiceState.INITIALIZED) {
-            if (isVoiceLoaded) {
-                managed.markVoiceLoaded()
-            } else {
-                managed.markPoisoned(
-                    "الصوت $speaker لم يُحمَّل في المكتبة الأصلية"
-                )
+            when (earlyEvidence.state) {
+                AcapelaVoiceDiagnostics.VoiceEvidenceState.LOADED -> {
+                    managed.markVoiceLoaded()
+                }
+                AcapelaVoiceDiagnostics.VoiceEvidenceState.LOAD_FAILED -> {
+                    managed.markPoisoned(
+                        "الصوت $speaker لم يُحمَّل في المكتبة الأصلية: " +
+                            earlyEvidence.details
+                    )
+                }
+                AcapelaVoiceDiagnostics.VoiceEvidenceState
+                    .EVIDENCE_UNAVAILABLE -> {
+                    if (isFreshLogFileEarly) {
+                        val fileLines = runCatching {
+                            trialLogFile.readLines(StandardCharsets.ISO_8859_1)
+                        }.getOrDefault(emptyList())
+                        val fileEvidence = AcapelaVoiceDiagnostics
+                            .evaluateVoiceEvidenceState(
+                                speaker = speaker,
+                                logs = fileLines,
+                                expectedPid = myPid,
+                                source = "logfile.txt",
+                                boundariesFound = true
+                            )
+                        when (fileEvidence.state) {
+                            AcapelaVoiceDiagnostics.VoiceEvidenceState
+                                .LOADED -> {
+                                managed.markVoiceLoaded()
+                            }
+                            AcapelaVoiceDiagnostics.VoiceEvidenceState
+                                .LOAD_FAILED -> {
+                                managed.markPoisoned(
+                                    "الصوت $speaker لم يُحمَّل في المكتبة " +
+                                        "الأصلية: ${fileEvidence.details}"
+                                )
+                            }
+                            else -> {
+                                managed.markPoisoned(
+                                    "غياب دليل تحميل الصوت $speaker " +
+                                        "(حدود المحاولة غير متاحة في السجل)"
+                                )
+                            }
+                        }
+                    } else {
+                        managed.markPoisoned(
+                            "غياب دليل تحميل الصوت $speaker " +
+                                "(حدود المحاولة غير متاحة في logcat)"
+                        )
+                    }
+                }
             }
         }
 
@@ -2800,7 +2867,8 @@ internal class AcapelaHostSession(
         } else {
             val skipReason = when {
                 initRes != 0 -> "فشل nInit ($initRes)"
-                !isVoiceLoaded -> "الصوت $speaker غير محمل"
+                managed.state != ExtendedServiceState.VOICE_LOADED ->
+                    "الصوت $speaker غير محمل"
                 voiceRes != 0 -> "فشل nSetCurrentVoice ($voiceRes)"
                 else -> "الحالة: ${managed.state}"
             }
@@ -2885,27 +2953,58 @@ internal class AcapelaHostSession(
             }
         }
 
-        val nativeTail = AcapelaVoiceDiagnostics.readLogcatBetweenMarkers(
-            startMarker,
-            endMarker,
-            1000
-        )
-        val effectiveLogFile = trialLogFile.takeIf {
-            it.exists() && it.length() > 0L
-        } ?: trialDir.walkTopDown()
-            .filter {
-                it.isFile && it.length() > 0L &&
-                    it.name.equals(
-                        AcapelaVoiceDiagnostics.LOG_FILE_NAME, true
-                    )
+        logcatReader.emitEndMarker()
+        val capturedLogcat = logcatReader.stop(800L)
+        val markersFound = startMarkerSeen || capturedLogcat.any {
+            !it.contains("حدود المحاولة غير متاحة") &&
+                !it.contains("تعذر قراءة logcat")
+        }
+        val isFreshLogFile = trialLogFile.exists() &&
+            trialLogFile.length() > 0L &&
+            trialLogFile.lastModified() >= (startedAtMs - 500L)
+
+        val (evidenceLines, evidenceSource, boundariesFound) = when {
+            markersFound && capturedLogcat.isNotEmpty() ->
+                Triple(capturedLogcat, "logcat", true)
+            isFreshLogFile -> {
+                val fileLines = runCatching {
+                    trialLogFile.readLines(StandardCharsets.ISO_8859_1)
+                }.getOrDefault(emptyList())
+                Triple(fileLines, "logfile.txt", true)
             }
-            .maxByOrNull { it.lastModified() }
-        val logFileContent = if (effectiveLogFile != null) {
+            trialLogFile.exists() && !isFreshLogFile ->
+                Triple(emptyList<String>(), "stale_logfile.txt", false)
+            else ->
+                Triple(capturedLogcat, "none", false)
+        }
+
+        val missingElements = mutableListOf<String>()
+        if (!startMarkerSeen) missingElements.add("start_marker")
+        if (!markersFound) missingElements.add("logcat_markers")
+        if (!isFreshLogFile && trialLogFile.exists()) {
+            missingElements.add("fresh_logfile")
+        }
+
+        val evidenceResult =
+            AcapelaVoiceDiagnostics.evaluateVoiceEvidenceState(
+                speaker = speaker,
+                logs = evidenceLines,
+                expectedPid = myPid,
+                source = evidenceSource,
+                boundariesFound = boundariesFound,
+                missingElements = missingElements
+            )
+        val nativeTail = if (markersFound) capturedLogcat else evidenceLines
+
+        val effectiveLogFile = if (isFreshLogFile) trialLogFile else null
+        val logFileContent = if (isFreshLogFile && effectiveLogFile != null) {
             runCatching {
                 AcapelaVoiceDiagnostics.redactSensitiveText(
                     effectiveLogFile.readText(StandardCharsets.ISO_8859_1)
                 )
             }.getOrDefault("(تعذر قراءة logfile.txt)")
+        } else if (trialLogFile.exists()) {
+            "(ملف logfile.txt قديم من محاولة سابقة: تم استبعاده كدليل)"
         } else {
             "(لم يُنشأ ملف logfile.txt أو فارغ)"
         }
@@ -2916,32 +3015,36 @@ internal class AcapelaHostSession(
         val logFiles = AcapelaVoiceDiagnostics
             .extractFilesFromLogLines(nativeTail)
         val openedFiles = (newFds + logFiles).distinct()
-        val ebCode = nativeTail.firstNotNullOfOrNull { line ->
-            if (line.contains("eb", ignoreCase = true)) {
-                val match = Regex("eb\\s*[:=]?\\s*(-?\\d+)").find(line)
-                match?.groupValues?.get(1)?.toIntOrNull()
-            } else null
-        } ?: earlyEbVal
-        val nlpCode = nativeTail.firstNotNullOfOrNull { line ->
-            if (line.contains("nlpInitError", ignoreCase = true)) {
-                val match = Regex(
-                    "nlpInitError\\s*[:=]?\\s*(-?\\d+)"
-                ).find(line)
-                match?.groupValues?.get(1)?.toIntOrNull()
-            } else null
-        }
-        val sNlpCode = nativeTail.firstNotNullOfOrNull { line ->
-            if (line.contains("sNLPConfig", ignoreCase = true)) {
-                val match = Regex(
-                    "sNLPConfig\\s*[:=]?\\s*(-?\\d+)"
-                ).find(line)
-                match?.groupValues?.get(1)?.toIntOrNull()
-            } else null
-        } ?: 0
+        val ebCode = evidenceResult.ebCode ?: nativeTail
+            .firstNotNullOfOrNull { line ->
+                if (line.contains("eb", ignoreCase = true)) {
+                    val match = Regex("eb\\s*[:=]?\\s*(-?\\d+)").find(line)
+                    match?.groupValues?.get(1)?.toIntOrNull()
+                } else null
+            } ?: earlyEbVal
+        val nlpCode = evidenceResult.nlpCode ?: nativeTail
+            .firstNotNullOfOrNull { line ->
+                if (line.contains("nlpInitError", ignoreCase = true)) {
+                    val match = Regex(
+                        "nlpInitError\\s*[:=]?\\s*(-?\\d+)"
+                    ).find(line)
+                    match?.groupValues?.get(1)?.toIntOrNull()
+                } else null
+            }
+        val sNlpCode = evidenceResult.sNlpCode ?: nativeTail
+            .firstNotNullOfOrNull { line ->
+                if (line.contains("sNLPConfig", ignoreCase = true)) {
+                    val match = Regex(
+                        "sNLPConfig\\s*[:=]?\\s*(-?\\d+)"
+                    ).find(line)
+                    match?.groupValues?.get(1)?.toIntOrNull()
+                } else null
+            } ?: 0
 
-        val loadVoiceLine = nativeTail.firstOrNull {
-            it.contains("tts_function_load_voice")
-        } ?: earlyLoadLine
+        val loadVoiceLine = evidenceResult.loadVoiceLine ?: nativeTail
+            .firstOrNull {
+                it.contains("tts_function_load_voice")
+            } ?: earlyLoadLine
 
         val cbDesc = if (useRealCallback) "SynthesisCallback" else "null"
         val sb = StringBuilder()
@@ -2956,14 +3059,16 @@ internal class AcapelaHostSession(
         val allAuditsPassed = audits.all { it.passed }
         for (audit in audits) {
             val status = if (audit.passed) "ناجح" else "فاشل"
-            val lenDesc = audit.safeLength?.let { "طول=$it" } ?: "غير مقيد"
+            val lenDesc = audit.safeLength?.let {
+                "طول_آمن=$it"
+            } ?: "طول_آمن=غير مقيد"
             val notesDesc = if (audit.notes.isNotBlank()) {
                 " (${audit.notes})"
             } else ""
             sb.appendLine(
-                "  - [${audit.callName}] ${audit.argName}: " +
-                    "نوع متوقع=${audit.expectedType} | " +
-                    "نوع فعلي=${audit.actualType} | " +
+                "  - [${audit.callName}] وسيط_العقد=${audit.argName} | " +
+                    "نوع_متوقع=${audit.expectedType} | " +
+                    "نوع_فعلي=${audit.actualType} | " +
                     "الوجود=${audit.presence} | " +
                     "$lenDesc | الحالة=$status$notesDesc"
             )
@@ -2985,6 +3090,17 @@ internal class AcapelaHostSession(
                 "للمكتبة ولا يعني جاهزية الصوت؛ تحميل الصوت الفعلي " +
                 "يحدده كود eb في السجل (eb=-25 فشل تحميل داخلي للصوت)."
         )
+        sb.appendLine(
+            "  * حالة دليل الصوت: ${evidenceResult.state} | " +
+                "المصدر=${evidenceResult.source} | " +
+                "تفاصيل=${evidenceResult.details}"
+        )
+        if (evidenceResult.missingElements.isNotEmpty()) {
+            sb.appendLine(
+                "  * العناصر الغائبة: " +
+                    evidenceResult.missingElements.joinToString()
+            )
+        }
         sb.appendLine(
             "  === [البند هـ] قيم معاملات nInit التي مُرِّرت فعلياً ==="
         )
@@ -3246,7 +3362,10 @@ internal class AcapelaHostSession(
             isLangAvailResult = isLangAvailRes,
             runId = runId,
             startedAtMs = startedAtMs,
-            managedService = managed
+            managedService = managed,
+            evidenceState = evidenceResult.state,
+            evidenceSource = evidenceResult.source,
+            missingEvidenceElements = evidenceResult.missingElements
         )
     }
 
@@ -3304,7 +3423,12 @@ internal class AcapelaHostSession(
             synthCallback = synthCallback,
             details = text,
             runId = runId,
-            startedAtMs = startedAtMs
+            startedAtMs = startedAtMs,
+            evidenceState =
+                AcapelaVoiceDiagnostics.VoiceEvidenceState
+                    .EVIDENCE_UNAVAILABLE,
+            evidenceSource = "none",
+            missingEvidenceElements = listOf("before_init")
         )
     }
 
@@ -3431,30 +3555,80 @@ internal class AcapelaHostSession(
                 )
             } else null
 
-            val regToUse = when {
-                decodedReg != null && decodedReg.registration.isNotEmpty() ->
-                    decodedReg.registration
-                hexFile != null -> {
-                    val hexReg = AcapelaVoiceManifest
-                        .resolveRegistration(verifiedDir)
-                    if (AcapelaVoiceManifest.isRegistrationMetadata(hexReg)) {
-                        hexReg
-                    } else {
-                        voice.registration
-                    }
+            val regSourceDecision: String
+            val regSourceType: String
+            val regSourcePath: String?
+            val regToUse: String?
+
+            if (decodedReg != null && decodedReg.registration.isNotEmpty()) {
+                regToUse = decodedReg.registration
+                regSourceType = if (decodedReg.isEncrypted) {
+                    "encrypted_metadata"
+                } else {
+                    "plain_metadata"
                 }
-                else -> voice.registration
+                regSourcePath = metadataSource?.name
+                regSourceDecision = "metadata_decoded"
+            } else if (hexFile != null) {
+                val hexReg = AcapelaVoiceManifest
+                    .resolveRegistration(verifiedDir)
+                if (AcapelaVoiceManifest.isRegistrationMetadata(hexReg)) {
+                    regToUse = hexReg
+                    regSourceType = "hex_registration_file"
+                    regSourcePath = hexFile.name
+                    regSourceDecision = "hex_file"
+                } else {
+                    regToUse = null
+                    regSourceType = "invalid_hex"
+                    regSourcePath = hexFile.name
+                    regSourceDecision = "invalid_hex"
+                }
+            } else {
+                regToUse = null
+                regSourceType = "none"
+                regSourcePath = null
+                regSourceDecision = "missing_metadata"
             }
 
-            if (regToUse.isBlank()) {
+            if (regToUse.isNullOrBlank()) {
                 val regMissingMsg = "بيانات التسجيل غير متوفرة في " +
-                    "الحزمة المتحققة: ${verifiedDir.absolutePath}"
+                    "الحزمة المتحققة: ${verifiedDir.absolutePath} " +
+                    "(مصدر التسجيل=$regSourceDecision | " +
+                    "نوع المصدر=$regSourceType | " +
+                    "تم منع الرجوع الصامت إلى تسجيل قديم)"
                 Log.e(TAG, regMissingMsg)
                 return HostResult.failure(
-                    "REGISTRATION_EMPTY",
+                    "REGISTRATION_SOURCE_INVALID",
                     regMissingMsg
                 )
             }
+
+            if (decodedReg != null) {
+                if (decodedReg.voiceCode.isBlank()) {
+                    val msg = "فشل التحقق من metadata: voiceCode فارغ"
+                    Log.e(TAG, msg)
+                    return HostResult.failure(
+                        "METADATA_FORMAT_INVALID",
+                        msg
+                    )
+                }
+                if (!AcapelaVoiceManifest.isRegistrationMetadata(regToUse)) {
+                    val msg = "صيغة التسجيل المستخرج من metadata غير صالحة"
+                    Log.e(TAG, msg)
+                    return HostResult.failure(
+                        "REGISTRATION_FORMAT_INVALID",
+                        msg
+                    )
+                }
+            }
+
+            Log.i(
+                TAG,
+                "قرار مصدر التسجيل: نوع=$regSourceType | " +
+                    "مسار=${regSourcePath ?: "غير محدد"} | " +
+                    "هوية الحزمة=$expectedSpeaker | " +
+                    "طول_آمن=${regToUse.length}"
+            )
 
             // التحقق من تطابق هوية metadata
             if (decodedReg != null && decodedReg.voiceCode.isNotBlank()) {

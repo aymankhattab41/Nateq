@@ -593,4 +593,178 @@ class EngineHostRecoveryAndWarmupGuardsTest {
         assertTrue(text.contains("عينات PCM: غير مقيس"))
         assertTrue(text.contains("بايتات PCM: غير مقيس"))
     }
+
+    @Test
+    fun logcatReader_missingOrDelayedMarker_producesEvidenceUnavailable() {
+        val reader = AcapelaVoiceDiagnostics.AcapelaLogcatReader(
+            runId = "test_run_missing_marker",
+            hostGeneration = 1L,
+            pid = 1234
+        )
+        val seen = reader.waitForStartMarker(50L)
+        assertFalse(seen)
+
+        val result = AcapelaVoiceDiagnostics.evaluateVoiceEvidenceState(
+            speaker = "Salma",
+            logs = emptyList(),
+            boundariesFound = false,
+            source = "none"
+        )
+        assertEquals(
+            AcapelaVoiceDiagnostics.VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
+            result.state
+        )
+        assertTrue(result.missingElements.contains("boundaries_missing"))
+    }
+
+    @Test
+    fun releaseLoggingDisabled_producesEvidenceUnavailable() {
+        val reader = AcapelaVoiceDiagnostics.AcapelaLogcatReader(
+            runId = "test_release_disabled",
+            hostGeneration = 1L,
+            pid = 1234
+        )
+        val captured = reader.getCapturedLines()
+        val result = AcapelaVoiceDiagnostics.evaluateVoiceEvidenceState(
+            speaker = "Salma",
+            logs = captured,
+            boundariesFound = false,
+            source = "none"
+        )
+        assertEquals(
+            AcapelaVoiceDiagnostics.VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
+            result.state
+        )
+    }
+
+    @Test
+    fun failedReaderProcess_closesCleanlyWithoutCrash() {
+        val reader = AcapelaVoiceDiagnostics.AcapelaLogcatReader(
+            runId = "test_failed_proc",
+            hostGeneration = 1L,
+            pid = -9999
+        )
+        reader.start()
+        reader.close()
+        assertTrue(reader.isClosed)
+    }
+
+    @Test
+    fun interleavedPids_filtersByExpectedPidAccurately() {
+        val interleaved = listOf(
+            "05-23 12:34:56.780  1000  1000 I acattsandroid: " +
+                "tts_function_load_voice : Salma - done",
+            "05-23 12:34:56.790  2000  2000 I acattsandroid: " +
+                "tts_function_load_voice : Salma - error - eb -25"
+        )
+        val resultPid1000 = AcapelaVoiceDiagnostics
+            .evaluateVoiceEvidenceState(
+                speaker = "Salma",
+                logs = interleaved,
+                expectedPid = 1000,
+                boundariesFound = true
+            )
+        assertEquals(
+            AcapelaVoiceDiagnostics.VoiceEvidenceState.LOADED,
+            resultPid1000.state
+        )
+
+        val resultPid2000 = AcapelaVoiceDiagnostics
+            .evaluateVoiceEvidenceState(
+                speaker = "Salma",
+                logs = interleaved,
+                expectedPid = 2000,
+                boundariesFound = true
+            )
+        assertEquals(
+            AcapelaVoiceDiagnostics.VoiceEvidenceState.LOAD_FAILED,
+            resultPid2000.state
+        )
+        assertEquals(-25, resultPid2000.ebCode)
+    }
+
+    @Test
+    fun staleLogFile_isExcludedAndProducesEvidenceUnavailable() {
+        val tempDir = File(
+            context.cacheDir,
+            "test_stale_log_${System.currentTimeMillis()}"
+        )
+        tempDir.mkdirs()
+        val logFile = File(tempDir, "logfile.txt")
+        logFile.writeText("tts_function_load_voice : Salma - done")
+        val attemptStartMs = System.currentTimeMillis() + 10000L
+        logFile.setLastModified(attemptStartMs - 5000L)
+
+        val isFresh = logFile.exists() && logFile.length() > 0L &&
+            logFile.lastModified() >= (attemptStartMs - 500L)
+        assertFalse(isFresh)
+
+        val result = AcapelaVoiceDiagnostics.evaluateVoiceEvidenceState(
+            speaker = "Salma",
+            logs = emptyList(),
+            boundariesFound = false,
+            source = "stale_logfile.txt",
+            missingElements = listOf("fresh_logfile")
+        )
+        assertEquals(
+            AcapelaVoiceDiagnostics.VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
+            result.state
+        )
+        assertEquals("stale_logfile.txt", result.source)
+        assertTrue(result.missingElements.contains("fresh_logfile"))
+        tempDir.deleteRecursively()
+    }
+
+    @Test
+    fun distinguishingMissingEvidence_fromLoadFailure() {
+        val missingEvidenceResult = AcapelaVoiceDiagnostics
+            .evaluateVoiceEvidenceState(
+                speaker = "Salma",
+                logs = emptyList(),
+                boundariesFound = false
+            )
+        assertEquals(
+            AcapelaVoiceDiagnostics.VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
+            missingEvidenceResult.state
+        )
+
+        val failureLogs = listOf(
+            "05-23 12:34:56.780  1000  1000 I acattsandroid: " +
+                "tts_function_load_voice : Salma - error - eb -25"
+        )
+        val loadFailedResult = AcapelaVoiceDiagnostics
+            .evaluateVoiceEvidenceState(
+                speaker = "Salma",
+                logs = failureLogs,
+                expectedPid = 1000,
+                boundariesFound = true
+            )
+        assertEquals(
+            AcapelaVoiceDiagnostics.VoiceEvidenceState.LOAD_FAILED,
+            loadFailedResult.state
+        )
+        assertEquals(-25, loadFailedResult.ebCode)
+    }
+
+    @Test
+    fun redaction_preservesSafeVerdictAndStructuredFields() {
+        val auditLine = "  - [AcattsandroidService.<init>] " +
+            "وسيط_العقد=registration | نوع_متوقع=String | " +
+            "نوع_فعلي=String | الوجود=موجود | طول_آمن=56 | الحالة=ناجح"
+        val redactedAudit = AcapelaVoiceDiagnostics
+            .redactSensitiveLine(auditLine)
+        assertEquals(auditLine, redactedAudit)
+
+        val secretLine = "registration: mySecretRegistration123 | " +
+            "نوع_متوقع=String | الحالة=ناجح"
+        val redactedSecret = AcapelaVoiceDiagnostics
+            .redactSensitiveLine(secretLine)
+        assertTrue(redactedSecret.contains("[محجوب]"))
+        assertFalse(redactedSecret.contains("mySecretRegistration123"))
+        assertTrue(redactedSecret.contains("الحالة=ناجح"))
+
+        val idempotent = AcapelaVoiceDiagnostics
+            .redactSensitiveLine(redactedSecret)
+        assertEquals(redactedSecret, idempotent)
+    }
 }

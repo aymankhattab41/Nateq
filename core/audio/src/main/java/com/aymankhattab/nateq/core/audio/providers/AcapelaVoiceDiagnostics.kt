@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
@@ -14,6 +15,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
+import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
@@ -964,7 +966,8 @@ object AcapelaVoiceDiagnostics {
         Regex(
             """(?i)\b(pass(?:wd|word)?|pwd|license|licence|""" +
                 """registration|token|secret|api[_-]?key|""" +
-                """param)\b\s*[:=]\s*""" +
+                """param)\b(?!\.length|\.size|_العقد|\.source|\.type)""" +
+                """\s*[:=]\s*""" +
                 """("([^"]*)"|'([^']*)'|[^\s,;|]+)"""
         ) to "REDACTED_KV",
         Regex(
@@ -1048,19 +1051,47 @@ object AcapelaVoiceDiagnostics {
         } ?: return out
         val start = out.indexOf(key, ignoreCase = true)
         if (start < 0) return out
-        val raw = out.substring(start + key.length)
-            .trimStart()
-            .removePrefix("=")
-            .removePrefix(":")
-            .trimStart()
-            .trimStart('"', '\'')
-        val value = raw.substringBefore('"')
-            .substringBefore('\'')
-            .trim()
-        if (value.isEmpty() || value == "[محجوب]" || value == "[مُقنَّع]") {
+
+        val beforeKey = out.substring(0, start)
+        if (beforeKey.contains("وسيط_العقد=") ||
+            beforeKey.contains("argName=") ||
+            beforeKey.contains("المعامل=")
+        ) {
             return out
         }
-        return out.substring(0, start) + "$key: [محجوب]"
+
+        val afterKey = out.substring(start + key.length)
+        if (afterKey.startsWith(".length", ignoreCase = true) ||
+            afterKey.startsWith(".size", ignoreCase = true) ||
+            afterKey.startsWith(".source", ignoreCase = true) ||
+            afterKey.startsWith(".type", ignoreCase = true)
+        ) {
+            return out
+        }
+        val sepMatch = if (key.startsWith("babparam", ignoreCase = true)) {
+            Regex("""^\s*[:=]?\s*""").find(afterKey)
+        } else {
+            Regex("""^\s*[:=]\s*""").find(afterKey)
+        } ?: return out
+        if (sepMatch.value.isEmpty()) return out
+        val valStart = start + key.length + sepMatch.range.last + 1
+        val rest = out.substring(valStart)
+        if (rest.startsWith("[محجوب]") || rest.startsWith("[مُقنَّع]")) {
+            return out
+        }
+        val delims = charArrayOf('|', ';', '\n', '\r')
+        val delimIdx = rest.indexOfAny(delims)
+        val rawVal = if (delimIdx >= 0) rest.substring(0, delimIdx) else rest
+        val trimmedVal = rawVal.trim().removeSurrounding("\"", "\"")
+            .removeSurrounding("'", "'")
+        if (trimmedVal.isEmpty() || trimmedVal == "[محجوب]" ||
+            trimmedVal == "[مُقنَّع]"
+        ) {
+            return out
+        }
+        val tail = if (delimIdx >= 0) rest.substring(delimIdx) else ""
+        return out.substring(0, start) + "$key: [محجوب]" +
+            (if (tail.isNotEmpty()) " $tail" else "")
     }
 
     /** جلسة تتبع حجب التراخيص متعددة الأسطر عبر الرسائل والأجزاء. */
@@ -2834,15 +2865,55 @@ object AcapelaVoiceDiagnostics {
         return spacedMatch?.groupValues?.get(1)?.toIntOrNull()
     }
 
+    /** حالة دليل تحميل الصوت في السجلات أو logfile.txt. */
+    enum class VoiceEvidenceState {
+        /** تم إثبات اكتمال تحميل الصوت بنجاح (- done). */
+        LOADED,
+        /** تم إثبات فشل تحميل الصوت صراحة (- error أو eb -...). */
+        LOAD_FAILED,
+        /** غياب الدليل: حدود المحاولة مفقودة أو السجل غير متاح. */
+        EVIDENCE_UNAVAILABLE
+    }
+
+    /** نتيجة تقييم دليل تحميل الصوت مع المصدر والعناصر الغائبة. */
+    data class VoiceEvidenceResult(
+        val state: VoiceEvidenceState,
+        val source: String,
+        val details: String,
+        val ebCode: Int? = null,
+        val nlpCode: Int? = null,
+        val sNlpCode: Int? = null,
+        val loadVoiceLine: String? = null,
+        val boundariesFound: Boolean = false,
+        val missingElements: List<String> = emptyList(),
+        val lines: List<String> = emptyList()
+    )
+
     /**
-     * التحقق الصارم من تحميل الصوت المطلوب حصراً في سجلات المكتبة الأصلية،
-     * مع استبعاد أسطر lang_name واستبعاد نجاح أصوات أخرى أو PIDs سابقة.
+     * تقييم مستقل لدليل تحميل الصوت في السجلات دون خلط غياب الدليل بالفشل.
      */
-    fun isSpeakerLoadedInLogs(
+    fun evaluateVoiceEvidenceState(
         speaker: String,
         logs: List<String>,
-        expectedPid: Int? = null
-    ): Boolean {
+        expectedPid: Int? = null,
+        source: String = "logcat",
+        boundariesFound: Boolean = true,
+        missingElements: List<String> = emptyList()
+    ): VoiceEvidenceResult {
+        val missing = missingElements.toMutableList()
+        if (!boundariesFound) {
+            if (!missing.contains("boundaries_missing")) {
+                missing.add("boundaries_missing")
+            }
+            return VoiceEvidenceResult(
+                state = VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
+                source = source,
+                details = "حدود المحاولة غير متاحة في السجل",
+                boundariesFound = false,
+                missingElements = missing,
+                lines = logs
+            )
+        }
         val speakerNorm = speaker.trim().lowercase(Locale.ROOT)
         val validLogs = if (expectedPid != null) {
             logs.filter { line ->
@@ -2863,15 +2934,280 @@ object AcapelaVoiceDiagnostics {
                 ?.lowercase(Locale.ROOT)
             foundSpeaker == speakerNorm
         }
-        if (matchingLines.isEmpty()) return false
+
+        val ebCode = validLogs.firstNotNullOfOrNull { line ->
+            if (line.contains("eb", ignoreCase = true)) {
+                val match = Regex("eb\\s*[:=]?\\s*(-?\\d+)").find(line)
+                match?.groupValues?.get(1)?.toIntOrNull()
+            } else null
+        }
+        val nlpCode = validLogs.firstNotNullOfOrNull { line ->
+            if (line.contains("nlpInitError", ignoreCase = true)) {
+                val match = Regex(
+                    "nlpInitError\\s*[:=]?\\s*(-?\\d+)"
+                ).find(line)
+                match?.groupValues?.get(1)?.toIntOrNull()
+            } else null
+        }
+        val sNlpCode = validLogs.firstNotNullOfOrNull { line ->
+            if (line.contains("sNLPConfig", ignoreCase = true)) {
+                val match = Regex(
+                    "sNLPConfig\\s*[:=]?\\s*(-?\\d+)"
+                ).find(line)
+                match?.groupValues?.get(1)?.toIntOrNull()
+            } else null
+        }
+
+        if (matchingLines.isEmpty()) {
+            missing.add("speaker_load_voice_line")
+            return VoiceEvidenceResult(
+                state = VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
+                source = source,
+                details = "لم يظهر سطر تحميل الصوت ($speaker) في السجل",
+                ebCode = ebCode,
+                nlpCode = nlpCode,
+                sNlpCode = sNlpCode,
+                boundariesFound = true,
+                missingElements = missing,
+                lines = validLogs
+            )
+        }
+
         val lastLine = matchingLines.last()
-        val isDone = lastLine.contains("- done", ignoreCase = true) &&
-            !lastLine.contains("- error", ignoreCase = true)
         val hasError = matchingLines.any {
             it.contains("- error", ignoreCase = true) ||
                 it.contains("eb -", ignoreCase = true)
         }
-        return isDone && !hasError
+        val isDone = lastLine.contains("- done", ignoreCase = true) &&
+            !hasError
+
+        return if (isDone) {
+            VoiceEvidenceResult(
+                state = VoiceEvidenceState.LOADED,
+                source = source,
+                details = "تم تحميل الصوت $speaker بنجاح في المكتبة الأصلية",
+                ebCode = ebCode,
+                nlpCode = nlpCode,
+                sNlpCode = sNlpCode,
+                loadVoiceLine = lastLine,
+                boundariesFound = true,
+                missingElements = emptyList(),
+                lines = validLogs
+            )
+        } else {
+            VoiceEvidenceResult(
+                state = VoiceEvidenceState.LOAD_FAILED,
+                source = source,
+                details = "فشل تحميل الصوت $speaker: $lastLine",
+                ebCode = ebCode,
+                nlpCode = nlpCode,
+                sNlpCode = sNlpCode,
+                loadVoiceLine = lastLine,
+                boundariesFound = true,
+                missingElements = emptyList(),
+                lines = validLogs
+            )
+        }
+    }
+
+    /**
+     * قارئ Logcat مخصص للعملية بصيغة threadtime وبمخزن محدود
+     * keyed by runId و hostGeneration.
+     */
+    class AcapelaLogcatReader(
+        val runId: String,
+        val hostGeneration: Long,
+        val pid: Int,
+        private val maxBufferSize: Int = 2000
+    ) : AutoCloseable {
+        val startMarker =
+            "=== START_TRIAL_${runId}_G${hostGeneration}_PID${pid} ==="
+        val endMarker =
+            "=== END_TRIAL_${runId}_G${hostGeneration}_PID${pid} ==="
+
+        private val buffer = Collections.synchronizedList(
+            mutableListOf<String>()
+        )
+        private var process: java.lang.Process? = null
+        private var streamReaderThread: Thread? = null
+
+        @Volatile var isStarted: Boolean = false
+            private set
+        @Volatile var isClosed: Boolean = false
+            private set
+        @Volatile var startMarkerSeen: Boolean = false
+            private set
+        @Volatile var endMarkerSeen: Boolean = false
+            private set
+        @Volatile var exitCode: Int? = null
+            private set
+        @Volatile var standardError: String = ""
+            private set
+        @Volatile var isLogcatAvailable: Boolean = true
+            private set
+        @Volatile var releaseLoggingEnabled: Boolean = true
+            private set
+
+        fun start() {
+            if (isStarted || isClosed) return
+            isStarted = true
+            try {
+                val cmd = arrayOf(
+                    "logcat",
+                    "-v",
+                    "threadtime",
+                    "--pid=$pid"
+                )
+                val proc = ProcessBuilder(*cmd).start()
+                process = proc
+
+                val thread = Thread({
+                    runCatching {
+                        proc.inputStream.bufferedReader(StandardCharsets.UTF_8)
+                            .useLines { lines ->
+                                for (line in lines) {
+                                    if (isClosed) break
+                                    val trimmed = line.trim()
+                                    if (trimmed.isEmpty()) continue
+                                    synchronized(buffer) {
+                                        if (buffer.size >= maxBufferSize) {
+                                            buffer.removeAt(0)
+                                        }
+                                        buffer.add(trimmed)
+                                    }
+                                    if (trimmed.contains(startMarker)) {
+                                        startMarkerSeen = true
+                                    }
+                                    if (trimmed.contains(endMarker)) {
+                                        endMarkerSeen = true
+                                        break
+                                    }
+                                }
+                            }
+                    }
+                }, "AcapelaLogcatReader-$runId")
+                thread.isDaemon = true
+                thread.start()
+                streamReaderThread = thread
+            } catch (t: Throwable) {
+                isLogcatAvailable = false
+                releaseLoggingEnabled = false
+                standardError = t.message ?: t.toString()
+            }
+        }
+
+        fun emitStartMarker() {
+            Log.i("acattsandroid-extended-native", startMarker)
+        }
+
+        fun emitEndMarker() {
+            Log.i("acattsandroid-extended-native", endMarker)
+        }
+
+        fun waitForStartMarker(timeoutMs: Long = 500L): Boolean {
+            if (startMarkerSeen) return true
+            if (!isLogcatAvailable || isClosed) return false
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                if (startMarkerSeen) return true
+                synchronized(buffer) {
+                    if (buffer.any { it.contains(startMarker) }) {
+                        startMarkerSeen = true
+                        return true
+                    }
+                }
+                runCatching { Thread.sleep(25L) }
+            }
+            return startMarkerSeen
+        }
+
+        fun feedLinesForTest(lines: List<String>) {
+            synchronized(buffer) {
+                for (l in lines) {
+                    if (buffer.size >= maxBufferSize) {
+                        buffer.removeAt(0)
+                    }
+                    buffer.add(l)
+                    if (l.contains(startMarker)) startMarkerSeen = true
+                    if (l.contains(endMarker)) endMarkerSeen = true
+                }
+            }
+        }
+
+        fun getCapturedLines(): List<String> {
+            val snapshot = synchronized(buffer) { buffer.toList() }
+            if (snapshot.isEmpty()) {
+                if (!isLogcatAvailable) {
+                    return listOf(
+                        "(تعذر بدء قارئ logcat: $standardError)"
+                    )
+                }
+                return readLogcatBetweenMarkers(
+                    startMarker = startMarker,
+                    endMarker = endMarker,
+                    maxLines = maxBufferSize
+                )
+            }
+            return filterLogcatLinesBetweenMarkers(
+                snapshot,
+                startMarker,
+                endMarker
+            )
+        }
+
+        fun stop(timeoutMs: Long = 800L): List<String> {
+            if (isClosed) return getCapturedLines()
+            if (!endMarkerSeen && isLogcatAvailable) {
+                val deadline = System.currentTimeMillis() + timeoutMs
+                while (System.currentTimeMillis() < deadline) {
+                    if (endMarkerSeen) break
+                    synchronized(buffer) {
+                        if (buffer.any { it.contains(endMarker) }) {
+                            endMarkerSeen = true
+                        }
+                    }
+                    if (endMarkerSeen) break
+                    runCatching { Thread.sleep(30L) }
+                }
+            }
+            close()
+            return getCapturedLines()
+        }
+
+        override fun close() {
+            isClosed = true
+            runCatching {
+                process?.let { p ->
+                    p.destroy()
+                    exitCode = runCatching { p.exitValue() }.getOrNull()
+                }
+            }
+            process = null
+            streamReaderThread?.interrupt()
+            streamReaderThread = null
+        }
+    }
+
+    /**
+     * التحقق الصارم من تحميل الصوت المطلوب حصراً في سجلات المكتبة الأصلية،
+     * مع استبعاد أسطر lang_name واستبعاد نجاح أصوات أخرى أو PIDs سابقة.
+     */
+    fun isSpeakerLoadedInLogs(
+        speaker: String,
+        logs: List<String>,
+        expectedPid: Int? = null
+    ): Boolean {
+        val result = evaluateVoiceEvidenceState(
+            speaker = speaker,
+            logs = logs,
+            expectedPid = expectedPid,
+            source = "logcat",
+            boundariesFound = !logs.any {
+                it.contains("حدود المحاولة غير متاحة") ||
+                    it.contains("تعذر قراءة logcat")
+            }
+        )
+        return result.state == VoiceEvidenceState.LOADED
     }
 
     /**
@@ -2900,7 +3236,11 @@ object AcapelaVoiceDiagnostics {
         val isConfirmedNativeCrash: Boolean,
         val pid: Int = android.os.Process.myPid(),
         val attemptStartMs: Long = 0L,
-        val attemptEndMs: Long = 0L
+        val attemptEndMs: Long = 0L,
+        val evidenceState: VoiceEvidenceState =
+            VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
+        val evidenceSource: String = "none",
+        val missingEvidenceElements: List<String> = emptyList()
     )
 
     val sessionStartWallMs: Long = System.currentTimeMillis()
@@ -2947,6 +3287,16 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine("المرحلة: ${record.stage}")
         sb.appendLine("مجلد الصوت المتحقق: ${record.verifiedVoiceDir}")
         sb.appendLine("الهوية (speaker): ${record.speaker}")
+        sb.appendLine(
+            "حالة الدليل: ${record.evidenceState} | " +
+                "المصدر: ${record.evidenceSource}"
+        )
+        if (record.missingEvidenceElements.isNotEmpty()) {
+            sb.appendLine(
+                "العناصر الغائبة: " +
+                    record.missingEvidenceElements.joinToString()
+            )
+        }
         sb.appendLine(
             "nInit: مستدعى=${record.initInvoked} | " +
                 "كود=${record.initCode ?: "غير مقيس"}"
