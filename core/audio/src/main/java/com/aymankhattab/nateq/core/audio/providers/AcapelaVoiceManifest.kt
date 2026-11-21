@@ -230,7 +230,7 @@ object AcapelaVoiceManifest {
 
     /** جذر الحزمة المحددة: ابن مباشر لجذر Acapela يضم [startDir]،
      * أو [startDir]. */
-    private fun findPackageRoot(startDir: File): File {
+    internal fun findPackageRoot(startDir: File): File {
         val base = if (startDir.isDirectory) startDir
         else (startDir.parentFile ?: startDir)
         val acapelaRoot = runCatching { findAcapelaRootDir(base) }

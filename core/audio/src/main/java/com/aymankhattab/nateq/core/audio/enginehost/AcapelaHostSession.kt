@@ -508,6 +508,25 @@ internal class AcapelaHostSession(
         return result
     }
 
+    private fun isVoiceActuallyLoaded(
+        srv: AcattsandroidService?,
+        speaker: String
+    ): Boolean {
+        if (srv == null) return false
+        val setRes = runCatching {
+            srv.nSetCurrentVoice(speaker)
+        }.getOrElse { -1 }
+        if (setRes != 0) return false
+        val recentLogs = AcapelaVoiceDiagnostics
+            .readNativeLogcatLines(60)
+        val hasNotLoaded = recentLogs.any { line ->
+            (line.contains("voice $speaker", ignoreCase = true) &&
+                line.contains("not loaded", ignoreCase = true)) ||
+                line.contains("error eb", ignoreCase = true)
+        }
+        return !hasNotLoaded
+    }
+
     private fun performSilentWarmup(
         voice: AcapelaVoiceManifest.VoiceInfo
     ) {
@@ -584,6 +603,33 @@ internal class AcapelaHostSession(
             srv.nUtf8Mode(iso3.language, iso3.country)
             srv.nSetLanguage(iso3.language, iso3.country, "")
             srv.nSetCurrentVoice(expectedSpeaker)
+
+            if (!isVoiceActuallyLoaded(srv, expectedSpeaker)) {
+                Log.w(
+                    TAG,
+                    "صوت الإحماء $expectedSpeaker غير محمل؛ " +
+                        "إعادة التجهيز والتهيئة بالبنية الصحيحة..."
+                )
+                val retryStageDir = AcapelaVoiceDiagnostics
+                    .stageAuthenticVoiceForRun(
+                        context = context,
+                        voiceDir = voice.dir,
+                        runId = "warmup_retry_" +
+                            UUID.randomUUID().toString().take(6)
+                    )
+                activeStageDir = retryStageDir
+                val retryStagePath = directoryArgument(retryStageDir)
+                runCatching { srv.nStop() }
+                val reInit = runCatching {
+                    srv.nInit(retryStagePath)
+                }.getOrElse { -1 }
+                if (reInit == 0) {
+                    srv.nSetVoiceMode(VOICE_MODE_HD)
+                    srv.nUtf8Mode(iso3.language, iso3.country)
+                    srv.nSetLanguage(iso3.language, iso3.country, "")
+                    srv.nSetCurrentVoice(expectedSpeaker)
+                }
+            }
 
             var speakRes = runCatching {
                 srv.nSpeak("مرحبا", synthCallback)
@@ -740,6 +786,9 @@ internal class AcapelaHostSession(
         extendedKey = null
         lastTrialSucceeded.set(false)
         activeStageDir = null
+        runCatching {
+            AcapelaVoiceDiagnostics.cleanupOldStagingDirectories(context, null)
+        }
     }
 
     /**
@@ -1271,6 +1320,37 @@ internal class AcapelaHostSession(
         val startMarker = "=== START_REAL_SPEAK_${voice.id}_$runId ==="
         val endMarker = "=== END_REAL_SPEAK_${voice.id}_$runId ==="
         Log.i("acattsandroid-extended-native", startMarker)
+
+        val speaker = voice.rawSpeaker ?: voice.voiceName
+        if (!isVoiceActuallyLoaded(srv, speaker)) {
+            Log.w(
+                TAG,
+                "الصوت $speaker غير محمل قبل nSpeak في المسار الحقيقي؛ " +
+                    "إعادة التجهيز وإعادة التهيئة بالبنية الصحيحة..."
+            )
+            val retryStage = AcapelaVoiceDiagnostics
+                .stageAuthenticVoiceForRun(
+                    context = context,
+                    voiceDir = voice.dir,
+                    runId = "real_retry_" +
+                        UUID.randomUUID().toString().take(6)
+                )
+            activeStageDir = retryStage
+            val retryPath = directoryArgument(retryStage)
+            runCatching { srv.nStop() }
+            val reInit = runCatching {
+                srv.nInit(retryPath)
+            }.getOrElse { -1 }
+            if (reInit == 0) {
+                srv.nSetVoiceMode(VOICE_MODE_HD)
+                val iso3 = iso3Of(voice.locale)
+                iso3?.let {
+                    srv.nUtf8Mode(it.language, it.country)
+                    srv.nSetLanguage(it.language, it.country, "")
+                }
+                srv.nSetCurrentVoice(speaker)
+            }
+        }
 
         for (chunk in chunks) {
             if (cancelled.get()) {
@@ -2518,6 +2598,31 @@ internal class AcapelaHostSession(
             "[$label] nSpeak(text='$probeText', cb=$cbName)"
         )
         val canSpeak = initRes == 0 || forceVoiceEvenIfInitFailed
+        if (canSpeak && !isVoiceActuallyLoaded(srv, speaker) && allowRetry) {
+            Log.w(
+                TAG,
+                "[$label] الصوت $speaker غير محمل قبل nSpeak؛ " +
+                    "إعادة التجهيز والتهيئة بالبنية الصحيحة..."
+            )
+            val retryDir = AcapelaVoiceDiagnostics
+                .stageAuthenticVoiceForRun(
+                    context = context,
+                    voiceDir = trialDir,
+                    runId = "trial_retry_" +
+                        UUID.randomUUID().toString().take(6)
+                )
+            val retryPath = directoryArgument(retryDir)
+            runCatching { srv.nStop() }
+            val reInit = runCatching {
+                srv.nInit(retryPath)
+            }.getOrElse { -1 }
+            if (reInit == 0) {
+                srv.nSetVoiceMode(voiceMode)
+                srv.nUtf8Mode(iso3.language, iso3.country)
+                srv.nSetLanguage(iso3.language, iso3.country, "")
+                srv.nSetCurrentVoice(speaker)
+            }
+        }
         var speakInvoked = false
         var speakRes: Int? = null
         if (canSpeak) {
@@ -3349,7 +3454,8 @@ internal class AcapelaHostSession(
 
     /** وسيط `nInit`: مسار المجلد منتهياً بفاصل، كما يفعل MultiTTS. */
     private fun directoryArgument(dir: File): String {
-        val path = dir.absolutePath
+        val norm = AcapelaVoiceDiagnostics.normalizeToUser0(dir)
+        val path = norm.absolutePath
         return if (path.endsWith(File.separator)) path
         else path + File.separator
     }

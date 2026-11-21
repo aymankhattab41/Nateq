@@ -729,6 +729,8 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Unify Acapela voice staging in real speech and warmup paths to preserve authentic package structure (salma_lf, NLP, and sibling userdicos), verify voice is loaded before nSpeak, and restage automatically if needed.
+• Clean up old staging folders under acapela_stage_authentic, close open handles to prevent descriptor leaks, and normalize all paths under /data/user/0.
 • Treat nSpeak=0 with positive PCM samples as genuine success in Acapela embedded path, clearing engine failure state, showing engine as ready, canceling fallback to substitute voice, and recording successful speech.
 • Perform silent background engine warmup for Acapela embedded engine on initialization with automatic retries to eliminate cold-boot first-call nSpeak -2 errors and log warmup results in diagnostics.
 • Capture native library logs (acattsandroid and logfile.txt) for failed real speech attempts and present them in a dedicated diagnostics section ahead of Logcat without truncation, including runId, nSpeak code, samples, and first native error.

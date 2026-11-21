@@ -563,4 +563,65 @@ class AcapelaAuthenticVoiceGuardsTest {
         }
     }
 
+    @Test
+    fun normalizeToUser0_replacesDataDataWithDataUser0() {
+        val input = "/data/data/com.aymankhattab.nateq/cache/stage"
+        val expected = "/data/user/0/com.aymankhattab.nateq/cache/stage"
+        assertEquals(
+            expected,
+            AcapelaVoiceDiagnostics.normalizeToUser0(input)
+        )
+        val fileInput = File("/data/data/com.aymankhattab.nateq/test.txt")
+        val fileExpected =
+            File("/data/user/0/com.aymankhattab.nateq/test.txt")
+        assertEquals(
+            fileExpected,
+            AcapelaVoiceDiagnostics.normalizeToUser0(fileInput)
+        )
+    }
+
+    @Test
+    fun cleanupOldStagingDirectories_deletesOldAndRetainsCurrent() {
+        val base = File(context.cacheDir, "acapela_stage_authentic")
+        base.mkdirs()
+        val oldDir = File(base, "run_old").apply { mkdirs() }
+        oldDir.setLastModified(System.currentTimeMillis() - 10000L)
+        val activeDir = File(base, "run_active").apply { mkdirs() }
+
+        AcapelaVoiceDiagnostics.cleanupOldStagingDirectories(
+            context = context,
+            currentRunSafeId = "run_active"
+        )
+
+        assertFalse(oldDir.exists())
+        assertTrue(activeDir.exists())
+    }
+
+    @Test
+    fun stageAuthenticVoiceForRun_preservesPackageStructureAndSiblings() {
+        val root = tempDir()
+        try {
+            val voice = writeSalmaPackage(
+                root, "ar_sa_hd_salma_22k_lf.ini"
+            )
+            val staged = AcapelaVoiceDiagnostics.stageAuthenticVoiceForRun(
+                context = context,
+                voiceDir = voice,
+                runId = "test_run_structure"
+            )
+            assertTrue(staged.isDirectory)
+            // salma_lf مجلد فرعي محتفظ به
+            val stagedSub = File(staged, "salma_lf/salma_22k_lf.bvcu")
+            assertTrue(stagedSub.isFile)
+            // NLP محتفظ به
+            val stagedNlp = File(staged, "NLP/ar_sa.oso")
+            assertTrue(stagedNlp.isFile)
+            // userdicos كأخ لمجلد التجهيز
+            val siblingDico = File(staged.parentFile, "userdicos")
+            assertTrue(siblingDico.isDirectory)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
 }

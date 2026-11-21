@@ -865,6 +865,40 @@ object AcapelaVoiceDiagnostics {
         )
     }
 
+    /** توحيد مسار الملف ليكون تحت /data/user/0 بدل /data/data. */
+    fun normalizeToUser0(path: String): String {
+        return path.replace("/data/data/", "/data/user/0/")
+            .replace("\\data\\data\\", "\\data\\user\\0\\")
+    }
+
+    /** توحيد مسار الملف ليكون تحت /data/user/0 بدل /data/data. */
+    fun normalizeToUser0(file: File): File {
+        return File(normalizeToUser0(file.path))
+    }
+
+    /**
+     * تنظيف مجلدات التجهيز القديمة تحت cache/acapela_stage_authentic
+     * عدا المجلد الحالي.
+     */
+    fun cleanupOldStagingDirectories(
+        context: Context,
+        currentRunSafeId: String? = null
+    ) {
+        val cache = normalizeToUser0(context.cacheDir)
+        val base = File(cache, "acapela_stage_authentic")
+        if (!base.exists() || !base.isDirectory) return
+        val now = System.currentTimeMillis()
+        base.listFiles()?.forEach { child ->
+            if (child.name == currentRunSafeId) return@forEach
+            if (child.name == "userdicos") return@forEach
+            if (currentRunSafeId == null ||
+                (now - child.lastModified() > 2000L)
+            ) {
+                runCatching { child.deleteRecursively() }
+            }
+        }
+    }
+
     /**
      * نسخ حرفي لمجلد صوت أصيل إلى مجلد staging جديد وفريد لكل تجربة runId،
      * مع الحفاظ على البنية النسبية وعدم توليد/تعديل تهيئة ini أو المصدر،
@@ -875,11 +909,32 @@ object AcapelaVoiceDiagnostics {
         voiceDir: File,
         runId: String
     ): File {
-        val cache = context.cacheDir
+        val cache = normalizeToUser0(context.cacheDir)
         val safeId = runId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        cleanupOldStagingDirectories(context, currentRunSafeId = safeId)
+
         val stageDir = File(File(cache, "acapela_stage_authentic"), safeId)
         if (stageDir.exists()) runCatching { stageDir.deleteRecursively() }
         stageDir.mkdirs()
+
+        val parent = voiceDir.parentFile
+        val root = when {
+            File(voiceDir, "NLP").isDirectory -> voiceDir
+            parent != null && File(parent, "NLP").isDirectory -> parent
+            parent != null && (
+                parent.name.equals("Salma", true) ||
+                    parent.name.equals("Leila", true) ||
+                    parent.name.equals("Heather", true)
+            ) && !voiceDir.name.equals("Salma", true) &&
+                !voiceDir.name.equals("Leila", true) &&
+                !voiceDir.name.equals("Heather", true) -> parent
+            else -> {
+                val pkg = AcapelaVoiceManifest.findPackageRoot(voiceDir)
+                if (pkg.exists() && pkg.isDirectory &&
+                    (File(pkg, "NLP").isDirectory || pkg != voiceDir)
+                ) pkg else voiceDir
+            }
+        }
 
         fun isStaleLog(name: String): Boolean {
             val n = name.lowercase(Locale.ROOT)
@@ -904,32 +959,50 @@ object AcapelaVoiceDiagnostics {
             }
         }
 
-        if (voiceDir.isDirectory) {
-            voiceDir.listFiles()?.forEach { child ->
+        if (root.isDirectory) {
+            root.listFiles()?.forEach { child ->
                 copyRec(child, File(stageDir, child.name))
             }
         }
+
+        val parentNlp = File(root.parentFile ?: root, "NLP")
+        val stagedNlp = File(stageDir, "NLP")
+        if (parentNlp.isDirectory && !stagedNlp.exists()) {
+            stagedNlp.mkdirs()
+            parentNlp.listFiles()?.forEach { f ->
+                if (f.isFile && !isStaleLog(f.name)) {
+                    val dst = File(stagedNlp, f.name)
+                    if (!dst.exists()) {
+                        runCatching { f.copyTo(dst, overwrite = false) }
+                    }
+                }
+            }
+        }
+
         val stageParent = stageDir.parentFile ?: stageDir
-        File(stageParent, "userdicos").mkdirs()
-        File(stageDir, "userdicos").mkdirs()
         val stageUserdicos = File(stageParent, "userdicos").apply { mkdirs() }
-        val sourceRoot = voiceDir.parentFile ?: voiceDir
+        File(stageDir, "userdicos").mkdirs()
+
+        val sourceRoot = root.parentFile ?: root
         val srcUserdicos = File(sourceRoot, "userdicos")
         if (srcUserdicos.isDirectory) {
             runCatching {
                 srcUserdicos.copyRecursively(stageUserdicos, overwrite = true)
             }
         }
-        runCatching {
-            voiceDir.walkTopDown().maxDepth(4).filter {
-                it.isFile && it.name.endsWith(".userdico", ignoreCase = true)
-            }.forEach { ud ->
-                val target = File(stageUserdicos, ud.name)
-                if (!target.exists()) {
-                    ud.copyTo(target, overwrite = false)
-                }
+        root.walkTopDown().maxDepth(4).filter {
+            it.isFile && it.name.endsWith(".userdico", ignoreCase = true)
+        }.forEach { ud ->
+            val target = File(stageUserdicos, ud.name)
+            if (!target.exists()) {
+                runCatching { ud.copyTo(target, overwrite = false) }
+            }
+            val targetInStage = File(stageDir, "userdicos/${ud.name}")
+            if (!targetInStage.exists()) {
+                runCatching { ud.copyTo(targetInStage, overwrite = false) }
             }
         }
+
         sourceRoot.listFiles()?.forEach { sib ->
             if (!sib.isFile) return@forEach
             if (isStaleLog(sib.name)) return@forEach
@@ -942,6 +1015,11 @@ object AcapelaVoiceDiagnostics {
                 }
             }
         }
+
+        stageDir.walkTopDown().filter {
+            it.isFile && it.name.equals(LOG_FILE_NAME, ignoreCase = true)
+        }.forEach { runCatching { it.delete() } }
+
         return stageDir
     }
 
@@ -2823,7 +2901,8 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * استخراج قائمة واصفات الملفات المفتوحة للعملية الحالية عبر /proc/self/fd.
+     * استخراج قائمة واصفات الملفات المفتوحة للعملية الحالية عبر /proc/self/fd
+     * مع توحيد المسارات لتكون تحت /data/user/0.
      */
     fun getOpenFileDescriptors(): List<String> {
         return runCatching {
@@ -2836,7 +2915,7 @@ object AcapelaVoiceDiagnostics {
                     !path.startsWith("/dev/") &&
                     !path.startsWith("/proc/") &&
                     !path.startsWith("/sys/")
-            }?.distinct()
+            }?.map { normalizeToUser0(it) }?.distinct()
         }.getOrNull().orEmpty()
     }
 
