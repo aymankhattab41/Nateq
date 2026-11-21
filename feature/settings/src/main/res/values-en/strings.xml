@@ -732,6 +732,7 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Break reconnection loop in EngineHostClient by decoupling intentional invalidate from death events with unified single recovery job and monotonic generations, unify AcapelaHostSession initialization and warmup under verified voice loading contracts preventing speech on unready services, and record accurate immutable first-failure records while masking multiline license payloads.
 • Direct Acapela initialization strictly to the verified package folder, exclude failed voice copies while selecting only the successfully loaded copy, and extend multiline license redaction in diagnostics.
 • Permanently eliminate Acapela cache staging and load directly from authentic package root preventing file corruption and memory pressure, serialize engine operations via a single mutex, and run one-time silent warmup.
 • Add ACTION_SEND text/plain support for Lord TTS and an exported activity for text selection menu ACTION_PROCESS_TEXT labeled "Read later", storing texts in a unified repository without modifying original text and providing screen-reader accessible confirmations for duplicates, empty, and successful saves.

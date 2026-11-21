@@ -5,6 +5,7 @@ import android.content.ContextWrapper
 import android.os.SystemClock
 import android.speech.tts.SynthesisCallback
 import android.util.Log
+import androidx.core.content.pm.PackageInfoCompat
 import com.acapelagroup.android.tts.AcattsandroidService
 import com.acapelagroup.android.tts.acattsandroid
 import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
@@ -24,6 +25,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -37,6 +39,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
 /**
@@ -396,8 +399,17 @@ internal class AcapelaHostSession(
     private val totalAudioBytes = AtomicLong(0L)
     private val lastAudioTime = AtomicLong(0L)
 
+    enum class WarmupState {
+        IDLE,
+        IN_PROGRESS,
+        SUCCESS,
+        FAILED
+    }
+
     private val sessionMutex = Mutex()
-    private val warmupDone = AtomicBoolean(false)
+    private val warmupState = AtomicReference(WarmupState.IDLE)
+    @Volatile
+    private var lastWarmupFailure: HostResult? = null
 
     override fun init(dataDir: String): HostResult = runBlocking {
         sessionMutex.withLock {
@@ -455,20 +467,50 @@ internal class AcapelaHostSession(
                 "تهيئة Acapela الممتد (أصوات مسجلة): " +
                     "أصوات القرص=${voices.size}"
             )
-            val regVoice = voices.firstOrNull { it.registration.isNotEmpty() }
-                ?: voices.firstOrNull {
-                    AcapelaVoiceManifest.findHexRegistrationFile(it.dir) != null
+            val candidateVoice = voices.firstOrNull { v ->
+                val hasReg = v.registration.isNotEmpty() ||
+                    AcapelaVoiceManifest.findHexRegistrationFile(v.dir) != null
+                hasReg && AcapelaVoiceDiagnostics.verifyAuthenticVoicePackage(
+                    voiceDir = v.dir,
+                    expectedSpeakerHint = v.rawSpeaker ?: v.voiceName
+                ).ok
+            } ?: voices.firstOrNull { it.registration.isNotEmpty() }
+              ?: voices.firstOrNull {
+                  AcapelaVoiceManifest.findHexRegistrationFile(it.dir) != null
+              }
+
+            if (candidateVoice == null) {
+                return HostResult.failure(
+                    "NO_AUTHENTIC_VOICE",
+                    "لم يُعثر على حزمة صوت صالحة ومحققة في ${dir.absolutePath}"
+                )
+            }
+
+            if (warmupState.compareAndSet(
+                    WarmupState.IDLE,
+                    WarmupState.IN_PROGRESS
+                )
+            ) {
+                Log.i(
+                    TAG,
+                    "بدء إحماء Acapela الموحد بعد نجاح التهيئة..."
+                )
+                val warmupRes = runBlocking {
+                    performUnifiedWarmup(candidateVoice)
                 }
-            if (regVoice != null) {
-                if (warmupDone.compareAndSet(false, true)) {
-                    Log.i(
-                        TAG,
-                        "بدء إحماء Acapela الصامت الأحادي بعد نجاح التهيئة..."
-                    )
-                    performSilentWarmup(regVoice)
-                } else {
-                    Log.i(TAG, "تم تخطي الإحماء: المحرك سبق إحماؤه بنجاح")
+                if (!warmupRes.ok) {
+                    warmupState.set(WarmupState.FAILED)
+                    lastWarmupFailure = warmupRes
+                    releaseEngine()
+                    return warmupRes
                 }
+                warmupState.set(WarmupState.SUCCESS)
+                lastWarmupFailure = null
+            } else if (warmupState.get() == WarmupState.FAILED) {
+                return lastWarmupFailure ?: HostResult.failure(
+                    "WARMUP_FAILED",
+                    "فشل إحماء محرك Acapela مسبقاً — الخدمة غير جاهزة"
+                )
             }
             return HostResult(ok = true)
         }
@@ -562,215 +604,33 @@ internal class AcapelaHostSession(
         }
     }
 
-    private fun performSilentWarmup(
+    private suspend fun performUnifiedWarmup(
         voice: AcapelaVoiceManifest.VoiceInfo
-    ) {
-        try {
-            val runId = UUID.randomUUID().toString().take(8)
-            val iso3 = iso3Of(voice.locale) ?: return
-            val expectedSpeaker = voice.rawSpeaker ?: voice.voiceName
-            val rawParam = AcapelaVoiceManifest
-                .readParamFromConfigYaml(voice.dir)
-            val decodedReg = AcapelaMetadataCodec.resolveAcapelaParam(
-                rawParam = rawParam.orEmpty(),
-                context = context
+    ): HostResult {
+        val dummySink = PcmSink(
+            DataOutputStream(ByteArrayOutputStream())
+        )
+        val cancelled = AtomicBoolean(false)
+        val openResult = runCatching {
+            openExtendedEngine(voice, dummySink, cancelled)
+        }.getOrElse { t ->
+            Log.e(TAG, "استثناء أثناء إحماء Acapela الموحد", t)
+            HostResult.failure(
+                "WARMUP_EXCEPTION",
+                t.message ?: "استثناء أثناء الإحماء الموحد"
             )
-            val regToUse = if (decodedReg.registration.isNotEmpty()) {
-                decodedReg.registration
-            } else {
-                voice.registration.ifEmpty {
-                    AcapelaVoiceManifest.resolveRegistration(voice.dir)
-                }
-            }
-            if (regToUse.isEmpty()) return
-
-            AcapelaVoiceManifest.normalizeExtensionsCase(voice.dir)
-            val siblingUserdicos = File(
-                voice.dir.parentFile ?: voice.dir, "userdicos"
-            ).apply { mkdirs() }
-            File(voice.dir, "userdicos").mkdirs()
-            runCatching {
-                voice.dir.walkTopDown().maxDepth(4).filter {
-                    it.isFile && it.name.endsWith(
-                        ".userdico", ignoreCase = true
-                    )
-                }.forEach { ud ->
-                    val target = File(siblingUserdicos, ud.name)
-                    if (!target.exists() &&
-                        ud.canonicalPath != target.canonicalPath
-                    ) {
-                        ud.copyTo(target, overwrite = false)
-                    }
-                }
-            }
-
-            val acapelaRoot =
-                AcapelaVoiceManifest.findAcapelaRootDir(voice.dir)
-            if (acapelaRoot.exists() && acapelaRoot.isDirectory &&
-                acapelaRoot.canonicalPath != voice.dir.canonicalPath
-            ) {
-                val rootNlp = File(acapelaRoot, "NLP")
-                val voiceNlp = File(voice.dir, "NLP")
-                if (!rootNlp.exists() &&
-                    voiceNlp.exists() &&
-                    voiceNlp.isDirectory
-                ) {
-                    runCatching {
-                        voiceNlp.copyRecursively(rootNlp, overwrite = false)
-                    }
-                }
-            }
-            val warmupDir = voice.dir
-            val stagePath = directoryArgument(warmupDir)
-
-            val audioHandler = TrialAudio { _, _ -> }
-            audioHandler.probeOnly = true
-            val synthCallback = AcapelaSynthesisCallback { _, _ -> }
-            val srv = AcattsandroidService(audioHandler, regToUse)
-
-            var initRes: Int? = null
-            try {
-                initRes = srv.nInit(stagePath)
-            } catch (t: Throwable) {
-                Log.w(TAG, "استثناء nInit أثناء الإحماء", t)
-            }
-            if (initRes != 0) {
-                recordWarmupDiagnostic(
-                    runId = runId,
-                    speakCode = -1,
-                    samples = 0L,
-                    attempts = 1,
-                    status = "فشل nInit: $initRes"
-                )
-                return
-            }
-
-            srv.nSetVoiceMode(VOICE_MODE_HD)
-            srv.nUtf8Mode(iso3.language, iso3.country)
-            srv.nSetLanguage(iso3.language, iso3.country, "")
-            srv.nSetCurrentVoice(expectedSpeaker)
-
-            if (!isVoiceActuallyLoaded(srv, expectedSpeaker)) {
-                Log.w(
-                    TAG,
-                    "صوت الإحماء $expectedSpeaker غير محمل؛ " +
-                        "إعادة التهيئة..."
-                )
-                runCatching { srv.nStop() }
-                val reInit = runCatching {
-                    srv.nInit(stagePath)
-                }.getOrElse { -1 }
-                if (reInit == 0) {
-                    srv.nSetVoiceMode(VOICE_MODE_HD)
-                    srv.nUtf8Mode(iso3.language, iso3.country)
-                    srv.nSetLanguage(iso3.language, iso3.country, "")
-                    srv.nSetCurrentVoice(expectedSpeaker)
-                }
-            }
-
-            if (!isVoiceActuallyLoaded(srv, expectedSpeaker)) {
-                Log.w(TAG, "صوت الإحماء $expectedSpeaker غير محمل بعد المحاولة")
-                recordWarmupDiagnostic(
-                    runId = runId,
-                    speakCode = -1,
-                    samples = 0L,
-                    attempts = 1,
-                    status = "الصوت غير محمل في المحرك"
-                )
-                return
-            }
-
-            var speakRes = runCatching {
-                srv.nSpeak("مرحبا", synthCallback)
-            }.getOrElse { -2 }
-
-            var attempts = 1
-            while (speakRes < 0 && attempts < 3) {
-                try {
-                    Thread.sleep(150L)
-                } catch (_: InterruptedException) {}
-                runCatching { srv.nSetCurrentVoice(expectedSpeaker) }
-                speakRes = runCatching {
-                    srv.nSpeak("مرحبا", synthCallback)
-                }.getOrElse { -2 }
-                attempts++
-            }
-
-            if (speakRes == 0) {
-                val started = SystemClock.uptimeMillis()
-                while (SystemClock.uptimeMillis() - started < 1500L &&
-                    audioHandler.samples.get() == 0L &&
-                    synthCallback.samples.get() == 0L
-                ) {
-                    try {
-                        Thread.sleep(50L)
-                    } catch (_: InterruptedException) {}
-                }
-            }
-
-            val samples = maxOf(
-                audioHandler.samples.get(),
-                synthCallback.samples.get()
-            )
-            val success = (speakRes == 0 && samples > 0L)
-            recordWarmupDiagnostic(
-                runId = runId,
-                speakCode = speakRes,
-                samples = samples,
-                attempts = attempts,
-                status = if (success) "نجاح الإحماء وجاهزية المحرك"
-                    else "تعثر الإحماء"
-            )
-
-            if (success) {
-                extendedService = srv
-                val voiceKey = registrationKey(voice)
-                extendedKey = "$voiceKey|$regToUse"
-                lastTrialSucceeded.set(true)
-                failedTrialKey = null
-                consecutiveTrialFailures.remove(extendedKey)
-                runCatching {
-                    SpeechFallbackTracker.clearAcapelaFallbackState()
-                    EngineStatusRegistry.noteReady(
-                        AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-                    )
-                    EngineStatusRegistry.noteSpeakSuccess(
-                        AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-                    )
-                }
-                Log.i(
-                    TAG,
-                    "اكتمل إحماء Acapela المدمج بنجاح: " +
-                        "nSpeak=$speakRes, عينات=$samples, " +
-                        "محاولات=$attempts"
-                )
-            }
-        } catch (t: Throwable) {
-            Log.w(TAG, "تجاوز إحماء Acapela الصامت: ${t.message}")
         }
-    }
-
-    private fun recordWarmupDiagnostic(
-        runId: String,
-        speakCode: Int,
-        samples: Long,
-        attempts: Int,
-        status: String
-    ) {
-        val started = SimpleDateFormat(
-            "yyyy-MM-dd HH:mm:ss.SSS",
-            Locale.US
-        ).format(Date())
-        val text = buildString {
-            appendLine("=== إحماء محرك Acapela المدمج ===")
-            appendLine("runId: $runId")
-            appendLine("الوقت: $started")
-            appendLine("كود nSpeak: $speakCode")
-            appendLine("عدد المحاولات: $attempts")
-            appendLine("عينات PCM المُتخلَّص منها: $samples")
-            appendLine("النتيجة: $status")
+        if (openResult != null) {
+            return openResult
         }
-        appendAcapelaFullDiagnostic(text)
+        val srv = extendedService
+        if (srv == null || !lastTrialSucceeded.get()) {
+            return HostResult.failure(
+                "WARMUP_FAILED",
+                "فشل إحماء صوت Acapela: تعذر الحصول على خدمة جاهزة"
+            )
+        }
+        return HostResult(ok = true)
     }
 
     private fun loadRuntimeLicense(inst: acattsandroid): Int {
@@ -908,6 +768,17 @@ internal class AcapelaHostSession(
     ): HostResult {
         if (cancelled.get()) {
             return HostResult.failure("CANCELLED", "أُلغي الطلب قبل بدئه")
+        }
+        if (warmupState.get() == WarmupState.FAILED) {
+            val failure = lastWarmupFailure ?: HostResult.failure(
+                "WARMUP_FAILED",
+                "خدمة Acapela غير جاهزة بسبب فشل الإحماء"
+            )
+            Log.w(
+                TAG,
+                "منع النطق على خدمة غير جاهزة: ${failure.message}"
+            )
+            return failure
         }
 
         activeSink = sink
@@ -1641,6 +1512,57 @@ internal class AcapelaHostSession(
             failFile.writeText(failureSection, StandardCharsets.UTF_8)
         }
 
+        val exitInfo = HostCrashDiagnostics.collectExitInfo(context)
+        val isConfirmedCrash = exitInfo.found && exitInfo.reasonCode == 5
+        val exitDesc = if (exitInfo.found) {
+            exitInfo.description
+        } else {
+            "لم يُرصد خروج مؤكد عبر ApplicationExitInfo"
+        }
+
+        val buildVerName = runCatching {
+            context.packageManager
+                .getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: "1.6.71"
+
+        val buildCode = runCatching {
+            val pInfo = context.packageManager
+                .getPackageInfo(context.packageName, 0)
+            PackageInfoCompat.getLongVersionCode(pInfo)
+        }.getOrDefault(10671L)
+
+        val connectionGen = EngineHostClient.hostGeneration.get()
+
+        val firstRealRecord = AcapelaVoiceDiagnostics.FirstFailureRecord(
+            buildVersion = buildVerName,
+            buildCode = buildCode,
+            timestamp = failTimestamp,
+            runId = runId,
+            connectionGeneration = connectionGen,
+            engineName = HostProtocol.ENGINE_ACAPELA,
+            stage = "RealSpeech",
+            verifiedVoiceDir = voice.dir.absolutePath,
+            speaker = voice.rawSpeaker ?: voice.voiceName,
+            initInvoked = true,
+            initCode = 0,
+            voiceInvoked = true,
+            voiceCode = 0,
+            speakInvoked = true,
+            speakCode = speakRes,
+            speakDesc = "nSpeak=$speakRes",
+            samples = samples,
+            bytes = bytes,
+            exitReasonDesc = exitDesc,
+            isConfirmedNativeCrash = isConfirmedCrash
+        )
+
+        AcapelaVoiceDiagnostics.recordFirstFailure(
+            context = context,
+            record = firstRealRecord,
+            nativeTail = nativeLines,
+            logFileContent = logFileContent
+        )
+
         appendAcapelaFullDiagnostic(failureSection)
 
         val voiceKey = registrationKey(voice)
@@ -1746,6 +1668,64 @@ internal class AcapelaHostSession(
             )
             failFile.writeText(failureSection, StandardCharsets.UTF_8)
         }
+
+        val exitInfo = HostCrashDiagnostics.collectExitInfo(context)
+        val isConfirmedCrash = exitInfo.found && exitInfo.reasonCode == 5
+        val exitDesc = if (exitInfo.found) {
+            exitInfo.description
+        } else {
+            "لم يُرصد خروج مؤكد عبر ApplicationExitInfo"
+        }
+
+        val buildVerName = runCatching {
+            context.packageManager
+                .getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: "1.6.71"
+
+        val buildCode = runCatching {
+            val pInfo = context.packageManager
+                .getPackageInfo(context.packageName, 0)
+            PackageInfoCompat.getLongVersionCode(pInfo)
+        }.getOrDefault(10671L)
+
+        val connectionGen = EngineHostClient.hostGeneration.get()
+
+        val speakDesc = if (trial.speakInvoked) {
+            "nSpeak=${trial.speakCode ?: "غير مقيس"}"
+        } else {
+            "لم يُستدعَ"
+        }
+
+        val firstRecord = AcapelaVoiceDiagnostics.FirstFailureRecord(
+            buildVersion = buildVerName,
+            buildCode = buildCode,
+            timestamp = failTimestamp,
+            runId = runId,
+            connectionGeneration = connectionGen,
+            engineName = HostProtocol.ENGINE_ACAPELA,
+            stage = trial.method,
+            verifiedVoiceDir = trial.path,
+            speaker = voice.rawSpeaker ?: voice.voiceName,
+            initInvoked = trial.initInvoked,
+            initCode = trial.initCode,
+            voiceInvoked = trial.voiceInvoked,
+            voiceCode = trial.voiceCode,
+            speakInvoked = trial.speakInvoked,
+            speakCode = if (trial.speakInvoked) trial.speakCode else null,
+            speakDesc = speakDesc,
+            samples = trial.samples ?: 0L,
+            bytes = trial.pcmBytes ?: 0L,
+            exitReasonDesc = exitDesc,
+            isConfirmedNativeCrash = isConfirmedCrash
+        )
+
+        AcapelaVoiceDiagnostics.recordFirstFailure(
+            context = context,
+            record = firstRecord,
+            nativeTail = trial.nativeLines,
+            logFileContent = logFileContent
+        )
+
         appendAcapelaFullDiagnostic(failureSection)
     }
 
@@ -2045,7 +2025,8 @@ internal class AcapelaHostSession(
         val startedAtMs: Long = 0L
     ) {
         val isSuccess: Boolean
-            get() = (speakCode == 0 && (samples ?: 0L) > 0L) ||
+            get() = speakInvoked && (speakCode == 0) &&
+                ((samples ?: 0L) > 0L) &&
                 AcapelaVoiceDiagnostics.evaluateTrialSuccess10724(
                     speakCode = speakCode,
                     samples = samples,
@@ -2546,7 +2527,6 @@ internal class AcapelaHostSession(
             speaker in successfulVoiceNames -> speaker
             successfulVoiceNames.isNotEmpty() -> successfulVoiceNames.first()
             trialDir.name in successfulVoiceNames -> trialDir.name
-            speaker !in failedVoiceNames -> speaker
             else -> null
         }
         val effectiveSpeaker = chosenSpeaker ?: speaker
@@ -2747,12 +2727,6 @@ internal class AcapelaHostSession(
                 Log.w(TAG, "[$label] استثناء أثناء nSpeak", t)
                 -2
             }
-        } else if (!canSpeak) {
-            val firstEb = errorLines.firstNotNullOfOrNull { line ->
-                Regex("eb\\s+(-?\\d+)").find(line)?.groupValues
-                    ?.get(1)?.toIntOrNull()
-            } ?: -27
-            speakRes = firstEb
         }
         Log.i("acattsandroid-extended-native", endMarker)
         recordAcapelaBreadcrumb(
@@ -2819,7 +2793,11 @@ internal class AcapelaHostSession(
         } else {
             null
         }
-        val finalSpeakCode = if (retrySpeakRes == 0) 0 else speakRes
+        val finalSpeakCode = if (speakInvoked) {
+            if (retrySpeakRes == 0) 0 else speakRes
+        } else {
+            null
+        }
         if (synthCallback.pcmStream.size() > 0) {
             val synthBytes = synthCallback.pcmStream.toByteArray()
             synchronized(audioHandler.pcmBytes) {
@@ -3306,7 +3284,10 @@ internal class AcapelaHostSession(
                         voiceNlp.isDirectory
                     ) {
                         runCatching {
-                            voiceNlp.copyRecursively(rootNlp, overwrite = false)
+                            voiceNlp.copyRecursively(
+                                rootNlp,
+                                overwrite = false
+                            )
                         }
                     }
                 }
@@ -3331,9 +3312,9 @@ internal class AcapelaHostSession(
                 )
             }
 
-            val isSynthesizedOk = (trial.speakCode == 0 &&
-                (trial.samples ?: 0L) > 0L)
-            val isTrialSuccessful = trial.isSuccess || isSynthesizedOk
+            val isSynthesizedOk = trial.speakInvoked && trial.speakCode == 0 &&
+                (trial.samples ?: 0L) > 0L
+            val isTrialSuccessful = trial.isSuccess && isSynthesizedOk
 
             lastTrialSucceeded.set(isTrialSuccessful)
             if (isTrialSuccessful) {
@@ -3658,6 +3639,8 @@ internal class AcapelaHostSession(
         activeSink = null
         activeCancelled = null
         releaseEngine()
+        warmupState.set(WarmupState.IDLE)
+        lastWarmupFailure = null
         dataDirectory = null
     }
 

@@ -13,6 +13,8 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
@@ -67,6 +69,9 @@ object AcapelaVoiceDiagnostics {
     /** اسم ملف آخر محاولة نطق حقيقية فاشلة مع أسطر المكتبة الأصلية. */
     const val ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE =
         "acapela_last_real_speech_failure.txt"
+
+    /** اسم ملف أول فشل أصلي ثابت لكل محاولة قبل التنظيف. */
+    const val ACAPELA_FIRST_FAILURE_FILE = "acapela_first_failure.txt"
 
     /** السقف الأقصى لأحرف التقرير المنسوخ/المُشارَك (بناء 10729). */
     const val MAX_SHARED_REPORT_CHARS = 60_000
@@ -550,7 +555,8 @@ object AcapelaVoiceDiagnostics {
             }
             AcapelaVoiceManifest.IniDiscoveryState.AUTHENTIC -> {
                 if (ini != null) {
-                    checked += "ini=${ini.absolutePath} (${fingerprintOf(ini)})"
+                    checked += "ini=${ini.absolutePath} " +
+                        "(${fingerprintOf(ini)})"
                     val deps = AcapelaVoiceManifest.parseIniDependencies(ini)
                     if (deps.isEmpty()) {
                         issues += VoiceDependencyIssue(
@@ -590,9 +596,10 @@ object AcapelaVoiceDiagnostics {
                         }
                     }
                     for (dep in deps) {
-                        val resolved = AcapelaVoiceManifest.resolveRelativeFile(
-                            refRoot, dep.relativePath
-                        )
+                        val resolved = AcapelaVoiceManifest
+                            .resolveRelativeFile(
+                                refRoot, dep.relativePath
+                            )
                         val expected =
                             File(refRoot, dep.relativePath).absolutePath
                         val isUserDico = dep.relativePath.endsWith(
@@ -783,11 +790,14 @@ object AcapelaVoiceDiagnostics {
             )
         }
 
-        val hex = effectiveVoiceDir.walkTopDown().maxDepth(5).firstOrNull { f ->
-            f.isFile &&
-                f.name.matches(Regex("^0x[0-9a-fA-F]+$")) &&
-                f.length() > 0L
-        } ?: AcapelaVoiceManifest.findHexRegistrationFile(effectiveVoiceDir)
+        val hex = effectiveVoiceDir.walkTopDown().maxDepth(5)
+            .firstOrNull { f ->
+                f.isFile &&
+                    f.name.matches(Regex("^0x[0-9a-fA-F]+$")) &&
+                    f.length() > 0L
+            } ?: AcapelaVoiceManifest.findHexRegistrationFile(
+                effectiveVoiceDir
+            )
         val hasYamlParam = AcapelaVoiceManifest
             .findConfigYamlWithParam(effectiveVoiceDir) != null
         if (hex == null && !hasYamlParam) {
@@ -1006,8 +1016,8 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * تنقية قائمة أسطر من البيانات الحساسة مع تتبع حمولة الترخيص متعددة الأسطر.
-     * الأسطر التابعة لحمولة babParam.license تُقنَّع كاملة ولا تمر خاماً.
+     * تنقية قائمة أسطر من البيانات الحساسة مع تتبع حمولة الترخيص متعددة
+     * الأسطر. الأسطر التابعة لحمولة babParam.license تُقنَّع كاملة.
      */
     fun redactSensitiveLines(lines: List<String>): List<String> {
         val result = ArrayList<String>(lines.size)
@@ -1749,7 +1759,9 @@ object AcapelaVoiceDiagnostics {
     fun verifyRoot109IniBeforeInit(stageDir: File): StagedIniVerification {
         val sb = StringBuilder()
         sb.appendLine("=== [بناء 10727] تحقق ملفات ini قبل nInit ===")
-        sb.appendLine("  - المجلد المُمرَّر لـ nInit: ${stageDir.absolutePath}")
+        sb.appendLine(
+            "  - المجلد المُمرَّر لـ nInit: ${stageDir.absolutePath}"
+        )
         if (!stageDir.exists() || !stageDir.isDirectory) {
             sb.appendLine("  - النتيجة: فشل — المجلد غير موجود")
             return StagedIniVerification(
@@ -2606,7 +2618,11 @@ object AcapelaVoiceDiagnostics {
                 return
             }
 
-            val voiceIdToPass = if (voice.id.isNotBlank()) voice.id else "Salma"
+            val voiceIdToPass = if (voice.id.isNotBlank()) {
+                voice.id
+            } else {
+                "Salma"
+            }
             val synthRes = EngineHostClient.synthesize(
                 context = context,
                 engineId = HostProtocol.ENGINE_ACAPELA,
@@ -2672,7 +2688,9 @@ object AcapelaVoiceDiagnostics {
             context.cacheDir,
             ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE
         )
-        val failureText = if (failureFile.isFile && failureFile.length() > 0L) {
+        val failureText = if (
+            failureFile.isFile && failureFile.length() > 0L
+        ) {
             runCatching {
                 failureFile.readText(StandardCharsets.UTF_8)
             }.getOrNull().orEmpty()
@@ -2691,7 +2709,8 @@ object AcapelaVoiceDiagnostics {
 
         return if (failureText.isNotBlank()) {
             if (!baseReport.contains("=== آخر محاولة نطق حقيقية فاشلة ===")) {
-                baseReport + "\n\n" + redactSensitiveText(failureText).trimEnd()
+                baseReport + "\n\n" +
+                    redactSensitiveText(failureText).trimEnd()
             } else {
                 baseReport
             }
@@ -2701,29 +2720,161 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * قراءة آخر محاولة نطق حقيقية فاشلة إن وُجدت.
+     * سجل أول فشل أصلي محدد بالمرحلة لتوثيق السبب الحقيقي قبل التنظيف.
+     */
+    data class FirstFailureRecord(
+        val buildVersion: String,
+        val buildCode: Long,
+        val timestamp: String,
+        val runId: String,
+        val connectionGeneration: Long,
+        val engineName: String,
+        val stage: String,
+        val verifiedVoiceDir: String,
+        val speaker: String,
+        val initInvoked: Boolean,
+        val initCode: Int?,
+        val voiceInvoked: Boolean,
+        val voiceCode: Int?,
+        val speakInvoked: Boolean,
+        val speakCode: Int?,
+        val speakDesc: String,
+        val samples: Long,
+        val bytes: Long,
+        val exitReasonDesc: String,
+        val isConfirmedNativeCrash: Boolean
+    )
+
+    val sessionStartWallMs: Long = System.currentTimeMillis()
+
+    @Volatile
+    var recordedFirstFailureRunId: String? = null
+        internal set
+
+    /**
+     * حفظ سجل أول فشل حقيقي لكل محاولة/تشغيل قبل بدء أي تنظيف أو إعادة ربط.
+     */
+    fun recordFirstFailure(
+        context: Context,
+        record: FirstFailureRecord,
+        nativeTail: List<String> = emptyList(),
+        logFileContent: String = ""
+    ) {
+        if (recordedFirstFailureRunId == record.runId) {
+            return
+        }
+        recordedFirstFailureRunId = record.runId
+
+        val sb = StringBuilder()
+        sb.appendLine("=== سجل أول فشل أصلي (First-Failure Record) ===")
+        sb.appendLine(
+            "إصدار البناء: ${record.buildVersion} (${record.buildCode})"
+        )
+        sb.appendLine("الوقت: ${record.timestamp}")
+        sb.appendLine("runId: ${record.runId}")
+        sb.appendLine("جيل الاتصال: ${record.connectionGeneration}")
+        sb.appendLine("المحرك: ${record.engineName}")
+        sb.appendLine("المرحلة: ${record.stage}")
+        sb.appendLine("مجلد الصوت المتحقق: ${record.verifiedVoiceDir}")
+        sb.appendLine("الهوية (speaker): ${record.speaker}")
+        sb.appendLine(
+            "nInit: مستدعى=${record.initInvoked} | " +
+                "كود=${record.initCode ?: "غير مقيس"}"
+        )
+        sb.appendLine(
+            "nSetCurrentVoice: مستدعى=${record.voiceInvoked} | " +
+                "كود=${record.voiceCode ?: "غير مقيس"}"
+        )
+        sb.appendLine(
+            "nSpeak: مستدعى=${record.speakInvoked} | " +
+                "كود=${record.speakCode ?: "لم يُستدعَ"}"
+        )
+        sb.appendLine("وصف nSpeak: ${record.speakDesc}")
+        sb.appendLine("عينات PCM: ${record.samples}")
+        sb.appendLine("بايتات PCM: ${record.bytes}")
+        sb.appendLine("سبب خروج المضيف: ${record.exitReasonDesc}")
+        sb.appendLine(
+            "انهيار أصلي مؤكد: " +
+                if (record.isConfirmedNativeCrash) "نعم" else "لا (غير مؤكد)"
+        )
+        if (logFileContent.isNotBlank() &&
+            logFileContent != "(لم يُنشأ ملف logfile.txt أو فارغ)"
+        ) {
+            sb.appendLine()
+            sb.appendLine("--- سجل logfile.txt ---")
+            sb.appendLine(redactSensitiveText(logFileContent).trimEnd())
+        }
+        if (nativeTail.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine(
+                "--- أسطر المكتبة الأصلية (acattsandroid) " +
+                    "(${nativeTail.size} سطر) ---"
+            )
+            redactSensitiveLines(nativeTail).forEach { line ->
+                sb.appendLine(line)
+            }
+        }
+        val fullSection = sb.toString().trimEnd()
+
+        runCatching {
+            val firstFile = File(context.cacheDir, ACAPELA_FIRST_FAILURE_FILE)
+            firstFile.writeText(fullSection, StandardCharsets.UTF_8)
+        }
+    }
+
+    /**
+     * قراءة سجل أول فشل أصلي ثابت إن وُجد مع تمييز السجلات التاريخية.
+     */
+    fun readFirstFailure(context: Context): String? {
+        val file = File(
+            context.cacheDir,
+            ACAPELA_FIRST_FAILURE_FILE
+        ).takeIf { it.isFile && it.length() > 0L } ?: return null
+        return readWithHistoricalCheck(file)
+    }
+
+    /**
+     * قراءة آخر محاولة نطق حقيقية فاشلة إن وُجدت مع تمييز السجلات التاريخية.
      */
     fun readLastRealSpeechFailure(context: Context): String? {
         val file = File(
             context.cacheDir,
             ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE
-        )
-        return if (file.isFile && file.length() > 0L) {
-            runCatching {
-                file.readText(StandardCharsets.UTF_8)
-            }.getOrNull()?.takeIf { it.isNotBlank() }
-        } else null
+        ).takeIf { it.isFile && it.length() > 0L }
+            ?: File(
+                context.cacheDir,
+                ACAPELA_FIRST_FAILURE_FILE
+            ).takeIf { it.isFile && it.length() > 0L }
+            ?: return null
+        return readWithHistoricalCheck(file)
+    }
+
+    private fun readWithHistoricalCheck(file: File): String? {
+        val text = runCatching {
+            file.readText(StandardCharsets.UTF_8)
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
+
+        val isHistorical = file.lastModified() < sessionStartWallMs - 3000L
+        return if (isHistorical) {
+            val dateStr = SimpleDateFormat(
+                "yyyy-MM-dd HH:mm:ss", Locale.US
+            ).format(Date(file.lastModified()))
+            "=== سجل محاولة سابقة من تشغيل منتهٍ ($dateStr) — " +
+                "غير تابع للتشغيل الحالي ===\n$text"
+        } else {
+            text
+        }
     }
 
     /**
-     * مسح ملف آخر محاولة نطق حقيقية فاشلة.
+     * مسح ملف آخر محاولة نطق حقيقية فاشلة وسجل أول فشل.
      */
     fun clearLastRealSpeechFailure(context: Context) {
-        val file = File(
-            context.cacheDir,
-            ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE
-        )
-        runCatching { file.delete() }
+        recordedFirstFailureRunId = null
+        val f1 = File(context.cacheDir, ACAPELA_FIRST_FAILURE_FILE)
+        val f2 = File(context.cacheDir, ACAPELA_LAST_REAL_SPEECH_FAILURE_FILE)
+        runCatching { f1.delete() }
+        runCatching { f2.delete() }
     }
 
     /**
@@ -3058,7 +3209,9 @@ object AcapelaVoiceDiagnostics {
         appendLine("  - nIsPaused(): int  [حالة: هل متوقف مؤقتاً]")
         appendLine("  - nGetVoiceList(paths: Array<String>): int")
         appendLine("    [حصر الأصوات المتاحة]")
-        appendLine("  - nGetVoiceInfo(path, key: String): String  [بيانات صوت]")
+        appendLine(
+            "  - nGetVoiceInfo(path, key: String): String  [بيانات صوت]"
+        )
         appendLine("  - nGetLanguage(): String  [حالة اللغة]")
         appendLine("  - nGetAudioBufferSize(): int")
         appendLine("  - nGetTextIndex(): int")
@@ -3089,7 +3242,9 @@ object AcapelaVoiceDiagnostics {
         appendLine("  في دالة tts_function_analyse_and_speak")
         appendLine("  (العنوان 0x1bd5dc): يُفحص مقبض الصوت المحمل")
         appendLine("  عند الإزاحة 0x200 ([voice + 0x200]).")
-        appendLine("  إن كان المقبض صفراً (NULL)، تقفز التعليمات إلى 0x1bd988:")
+        appendLine(
+            "  إن كان المقبض صفراً (NULL)، تقفز التعليمات إلى 0x1bd988:"
+        )
         appendLine("    1bd988: mov w0, #-0x2")
         appendLine("    1bd98c: b   0x1bdc7c")
         appendLine("  وتعيد الدالة الرمز -2 فوراً دون توليد أي عينة PCM!")
@@ -3211,7 +3366,8 @@ object AcapelaVoiceDiagnostics {
                 "ExtendedEngine(Audio audio, AcapelaPack pack):"
         )
         appendLine(
-            "    this.api = new AcattsandroidService(audio, pack.registration);"
+            "    this.api = new AcattsandroidService(audio, " +
+                "pack.registration);"
         )
         appendLine(
             "  - في فئة AcattsandroidService: الحقل " +
@@ -3219,7 +3375,8 @@ object AcapelaVoiceDiagnostics {
         )
         appendLine(
             "  - دالة رد النداء لـ JNI: " +
-                "@Keep public String idfunction() { return this.registration; }"
+                "@Keep public String idfunction() { " +
+                "return this.registration; }"
         )
         appendLine(
             "  - داخل المكتبة الأصلية (libttsacattsandroidextended.so):"
@@ -3272,19 +3429,27 @@ object AcapelaVoiceDiagnostics {
         appendLine("")
         appendLine("2) نتائج تفكيك check_license (العنوان 0x1b8f70):")
         appendLine("  [0x1b8fc8] ldr x21, [x21, #0xbb8]  // مؤشر idfunction")
-        appendLine("  [0x1b8fd0] cbz x8, #0x1b90e0       // إن كان صفراً < 4.0")
+        appendLine(
+            "  [0x1b8fd0] cbz x8, #0x1b90e0       // إن كان صفراً < 4.0"
+        )
         appendLine("  [0x1b8fe8] // STR: 'android >= 4.0 check method'")
-        appendLine("  [0x1b902c] bl  CallObjectMethod    // استدعاء idfunction")
+        appendLine(
+            "  [0x1b902c] bl  CallObjectMethod    // استدعاء idfunction"
+        )
         appendLine("  [0x1b904c] blr x9                  // GetStringUTFChars")
         appendLine("  [0x1b9084] bl  SHA1Reset           // تهيئة سياق SHA1")
-        appendLine("  [0x1b90a0] bl  SHA1Input          // تمرير سلسلة التسجيل")
+        appendLine(
+            "  [0x1b90a0] bl  SHA1Input          // تمرير سلسلة التسجيل"
+        )
         appendLine("  [0x1b90a8] bl  SHA1Result          // حساب SHA1")
         appendLine("  [0x1b90b0] ldr w4, [sp, #0x130]    // أول كلمة 32-بت")
         appendLine("  [0x1b90b8] // STR: '%08x'")
         appendLine("  [0x1b90c8] bl  snprintf(buf, 5, \"%08x\", w4)")
         appendLine("  [0x1b90d8] str w8, [mUserid]       // تخزين 4 بايت")
         appendLine("  [0x1b91cc] bl  opendir             // فتح mVoicesPath")
-        appendLine("  [0x1b9214] bl  readdir            // قراءة مدخلات المجلد")
+        appendLine(
+            "  [0x1b9214] bl  readdir            // قراءة مدخلات المجلد"
+        )
         appendLine("  [0x1b9264] // STR: '0x'")
         appendLine("  [0x1b9268] bl  strstr(name, \"0x\") // فحص وجود 0x")
         appendLine("  [0x1b9284] bl  sprintf(\"%s/%s\")   // تكوين المسار")
@@ -3292,7 +3457,9 @@ object AcapelaVoiceDiagnostics {
         appendLine("  [0x1b938c] bl  sscanf(name, \"%x\", &mPasswd)")
         appendLine("  [0x1b9394] // STR: 'rt'")
         appendLine("  [0x1b939c] bl  fopen(path, \"rt\")  // فتح الملف")
-        appendLine("  [0x1b93dc] bl  fgets               // قراءة أسطر الترخيص")
+        appendLine(
+            "  [0x1b93dc] bl  fgets               // قراءة أسطر الترخيص"
+        )
         appendLine("  [0x1b93f8] bl  strcat              // دمج في mLicense")
         appendLine("  [0x1b9414] bl  fclose              // إغلاق الملف")
         appendLine("  [0x1b9438] // STR: 'COMMERCIAL'")
@@ -3300,7 +3467,9 @@ object AcapelaVoiceDiagnostics {
         appendLine("  [0x1b944c] // STR: 'license value error'")
         appendLine("")
         appendLine("3) تمرير القيم إلى Babile (العنوان 0x1ba388..0x1ba404):")
-        appendLine("  [0x1ba3ac] str x19, [babParam+0x280] // babParam.license")
+        appendLine(
+            "  [0x1ba3ac] str x19, [babParam+0x280] // babParam.license"
+        )
         appendLine("  [0x1ba3b0] str w9,  [babParam+0x288] // babParam.userId")
         appendLine("  [0x1ba3b4] str w8,  [babParam+0x28c] // babParam.passwd")
         appendLine("  [0x1ba3cc] // STR: 'check license done'")
@@ -3332,7 +3501,8 @@ object AcapelaVoiceDiagnostics {
                 "(المحرك الكلاسيكي):"
         )
         appendLine(
-            "    Lorg/volodymyr/multivoice/AcapelaSpeech\$NativeEngine;-><init>"
+            "    Lorg/volodymyr/multivoice/" +
+                "AcapelaSpeech\$NativeEngine;-><init>"
         )
         appendLine("  - سطر الاستدعاء بالبايت كود حرفياً:")
         appendLine(
@@ -3559,7 +3729,9 @@ object AcapelaVoiceDiagnostics {
         appendLine(
             "=== [البند 5 من 10717] مطابقة بصمة التسجيل ==="
         )
-        appendLine("1. القيمة المسجلة: مطابقة للحالة المشخَّصة (القيمة مخفية).")
+        appendLine(
+            "1. القيمة المسجلة: مطابقة للحالة المشخَّصة (القيمة مخفية)."
+        )
         appendLine("2. آلية المكتبة:")
         appendLine(
             "   - تستدعي idfunction() لجلب سلسلة التسجيل registration."
@@ -3809,8 +3981,8 @@ object AcapelaVoiceDiagnostics {
                 "ar_sa_hd_salma_22k_lf.bvcu"
         )
         appendLine(
-            "     أو إزالة [ RAM ] أو تعديل المسارات، فتعثرت initLanguageDba " +
-                "في مطابقة الفهرس"
+            "     أو إزالة [ RAM ] أو تعديل المسارات، " +
+                "فتعثرت initLanguageDba في مطابقة الفهرس"
         )
         appendLine(
             "     ولم يتوفر المكون \"PRO\" في مصفوفة pNLPConfig، فقفزت " +
@@ -3836,7 +4008,8 @@ object AcapelaVoiceDiagnostics {
         )
         appendLine("1. مصدر قيمة sNLPConfig في التفكيك الثنائي:")
         appendLine(
-            "   - في دالة tts_function_load_voicei (العنوان 0x1ba2b4-0x1ba2cc):"
+            "   - في دالة tts_function_load_voicei " +
+                "(العنوان 0x1ba2b4-0x1ba2cc):"
         )
         appendLine(
             "     تحمّل الدالة قالباً ثابتاً q0 بحجم 16 بايت من العنوان " +
@@ -3861,7 +4034,9 @@ object AcapelaVoiceDiagnostics {
             "     الافتراضي القياسي المحدد في المكتبة لموديول MBR."
         )
         appendLine("")
-        appendLine("2. كيف تُملأ sNLPConfig من ملفات ini و inf وأي سطر يغيرها:")
+        appendLine(
+            "2. كيف تُملأ sNLPConfig من ملفات ini و inf وأي سطر يغيرها:"
+        )
         appendLine(
             "   - تستدعي المكتبة initLanguageDbaNewEx (العنوان 0x1b74a4) " +
                 "لقراءة ملف .ini."

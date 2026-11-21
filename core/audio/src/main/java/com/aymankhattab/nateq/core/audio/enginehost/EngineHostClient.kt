@@ -154,7 +154,9 @@ object EngineHostClient {
         return mutex.withLock {
             setContext(context)
             lastDataDirs[id] = dataDir
-            recordCallSent("init(engineId=$id, dataDir=$dataDir, force=$force)")
+            recordCallSent(
+                "init(engineId=$id, dataDir=$dataDir, force=$force)"
+            )
             if (!force && initializedEngines[id] == dataDir) {
                 return@withLock HostResult(ok = true)
             }
@@ -358,6 +360,10 @@ object EngineHostClient {
         val id = HostProtocol.normalizeEngineId(engineId)
         initializedEngines.remove(id)
         lastDataDirs.remove(id)
+        synchronized(recoveryJob) {
+            recoveryJob.getAndSet(null)?.cancel()
+        }
+        lastRecoveryFailed = false
         val connection = connections.remove(id) ?: return
         background.execute {
             runCatching { connection.current()?.shutdown(id) }
@@ -409,59 +415,117 @@ object EngineHostClient {
         }
     }
 
+    val hostGeneration = AtomicLong(1L)
+
+    private val recoveryJob = AtomicReference<kotlinx.coroutines.Job?>(null)
+
+    @Volatile
+    var lastRecoveryFailed: Boolean = false
+        private set
+
     internal fun onHostDied(engineId: String) {
+        notifyHostDied(engineId, hostGeneration.get())
+    }
+
+    internal fun notifyHostDied(engineId: String, generation: Long) {
         val id = HostProtocol.normalizeEngineId(engineId)
         initializedEngines.remove(id)
-        Log.w(TAG, "مات مضيف $id — جدولة إعادة الربط بتراجع تكراري")
-        val ctx = appContext
-        if (ctx != null) {
-            scheduleRebind(ctx, id)
+
+        // دمج البلاغات وتجاهل الجيل القديم
+        val currentGen = hostGeneration.get()
+        if (generation < currentGen) {
+            Log.d(
+                TAG,
+                "تجاهل بلاغ موت قديم لمضيف $id (جيل=$generation < $currentGen)"
+            )
+            return
+        }
+
+        // تقدم جيل الاتصال لمنع تكرار معالجة نفس الانهيار
+        val nextGen = hostGeneration.incrementAndGet()
+        Log.w(
+            TAG,
+            "مات مضيف $id (جيل سابق=$generation، جيل جديد=$nextGen) — " +
+                "تنسيق التعافي"
+        )
+
+        val ctx = appContext ?: return
+        synchronized(recoveryJob) {
+            val current = recoveryJob.get()
+            if (current != null && current.isActive) {
+                Log.d(TAG, "عملية تعافٍ جارية بالفعل لمضيف :engine_host")
+                return
+            }
+            val job = rebindScope.launch {
+                performHostRecovery(ctx, id, nextGen)
+            }
+            recoveryJob.set(job)
         }
     }
 
-    /**
-     * إعادة ربط المضيف بتأخير تراجعي [500ms, 1s, 2s] حتى 3 محاولات
-     * وإعادة تحميل بيانات الصوت (ع٥٧-أمر 4).
-     */
-    fun scheduleRebind(context: Context, engineId: String) {
-        val id = HostProtocol.normalizeEngineId(engineId)
-        setContext(context)
-        rebindScope.launch {
-            val backoffs = longArrayOf(500L, 1000L, 2000L)
-            for ((attempt, delayMs) in backoffs.withIndex()) {
-                delay(delayMs)
+    private suspend fun performHostRecovery(
+        context: Context,
+        triggerEngineId: String,
+        recoveryGen: Long
+    ) {
+        lastRecoveryFailed = false
+        val backoffs = longArrayOf(500L, 1000L, 2000L)
+        for ((attempt, delayMs) in backoffs.withIndex()) {
+            delay(delayMs)
+            if (recoveryGen != hostGeneration.get()) {
+                Log.d(TAG, "إلغاء محاولة التعافي لتغير جيل المضيف")
+                return
+            }
+            Log.i(
+                TAG,
+                "محاولة تعافي مضيف :engine_host (${attempt + 1}/3) " +
+                    "بعد ${delayMs}ms"
+            )
+            val conn = connection(context, triggerEngineId)
+            conn.invalidate()
+            val svc = conn.service()
+            if (svc != null) {
                 Log.i(
                     TAG,
-                    "محاولة إعادة ربط $id (${attempt + 1}/3) " +
-                        "بعد ${delayMs}ms"
+                    "نجحت استعادة المضيف في المحاولة ${attempt + 1}"
                 )
-                val conn = connection(context, id)
-                conn.invalidate()
-                val svc = conn.service()
-                if (svc != null) {
-                    Log.i(
-                        TAG,
-                        "نجحت إعادة ربط مضيف $id في المحاولة ${attempt + 1}"
-                    )
-                    val dataDir = lastDataDirs[id]
-                    if (!dataDir.isNullOrBlank()) {
+                for ((engId, dataDir) in lastDataDirs) {
+                    if (dataDir.isNotBlank()) {
                         val initRes = init(
-                            context, id, dataDir, force = true
+                            context, engId, dataDir, force = true
                         )
                         Log.i(
                             TAG,
-                            "إعادة تحميل صوت $id: ok=${initRes.ok}"
+                            "إعادة تحميل محرك $engId بعد التعافي: " +
+                                "ok=${initRes.ok}"
                         )
                     }
-                    break
-                } else {
-                    Log.w(
-                        TAG,
-                        "فشلت محاولة إعادة ربط $id (${attempt + 1}/3)"
-                    )
                 }
+                lastRecoveryFailed = false
+                synchronized(recoveryJob) { recoveryJob.set(null) }
+                return
+            } else {
+                Log.w(
+                    TAG,
+                    "فشلت محاولة تعافي المضيف (${attempt + 1}/3)"
+                )
             }
         }
+        Log.e(
+            TAG,
+            "استنفاد محاولات إعادة ربط المضيف (3/3)؛ توقف التعافي التلقائي"
+        )
+        lastRecoveryFailed = true
+        synchronized(recoveryJob) { recoveryJob.set(null) }
+    }
+
+    /**
+     * إعادة ربط المضيف بتأخير تراجعي [500ms, 1s, 2s] حتى 3 محاولات.
+     * توجَّه لمنسق التعافي الواحد وتمنع الحلقات المتداخلة.
+     */
+    fun scheduleRebind(context: Context, engineId: String) {
+        setContext(context)
+        notifyHostDied(engineId, hostGeneration.get())
     }
 
     /**
@@ -719,7 +783,7 @@ object EngineHostClient {
         }
     }
 
-    private fun connection(
+    internal fun connection(
         context: Context,
         engineId: String
     ): HostConnection {
@@ -735,7 +799,7 @@ object EngineHostClient {
  * بناءان على الواجهة، واستقبال `onBindingDied`/موت الـBinder بإعادة
  * بناء الربط عند النداء التالي.
  */
-private class HostConnection(
+internal class HostConnection(
     context: Context,
     private val engineId: String
 ) {
@@ -748,13 +812,17 @@ private class HostConnection(
     }
 
     private val app = context.applicationContext
-    private val mutex = Mutex()
+    private val bindMutex = Mutex()
 
     @Volatile
     private var service: IEmbeddedEngineHost? = null
 
     @Volatile
     private var bound = false
+
+    @Volatile
+    var connectionGeneration: Long = 0L
+        private set
 
     /** إشارة اكتمال آخر بناء — تتبدّل في كل محاولة بناء. */
     @Volatile
@@ -766,13 +834,20 @@ private class HostConnection(
             name: ComponentName?,
             binder: IBinder?
         ) {
+            val thisGen = connectionGeneration
             val connected = IEmbeddedEngineHost.Stub.asInterface(binder)
             if (connected == null) {
-                // ربطٌ بلا واجهة (بيئة اختبار أو خدمة غير مطابقة): لا
-                // نخزّن خدمة غير صالحة ولا نُكمل الإشارة بها.
                 bound = false
                 failSignal()
                 Log.e(TAG, "ربطٌ بلا واجهة للمضيف $engineId")
+                return
+            }
+            if (thisGen < EngineHostClient.hostGeneration.get()) {
+                Log.w(
+                    TAG,
+                    "تجاهل onServiceConnected لجيل قديم $thisGen " +
+                        "للمضيف $engineId"
+                )
                 return
             }
             service = connected
@@ -791,27 +866,27 @@ private class HostConnection(
                 }
             }
             try {
-                binder?.linkToDeath({ onBinderDied() }, 0)
+                binder?.linkToDeath({ onBinderDied(thisGen) }, 0)
             } catch (t: RemoteException) {
-                onBinderDied()
+                onBinderDied(thisGen)
                 return
             }
             signal.complete(connected)
-            Log.i(TAG, "اتصل المضيف $engineId")
+            Log.i(TAG, "اتصل المضيف $engineId (جيل=$thisGen)")
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            // ماتت العملية: المنظومة تعيد تشغيلها وتستدعي الربط ثانية.
+            val gen = connectionGeneration
             service = null
-            EngineHostClient.onHostDied(engineId)
-            Log.w(TAG, "انفصل المضيف $engineId — ستعيده المنظومة")
+            Log.w(TAG, "انفصل المضيف $engineId (جيل=$gen)")
+            EngineHostClient.notifyHostDied(engineId, gen)
         }
 
         override fun onBindingDied(name: ComponentName?) {
-            // ربطٌ ميت لا يُستعاد تلقائياً: نظّفه ليُبنى من جديد.
+            val gen = connectionGeneration
             drop()
-            EngineHostClient.onHostDied(engineId)
-            Log.w(TAG, "مات ربط المضيف $engineId")
+            Log.w(TAG, "مات ربط المضيف $engineId (جيل=$gen)")
+            EngineHostClient.notifyHostDied(engineId, gen)
         }
 
         override fun onNullBinding(name: ComponentName?) {
@@ -824,28 +899,69 @@ private class HostConnection(
     /** الخدمة الحالية إن كانت حيّة (بلا بناء). */
     fun current(): IEmbeddedEngineHost? = service
 
-    /** خدمة صالحة: البناء متزامن بمفتاح واحد فلا يتداخل طلبان. */
+    /** خدمة صالحة: البناء لا يعلّق Mutex أثناء انتظار Binder. */
     suspend fun service(): IEmbeddedEngineHost? {
         service?.let { return it }
-        mutex.withLock {
+        val mySignal: CompletableDeferred<IEmbeddedEngineHost>
+        bindMutex.withLock {
             service?.let { return it }
-            return bindLocked()
+            if (bound && !signal.isCompleted) {
+                mySignal = signal
+            } else {
+                if (!VisibleEngines.isVisible(engineId)) {
+                    Log.d(
+                        TAG,
+                        "تجاوز ربط المحرك $engineId لأنه مخفي في التصفية"
+                    )
+                    return null
+                }
+                if (bound) {
+                    runCatching { app.unbindService(callback) }
+                    bound = false
+                }
+                connectionGeneration =
+                    EngineHostClient.hostGeneration.get()
+                signal = CompletableDeferred()
+                mySignal = signal
+                val intent = Intent(
+                    app, EmbeddedEngineHostService::class.java
+                )
+                val asked = try {
+                    app.bindService(
+                        intent, callback, Context.BIND_AUTO_CREATE
+                    )
+                } catch (t: Throwable) {
+                    Log.e(
+                        TAG,
+                        "bindService رُفض لـ$engineId: ${t.message}"
+                    )
+                    false
+                }
+                if (!asked) return null
+                bound = true
+            }
+        }
+        return try {
+            withTimeoutOrNull(BIND_TIMEOUT_MS) { mySignal.await() }
+        } catch (t: CancellationException) {
+            throw t
+        } catch (_: Throwable) {
+            null
         }
     }
 
-    /** نظّف الربط (إعادة محاولة بعد الموت). */
-    suspend fun invalidate() {
-        mutex.withLock { drop() }
+    /** نظّف الربط محلياً دون توليد أحداث موت أو جدولة تعافٍ. */
+    fun invalidate() {
+        drop()
     }
 
-    /** إغلاق نهائي عند إصدار المحرك — ينتظر بناءً جارياً لا يتركه. */
+    /** إغلاق نهائي عند إصدار المحرك. */
     fun close() {
-        runBlocking { mutex.withLock { drop() } }
+        drop()
     }
 
     private fun drop() {
         service = null
-        EngineHostClient.onHostDied(engineId)
         if (bound) {
             bound = false
             runCatching { app.unbindService(callback) }
@@ -862,38 +978,11 @@ private class HostConnection(
         }
     }
 
-    private fun onBinderDied() {
+    private fun onBinderDied(gen: Long) {
         service = null
-        EngineHostClient.onHostDied(engineId)
         failSignal()
-    }
-
-    private suspend fun bindLocked(): IEmbeddedEngineHost? {
-        if (!VisibleEngines.isVisible(engineId)) {
-            Log.d(TAG, "تجاوز ربط المحرك $engineId لأنه مخفي في التصفية")
-            return null
-        }
-        if (bound) {
-            runCatching { app.unbindService(callback) }
-            bound = false
-        }
-        signal = CompletableDeferred()
-        val intent = Intent(app, EmbeddedEngineHostService::class.java)
-        val asked = try {
-            app.bindService(intent, callback, Context.BIND_AUTO_CREATE)
-        } catch (t: Throwable) {
-            Log.e(TAG, "bindService رُفض لـ$engineId: ${t.message}")
-            false
-        }
-        if (!asked) return null
-        bound = true
-        return try {
-            withTimeoutOrNull(BIND_TIMEOUT_MS) { signal.await() }
-        } catch (t: CancellationException) {
-            throw t
-        } catch (_: Throwable) {
-            null
-        }
+        Log.w(TAG, "مات binder المضيف $engineId (جيل=$gen)")
+        EngineHostClient.notifyHostDied(engineId, gen)
     }
 }
 
