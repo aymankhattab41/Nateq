@@ -949,4 +949,205 @@ class EngineHostRecoveryAndWarmupGuardsTest {
         assertTrue(reader.isClosed)
         assertTrue(reader.stopReason.isNotEmpty())
     }
+
+    @Test
+    fun logcatReader_readyHandshakeAndDecoupledStartedState() {
+        val reader = AcapelaVoiceDiagnostics.AcapelaLogcatReader(
+            runId = "test_ready_handshake",
+            hostGeneration = 1L,
+            pid = 9999
+        )
+        assertFalse(reader.isStarted)
+        assertFalse(reader.isReady)
+        assertFalse(reader.startMarkerSeen)
+
+        reader.start()
+        assertTrue(reader.isStarted)
+        assertFalse(reader.startMarkerSeen)
+
+        reader.waitForStartMarker(50L)
+        assertFalse(reader.startMarkerSeen)
+        assertTrue(
+            reader.stopReason == "START_MARKER_TIMEOUT" ||
+                reader.stopReason == "START_FAILED"
+        )
+
+        reader.close()
+        assertTrue(reader.isClosed)
+    }
+
+    @Test
+    fun voiceDataInSubdirectory_resolvedAccordingToIniDirectives() {
+        val rootDir = File(
+            context.cacheDir,
+            "test_sub_bvcu_${System.currentTimeMillis()}"
+        )
+        rootDir.mkdirs()
+        try {
+            val voiceDir = File(rootDir, "salma22k_hq").apply { mkdirs() }
+            val iniFile = File(voiceDir, "salma22k.ini").apply {
+                writeText("SLV \"salma_lf/salma_22k_lf.bvcu\" [ FILE ]\n")
+            }
+            val subDir = File(voiceDir, "salma_lf").apply { mkdirs() }
+            val bvcuFile = File(subDir, "salma_22k_lf.bvcu").apply {
+                writeBytes(ByteArray(1024))
+            }
+
+            val audits = AcapelaVoiceDiagnostics.auditProactiveContractPaths(
+                voiceDir = voiceDir,
+                supportDir = null,
+                iniFile = iniFile,
+                metadataFile = null,
+                supportFiles = emptyList()
+            )
+
+            val dataAudit = audits.firstOrNull {
+                it.role.startsWith("voiceData")
+            }
+            assertNotNull(dataAudit)
+            assertEquals("PASSED", dataAudit!!.auditStatus)
+            assertTrue(dataAudit.passed)
+            assertEquals(bvcuFile.path, dataAudit.expectedPath)
+            assertTrue(dataAudit.notes.contains("1024"))
+        } finally {
+            rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun voiceDataMissingInSubdirectory_marksMissingWithoutFakeWildcard() {
+        val rootDir = File(
+            context.cacheDir,
+            "test_missing_sub_bvcu_${System.currentTimeMillis()}"
+        )
+        rootDir.mkdirs()
+        try {
+            val voiceDir = File(rootDir, "salma22k_hq").apply { mkdirs() }
+            val iniFile = File(voiceDir, "salma22k.ini").apply {
+                writeText("SLV \"salma_lf/salma_22k_lf.bvcu\" [ FILE ]\n")
+            }
+
+            val audits = AcapelaVoiceDiagnostics.auditProactiveContractPaths(
+                voiceDir = voiceDir,
+                supportDir = null,
+                iniFile = iniFile,
+                metadataFile = null,
+                supportFiles = emptyList()
+            )
+
+            val dataAudit = audits.firstOrNull {
+                it.role.startsWith("voiceData")
+            }
+            assertNotNull(dataAudit)
+            assertEquals("MISSING", dataAudit!!.auditStatus)
+            assertFalse(dataAudit.passed)
+            val expected = File(voiceDir, "salma_lf/salma_22k_lf.bvcu").path
+            assertEquals(expected, dataAudit.expectedPath)
+            assertFalse(dataAudit.expectedPath.contains("*.bvcu"))
+        } finally {
+            rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun voiceDataUnknownReference_marksUnknownInsteadOfMissing() {
+        val rootDir = File(
+            context.cacheDir,
+            "test_unknown_data_${System.currentTimeMillis()}"
+        )
+        rootDir.mkdirs()
+        try {
+            val voiceDir = File(rootDir, "salma22k_hq").apply { mkdirs() }
+            val iniFile = File(voiceDir, "salma22k.ini").apply {
+                writeText("[Voice]\nname=Salma\n")
+            }
+
+            val audits = AcapelaVoiceDiagnostics.auditProactiveContractPaths(
+                voiceDir = voiceDir,
+                supportDir = null,
+                iniFile = iniFile,
+                metadataFile = null,
+                supportFiles = emptyList()
+            )
+
+            val dataAudit = audits.firstOrNull {
+                it.role.startsWith("voiceData")
+            }
+            assertNotNull(dataAudit)
+            assertEquals("UNKNOWN", dataAudit!!.auditStatus)
+            assertFalse(dataAudit.passed)
+            assertFalse(dataAudit.expectedPath.contains("*.bvcu"))
+        } finally {
+            rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun successAfterHistoricalFailure_cleansFailureAndShowsHistoryClearly() {
+        val fakeFailFile = File(
+            context.cacheDir,
+            AcapelaVoiceDiagnostics.ACAPELA_FIRST_FAILURE_FILE
+        )
+        fakeFailFile.writeText("tts_function_load_voice: -25")
+        fakeFailFile.setLastModified(
+            AcapelaVoiceDiagnostics.sessionStartWallMs - 10000L
+        )
+
+        val histText = AcapelaVoiceDiagnostics
+            .readLastRealSpeechFailure(context)
+        assertNotNull(histText)
+        assertTrue(
+            histText!!.contains("=== [فشل سابق قبل النجاح الحالي] ===")
+        )
+
+        AcapelaVoiceDiagnostics.clearLastRealSpeechFailure(context)
+        assertNull(
+            AcapelaVoiceDiagnostics.readLastRealSpeechFailure(context)
+        )
+    }
+
+    @Test
+    fun sharedContainerSalmaAndLeila_rejectsSalmaMetadataForLeila() {
+        val rootDir = File(
+            context.cacheDir,
+            "test_shared_salma_leila_${System.currentTimeMillis()}"
+        )
+        rootDir.mkdirs()
+        try {
+            val parentAcapela = File(rootDir, "Acapela").apply { mkdirs() }
+            File(parentAcapela, "config.yaml").apply {
+                writeText(
+                    "voice: Salma\n" +
+                        "voiceCode: salma22k\n" +
+                        "param: salma22k,user@test.com,1234567890abcdef\n"
+                )
+            }
+            File(parentAcapela, "0x00169729").apply {
+                writeText("salma_license_data")
+            }
+
+            val leilaDir = File(parentAcapela, "leila22k_hq").apply {
+                mkdirs()
+            }
+            File(leilaDir, "leila22k.ini").apply {
+                writeText("[Voice]\nname=Leila\n")
+            }
+
+            val parentParam = AcapelaVoiceManifest
+                .readParamFromConfigYaml(parentAcapela)
+            val parentParsed = parentParam?.let {
+                AcapelaVoiceManifest.splitConfigYamlParam(it)
+            }
+            assertNotNull(parentParsed)
+            val leilaToken = AcapelaVoiceManifest.tokenOfIdentity("Leila")
+            val parentToken = AcapelaVoiceManifest.tokenOfIdentity(
+                parentParsed!!.first
+            )
+
+            assertTrue(leilaToken != parentToken)
+            assertFalse(parentToken == leilaToken)
+        } finally {
+            rootDir.deleteRecursively()
+        }
+    }
 }

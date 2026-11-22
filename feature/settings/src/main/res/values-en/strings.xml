@@ -732,6 +732,7 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Fixed Logcat reader lifecycle with ready handshake (CountDownLatch) and concurrent bounded stderr reading to prevent stream blocking, preserved markers against R8 release stripping using Log.w, decoupled started state from marker detection, accurately verified ini relative voice dependencies (bvcu/SLV/SLL) without false fopen failure warnings, aligned diagnostic summary with verified trial results while isolating historical failures, and guarded voice support context with strict identity mismatch rejection (SUPPORT_IDENTITY_MISMATCH).
 • Proven Acapela initialization and file-open contract (_Z13check_licensev and 0x*) via native library disassembly, non-destructive proactive contract path auditing and license resource checks with explicit native interception disclaimer, non-destructive adaptation of verified 0x* support files into verified package folder with strict identity mismatch rejection, concise first-failure summary with decoupled listings in diagnostics, and robust logcat reader lifecycle with guaranteed finally cleanup.
 • Captured Acapela initialization evidence via a decoupled tri-state model (LOADED/LOAD_FAILED/EVIDENCE_UNAVAILABLE) preventing missing evidence from claiming success or unmeasured native crashes, streamed PID-specific threadtime logcat bounded by runId, host generation, and PID, verified freshness of logfile.txt while excluding stale logs, identified true eb=-25 (E_BABILE_NULLARG) rejection conditions via disassembly and contract audit, eliminated silent fallbacks to old registrations, and preserved safe audit verdicts and lengths while maintaining idempotent redaction.
 • Unified Acapela file source and metadata resolution from verified package exclusively with unified ResolvedVerifiedPackage object, strict identity matching before native calls, safe JNI contract auditing and NULLARG diagnostics, permanent idempotent redaction of sensitive credentials with [محجوب], and unique attempt boundary calibration across runId, host generation, and PID.
@@ -766,21 +767,20 @@
 • Fully restored "Read later": an independent card after the Text reading section to save texts from apps and read/stop/delete them with persistent storage and history, deduplication on redelivery, removal of queue purging, and backup/restore support while keeping only real existing data.
 • Acapela (Salma) voice path fix: unified config.yaml lookup preventing false CONFIG_YAML_MISSING, reaching nInit/nSpeak, and recording speech trial logs.
 • Comprehensive Acapela voice path fix: unified discovery, authentic ini verification, dependency checks, single-run live diagnostics, and multiline secret redaction.
-Version %1$s
 • Removed "Default" voice category and linked reading voice to language engine, and fixed "Read more" message expansion in WhatsApp and WhatsApp Business.
 • Authentic Acapela overhaul: prevented fabricated ini generation, verified PRO/SLV/NLP dependencies, single live run with runId, WAV export on PCM, and host client fixes.
 • Accessibility and Egyptian speech processing: focus event subscription, immediate serviceInfo refresh, unhidden summaries, and engine-aware diacritics.
 • Enabled features 1–5: Egyptian speech processing, dynamic speed per segment, multi-voice reader, and unlabeled element descriptions and custom labels.
-• Fixes and integration for this release: resolved new feature key contract/override conflicts and completed dialogue/narration role handling in planning and synthesis, added missing Arabic feature strings, fixed the label-management delete button reference and removed a BOM from the voice selection layout, plus targeted unit tests for Egyptian processing, dynamic speed, and dialogue/narration split/planning.
-• Reverted items 6 and 7: removed network security restrictions and SHA-256-verified voice-provider downloads, removed the first-speech baseline benchmark scenario, and cleaned related code and changelog.
-• Completed item 9 (accessibility): improved labels/states for interactive elements in settings and voice selection, announced collapsible section state and moved focus on expand/collapse, with dynamic accessibility and resource translation updates.
-• Completed item 14 (safe refactoring): extracted delegates/extensions for SettingsRepository and VoiceSelectionFragment (announcement templates, text processing/conversion, phone/keyboard input, general settings, device health/battery and audio cues, caller announcement, and UI actions/helpers) while preserving behavior and public contracts.
-• Accessibility and live-reading responsiveness: cache the home launcher package (invalidate on package changes) to avoid PackageManager queries on every tap, restrict FLAG_INCLUDE_NOT_IMPORTANT_VIEWS to required cases, and use a 100ms notification timeout for live/chat and Read more with content-change throttling preserved.
-• Logic cleanup: moved recurring Regex patterns to companion object constants in number, planning, accessibility, and TTS settings automation paths.
-• UI/i18n improvements: moved hardcoded layout texts to string resources with English translations (speed dial) and verified no remaining hardcoded Arabic layout texts.
-• Repeat last spoken: limited history to the last 10 items while relying on policies that exclude sensitive texts (e.g. OTP-like codes) and caller announcements.
-• YouTube ad skip (experimental): an accessibility option that tries to auto-click the Skip ad button (Arabic/English) in YouTube only, announces Ad skipped, and performs a lightweight periodic check.
-• Comprehensive Vocalizer voice fixes (1-12): unified names/aliases (Tarek/Tariq/Tarik, Leila/Layla) and BCP-47 language matching, no silent selection for language-only IDs with clear reason, distinct Tarik variants (Compact/High) by variant/header identity with legacy value compatibility, voice completeness via.dat referenced by.hdr with unified recursive scan, no silent drop of empty language and propagated list-voices failure reasons with raw logging, preview text by language tag only, conversion dialog without silent drop/selection with audible absence reasons and save/enable handling, normalized mixed-text segLang/convertLang comparison, and audible announcement on VOICE_NOT_FOUND/LOAD_VOICE_FAILED while preserving the error reason.
+• Fixes and integration: handled dialogue and narration roles, added missing strings, fixed delete button in labels, and unit tests.
+• Reverted items 6 and 7: removed network security restrictions, SHA-256 downloads, and first-speech scenario from baseline.
+• Accessibility improvements: refined interactive element descriptions and states in settings and voice selection.
+• Safe refactoring: extracted delegates and extensions for SettingsRepository and VoiceSelectionFragment.
+• Reading responsiveness: cached home launcher package and refined live-reading notification delays.
+• Logic cleanup: moved recurring Regex patterns to companion object constants across number and layout paths.
+• UI/i18n improvements: moved layout strings to resources with English translations and verified layouts.
+• Repeat last spoken: limited history to 10 items with sensitive text exclusions and caller announcements.
+• YouTube ad skip (experimental): accessibility option to auto-click skip button with audio announcement.
+• Comprehensive Vocalizer fixes: unified aliases and BCP-47 matching, distinguished Tariq variants, verified .dat/.hdr completeness, and audible failure reports.
 • Voice save is reported successful only after a real success; failures are audible and visible.
 • Switching engines with unsaved edits offers Save/Discard/Cancel with no silent loss.
 • Voice-to-engine matching ignores whitespace and letter case, with an audible rejection.
@@ -926,7 +926,7 @@ Version %1$s
 • Applied engine filtering to default event voices (clock, battery…
 • Added Emergency Voice fallback system and Crash Guard for automatic…
 • Protected number category and Vocalizer / Acapela engines against…
-    </string>
+</string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
     <string name="diagnostics_copy">Copy</string>

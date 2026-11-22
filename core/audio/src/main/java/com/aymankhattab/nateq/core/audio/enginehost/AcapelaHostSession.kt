@@ -2677,6 +2677,7 @@ internal class AcapelaHostSession(
 
         try {
             logcatReader.start()
+            logcatReader.waitForReady(300L)
             logcatReader.emitStartMarker()
             val startMarkerSeen = logcatReader.waitForStartMarker(500L)
             val startMarker = logcatReader.startMarker
@@ -3063,8 +3064,16 @@ internal class AcapelaHostSession(
                 supportFiles = resolvedPackage.supportFiles
             )
 
-        val firstProactiveFailure = proactiveAudits.firstOrNull { !it.passed }
+        val isSynthesizedOk = speakInvoked && (finalSpeakCode == 0) &&
+            ((totalSamples ?: 0L) > 0L)
+        val isTrialSuccessful = isSynthesizedOk &&
+            (ebCode == null || ebCode == 0 || ebCode == 1)
+
+        val firstProactiveFailure = proactiveAudits.firstOrNull {
+            it.auditStatus == "MISSING" || it.auditStatus == "FAILED"
+        }
         val firstProvenFailedResource = when {
+            isSynthesizedOk -> "لا يوجد (نجاح حقيقي)"
             firstProactiveFailure != null ->
                 "${firstProactiveFailure.role} " +
                     "(${firstProactiveFailure.expectedPath})"
@@ -3078,6 +3087,7 @@ internal class AcapelaHostSession(
             else -> "غير محدد"
         }
         val failedStage = when {
+            isSynthesizedOk -> "NONE (نجاح حقيقي)"
             firstProactiveFailure != null -> "PROACTIVE_VERIFICATION"
             nativeTail.any {
                 it.contains("error opening file", ignoreCase = true) ||
@@ -3091,17 +3101,33 @@ internal class AcapelaHostSession(
             else -> "NONE"
         }
 
+        val pcmBytesCount = if (pcmInvoked) {
+            audioHandler.pcmBytes.size().toLong()
+        } else {
+            null
+        }
+
         val sb = StringBuilder()
         sb.appendLine("=== [ملخص تجربة تحميل الصوت] ===")
+        if (isSynthesizedOk) {
+            sb.appendLine(
+                "  * النتيجة: نجاح حقيقي (تم تحميل الصوت والنطق وإنتاج " +
+                    "${totalSamples ?: 0L} عينة PCM)"
+            )
+        } else {
+            sb.appendLine("  * النتيجة: فشل")
+        }
         sb.appendLine("  * أول مورد فاشل مثبت: $firstProvenFailedResource")
         sb.appendLine("  * المرحلة: $failedStage")
         sb.appendLine("  * مصدر الدليل: $evidenceSource")
-        sb.appendLine("  * كود eb: ${ebCode ?: "غير مقيس"}")
-        sb.appendLine(
-            "  * استدعاء nSpeak: $speakInvoked " +
-                "(كود=${finalSpeakCode ?: "غير مقيس"})"
-        )
+        val ebDesc = if (isSynthesizedOk && ebCode == null) "0 (ناجح)"
+        else (ebCode ?: "غير مقيس")
+        sb.appendLine("  * كود eb: $ebDesc")
+        val speakCodeDesc = finalSpeakCode
+            ?: (if (isSynthesizedOk) 0 else "غير مقيس")
+        sb.appendLine("  * استدعاء nSpeak: $speakInvoked (كود=$speakCodeDesc)")
         sb.appendLine("  * عينات PCM: ${totalSamples ?: "غير مقيس"}")
+        sb.appendLine("  * بايتات PCM: ${pcmBytesCount ?: "غير مقيس"}")
         sb.appendLine(
             "  * عملية المضيف: PID=$myPid | " +
                 "HostGen=$hostGen | RunId=$runId"
@@ -3111,9 +3137,12 @@ internal class AcapelaHostSession(
                 AcapelaVoiceDiagnostics.NATIVE_INTERCEPTION_DISCLAIMER
         )
         sb.appendLine(
-            "  * حالة القارئ: بدأ=$startMarkerSeen | " +
-                "انتهى=${logcatReader.endMarkerSeen} | " +
+            "  * حالة القارئ: مشغّل=${logcatReader.isStarted} | " +
+                "جاهز=${logcatReader.isReady} | " +
+                "علامة_البدء=$startMarkerSeen | " +
+                "علامة_الانتهاء=${logcatReader.endMarkerSeen} | " +
                 "أسطر=${logcatReader.linesCount} | " +
+                "كود_الخروج=${logcatReader.exitCode ?: "نشط"} | " +
                 "سبب_التوقف=${logcatReader.stopReason}"
         )
         if (evidenceSource == "logfile.txt") {
@@ -3431,12 +3460,6 @@ internal class AcapelaHostSession(
         Log.i(TAG, logOutput)
         HostLog.i(HostProtocol.ENGINE_ACAPELA, logOutput)
 
-        val pcmBytesCount = if (pcmInvoked) {
-            audioHandler.pcmBytes.size().toLong()
-        } else {
-            null
-        }
-
         return VoiceLoadTrialResult(
             method = label,
             path = stagePath,
@@ -3656,34 +3679,43 @@ internal class AcapelaHostSession(
                 null to "NONE"
             }
 
-            // ملفات الدعم المرشحة في سياق الدعم
-            val supportYaml = supportDir?.let { dir ->
-                File(dir, "config.yaml").takeIf { it.isFile }
-                    ?: AcapelaVoiceManifest.findConfigYamlWithParam(dir)?.first
+            // 1. فحص ملفات config.yaml المباشرة دون مسح مجلدات أصوات شقيقة
+            val directYaml = File(verifiedDir, "config.yaml")
+                .takeIf { it.isFile }
+            val parentYaml = parentContainer?.let {
+                File(it, "config.yaml").takeIf { f -> f.isFile }
             }
-            val supportHexList = supportDir?.listFiles { f ->
-                f.isFile && f.name.matches(
-                    AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
-                ) && f.length() > 0L
-            }?.toList().orEmpty()
 
-            // التحقق من ملكية ملف الدعم لنفس الحزمة وهوية الصوت
-            if (supportYaml != null) {
-                val yamlParam = AcapelaVoiceManifest
-                    .readParamFromConfigYaml(supportYaml.parentFile)
-                val parsed = yamlParam?.let {
+            fun isYamlMatchingSpeaker(yamlFile: File?): Boolean? {
+                if (yamlFile == null) return null
+                val param = AcapelaVoiceManifest
+                    .readParamFromConfigYaml(yamlFile.parentFile)
+                val parsed = param?.let {
                     AcapelaVoiceManifest.splitConfigYamlParam(it)
                 }
                 if (parsed != null) {
-                    val (yamlVoice, _, _) = parsed
-                    val yamlVoiceToken =
-                        AcapelaVoiceManifest.tokenOfIdentity(yamlVoice)
-                    if (yamlVoiceToken != null && speakerToken != null &&
-                        yamlVoiceToken != speakerToken
-                    ) {
+                    val yToken = AcapelaVoiceManifest.tokenOfIdentity(
+                        parsed.first
+                    )
+                    return yToken == speakerToken
+                }
+                return yamlFile.parentFile.canonicalPath ==
+                    verifiedDir.canonicalPath
+            }
+
+            if (parentYaml != null) {
+                val parentMatches = isYamlMatchingSpeaker(parentYaml)
+                if (parentMatches == false) {
+                    val parentParam = AcapelaVoiceManifest
+                        .readParamFromConfigYaml(parentContainer)
+                    val parentParsed = parentParam?.let {
+                        AcapelaVoiceManifest.splitConfigYamlParam(it)
+                    }
+                    val otherVoice = parentParsed?.first ?: "آخر"
+                    if (directYaml == null && !hasHexDirect) {
                         val mismatchMsg = "ملف الدعم (config.yaml) في " +
-                            "${supportDir?.name} يخص صوتاً آخر " +
-                            "($yamlVoice) ولا يطابق الصوت " +
+                            "${parentContainer.name} يخص صوتاً آخر " +
+                            "($otherVoice) ولا يطابق الصوت " +
                             "المطلوب ($expectedSpeaker)"
                         Log.e(TAG, mismatchMsg)
                         return HostResult.failure(
@@ -3694,15 +3726,27 @@ internal class AcapelaHostSession(
                 }
             }
 
-            // التحقق من ملف 0x... في سياق الدعم وربطه بهوية الصوت
-            val matchedHexFile: File? = if (supportHexList.size == 1) {
-                supportHexList.first()
-            } else if (supportHexList.size > 1) {
-                val yamlHex = supportYaml?.let {
-                    AcapelaVoiceManifest.readParamFromConfigYaml(it.parentFile)
-                }?.let { AcapelaVoiceManifest.splitConfigYamlParam(it) }
+            val supportYaml = when {
+                isYamlMatchingSpeaker(directYaml) == true -> directYaml
+                isYamlMatchingSpeaker(parentYaml) == true -> parentYaml
+                directYaml != null -> directYaml
+                else -> null
+            }
+
+            val supportHexList = supportDir?.listFiles { f ->
+                f.isFile && f.name.matches(
+                    AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
+                ) && f.length() > 0L
+            }?.toList().orEmpty()
+
+            val matchedHexFile: File? = if (hasHexDirect) {
+                AcapelaVoiceManifest.findHexRegistrationFile(verifiedDir)
+            } else if (supportYaml != null) {
+                val yamlHex = AcapelaVoiceManifest
+                    .readParamFromConfigYaml(supportYaml.parentFile)
+                    ?.let { AcapelaVoiceManifest.splitConfigYamlParam(it) }
                     ?.third?.trim()
-                if (yamlHex != null) {
+                if (!yamlHex.isNullOrBlank()) {
                     supportHexList.firstOrNull {
                         it.name.equals(yamlHex, ignoreCase = true) ||
                             it.name.equals(
@@ -3710,6 +3754,8 @@ internal class AcapelaHostSession(
                                 ignoreCase = true
                             )
                     }
+                } else if (supportHexList.size == 1) {
+                    supportHexList.first()
                 } else {
                     val mismatchMsg = "تعدد ملفات الترخيص " +
                         "(${supportHexList.size}) في سياق الدعم " +
@@ -3720,7 +3766,26 @@ internal class AcapelaHostSession(
                         mismatchMsg
                     )
                 }
-            } else null
+            } else if (supportHexList.size == 1 &&
+                supportRelation != "PARENT_CONTAINER"
+            ) {
+                supportHexList.first()
+            } else {
+                null
+            }
+
+            if (!hasHexDirect && matchedHexFile == null &&
+                supportRelation == "PARENT_CONTAINER"
+            ) {
+                val mismatchMsg = "حزمة الصوت $expectedSpeaker لا تحتوي على " +
+                    "ملفات دعم أو ترخيص موثق خاص بها داخل " +
+                    "${verifiedDir.name} أو حاويتها المشتركة"
+                Log.e(TAG, mismatchMsg)
+                return HostResult.failure(
+                    "SUPPORT_IDENTITY_MISMATCH",
+                    mismatchMsg
+                )
+            }
 
             val verifiedSupportFiles = listOfNotNull(
                 supportYaml,
@@ -3961,6 +4026,7 @@ internal class AcapelaHostSession(
                 val trialKey = "$voiceKey|$regToUse"
                 consecutiveTrialFailures.remove(trialKey)
                 failedTrialKey = null
+                AcapelaVoiceDiagnostics.clearLastRealSpeechFailure(context)
                 runCatching {
                     com.aymankhattab.nateq.core.audio.engine
                         .SpeechFallbackTracker.clearAcapelaFallbackState()

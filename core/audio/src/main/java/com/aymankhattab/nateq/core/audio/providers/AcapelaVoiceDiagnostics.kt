@@ -3036,6 +3036,8 @@ object AcapelaVoiceDiagnostics {
 
         @Volatile var isStarted: Boolean = false
             private set
+        @Volatile var isReady: Boolean = false
+            private set
         @Volatile var isClosed: Boolean = false
             private set
         @Volatile var startMarkerSeen: Boolean = false
@@ -3053,6 +3055,18 @@ object AcapelaVoiceDiagnostics {
         @Volatile var releaseLoggingEnabled: Boolean = true
             private set
 
+        private val readyLatch = java.util.concurrent.CountDownLatch(1)
+        private var errorReaderThread: Thread? = null
+
+        fun waitForReady(timeoutMs: Long = 300L): Boolean {
+            return runCatching {
+                readyLatch.await(
+                    timeoutMs,
+                    java.util.concurrent.TimeUnit.MILLISECONDS
+                )
+            }.getOrDefault(false)
+        }
+
         fun start() {
             if (isStarted || isClosed) return
             isStarted = true
@@ -3067,6 +3081,8 @@ object AcapelaVoiceDiagnostics {
                 process = proc
 
                 val thread = Thread({
+                    readyLatch.countDown()
+                    isReady = true
                     runCatching {
                         proc.inputStream.bufferedReader(StandardCharsets.UTF_8)
                             .useLines { lines ->
@@ -3094,20 +3110,46 @@ object AcapelaVoiceDiagnostics {
                 thread.isDaemon = true
                 thread.start()
                 streamReaderThread = thread
+
+                val errThread = Thread({
+                    runCatching {
+                        proc.errorStream
+                            .bufferedReader(StandardCharsets.UTF_8)
+                            .useLines { lines ->
+                                val errLines = mutableListOf<String>()
+                                for (line in lines) {
+                                    if (isClosed || errLines.size >= 50) break
+                                    val trimmed = line.trim()
+                                    if (trimmed.isNotEmpty()) {
+                                        errLines.add(trimmed)
+                                    }
+                                }
+                                if (errLines.isNotEmpty()) {
+                                    standardError = redactSensitiveText(
+                                        errLines.joinToString(" | ")
+                                    )
+                                }
+                            }
+                    }
+                }, "AcapelaLogcatErr-$runId")
+                errThread.isDaemon = true
+                errThread.start()
+                errorReaderThread = errThread
             } catch (t: Throwable) {
                 isLogcatAvailable = false
                 releaseLoggingEnabled = false
+                readyLatch.countDown()
                 stopReason = "START_FAILED"
                 standardError = redactSensitiveText(t.message ?: t.toString())
             }
         }
 
         fun emitStartMarker() {
-            Log.i("acattsandroid-extended-native", startMarker)
+            Log.w("acattsandroid-extended-native", startMarker)
         }
 
         fun emitEndMarker() {
-            Log.i("acattsandroid-extended-native", endMarker)
+            Log.w("acattsandroid-extended-native", endMarker)
         }
 
         fun waitForStartMarker(timeoutMs: Long = 500L): Boolean {
@@ -3192,6 +3234,7 @@ object AcapelaVoiceDiagnostics {
 
         override fun close() {
             isClosed = true
+            readyLatch.countDown()
             if (stopReason.isBlank()) {
                 stopReason = "CLOSED"
             }
@@ -3204,6 +3247,8 @@ object AcapelaVoiceDiagnostics {
             process = null
             streamReaderThread?.interrupt()
             streamReaderThread = null
+            errorReaderThread?.interrupt()
+            errorReaderThread = null
         }
     }
 
@@ -3372,29 +3417,100 @@ object AcapelaVoiceDiagnostics {
             )
         )
 
-        // 6. ملف العينات الصوتية (.bvcu / .dat)
-        val dataFile = voiceDir.listFiles { f ->
-            f.isFile && (f.extension.equals("bvcu", ignoreCase = true) ||
-                f.extension.equals("dat", ignoreCase = true)) &&
-                f.length() > 0L
-        }?.firstOrNull()
-        audits.add(
-            ProactivePathAudit(
-                role = "voiceData (ملف العينات الصوتية)",
-                expectedPath = dataFile?.path ?: "${voiceDir.path}/*.bvcu",
-                exists = dataFile?.exists() == true,
-                isDirectory = false,
-                isFile = dataFile?.isFile == true,
-                canRead = dataFile?.canRead() == true,
-                canonicalPath = dataFile?.let {
-                    runCatching { it.canonicalPath }.getOrNull()
-                },
-                auditStatus = if (dataFile != null && dataFile.exists() &&
-                    dataFile.canRead() && dataFile.length() > 0L
-                ) "PASSED" else "MISSING",
-                notes = "العينات الصوتية التخليقية للمتحدث"
-            )
-        )
+        // 6. ملف العينات الصوتية (.bvcu / .dat) المستخرج من ini أو بنية الحزمة
+        val iniDeps = iniFile?.takeIf { it.isFile }?.let {
+            AcapelaVoiceManifest.parseIniDependencies(it)
+        }.orEmpty()
+        val dataDeps = iniDeps.filter { dep ->
+            dep.key.equals("SLV", ignoreCase = true) ||
+                dep.key.equals("SLL", ignoreCase = true) ||
+                dep.key.equals("BVCU", ignoreCase = true) ||
+                dep.relativePath.endsWith(".bvcu", ignoreCase = true) ||
+                dep.relativePath.endsWith(".dat", ignoreCase = true)
+        }
+
+        if (dataDeps.isNotEmpty()) {
+            for (dep in dataDeps) {
+                val resolved = AcapelaVoiceManifest
+                    .resolveRelativeFile(voiceDir, dep.relativePath)
+                val expected = File(voiceDir, dep.relativePath)
+                val exists = resolved?.exists() == true
+                val isFile = resolved?.isFile == true
+                val canRead = resolved?.canRead() == true
+                val length = resolved?.length() ?: 0L
+                val passed = exists && isFile && canRead && length > 0L
+
+                audits.add(
+                    ProactivePathAudit(
+                        role = "voiceData (${dep.key} ${dep.relativePath})",
+                        expectedPath = expected.path,
+                        exists = exists,
+                        isDirectory = false,
+                        isFile = isFile,
+                        canRead = canRead,
+                        canonicalPath = resolved?.let {
+                            runCatching { it.canonicalPath }.getOrNull()
+                        },
+                        auditStatus = if (passed) "PASSED" else "MISSING",
+                        notes = if (passed) {
+                            "تم التحقق من مسار ini (${length} بايت)"
+                        } else {
+                            "مطلوب وفق ini (${dep.key}) " +
+                                "لكنه غير موجود على القرص"
+                        }
+                    )
+                )
+            }
+        } else {
+            val directFile = voiceDir.listFiles { f ->
+                f.isFile && (f.extension.equals("bvcu", ignoreCase = true) ||
+                    f.extension.equals("dat", ignoreCase = true)) &&
+                    f.length() > 0L
+            }?.firstOrNull() ?: voiceDir.walkTopDown().maxDepth(3)
+                .firstOrNull { f ->
+                    f.isFile && (f.extension.equals(
+                        "bvcu",
+                        ignoreCase = true
+                    ) || f.extension.equals("dat", ignoreCase = true)) &&
+                        f.length() > 0L
+                }
+
+            if (directFile != null) {
+                audits.add(
+                    ProactivePathAudit(
+                        role = "voiceData (ملف العينات الصوتية)",
+                        expectedPath = directFile.path,
+                        exists = true,
+                        isDirectory = false,
+                        isFile = true,
+                        canRead = directFile.canRead(),
+                        canonicalPath = runCatching {
+                            directFile.canonicalPath
+                        }.getOrNull(),
+                        auditStatus = "PASSED",
+                        notes = "عُثر على عينات الصوت في " +
+                            "${directFile.parentFile.name} " +
+                            "(${directFile.length()} بايت)"
+                    )
+                )
+            } else {
+                audits.add(
+                    ProactivePathAudit(
+                        role = "voiceData (ملف العينات الصوتية)",
+                        expectedPath = "${voiceDir.path} " +
+                            "(مرجع غير محدد في ini)",
+                        exists = false,
+                        isDirectory = false,
+                        isFile = false,
+                        canRead = false,
+                        canonicalPath = null,
+                        auditStatus = "UNKNOWN",
+                        notes = "لم يُعثر على توجيه SLV صريح في ini " +
+                            "ولا ملف bvcu في المجلدات"
+                    )
+                )
+            }
+        }
 
         return audits
     }
@@ -3628,8 +3744,8 @@ object AcapelaVoiceDiagnostics {
             val dateStr = SimpleDateFormat(
                 "yyyy-MM-dd HH:mm:ss", Locale.US
             ).format(Date(file.lastModified()))
-            "=== سجل محاولة سابقة من تشغيل منتهٍ ($dateStr) — " +
-                "غير تابع للتشغيل الحالي ===\n$text"
+            "=== [فشل سابق قبل النجاح الحالي] ===\n" +
+                "(سجل محاولة سابقة: $dateStr)\n$text"
         } else {
             text
         }
