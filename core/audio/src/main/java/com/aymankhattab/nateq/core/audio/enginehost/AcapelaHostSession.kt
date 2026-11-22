@@ -3111,11 +3111,16 @@ internal class AcapelaHostSession(
         sb.appendLine("=== [ملخص تجربة تحميل الصوت] ===")
         if (isSynthesizedOk) {
             sb.appendLine(
-                "  * النتيجة: نجاح حقيقي (تم تحميل الصوت والنطق وإنتاج " +
+                "  * النتيجة: نجاح التخليق (تم استدعاء nSpeak وإنتاج " +
                     "${totalSamples ?: 0L} عينة PCM)"
             )
+            sb.appendLine(
+                "  * تنبيه السماع: توليد عينات PCM يثبت قدرة المحرك " +
+                    "التقنية، ولا يُدعى أنه مسموع فعلياً دون تجربة " +
+                    "صوتية مباشرة على الجهاز."
+            )
         } else {
-            sb.appendLine("  * النتيجة: فشل")
+            sb.appendLine("  * النتيجة: فشل التخليق")
         }
         sb.appendLine("  * أول مورد فاشل مثبت: $firstProvenFailedResource")
         sb.appendLine("  * المرحلة: $failedStage")
@@ -3129,6 +3134,11 @@ internal class AcapelaHostSession(
         sb.appendLine("  * عينات PCM: ${totalSamples ?: "غير مقيس"}")
         sb.appendLine("  * بايتات PCM: ${pcmBytesCount ?: "غير مقيس"}")
         sb.appendLine(
+            "  * دلالة التخليق ومستقلّة الدليل: كود nSpeak وعينات PCM " +
+                "يقيسان نجاح التخليق، وهما مستقلان تماماً عن حالة " +
+                "التقاط علامات Logcat."
+        )
+        sb.appendLine(
             "  * عملية المضيف: PID=$myPid | " +
                 "HostGen=$hostGen | RunId=$runId"
         )
@@ -3137,7 +3147,7 @@ internal class AcapelaHostSession(
                 AcapelaVoiceDiagnostics.NATIVE_INTERCEPTION_DISCLAIMER
         )
         sb.appendLine(
-            "  * حالة القارئ: مشغّل=${logcatReader.isStarted} | " +
+            "  * حالة رصد Logcat: مشغّل=${logcatReader.isStarted} | " +
                 "جاهز=${logcatReader.isReady} | " +
                 "علامة_البدء=$startMarkerSeen | " +
                 "علامة_الانتهاء=${logcatReader.endMarkerSeen} | " +

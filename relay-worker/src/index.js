@@ -204,20 +204,23 @@ function rateLimitDecision(record, nowSeconds) {
 }
 
 /**
- * تطبيق قيود المعدل عبر Cloudflare KV (مفتاح لكل مرسل). إن لم يُربط
- * namespace (env.RATE_LIMITS غير موجود) أو أخفق KV يُسمح دائماً — لا يُوقف
- * الناقل أبداً وتُسجَّل الأخطاء فحسب.
+ * تطبيق قيود المعدل عبر Cloudflare KV (مفتاح لكل مرسل).
+ * سياسة واضحة لغياب أو فشل KV:
+ * - إن لم يُربط namespace (env.RATE_LIMITS غير موجود)، يُسمح بالطلب كسياسة
+ *   عدم حظر (fail-open) دون ادعاء حماية وهمية.
+ * - عمليات get وput في Cloudflare KV تتبع الاتساق النهائي (eventually consistent)
+ *   وليست عمليات ذرية (non-atomic).
  */
 async function enforceRateLimit(env, senderId) {
-  if (!env || !env.RATE_LIMITS) return { allowed: true };
+  if (!env || !env.RATE_LIMITS) return { allowed: true, kvConfigured: false };
   const now = Math.floor(Date.now() / 1000);
   const key = `rate:${senderId}`;
   let record = null;
   try {
     record = await env.RATE_LIMITS.get(key, "json");
   } catch (err) {
-    console.error("rate limit get failed:", err);
-    return { allowed: true };
+    console.error("rate limit get failed (eventual consistency):", err);
+    return { allowed: true, kvError: true };
   }
   const decision = rateLimitDecision(record, now);
   if (decision.record !== record) {
@@ -226,10 +229,31 @@ async function enforceRateLimit(env, senderId) {
         expirationTtl: RATE_LIMIT_WINDOW_SECONDS + 60,
       });
     } catch (err) {
-      console.error("rate limit put failed:", err);
+      console.error("rate limit put failed (eventual consistency):", err);
     }
   }
-  return { allowed: decision.allowed };
+  return { allowed: decision.allowed, kvConfigured: true };
+}
+
+/**
+ * فحص وتتبع تكرار update_id لمنع المعالجة المكررة عند إعادة المحاولة من تليجرام.
+ * تتبع الاتساق النهائي لـ KV.
+ */
+async function checkAndMarkUpdateId(env, updateId) {
+  if (updateId === undefined || updateId === null) return { isDuplicate: false };
+  if (!env || !env.RATE_LIMITS) return { isDuplicate: false };
+  const key = `update:${updateId}`;
+  try {
+    const existing = await env.RATE_LIMITS.get(key);
+    if (existing !== null) {
+      return { isDuplicate: true };
+    }
+    await env.RATE_LIMITS.put(key, "1", { expirationTtl: 300 });
+    return { isDuplicate: false };
+  } catch (err) {
+    console.error("update_id dedup check failed:", err);
+    return { isDuplicate: false };
+  }
 }
 
 /**
@@ -297,27 +321,31 @@ async function forwardMessage(env, update) {
   const msg = update.message;
   if (!msg) return "ignored";
 
+  // معالجة تكرار update_id من تليجرام لمنع إرسال مكرر
+  if (update.update_id !== undefined && update.update_id !== null) {
+    const dedup = await checkAndMarkUpdateId(env, update.update_id);
+    if (dedup.isDuplicate) {
+      return "duplicate_update";
+    }
+  }
+
   const from = msg.from || {};
   const senderName = [from.first_name, from.last_name].filter(Boolean).join(" ") || "مستخدِم";
   const handle = from.username ? `@${from.username}` : "ليس له معرّف";
   const senderId = from.id || "؟";
 
-  // أول رسالة: يبدأ المستخدم محادثة البوت
-  if (typeof msg.text === "string" && msg.text.startsWith("/start")) {
-    await sendWithParseFallback(env, msg.chat.id, WELCOME_HTML);
-    return "welcomed";
-  }
-
-  // قيود المعدل تُفحص قبل التوجيه لكل مرسل (نافذة 60 ث / حدّ 20 رسالة).
-  // عند التجاوز نُسقط الطلب بصمت (بلا إرسال أي رد لتليجرام) لئلا يُستغل
-  // الناقل لإغراق البوت بآلاف الرسائل وتعريضه للحظر من تليجرام. يُشار إلى
-  // التجاوز بالرجوع "rate_limited" وهو يُسلَّم إلى تليجرام بـ 200 OK (بند 8.1)
-  // حتى لا يعيد إرسال الرسالة مراراً فيغرق الخادم بدورات حجب ذاتي.
+  // قيود المعدل تُفحص قبل /start وجميع الردود والتوجيه لكل مرسل
   if (from.id !== undefined && from.id !== null) {
     const rate = await enforceRateLimit(env, String(from.id));
     if (!rate.allowed) {
       return "rate_limited";
     }
+  }
+
+  // أول رسالة: يبدأ المستخدم محادثة البوت (بعد التحقق من قيود المعدل)
+  if (typeof msg.text === "string" && msg.text.startsWith("/start")) {
+    await sendWithParseFallback(env, msg.chat.id, WELCOME_HTML);
+    return "welcomed";
   }
 
   // فحص حجم الملفات المرفقة: منع تجاوز الحد الأقصى (10 ميجابايت) — كافٍ للسجلات
@@ -370,8 +398,9 @@ async function forwardMessage(env, update) {
     );
     if (!docRes.ok) {
       console.error("sendDocument failed:", docRes.status, await docRes.text());
+      return "document_send_failed";
     }
-    // إشعار تأكيد للمستخدم عند استلام ملف السجل
+    // إشعار تأكيد للمستخدم عند استلام ملف السجل بنجاح فقط
     await sendWithParseFallback(
       env,
       msg.chat.id,
@@ -479,4 +508,5 @@ export {
   sendVoiceToTelegram,
   sendAudioToTelegram,
   forwardMessage,
+  checkAndMarkUpdateId,
 };

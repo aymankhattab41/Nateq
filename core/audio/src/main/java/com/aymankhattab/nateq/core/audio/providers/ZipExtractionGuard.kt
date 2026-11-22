@@ -28,6 +28,15 @@ internal class ZipExtractionGuard(
 
     /** تحقق من مسار الإدخال وإرجاع الملف الهدف الآمن. */
     fun resolve(entryName: String): File {
+        val normalized = entryName.replace('\\', '/')
+        if (normalized.contains("../") || normalized.contains("/..") ||
+            normalized == ".." || normalized.startsWith("/") ||
+            normalized.matches(Regex("^[a-zA-Z]:.*"))
+        ) {
+            throw SecurityException(
+                "محاولة اختراق مسار عبر Zip Slip أو عبور مجلدات: $entryName"
+            )
+        }
         val target = File(baseDir, entryName)
         val canonicalBase = baseDir.canonicalPath
         val prefix = if (canonicalBase.endsWith(File.separator)) {
@@ -60,10 +69,16 @@ internal class ZipExtractionGuard(
     fun copy(
         input: InputStream,
         output: FileOutputStream,
-        buffer: ByteArray
+        buffer: ByteArray,
+        isCancelled: () -> Boolean = { false }
     ) {
         var read: Int
         while (input.read(buffer).also { read = it } != -1) {
+            if (isCancelled()) {
+                throw java.util.concurrent.CancellationException(
+                    "تم إلغاء الاستخراج من قبل المستخدم"
+                )
+            }
             totalBytes += read.toLong()
             if (totalBytes > maxTotalBytes) {
                 throw SecurityException(

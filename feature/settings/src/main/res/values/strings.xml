@@ -731,6 +731,7 @@
     <string name="read_later_open">فتح «اقرأ لاحقاً»</string>
     <string name="read_later_open_desc">فتح قائمة النصوص المحفوظة للقراءة لاحقاً</string>
     <string name="read_later_saved_toast">تم الحفظ في «اقرأ لاحقاً»</string>
+    <string name="read_later_saved_truncated_toast">تم حفظ النص مقتطعاً لتجاوزه الحد الأقصى</string>
     <string name="read_later_duplicate_toast">النص موجود مسبقاً في «اقرأ لاحقاً»</string>
     <string name="read_later_empty_toast">النص فارغ، لم يتم الحفظ</string>
     <string name="read_later_failed_toast">تعذر الحفظ في «اقرأ لاحقاً»</string>
@@ -742,6 +743,7 @@
     <string name="read_later_back">رجوع</string>
     <string name="read_later_item_actions_title">إجراءات النص</string>
     <string name="changelog_text">
+• إصلاح دورة حياة الإعدادات وحل تعارض العمليات والمزامنة عبر مزود تغييرات مخصص، وتعزيز أمان استيراد الأصوات بمراجعة مسبقة وحدود موارد للأرشيف، وحماية الخصوصية بحجب كلمات المرور والأرقام والنصوص في السجلات عبر بوابة حساسية موحدة، وترقية «اقرأ لاحقاً» بإنهاء القص الصامت ودعم التخزين المخصص بمعرفات ذرية غير متصادمة وتوحيد التطبيع، وتمرير سياق اللغة الحقيقي لمعالجة العملات والوقت والنصوص متعددة اللغات، وضبط تزامن قراءة الشاشة بالتعرف الضوئي (OCR) ومهمة المراقبة الموحدة وتنسيق ساعات الهدوء.
 • إصلاح دورة حياة قارئ Logcat ومصافحة الجاهزية (ready handshake / CountDownLatch) وقراءة تيار الأخطاء لتفادي تعليق القنوات، وحماية علامات البدء والانتهاء من استبعاد R8 في إصدار Release بإرسالها عبر Log.w وفصل حالة التشغيل عن التقاط العلامات، وتدقيق مسارات بيانات الصوت الفرعية والتبعيات النسبية (bvcu/SLV/SLL) في ملفات ini دون تحذير زائف، ومواءمة ملخص التشخيص مع النتيجة الحقيقية لتخليق الصوت مع تصفير الفشل النشط وفصل السجلات التاريخية، وحسم سياق دعم الأصوات (Leila/Salma) برفض خلط الهويات فوراً (SUPPORT_IDENTITY_MISMATCH).
 • إثبات عقد تهيئة Acapela وعطل فتح الملفات (_Z13check_licensev و0x*) بتفكيك المكتبة الأصلية، وتدقيق استباقي غير مدمر لمسارات العقد وموارد الترخيص مع إخلاء مسؤولية صريح لغياب اعتراض JNI للنداءات النظامية، وتكييف غير مدمر لملفات الدعم 0x* من الحاوية الأم إلى مجلد الحزمة المتحقق مع حظر صارم لخلط هويات الأصوات، وهيكلة واضحة لملخص الفشل الأول وفصل القوائم الطويلة في التشخيص، وتطوير دورة حياة قارئ logcat بحالات إغلاق آمنة وتنظيف أخير مؤكد.
 • التقاط أدلة تهيئة Acapela بحالة ثلاثية مستقلة (LOADED/LOAD_FAILED/EVIDENCE_UNAVAILABLE) تمنع اعتبار غياب الدليل نجاحاً أو ادعاء انهيار أصلي غير مقيس، وبدء قارئ logcat مخصص للعملية بصيغة threadtime محدد بـ runId والجيل وPID، واعتماد logfile.txt مصدراً مستقلاً عند حداثته فقط واستبعاد الملفات القديمة، وتحديد شرط الرفض الحقيقي لـ eb=-25 (E_BABILE_NULLARG) بفك وفحص المكتبة الأصلية مع إزالة الرجوع الصامت لتسجيل قديم والتحقق من metadata، وحفظ الأحكام الآمنة وحقول التدقيق كاملة دون حجب جائر وإبقاء الحجب ثابتاً ومتماثل الأثر [محجوب].
@@ -968,6 +970,13 @@
     <string name="acapela_import_select_file">اختر ملف صوت Acapela (.zip)</string>
     <string name="acapela_import_folder_select">اختر مجلد أصوات Acapela من جهازك</string>
     <string name="zip_import_title">استيراد حزمة الأصوات</string>
+    <string name="zip_import_review_title">مراجعة استيراد حزمة الأصوات</string>
+    <string name="zip_import_review_inspecting">جارٍ فحص حزمة الأصوات والمساحة…</string>
+    <string name="zip_import_confirm_button">استيراد</string>
+    <string name="zip_import_cancel_button">إلغاء</string>
+    <string name="zip_import_cancelled_msg">تم إلغاء الاستيراد؛ بقيت أصواتك كما هي دون تغيير.</string>
+    <string name="zip_import_session_busy">هناك عملية استيراد جارية بالفعل. يرجى الانتظار حتى تكتمل أو إلغاؤها.</string>
+    <string name="zip_import_insufficient_space">مساحة التخزين غير كافية للاستيراد: مطلوب %1$s والمتاح %2$s.</string>
     <string name="zip_import_in_progress">جارٍ استيراد حزمة الأصوات: %1$s…</string>
     <string name="zip_import_success_title">اكتمل الاستيراد</string>
     <string name="zip_import_success_msg">تم استيراد الأصوات بنجاح:\n%1$s\n\nأصبحت جاهزة للاستخدام والمعاينة فوراً.</string>

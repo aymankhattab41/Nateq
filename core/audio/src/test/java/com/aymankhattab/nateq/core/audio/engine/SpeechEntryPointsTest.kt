@@ -7,6 +7,7 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -93,5 +94,35 @@ class SpeechEntryPointsTest {
     fun repeatSpellController_spellText_spellsCharNamesNotDictionary() {
         val spelled = RepeatSpellController.spellText("ج")
         assertEquals("جيم", spelled)
+    }
+
+    @Test
+    fun prepare_thousandsOfCalls_preservesSingleSettingsInstance() {
+        SettingsRepository.resetInstanceForTesting()
+        for (i in 1..2000) {
+            SpeechEntryPoints.prepare(
+                rawText = "نص تجريبي لاختبار التكرار $i",
+                source = SpeechEntryPoints.Source.SCREEN_READER,
+                context = context
+            )
+        }
+        assertEquals(
+            1,
+            SettingsRepository.activeInstancesCount.get()
+        )
+        val repo = SettingsRepository.create(context)
+        assertTrue(repo.isObserverRegisteredForTesting())
+        assertTrue(repo.isReceiverRegisteredForTesting())
+
+        repo.setSpeechRate("ar", 1.75f)
+        assertEquals(1.75f, repo.getSpeechRate("ar"), 0.001f)
+
+        repo.unregister()
+        assertFalse(repo.isObserverRegisteredForTesting())
+        assertFalse(repo.isReceiverRegisteredForTesting())
+        assertEquals(
+            0,
+            SettingsRepository.activeInstancesCount.get()
+        )
     }
 }

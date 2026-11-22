@@ -14,7 +14,8 @@
         <provider
             android:name="com.aymankhattab.nateq.core.data.SettingsChangeProvider"
             android:authorities="com.aymankhattab.nateq.settings"
-            android:exported="false" />
+            android:exported="false"
+            android:directBootAware="true" />
     </application>
 
 </manifest>

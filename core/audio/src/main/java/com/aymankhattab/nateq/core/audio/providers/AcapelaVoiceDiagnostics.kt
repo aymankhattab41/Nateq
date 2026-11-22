@@ -2817,7 +2817,7 @@ object AcapelaVoiceDiagnostics {
             mainReport
         } else {
             buildString {
-                appendLine("=== تشخيص Acapela ===")
+                appendLine("=== تشخيص Acapela (التجربة الحالية) ===")
                 appendLine("لا يوجد سجل لمحاولة حالية.")
                 appendLine("nSpeak: غير مقيس")
                 appendLine("PCM: غير مقيس")
@@ -2825,8 +2825,15 @@ object AcapelaVoiceDiagnostics {
         }
 
         return if (failureText.isNotBlank()) {
-            if (!baseReport.contains("=== آخر محاولة نطق حقيقية فاشلة ===")) {
+            if (!baseReport.contains("=== آخر محاولة نطق حقيقية فاشلة ===") &&
+                !baseReport.contains(
+                    "=== [سجل تاريخي منفصل لمحاولات سابقة] ==="
+                )
+            ) {
                 baseReport + "\n\n" +
+                    "=== [سجل تاريخي منفصل لمحاولات سابقة] ===\n" +
+                    "(ملاحظة: هذا السجل لمحاولة قديمة سابقة " +
+                    "ولا يمثل نتيجة التجربة الحالية أعلاه)\n" +
                     redactSensitiveText(failureText).trimEnd()
             } else {
                 baseReport
@@ -3466,14 +3473,7 @@ object AcapelaVoiceDiagnostics {
                 f.isFile && (f.extension.equals("bvcu", ignoreCase = true) ||
                     f.extension.equals("dat", ignoreCase = true)) &&
                     f.length() > 0L
-            }?.firstOrNull() ?: voiceDir.walkTopDown().maxDepth(3)
-                .firstOrNull { f ->
-                    f.isFile && (f.extension.equals(
-                        "bvcu",
-                        ignoreCase = true
-                    ) || f.extension.equals("dat", ignoreCase = true)) &&
-                        f.length() > 0L
-                }
+            }?.firstOrNull()
 
             if (directFile != null) {
                 audits.add(
@@ -3489,7 +3489,7 @@ object AcapelaVoiceDiagnostics {
                         }.getOrNull(),
                         auditStatus = "PASSED",
                         notes = "عُثر على عينات الصوت في " +
-                            "${directFile.parentFile.name} " +
+                            "${directFile.parentFile?.name ?: voiceDir.name} " +
                             "(${directFile.length()} بايت)"
                     )
                 )
@@ -3506,7 +3506,7 @@ object AcapelaVoiceDiagnostics {
                         canonicalPath = null,
                         auditStatus = "UNKNOWN",
                         notes = "لم يُعثر على توجيه SLV صريح في ini " +
-                            "ولا ملف bvcu في المجلدات"
+                            "ولا ملف عينات صوتية محدد"
                     )
                 )
             }

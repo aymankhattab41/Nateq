@@ -6,6 +6,7 @@ import android.content.Context
 import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -42,10 +43,12 @@ class SystemTtsEngineControllerTest {
 
     @Test
     fun setSystemEngine_failsWithoutPermission() {
-        val result = SystemTtsEngineController.setSystemEngine(
-            context,
-            "com.google.android.tts"
-        )
+        val result = runBlocking {
+            SystemTtsEngineController.setSystemEngine(
+                context,
+                "com.google.android.tts"
+            )
+        }
         assertFalse(result.success)
         assertNotNull(result.reason)
     }
@@ -74,10 +77,12 @@ class SystemTtsEngineControllerTest {
         )
 
         val targetPkg = "com.google.android.tts"
-        val result = SystemTtsEngineController.setSystemEngine(
-            context,
-            targetPkg
-        )
+        val result = runBlocking {
+            SystemTtsEngineController.setSystemEngine(
+                context,
+                targetPkg
+            )
+        }
 
         assertTrue(result.success)
         assertEquals(
@@ -140,7 +145,7 @@ class SystemTtsEngineControllerTest {
         val arPrefBefore = settings.getEnginePreferenceForLanguage("ar")
         val enPrefBefore = settings.getEnginePreferenceForLanguage("en")
 
-        NextEngineSwitcher.switchToNext(context)
+        runBlocking { NextEngineSwitcher.switchToNext(context) }
 
         val exportedAfter = settings.exportSettings()
         val autoConvertAfter = settings.isAutoConvertEnabled()
@@ -164,7 +169,9 @@ class SystemTtsEngineControllerTest {
         val initialEngine =
             SystemTtsEngineController.currentSystemEngine(context)
 
-        val result = NextEngineSwitcher.switchToNext(context)
+        val result = runBlocking {
+            NextEngineSwitcher.switchToNext(context)
+        }
         assertNull(result)
         assertEquals(exportedBefore, settings.exportSettings())
         assertEquals(

@@ -8,7 +8,7 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import android.os.ParcelFileDescriptor
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.Log
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -18,6 +18,8 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.util.UUID
 import kotlin.math.sqrt
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -38,7 +40,16 @@ data class CallRecordItem(
 )
 
 /**
- * مدير تسجيل المكالمات الصوتي وتضخيم الصوت البرمجي للمكفوفين (الجولة 48).
+ * حالات دورة حياة جلسة تسجيل المكالمة الصريحة.
+ */
+enum class RecordingState {
+    IDLE,
+    RECORDING,
+    STOPPING
+}
+
+/**
+ * مدير تسجيل المكالمات الصوتي وتضخيم الصوت البرمجي للمكفوفين.
  */
 object CallRecordManager {
 
@@ -54,14 +65,23 @@ object CallRecordManager {
         MediaRecorder.AudioSource.MIC
     )
 
+    private val stateLock = Any()
+    private val indexLock = Any()
+
     @Volatile
-    private var isRecordingActive = false
+    private var recordingState = RecordingState.IDLE
+
+    @Volatile
+    private var activeAudioRecord: AudioRecord? = null
+
     private var recordingThread: Thread? = null
     private var currentItem: CallRecordItem? = null
     private var currentTarget: RecordingTarget? = null
     private var recordingStartTime = 0L
 
-    fun isRecording(): Boolean = isRecordingActive
+    fun isRecording(): Boolean = recordingState == RecordingState.RECORDING
+
+    fun getRecordingState(): RecordingState = recordingState
 
     fun getCurrentItem(): CallRecordItem? = currentItem
 
@@ -91,58 +111,73 @@ object CallRecordManager {
     }
 
     /**
-     * بدء تسجيل المكالمة الحالية عبر MediaStore مع الخدمة الأمامية.
+     * بدء تسجيل المكالمة الحالية بجلسة واحدة صريحة وخدمة أمامية.
      */
-    @Synchronized
     fun startRecording(
         context: Context,
         phoneNumber: String,
         callerName: String
     ): Boolean {
-        if (isRecordingActive) return false
+        val thread: Thread
+        synchronized(stateLock) {
+            if (recordingState != RecordingState.IDLE) {
+                Log.w(
+                    TAG,
+                    "Cannot start recording: current state is $recordingState"
+                )
+                return false
+            }
+            if (recordingThread?.isAlive == true) {
+                Log.w(
+                    TAG,
+                    "Cannot start recording: previous thread still active"
+                )
+                return false
+            }
 
-        migrateLegacyRecordings(context)
+            migrateLegacyRecordings(context)
 
-        val id = UUID.randomUUID().toString()
-        val timestamp = System.currentTimeMillis()
-        val safeNumber = phoneNumber.replace(Regex("[^0-9+]"), "")
+            val id = UUID.randomUUID().toString()
+            val timestamp = System.currentTimeMillis()
+            val safeNumber = phoneNumber.replace(Regex("[^0-9+]"), "")
 
-        val target = createRecordingTarget(context, safeNumber, timestamp)
-        if (target == null) {
-            Log.e(TAG, "Failed to create recording destination target")
-            return false
+            val target = createRecordingTarget(context, safeNumber, timestamp)
+            if (target == null) {
+                Log.e(TAG, "Failed to create recording destination target")
+                return false
+            }
+
+            val item = CallRecordItem(
+                id = id,
+                phoneNumber = phoneNumber,
+                callerName = callerName,
+                timestamp = timestamp,
+                durationSeconds = 0L,
+                filePath = target.filePath,
+                fileSize = 0L,
+                uriString = target.uriString,
+                isSilent = false
+            )
+
+            currentItem = item
+            currentTarget = target
+            recordingStartTime = timestamp
+            recordingState = RecordingState.RECORDING
+
+            CallRecordingForegroundService.start(context)
+
+            val repo = SettingsRepository.create(context)
+            val boost = repo.isPhoneRecordBoostVolumeEnabled()
+            val gain = if (boost) 2.5f else 1.0f
+
+            thread = Thread {
+                recordAudioLoop(context, target, item, gain)
+            }.apply {
+                name = "LordCallRecordThread"
+            }
+            recordingThread = thread
+            thread.start()
         }
-
-        val item = CallRecordItem(
-            id = id,
-            phoneNumber = phoneNumber,
-            callerName = callerName,
-            timestamp = timestamp,
-            durationSeconds = 0L,
-            filePath = target.filePath,
-            fileSize = 0L,
-            uriString = target.uriString,
-            isSilent = false
-        )
-
-        currentItem = item
-        currentTarget = target
-        recordingStartTime = timestamp
-        isRecordingActive = true
-
-        CallRecordingForegroundService.start(context)
-
-        val repo = SettingsRepository.create(context)
-        val boost = repo.isPhoneRecordBoostVolumeEnabled()
-        val gain = if (boost) 2.5f else 1.0f
-
-        recordingThread = Thread {
-            recordAudioLoop(context, target, item, gain)
-        }.apply {
-            name = "LordCallRecordThread"
-            start()
-        }
-
         return true
     }
 
@@ -196,7 +231,6 @@ object CallRecordManager {
             }
         }
 
-        // المسار العام في أندرويد 7-9 أو الاحتياط
         val publicDir = File(
             Environment.getExternalStoragePublicDirectory(
                 Environment.DIRECTORY_MUSIC
@@ -237,11 +271,16 @@ object CallRecordManager {
         }
 
         if (raf == null) {
-            isRecordingActive = false
+            synchronized(stateLock) {
+                recordingState = RecordingState.IDLE
+                currentItem = null
+                currentTarget = null
+                recordingThread = null
+            }
+            CallRecordingForegroundService.stop(context)
             return
         }
 
-        // كتابة ترويسة WAV أولية بحجم صفر
         val initialHeader = buildWavHeader(0L, SAMPLE_RATE, 1, 16)
         try {
             raf.seek(0)
@@ -257,9 +296,11 @@ object CallRecordManager {
         var sourceConfirmed = false
         var checkedSamples = 0L
         var sumSquares = 0.0
+        var consecutiveZeros = 0
+        var consecutiveErrors = 0
 
         try {
-            while (isRecordingActive) {
+            while (recordingState == RecordingState.RECORDING) {
                 if (activeRecord == null) {
                     if (sourceIndex >= SOURCES_TO_TRY.size) {
                         Log.e(TAG, "All audio sources failed or silent")
@@ -301,9 +342,15 @@ object CallRecordManager {
                         continue
                     }
 
+                    synchronized(stateLock) {
+                        activeAudioRecord = activeRecord
+                    }
+
                     checkedSamples = 0L
                     sumSquares = 0.0
                     sourceConfirmed = false
+                    consecutiveZeros = 0
+                    consecutiveErrors = 0
                 }
 
                 val readCount = activeRecord.read(
@@ -311,8 +358,15 @@ object CallRecordManager {
                     0,
                     shortBuffer.size
                 )
+
+                if (recordingState != RecordingState.RECORDING) {
+                    break
+                }
+
                 if (readCount > 0) {
-                    // فحص RMS في أول 3 ثوانٍ
+                    consecutiveZeros = 0
+                    consecutiveErrors = 0
+
                     if (!sourceConfirmed) {
                         for (i in 0 until readCount) {
                             val v = shortBuffer[i].toDouble()
@@ -321,15 +375,25 @@ object CallRecordManager {
                         checkedSamples += readCount
                         if (checkedSamples >= SAMPLE_RATE * 3) {
                             val rms = sqrt(sumSquares / checkedSamples)
-                            Log.i(TAG, "RMS for source: $rms")
+                            Log.i(
+                                TAG,
+                                "RMS for source: $rms (verifies mic input only)"
+                            )
                             if (rms < 1.0) {
                                 Log.w(
                                     TAG,
                                     "Source returned silence " +
                                         "(RMS=$rms), fallback"
                                 )
-                                activeRecord.stop()
-                                activeRecord.release()
+                                try {
+                                    activeRecord.stop()
+                                } catch (_: Exception) {}
+                                try {
+                                    activeRecord.release()
+                                } catch (_: Exception) {}
+                                synchronized(stateLock) {
+                                    activeAudioRecord = null
+                                }
                                 activeRecord = null
                                 sourceIndex++
                                 continue
@@ -351,7 +415,6 @@ object CallRecordManager {
                     raf.write(byteBuffer, 0, byteIdx)
                     totalAudioLen += byteIdx
 
-                    // تحديث الترويسة كل ثانيتين للحماية من قطع الطاقة
                     val now = System.currentTimeMillis()
                     if (now - lastHeaderUpdate >= 2000L) {
                         val currentPos = raf.filePointer
@@ -362,11 +425,55 @@ object CallRecordManager {
                         raf.seek(currentPos)
                         lastHeaderUpdate = now
                     }
+                } else if (readCount == 0) {
+                    consecutiveZeros++
+                    if (consecutiveZeros > 5) {
+                        try {
+                            Thread.sleep(20L)
+                        } catch (_: InterruptedException) {
+                            break
+                        }
+                    }
+                    if (consecutiveZeros >= 50) {
+                        Log.w(
+                            TAG,
+                            "Repeated zero reads from AudioRecord, breaking"
+                        )
+                        break
+                    }
+                } else {
+                    Log.w(
+                        TAG,
+                        "AudioRecord read returned error code: $readCount"
+                    )
+                    if (readCount == AudioRecord.ERROR_DEAD_OBJECT) {
+                        Log.e(
+                            TAG,
+                            "AudioRecord ERROR_DEAD_OBJECT, aborting source"
+                        )
+                        break
+                    }
+                    consecutiveErrors++
+                    if (consecutiveErrors >= 5) {
+                        Log.e(
+                            TAG,
+                            "Exceeded max consecutive errors: $readCount"
+                        )
+                        break
+                    }
+                    try {
+                        Thread.sleep(20L)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Exception during recording loop: ${e.message}")
         } finally {
+            synchronized(stateLock) {
+                activeAudioRecord = null
+            }
             try {
                 activeRecord?.stop()
             } catch (_: Exception) {}
@@ -375,7 +482,6 @@ object CallRecordManager {
             } catch (_: Exception) {}
 
             try {
-                // كتابة الترويسة النهائية بالأحجام الصحيحة
                 if (totalAudioLen == 0L && raf.length() > 44L) {
                     totalAudioLen = raf.length() - 44L
                 }
@@ -384,28 +490,35 @@ object CallRecordManager {
                 raf.close()
             } catch (_: Exception) {}
 
+            var copySucceeded = false
             try {
-                if (target.uri != null) {
-                    context.contentResolver.openOutputStream(
-                        target.uri
-                    )?.use { outStream ->
-                        FileInputStream(target.tempFile).use { inpStream ->
-                            inpStream.copyTo(outStream)
+                if (target.tempFile.exists() &&
+                    target.tempFile.length() > 44L
+                ) {
+                    if (target.uri != null) {
+                        context.contentResolver.openOutputStream(
+                            target.uri
+                        )?.use { outStream ->
+                            FileInputStream(target.tempFile).use { inpStream ->
+                                inpStream.copyTo(outStream)
+                            }
                         }
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        val updateVals = ContentValues().apply {
-                            put(MediaStore.Audio.Media.IS_PENDING, 0)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val updateVals = ContentValues().apply {
+                                put(MediaStore.Audio.Media.IS_PENDING, 0)
+                            }
+                            context.contentResolver.update(
+                                target.uri,
+                                updateVals,
+                                null,
+                                null
+                            )
                         }
-                        context.contentResolver.update(
-                            target.uri,
-                            updateVals,
-                            null,
-                            null
-                        )
+                        copySucceeded = true
+                    } else if (target.file != null) {
+                        target.tempFile.copyTo(target.file, overwrite = true)
+                        copySucceeded = true
                     }
-                } else if (target.file != null) {
-                    target.tempFile.copyTo(target.file, overwrite = true)
                 }
             } catch (e: Exception) {
                 Log.e(
@@ -416,6 +529,69 @@ object CallRecordManager {
                 try {
                     target.tempFile.delete()
                 } catch (_: Exception) {}
+            }
+
+            var actualSize = 0L
+            if (copySucceeded) {
+                if (target.file != null && target.file.exists()) {
+                    actualSize = target.file.length()
+                } else if (target.uri != null) {
+                    try {
+                        context.contentResolver.openFileDescriptor(
+                            target.uri,
+                            "r"
+                        )?.use {
+                            actualSize = it.statSize
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+
+            if (copySucceeded && actualSize > 44L) {
+                val durationMs =
+                    System.currentTimeMillis() - recordingStartTime
+                item.durationSeconds =
+                    (durationMs / 1000L).coerceAtLeast(1L)
+                item.fileSize = actualSize
+                saveRecordToHistory(context, item)
+                Log.i(
+                    TAG,
+                    "Recording saved: ${item.id}, size=$actualSize"
+                )
+            } else {
+                Log.w(
+                    TAG,
+                    "Recording failed or empty: " +
+                        "copySucceeded=$copySucceeded, " +
+                        "size=$actualSize"
+                )
+                if (target.uri != null) {
+                    try {
+                        context.contentResolver.delete(target.uri, null, null)
+                    } catch (_: Exception) {}
+                } else if (target.file != null && target.file.exists()) {
+                    try {
+                        target.file.delete()
+                    } catch (_: Exception) {}
+                }
+            }
+
+            CallRecordingForegroundService.stop(context)
+
+            try {
+                val appCtx = context.applicationContext
+                CoroutineScope(Dispatchers.Main).launch {
+                    com.aymankhattab.nateq.core.audio.accessibility
+                        .TtsSettingsAutomation
+                        .checkAndRunPendingSwitch(appCtx)
+                }
+            } catch (_: Exception) {}
+
+            synchronized(stateLock) {
+                recordingState = RecordingState.IDLE
+                currentItem = null
+                currentTarget = null
+                recordingThread = null
             }
         }
     }
@@ -440,57 +616,33 @@ object CallRecordManager {
     }
 
     /**
-     * إيقاف التسجيل الحالي وتحديث السجل.
+     * إيقاف التسجيل الحالي فوراً وفك قراءة AudioRecord دون تجميد main.
      */
-    @Synchronized
     fun stopRecording(context: Context): CallRecordItem? {
-        if (!isRecordingActive) return null
+        val item: CallRecordItem?
+        val threadToWait: Thread?
 
-        isRecordingActive = false
-        try {
-            // انتظار حتى 6 ثوانٍ لضمان اكتمال كتابة الملف والترويسة
-            recordingThread?.join(6000L)
-        } catch (_: Exception) {}
-        recordingThread = null
-
-        CallRecordingForegroundService.stop(context)
-
-        val item = currentItem ?: return null
-        val durationMs = System.currentTimeMillis() - recordingStartTime
-        item.durationSeconds = (durationMs / 1000L).coerceAtLeast(1L)
-
-        // حساب الحجم الفعلي
-        val target = currentTarget
-        var actualSize = 0L
-        if (target?.file != null && target.file.exists()) {
-            actualSize = target.file.length()
-        } else if (target?.uri != null) {
-            try {
-                context.contentResolver.openFileDescriptor(
-                    target.uri,
-                    "r"
-                )?.use {
-                    actualSize = it.statSize
-                }
-            } catch (_: Exception) {}
-        }
-        item.fileSize = actualSize
-
-        saveRecordToHistory(context, item)
-
-        try {
-            val appCtx = context.applicationContext
-            kotlinx.coroutines.CoroutineScope(
-                kotlinx.coroutines.Dispatchers.Main
-            ).launch {
-                com.aymankhattab.nateq.core.audio.accessibility
-                    .TtsSettingsAutomation
-                    .checkAndRunPendingSwitch(appCtx)
+        synchronized(stateLock) {
+            if (recordingState != RecordingState.RECORDING) {
+                return null
             }
-        } catch (_: Exception) {}
+            recordingState = RecordingState.STOPPING
+            item = currentItem
+            threadToWait = recordingThread
 
-        currentItem = null
-        currentTarget = null
+            try {
+                activeAudioRecord?.stop()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping active AudioRecord", e)
+            }
+        }
+
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            try {
+                threadToWait?.join(5000L)
+            } catch (_: InterruptedException) {}
+        }
+
         return item
     }
 
@@ -522,79 +674,83 @@ object CallRecordManager {
         if (!indexFile.exists()) return emptyList()
 
         val list = mutableListOf<CallRecordItem>()
-        try {
-            val text = indexFile.readText(Charsets.UTF_8)
-            val jsonArray = JSONArray(text)
-            for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                val uriString = obj.optString("uriString", "")
-                val filePath = obj.optString("filePath", "")
-                val isSilent = obj.optBoolean("isSilent", false)
+        synchronized(indexLock) {
+            try {
+                val text = indexFile.readText(Charsets.UTF_8)
+                val jsonArray = JSONArray(text)
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    val uriString = obj.optString("uriString", "")
+                    val filePath = obj.optString("filePath", "")
+                    val isSilent = obj.optBoolean("isSilent", false)
 
-                var exists = false
-                if (uriString.isNotEmpty()) {
-                    exists = try {
-                        context.contentResolver.openFileDescriptor(
-                            Uri.parse(uriString),
-                            "r"
-                        )?.use { true } ?: false
-                    } catch (_: Exception) {
-                        false
+                    var exists = false
+                    if (uriString.isNotEmpty()) {
+                        exists = try {
+                            context.contentResolver.openFileDescriptor(
+                                Uri.parse(uriString),
+                                "r"
+                            )?.use { true } ?: false
+                        } catch (_: Exception) {
+                            false
+                        }
+                    }
+                    if (!exists && filePath.isNotEmpty()) {
+                        exists = File(filePath).exists()
+                    }
+
+                    if (exists) {
+                        list.add(
+                            CallRecordItem(
+                                id = obj.getString("id"),
+                                phoneNumber = obj.getString("phoneNumber"),
+                                callerName = obj.optString("callerName", ""),
+                                timestamp = obj.getLong("timestamp"),
+                                durationSeconds =
+                                    obj.getLong("durationSeconds"),
+                                filePath = filePath,
+                                fileSize = obj.optLong("fileSize", 0L),
+                                uriString = if (uriString.isNotEmpty()) {
+                                    uriString
+                                } else {
+                                    null
+                                },
+                                isSilent = isSilent
+                            )
+                        )
                     }
                 }
-                if (!exists && filePath.isNotEmpty()) {
-                    exists = File(filePath).exists()
-                }
-
-                if (exists) {
-                    list.add(
-                        CallRecordItem(
-                            id = obj.getString("id"),
-                            phoneNumber = obj.getString("phoneNumber"),
-                            callerName = obj.optString("callerName", ""),
-                            timestamp = obj.getLong("timestamp"),
-                            durationSeconds = obj.getLong("durationSeconds"),
-                            filePath = filePath,
-                            fileSize = obj.optLong("fileSize", 0L),
-                            uriString = if (uriString.isNotEmpty()) {
-                                uriString
-                            } else {
-                                null
-                            },
-                            isSilent = isSilent
-                        )
-                    )
-                }
-            }
-        } catch (_: Exception) {}
+            } catch (_: Exception) {}
+        }
 
         list.sortByDescending { it.timestamp }
         return list
     }
 
-    @Synchronized
     fun deleteRecording(context: Context, id: String): Boolean {
-        val all = getRecordings(context).toMutableList()
-        val target = all.find { it.id == id } ?: return false
+        synchronized(indexLock) {
+            val all = getRecordings(context).toMutableList()
+            val target = all.find { it.id == id } ?: return false
 
-        if (!target.uriString.isNullOrEmpty()) {
-            try {
-                context.contentResolver.delete(
-                    Uri.parse(target.uriString),
-                    null,
-                    null
-                )
-            } catch (_: Exception) {}
-        }
-        if (target.filePath.isNotEmpty()) {
-            val file = File(target.filePath)
-            if (file.exists()) {
-                file.delete()
+            if (!target.uriString.isNullOrEmpty()) {
+                try {
+                    context.contentResolver.delete(
+                        Uri.parse(target.uriString),
+                        null,
+                        null
+                    )
+                } catch (_: Exception) {}
             }
-        }
+            if (target.filePath.isNotEmpty()) {
+                val file = File(target.filePath)
+                if (file.exists()) {
+                    file.delete()
+                }
+            }
 
-        all.removeAll { it.id == id }
-        saveAllRecordings(context, all)
+            all.removeAll { it.id == id }
+            saveAllRecordings(context, all)
+        }
         return true
     }
 
@@ -609,38 +765,57 @@ object CallRecordManager {
     }
 
     private fun saveRecordToHistory(context: Context, item: CallRecordItem) {
-        val all = getRecordings(context).toMutableList()
-        all.removeAll { it.id == item.id }
-        all.add(0, item)
-        saveAllRecordings(context, all)
+        synchronized(indexLock) {
+            val all = getRecordings(context).toMutableList()
+            all.removeAll { it.id == item.id }
+            all.add(0, item)
+            saveAllRecordings(context, all)
+        }
     }
 
     private fun saveAllRecordings(
         context: Context,
         items: List<CallRecordItem>
     ) {
-        val dir = getRecordingsDir(context)
-        val indexFile = File(dir, INDEX_FILE_NAME)
-        val jsonArray = JSONArray()
+        synchronized(indexLock) {
+            val dir = getRecordingsDir(context)
+            val indexFile = File(dir, INDEX_FILE_NAME)
+            val tempFile = File(dir, "$INDEX_FILE_NAME.tmp")
+            val jsonArray = JSONArray()
 
-        for (item in items) {
-            val obj = JSONObject().apply {
-                put("id", item.id)
-                put("phoneNumber", item.phoneNumber)
-                put("callerName", item.callerName)
-                put("timestamp", item.timestamp)
-                put("durationSeconds", item.durationSeconds)
-                put("filePath", item.filePath)
-                put("fileSize", item.fileSize)
-                put("uriString", item.uriString ?: "")
-                put("isSilent", item.isSilent)
+            for (item in items) {
+                val obj = JSONObject().apply {
+                    put("id", item.id)
+                    put("phoneNumber", item.phoneNumber)
+                    put("callerName", item.callerName)
+                    put("timestamp", item.timestamp)
+                    put("durationSeconds", item.durationSeconds)
+                    put("filePath", item.filePath)
+                    put("fileSize", item.fileSize)
+                    put("uriString", item.uriString ?: "")
+                    put("isSilent", item.isSilent)
+                }
+                jsonArray.put(obj)
             }
-            jsonArray.put(obj)
-        }
 
-        try {
-            indexFile.writeText(jsonArray.toString(), Charsets.UTF_8)
-        } catch (_: Exception) {}
+            try {
+                tempFile.writeText(jsonArray.toString(), Charsets.UTF_8)
+                if (tempFile.exists() && tempFile.length() > 0) {
+                    if (indexFile.exists()) {
+                        indexFile.delete()
+                    }
+                    if (!tempFile.renameTo(indexFile)) {
+                        tempFile.copyTo(indexFile, overwrite = true)
+                        tempFile.delete()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed atomic index save: ${e.message}")
+                try {
+                    tempFile.delete()
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     fun getRecordingsDir(context: Context): File {
@@ -665,64 +840,65 @@ object CallRecordManager {
 
             for (oldFile in files) {
                 try {
-                val target = createRecordingTarget(
-                    context,
-                    "قديم",
-                    oldFile.lastModified()
-                ) ?: continue
+                    val target = createRecordingTarget(
+                        context,
+                        "قديم",
+                        oldFile.lastModified()
+                    ) ?: continue
 
-                val outStream = if (target.uri != null) {
-                    context.contentResolver.openOutputStream(target.uri)
-                } else if (target.file != null) {
-                    FileOutputStream(target.file)
-                } else {
-                    null
-                }
-
-                if (outStream != null) {
-                    FileInputStream(oldFile).use { input ->
-                        outStream.use { output ->
-                            input.copyTo(output)
-                        }
+                    val outStream = if (target.uri != null) {
+                        context.contentResolver.openOutputStream(target.uri)
+                    } else if (target.file != null) {
+                        FileOutputStream(target.file)
+                    } else {
+                        null
                     }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-                        target.uri != null
-                    ) {
-                        val vals = ContentValues().apply {
-                            put(MediaStore.Audio.Media.IS_PENDING, 0)
+
+                    if (outStream != null) {
+                        FileInputStream(oldFile).use { input ->
+                            outStream.use { output ->
+                                input.copyTo(output)
+                            }
                         }
-                        context.contentResolver.update(
-                            target.uri,
-                            vals,
-                            null,
-                            null
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                            target.uri != null
+                        ) {
+                            val vals = ContentValues().apply {
+                                put(MediaStore.Audio.Media.IS_PENDING, 0)
+                            }
+                            context.contentResolver.update(
+                                target.uri,
+                                vals,
+                                null,
+                                null
+                            )
+                        }
+                        val durSec =
+                            (oldFile.length() / (SAMPLE_RATE * 2))
+                                .coerceAtLeast(1L)
+                        val migratedItem = CallRecordItem(
+                            id = UUID.randomUUID().toString(),
+                            phoneNumber = "غير معروف",
+                            callerName = "تسجيل قديم",
+                            timestamp = oldFile.lastModified(),
+                            durationSeconds = durSec,
+                            filePath = target.filePath,
+                            fileSize = oldFile.length(),
+                            uriString = target.uriString
                         )
+                        saveRecordToHistory(context, migratedItem)
+                        oldFile.delete()
                     }
-                    val durSec =
-                        (oldFile.length() / (SAMPLE_RATE * 2))
-                            .coerceAtLeast(1L)
-                    val migratedItem = CallRecordItem(
-                        id = UUID.randomUUID().toString(),
-                        phoneNumber = "غير معروف",
-                        callerName = "تسجيل قديم",
-                        timestamp = oldFile.lastModified(),
-                        durationSeconds = durSec,
-                        filePath = target.filePath,
-                        fileSize = oldFile.length(),
-                        uriString = target.uriString
+                } catch (e: Exception) {
+                    Log.w(
+                        TAG,
+                        "Legacy migration error for ${oldFile.name}: " +
+                            "${e.message}"
                     )
-                    saveRecordToHistory(context, migratedItem)
-                    oldFile.delete()
                 }
-            } catch (e: Exception) {
-                Log.w(
-                    TAG,
-                    "Legacy migration error for ${oldFile.name}: ${e.message}"
-                )
             }
         }
     }
-}
 
     fun buildWavHeader(
         totalAudioLen: Long,

@@ -103,12 +103,17 @@ object TypingEchoHandler : A11yFeatureHandler {
         settings: SettingsRepository,
         stateStore: A11yStateStore?
     ) {
-        val pkg = event.packageName?.toString()
-        val echoText = TypingEcho.getEchoText(
+        val isSensitive = A11ySensitivityGate.isSensitive(event)
+        val rawEcho = TypingEcho.getEchoText(
             event.beforeText,
             event.text?.map { it.toString() }?.joinToString("") ?: "",
             TypingEcho.EchoMode.CHARACTERS
         )
+        val echoText = if (isSensitive) {
+            if (!rawEcho.isNullOrBlank()) "•" else null
+        } else {
+            rawEcho
+        }
         if (!echoText.isNullOrBlank()) {
             A11ySpeechCoordinator.speakAnnouncement(
                 context = service,
@@ -1419,11 +1424,15 @@ class NateqAccessibilityService : AccessibilityService() {
             return SelectorPacks.cleanBidi(initialFull).trim()
         }
 
-        val hasExplicit = hasExplicitExpandControl(containerNode ?: focusedNode)
+        val hasExplicit = hasExplicitExpandControl(
+            containerNode ?: focusedNode
+        )
         if (!hasExplicit) {
             recycleIfDifferent(containerNode, focusedNode)
             SafeNodeWalker.safeRecycle(focusedNode)
-            if (initialTrusted && isMeaningfulImprovement(prefixClean, initialFull)) {
+            if (initialTrusted &&
+                isMeaningfulImprovement(prefixClean, initialFull)
+            ) {
                 return SelectorPacks.cleanBidi(initialFull).trim()
             }
             Log.w(TAG, "[READMORE] لا يوجد إجراء/زر توسيع صريح")
@@ -2079,6 +2088,7 @@ class NateqAccessibilityService : AccessibilityService() {
         deviceEventGate.clear()
         chatSummaryTracker.clear()
         callKeyDetector.reset()
+        OcrScreenReader.shutdown()
 
         // ع٢٩-16: إزالة مستمع حالة الخدمة
         a11yStateListener?.let { listener ->

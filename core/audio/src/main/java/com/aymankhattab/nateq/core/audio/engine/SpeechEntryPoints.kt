@@ -10,12 +10,12 @@ import com.aymankhattab.nateq.util.LanguageCode
 import java.text.Normalizer
 
 /**
- * المدخل الموحد لكل عمليات النطق في التطبيق (الجولة 53 - الأمر 4).
+ * المدخل الموحد لكل عمليات النطق في التطبيق.
  * يطبق الترتيب الإلزامي:
  * 1. حارس الحرف المفرد
  * 2. القاموس أولاً
- * 3. المعالجة الدلالية
- * 4. التخطيط
+ * 3. المعالجة الدلالية بسياق لغة الطلب/المقطع
+ * 4. التخطيط بسياق اللغة المطابق
  */
 object SpeechEntryPoints {
 
@@ -35,15 +35,16 @@ object SpeechEntryPoints {
     fun prepare(
         rawText: String,
         source: Source,
-        context: Context
+        context: Context,
+        requestLanguage: String? = null
     ): String {
         if (rawText.isBlank()) return rawText
 
-        // تسجيل النص في سجل النصوص المنطوقة مع المصدر والسداسي للمحارف
+        // تسجيل النص في سجل النصوص المنطوقة
         LastSpokenTextsTracker.record(rawText, source)
 
         // 1. حارس الحرف المفرد
-        val settings = SettingsRepository(context)
+        val settings = SettingsRepository.create(context)
         val mode = runCatching { settings.getSingleLetterMode() }
             .getOrNull() ?: "name"
         if (source != Source.SPELL_LAST) {
@@ -69,9 +70,10 @@ object SpeechEntryPoints {
         // 3. المعالجة الدلالية
         val processor = TextProcessor(context, settings, dict)
         val markNumbers = source == Source.SCREEN_READER
+        val resolvedLang = resolveLanguage(dictText, requestLanguage, settings)
         val semanticText = processor.processSemantics(
             dictText,
-            LanguageCode.AR.tag,
+            resolvedLang,
             markNumbers = markNumbers
         )
 
@@ -79,8 +81,69 @@ object SpeechEntryPoints {
         return if (source == Source.SCREEN_READER) {
             semanticText
         } else {
-            processor.process(semanticText, applyDictionary = false)
+            processor.process(
+                semanticText,
+                languageTag = resolvedLang,
+                applyDictionary = false
+            )
         }
     }
-}
 
+    /**
+     * استنتاج لغة المقطع/الطلب لتفادي فرض العربية على النصوص الإنجليزية
+     * مع احترام لغة نطق الأرقام المستقلة ولغة التطبيق والقاموس.
+     */
+    private fun resolveLanguage(
+        text: String,
+        requestLanguage: String?,
+        settings: SettingsRepository
+    ): String {
+        if (!requestLanguage.isNullOrBlank()) {
+            return requestLanguage
+        }
+
+        var hasArabic = false
+        var hasLatin = false
+        var hasDigits = false
+
+        var i = 0
+        while (i < text.length) {
+            val cp = text.codePointAt(i)
+            i += Character.charCount(cp)
+            if (Character.isDigit(cp)) {
+                hasDigits = true
+            } else if (Character.isLetter(cp)) {
+                val block = Character.UnicodeBlock.of(cp)
+                if (block == Character.UnicodeBlock.ARABIC ||
+                    block == Character.UnicodeBlock.ARABIC_SUPPLEMENT ||
+                    block == Character.UnicodeBlock.ARABIC_EXTENDED_A ||
+                    block ==
+                    Character.UnicodeBlock.ARABIC_PRESENTATION_FORMS_A ||
+                    block ==
+                    Character.UnicodeBlock.ARABIC_PRESENTATION_FORMS_B
+                ) {
+                    hasArabic = true
+                    break
+                } else {
+                    hasLatin = true
+                }
+            }
+        }
+
+        if (hasArabic) {
+            return LanguageCode.AR.tag
+        }
+        if (hasLatin) {
+            return LanguageCode.EN.tag
+        }
+        if (hasDigits) {
+            val numLang = runCatching {
+                settings.getNumberReadingLanguage()
+            }.getOrNull()
+            if (numLang == LanguageCode.EN.tag) {
+                return LanguageCode.EN.tag
+            }
+        }
+        return LanguageCode.AR.tag
+    }
+}

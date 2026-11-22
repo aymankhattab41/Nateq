@@ -166,7 +166,7 @@ class CallerScreeningService : CallScreeningService() {
             if (number != null) {
                 RingCallerIdentity.publish(number, null)
             }
-            Log.w(TAG, "CALL-SCREEN number=${number ?: "?"}")
+            Log.w(TAG, "CALL-SCREEN hasNumber=${number != null}")
         } catch (t: Throwable) {
             Log.e(TAG, "onScreenCall failed", t)
         }

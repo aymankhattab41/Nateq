@@ -52,4 +52,19 @@ class LordInCallActivityTest {
         assertEquals(View.GONE, llIncoming.visibility)
         controller.destroy()
     }
+
+    @Test
+    fun inCallActivity_buttonsExistAndBoundProperly() {
+        val controller =
+            Robolectric.buildActivity(LordInCallActivity::class.java).setup()
+        val activity = controller.get()
+        val btnAnswer =
+            activity.findViewById<MaterialButton>(R.id.btn_incall_answer)
+        val btnReject =
+            activity.findViewById<MaterialButton>(R.id.btn_incall_reject)
+
+        org.junit.Assert.assertNotNull(btnAnswer)
+        org.junit.Assert.assertNotNull(btnReject)
+        controller.destroy()
+    }
 }

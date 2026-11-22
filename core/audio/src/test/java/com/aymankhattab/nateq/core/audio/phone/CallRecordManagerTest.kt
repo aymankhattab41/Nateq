@@ -136,4 +136,48 @@ class CallRecordManagerTest {
             )
         )
     }
+
+    @Test
+    fun recordingState_initiallyIdle_andStopWhenIdleReturnsNull() {
+        assertEquals(
+            RecordingState.IDLE,
+            CallRecordManager.getRecordingState()
+        )
+        assertFalse(CallRecordManager.isRecording())
+
+        val result = CallRecordManager.stopRecording(context)
+        assertEquals(null, result)
+        assertEquals(
+            RecordingState.IDLE,
+            CallRecordManager.getRecordingState()
+        )
+    }
+
+    @Test
+    fun startRecording_andStopRecording_handlesLifecycleProperly() {
+        settingsRepo.setPhoneRecordEnabled(true)
+        val started = CallRecordManager.startRecording(
+            context,
+            "01012345678",
+            "اختبار"
+        )
+        if (started) {
+            assertTrue(CallRecordManager.isRecording())
+            val item = CallRecordManager.getCurrentItem()
+            assertEquals("01012345678", item?.phoneNumber)
+            assertEquals("اختبار", item?.callerName)
+
+            // محاولة بدء جلسة ثانية ترفض
+            val second = CallRecordManager.startRecording(
+                context,
+                "01087654321",
+                "ثانٍ"
+            )
+            assertFalse(second)
+
+            // إيقاف التسجيل فوراً دون تجميد
+            val stopped = CallRecordManager.stopRecording(context)
+            assertEquals("01012345678", stopped?.phoneNumber)
+        }
+    }
 }

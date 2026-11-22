@@ -25,6 +25,9 @@ data class ScanResult(
  */
 object DataFolderScanner {
 
+    /** سقف قراءة محتوى ملفات .hdr لدرء استنزاف الذاكرة (2 MB). */
+    const val MAX_HDR_SCAN_BYTES = 2L * 1024 * 1024
+
     /**
      * ملفات .dat غير الصوتية المستثناة
      * من الكتالوج.
@@ -83,9 +86,24 @@ object DataFolderScanner {
                 when {
                     nameLower.endsWith(".hdr") -> {
                         try {
-                            val text = file.readText(Charsets.UTF_8)
-                            headersBuilder.append(text)
-                            hdrFiles.add(file)
+                            if (file.length() > MAX_HDR_SCAN_BYTES) {
+                                HostLog.w(
+                                    HostProtocol.ENGINE_VOCALIZER,
+                                    "DataFolderScanner: تجاوز ملف .hdr " +
+                                        "الحجم المسموح: ${file.name}"
+                                )
+                            } else {
+                                val text = file.inputStream()
+                                    .bufferedReader(Charsets.UTF_8).use { r ->
+                                        val buf = CharArray(
+                                            MAX_HDR_SCAN_BYTES.toInt()
+                                        )
+                                        val n = r.read(buf)
+                                        if (n > 0) String(buf, 0, n) else ""
+                                    }
+                                headersBuilder.append(text)
+                                hdrFiles.add(file)
+                            }
                         } catch (e: Exception) {
                             HostLog.w(
                                 HostProtocol.ENGINE_VOCALIZER,

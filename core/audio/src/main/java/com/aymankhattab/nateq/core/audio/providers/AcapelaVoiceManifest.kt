@@ -2141,8 +2141,7 @@ object AcapelaVoiceManifest {
     /**
      * بحث عن config.yaml الحاوي على param بالترتيب:
      * مجلد الصوت ← المجلد الأب ← جذر Acapela (ملف config.yaml في الجذر).
-     * عند عدم إيجاده مباشرة يُفحَص ضمن شجرة Acapela (أو ضمن نطاق الحزمة
-     * المحدود بالمجلد/أبيه عند غياب جذر Acapela مسمّى) دون مسح جذور واسعة.
+     * مقيد بهوية المتحدث لحظر ربط ملفات صوت آخر (مثل Salma لـ Leila).
      */
     fun findConfigYamlWithParam(dir: File): Pair<File, String>? {
         val paramRegex = Regex(
@@ -2152,6 +2151,7 @@ object AcapelaVoiceManifest {
 
         fun paramFrom(file: File): Pair<File, String>? {
             if (!file.isFile || !file.exists()) return null
+            if (file.length() > 512 * 1024L) return null
             val content = runCatching {
                 file.readText(StandardCharsets.UTF_8)
             }.getOrNull() ?: return null
@@ -2165,40 +2165,157 @@ object AcapelaVoiceManifest {
             return file to raw
         }
 
-        val namedRoot = findNamedAcapelaRoot(dir)
-        val direct = LinkedHashSet<File>()
-        direct.add(File(dir, "config.yaml"))
-        dir.parentFile?.let { direct.add(File(it, "config.yaml")) }
-        namedRoot?.let { direct.add(File(it, "config.yaml")) }
-        for (f in direct) {
-            paramFrom(f)?.let { return it }
+        // 1. فحص مباشر داخل dir نفسه
+        paramFrom(File(dir, "config.yaml"))?.let { return it }
+
+        // 2. فحص داخل المجلدات الفرعية التابعة لـ dir نفسه
+        val localSub = runCatching {
+            dir.walkTopDown().maxDepth(4).firstNotNullOfOrNull { f ->
+                if (f.isFile &&
+                    f.name.equals("config.yaml", ignoreCase = true)
+                ) {
+                    paramFrom(f)
+                } else null
+            }
+        }.getOrNull()
+        if (localSub != null) return localSub
+
+        // 3. تحديد هوية الصوت لمنع استعارة تهيئة صوت آخر
+        val dirSpeaker = cleanAcapelaSpeaker(dir.name).lowercase(Locale.ROOT)
+        val dirToken = tokenOfIdentity(dir.name)
+        val genericContainers = setOf(
+            "acapela", "voice", "voices", "root", "files", "data",
+            "app_voices", "parentacapela"
+        )
+        val isGeneric = dir.name.lowercase(Locale.ROOT) in genericContainers ||
+            (dirToken == null && dirSpeaker in genericContainers)
+
+        fun isParamConflicting(rawParam: String): Boolean {
+            if (isGeneric) return false
+            val parsed = splitConfigYamlParam(rawParam)
+            val pSpeaker = parsed?.first?.let {
+                cleanAcapelaSpeaker(it).lowercase(Locale.ROOT)
+            }.orEmpty()
+            if (pSpeaker.isBlank()) return false
+            val pToken = tokenOfIdentity(pSpeaker)
+            if (dirToken != null && pToken != null) {
+                return dirToken != pToken
+            }
+            if (dirSpeaker.isNotBlank() && dirSpeaker !in genericContainers) {
+                return pSpeaker != dirSpeaker &&
+                    !dir.name.lowercase(Locale.ROOT).contains(pSpeaker) &&
+                    !pSpeaker.contains(dirSpeaker)
+            }
+            return false
         }
 
-        val scanRoots = LinkedHashSet<File>()
-        if (namedRoot != null) {
-            scanRoots.add(namedRoot)
-        } else {
-            scanRoots.add(dir)
-            dir.parentFile?.let { scanRoots.add(it) }
+        // 4. فحص المجلد الأب المباشر dir.parentFile
+        val parentYaml = dir.parentFile?.let { File(it, "config.yaml") }
+        if (parentYaml != null && parentYaml.isFile) {
+            val candidate = paramFrom(parentYaml)
+            if (candidate != null && !isParamConflicting(candidate.second)) {
+                return candidate
+            }
         }
-        for (scanRoot in scanRoots) {
-            if (!scanRoot.exists() || !scanRoot.isDirectory) continue
-            val depth = if (namedRoot != null) 6 else 4
-            val found = runCatching {
-                scanRoot.walkTopDown().maxDepth(depth)
-                    .firstNotNullOfOrNull { f ->
-                        if (f.isFile &&
-                            f.name.equals("config.yaml", ignoreCase = true)
-                        ) {
-                            paramFrom(f)
-                        } else {
-                            null
+
+        val namedRoot = findNamedAcapelaRoot(dir)
+        if (namedRoot != null && namedRoot.exists() && namedRoot.isDirectory) {
+            val rootYaml = File(namedRoot, "config.yaml")
+            if (rootYaml.isFile) {
+                val candidate = paramFrom(rootYaml)
+                if (candidate != null &&
+                    !isParamConflicting(candidate.second)
+                ) {
+                    return candidate
+                }
+            }
+
+            if (!isGeneric) {
+                val matchingSubFound = runCatching {
+                    namedRoot.listFiles { f ->
+                        f.isDirectory && (
+                            (dirToken != null &&
+                                tokenOfIdentity(f.name) == dirToken) ||
+                            cleanAcapelaSpeaker(f.name)
+                                .lowercase(Locale.ROOT).contains(dirSpeaker)
+                        )
+                    }?.firstNotNullOfOrNull { sub ->
+                        sub.walkTopDown().maxDepth(4)
+                            .firstNotNullOfOrNull { f ->
+                            if (f.isFile &&
+                                f.name.equals("config.yaml", ignoreCase = true)
+                            ) {
+                                val c = paramFrom(f)
+                                if (c != null &&
+                                    !isParamConflicting(c.second)
+                                ) c else null
+                            } else null
                         }
                     }
-            }.getOrNull()
-            if (found != null) return found
+                }.getOrNull()
+                if (matchingSubFound != null) return matchingSubFound
+            } else {
+                val foundInContainer = runCatching {
+                    namedRoot.walkTopDown().maxDepth(6)
+                        .firstNotNullOfOrNull { f ->
+                            if (f.isFile &&
+                                f.name.equals("config.yaml", ignoreCase = true)
+                            ) {
+                                paramFrom(f)
+                            } else null
+                        }
+                }.getOrNull()
+                if (foundInContainer != null) return foundInContainer
+            }
         }
-        diagLog("[config.yaml] لم يُعثر على param في أي config.yaml")
+
+        if (isGeneric) {
+            if (dir.exists() && dir.isDirectory) {
+                val found = runCatching {
+                    dir.walkTopDown().maxDepth(4)
+                        .firstNotNullOfOrNull { f ->
+                            if (f.isFile &&
+                                f.name.equals("config.yaml", ignoreCase = true)
+                            ) {
+                                paramFrom(f)
+                            } else null
+                        }
+                }.getOrNull()
+                if (found != null) return found
+            }
+        } else {
+            val parent = dir.parentFile
+            if (parent != null && parent.isDirectory) {
+                val matchingInParent = runCatching {
+                    parent.listFiles { f ->
+                        f.isDirectory && (
+                            (dirToken != null &&
+                                tokenOfIdentity(f.name) == dirToken) ||
+                            cleanAcapelaSpeaker(f.name)
+                                .lowercase(Locale.ROOT).contains(dirSpeaker)
+                        )
+                    }?.firstNotNullOfOrNull { sub ->
+                        sub.walkTopDown().maxDepth(4)
+                            .firstNotNullOfOrNull { f ->
+                                if (f.isFile &&
+                                    f.name.equals(
+                                        "config.yaml",
+                                        ignoreCase = true
+                                    )
+                                ) {
+                                    val c = paramFrom(f)
+                                    if (c != null &&
+                                        !isParamConflicting(c.second)
+                                    ) c else null
+                                } else null
+                            }
+                    }
+                }.getOrNull()
+                if (matchingInParent != null) return matchingInParent
+            }
+        }
+
+        diagLog("[config.yaml] لم يُعثر على param مطابق لـ ${dir.name}")
         return null
     }
 

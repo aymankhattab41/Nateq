@@ -25,7 +25,11 @@ object XiaomiHyperOsGuidance {
                 isInterruptAllowed = true
             )
         } catch (t: Throwable) {
-            Log.w(TAG, "Failed to speak guidance announcement: $text", t)
+            Log.w(
+                TAG,
+                "Failed to speak guidance announcement (len=${text.length})",
+                t
+            )
         }
     }
 

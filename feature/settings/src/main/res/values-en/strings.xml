@@ -721,6 +721,7 @@
     <string name="read_later_open">Open Read later</string>
     <string name="read_later_open_desc">Open the saved texts list for reading later</string>
     <string name="read_later_saved_toast">Saved to Read later</string>
+    <string name="read_later_saved_truncated_toast">Text saved truncated (exceeded limit)</string>
     <string name="read_later_duplicate_toast">Text is already saved in Read later</string>
     <string name="read_later_empty_toast">Text is empty, not saved</string>
     <string name="read_later_failed_toast">Failed to save to Read later</string>
@@ -732,6 +733,7 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Fixed settings lifecycle and multi-process write conflicts via dedicated change provider; hardened voice package importing with accessible pre-import review and resource bounds; enforced privacy by redacting passwords, numbers, and spoken text via unified sensitivity gate; upgraded Read Later by eliminating silent truncation, supporting dedicated file storage, collision-free atomic IDs, and canonicalization; passed true language context to semantics/pipeline for currency, time, and multilingual text; bounded OCR screen reading concurrency and protected app monitoring with a single job, and aligned quiet hours formatting.
 • Fixed Logcat reader lifecycle with ready handshake (CountDownLatch) and concurrent bounded stderr reading to prevent stream blocking, preserved markers against R8 release stripping using Log.w, decoupled started state from marker detection, accurately verified ini relative voice dependencies (bvcu/SLV/SLL) without false fopen failure warnings, aligned diagnostic summary with verified trial results while isolating historical failures, and guarded voice support context with strict identity mismatch rejection (SUPPORT_IDENTITY_MISMATCH).
 • Proven Acapela initialization and file-open contract (_Z13check_licensev and 0x*) via native library disassembly, non-destructive proactive contract path auditing and license resource checks with explicit native interception disclaimer, non-destructive adaptation of verified 0x* support files into verified package folder with strict identity mismatch rejection, concise first-failure summary with decoupled listings in diagnostics, and robust logcat reader lifecycle with guaranteed finally cleanup.
 • Captured Acapela initialization evidence via a decoupled tri-state model (LOADED/LOAD_FAILED/EVIDENCE_UNAVAILABLE) preventing missing evidence from claiming success or unmeasured native crashes, streamed PID-specific threadtime logcat bounded by runId, host generation, and PID, verified freshness of logfile.txt while excluding stale logs, identified true eb=-25 (E_BABILE_NULLARG) rejection conditions via disassembly and contract audit, eliminated silent fallbacks to old registrations, and preserved safe audit verdicts and lengths while maintaining idempotent redaction.
@@ -958,6 +960,13 @@
     <string name="acapela_import_select_file">Select Acapela voice file (.zip)</string>
     <string name="acapela_import_folder_select">Select Acapela voice folder from device</string>
     <string name="zip_import_title">Import Voice Package</string>
+    <string name="zip_import_review_title">Review Voice Package Import</string>
+    <string name="zip_import_review_inspecting">Inspecting voice package and available space…</string>
+    <string name="zip_import_confirm_button">Import</string>
+    <string name="zip_import_cancel_button">Cancel</string>
+    <string name="zip_import_cancelled_msg">Import cancelled; your existing voices remain intact.</string>
+    <string name="zip_import_session_busy">Another import operation is currently in progress. Please wait for it to complete or cancel it.</string>
+    <string name="zip_import_insufficient_space">Insufficient storage for import: %1$s required, %2$s available.</string>
     <string name="zip_import_in_progress">Importing voice package: %1$s…</string>
     <string name="zip_import_success_title">Import Completed</string>
     <string name="zip_import_success_msg">Voices successfully imported:\n%1$s\n\nReady for immediate preview and use.</string>

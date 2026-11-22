@@ -1064,7 +1064,12 @@ internal class TimeAnnouncementController(
      * (24 = منتصف الليل) أو 1..12 ص/م (12 الظهر، 12 منتصف الليل).
      */
     private fun formatQuietHourLabel(hour: Int, is24h: Boolean): String {
-        val isAr = LanguageCode.isArabic(Locale.getDefault().language)
+        val appLang = runCatching { settings.getAppLanguage() }.getOrNull()
+        val isAr = if (!appLang.isNullOrBlank()) {
+            LanguageCode.isArabic(appLang)
+        } else {
+            LanguageCode.isArabic(Locale.getDefault().language)
+        }
         val midnightStr = fragment.getString(R.string.time_quiet_midnight)
         val noonStr = fragment.getString(R.string.time_quiet_noon)
         return if (is24h) {

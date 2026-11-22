@@ -3,6 +3,8 @@ package com.aymankhattab.nateq.core.data
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
@@ -370,7 +372,10 @@ object UpdateChecker {
     )
 
     sealed class DownloadResult {
-        data class Success(val apkFile: File) : DownloadResult()
+        data class Success(
+            val apkFile: File,
+            val sha256Verified: Boolean = true
+        ) : DownloadResult()
         object ChecksumMismatch : DownloadResult()
         data class Failed(val status: Int, val reason: Int) : DownloadResult()
     }
@@ -563,15 +568,20 @@ object UpdateChecker {
             }
         }
 
-        val matches = if (expectedSha256Hex == null) {
-            true
+        val matches: Boolean
+        val sha256Verified: Boolean
+        if (expectedSha256Hex == null) {
+            matches = true
+            sha256Verified = false
         } else if (computedDigest != null) {
-            constantTimeEquals(
+            matches = constantTimeEquals(
                 computedDigest.lowercase(),
                 expectedSha256Hex.trim().lowercase()
             )
+            sha256Verified = matches
         } else {
-            verifyApkSha256(targetApk, expectedSha256Hex)
+            matches = verifyApkSha256(targetApk, expectedSha256Hex)
+            sha256Verified = matches
         }
 
         if (!matches) {
@@ -583,7 +593,10 @@ object UpdateChecker {
         if (!isSameFile) {
             runCatching { dm.remove(downloadId) }
         }
-        return DownloadResult.Success(targetApk)
+        return DownloadResult.Success(
+            targetApk,
+            sha256Verified = sha256Verified
+        )
     }
 
     private fun copyDownloadToFileWithDigest(
@@ -653,9 +666,106 @@ object UpdateChecker {
         return null
     }
 
-    /** فتح شاشة تثبيت النظام لملف APK محلي عبر FileProvider. */
+    /**
+     * التحقق من اسم الحزمة وتطابق التوقيع مع التطبيق الحالي قبل التثبيت.
+     */
+    fun verifyApkPackageAndSignature(
+        context: Context,
+        apkFile: File
+    ): Boolean {
+        if (!apkFile.isFile || apkFile.length() == 0L) return false
+        val pm = context.packageManager
+        val archiveInfo = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pm.getPackageArchiveInfo(
+                    apkFile.absolutePath,
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageArchiveInfo(
+                    apkFile.absolutePath,
+                    PackageManager.GET_SIGNATURES
+                )
+            }
+        }.getOrNull() ?: return false
+
+        // 1. فحص اسم الحزمة المتوقع
+        if (archiveInfo.packageName != context.packageName) {
+            return false
+        }
+
+        // 2. فحص التوقيع المتوقع إن توفرت معلومات التوقيع
+        val currentSignatures = getPackageSignatures(
+            context,
+            context.packageName
+        )
+        val archiveSignatures = extractSignaturesFromArchive(archiveInfo)
+
+        if (currentSignatures.isNotEmpty() && archiveSignatures.isNotEmpty()) {
+            val hasMatch = currentSignatures.any { cur ->
+                archiveSignatures.any { it.contentEquals(cur) }
+            }
+            if (!hasMatch) return false
+        }
+        return true
+    }
+
+    private fun getPackageSignatures(
+        context: Context,
+        pkgName: String
+    ): List<ByteArray> {
+        return runCatching {
+            val pm = context.packageManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val pi = pm.getPackageInfo(
+                    pkgName,
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                )
+                val info = pi.signingInfo ?: return emptyList()
+                val list = mutableListOf<ByteArray>()
+                info.apkContentsSigners?.forEach {
+                    list.add(it.toByteArray())
+                }
+                info.signingCertificateHistory?.forEach {
+                    list.add(it.toByteArray())
+                }
+                list
+            } else {
+                @Suppress("DEPRECATION")
+                val pi = pm.getPackageInfo(
+                    pkgName,
+                    PackageManager.GET_SIGNATURES
+                )
+                pi.signatures?.map { it.toByteArray() } ?: emptyList()
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun extractSignaturesFromArchive(
+        archiveInfo: PackageInfo
+    ): List<ByteArray> {
+        val list = mutableListOf<ByteArray>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val info = archiveInfo.signingInfo
+            info?.apkContentsSigners?.forEach { list.add(it.toByteArray()) }
+            info?.signingCertificateHistory?.forEach {
+                list.add(it.toByteArray())
+            }
+        }
+        if (list.isEmpty()) {
+            @Suppress("DEPRECATION")
+            archiveInfo.signatures?.forEach { list.add(it.toByteArray()) }
+        }
+        return list
+    }
+
+    /** فتح شاشة تثبيت النظام لملف APK محلي عبر FileProvider بعد التحقق. */
     fun promptInstall(context: Context, apkFile: File): Boolean {
         if (!apkFile.exists() || apkFile.length() == 0L) return false
+        if (!verifyApkPackageAndSignature(context, apkFile)) {
+            return false
+        }
         val uri = FileProvider.getUriForFile(
             context, "${context.packageName}.fileprovider", apkFile
         )

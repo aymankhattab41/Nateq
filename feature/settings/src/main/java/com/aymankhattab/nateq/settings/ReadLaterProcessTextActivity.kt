@@ -32,6 +32,8 @@ class ReadLaterProcessTextActivity : AppCompatActivity() {
         val msgRes = when (result) {
             SettingsRepository.ReadLaterSaveResult.SAVED ->
                 R.string.read_later_saved_toast
+            SettingsRepository.ReadLaterSaveResult.SAVED_TRUNCATED ->
+                R.string.read_later_saved_truncated_toast
             SettingsRepository.ReadLaterSaveResult.DUPLICATE ->
                 R.string.read_later_duplicate_toast
             SettingsRepository.ReadLaterSaveResult.EMPTY ->

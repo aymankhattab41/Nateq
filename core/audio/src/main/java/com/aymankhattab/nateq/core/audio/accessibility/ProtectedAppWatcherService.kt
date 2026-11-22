@@ -37,12 +37,16 @@ class ProtectedAppWatcherService : Service() {
     private var startedAt: Long = 0L
     @Volatile private var isScreenOn: Boolean = true
     private var screenReceiver: BroadcastReceiver? = null
+    private var watcherJob: Job? = null
 
     @androidx.annotation.VisibleForTesting
     fun isScreenOnForTesting(): Boolean = isScreenOn
 
     @androidx.annotation.VisibleForTesting
     fun getScreenReceiverForTesting(): BroadcastReceiver? = screenReceiver
+
+    @androidx.annotation.VisibleForTesting
+    fun getWatcherJobForTesting(): Job? = watcherJob
 
     companion object {
         private const val TAG = "ProtectedAppWatcher"
@@ -86,6 +90,9 @@ class ProtectedAppWatcherService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        val powerManager =
+            getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        isScreenOn = powerManager?.isInteractive ?: true
         registerScreenReceiver()
         BatteryDiagnosticsTracker.recordServiceStarted(
             "ProtectedAppWatcherService"
@@ -102,7 +109,7 @@ class ProtectedAppWatcherService : Service() {
         startedAt = System.currentTimeMillis()
 
         startForegroundNotification()
-        startReactiveLoop()
+        ensureReactiveLoop()
 
         return START_NOT_STICKY
     }
@@ -166,38 +173,51 @@ class ProtectedAppWatcherService : Service() {
         startForeground(NOTIFICATION_ID, notification)
     }
 
-    /** وضع تفاعلي: استطلاع متدرج لخروج التطبيق ثم التوقف. */
-    private fun startReactiveLoop() {
-        scope.launch {
-            while (isActive) {
-                // أثناء إطفاء الشاشة: انتظر بلا استطلاع لحفظ البطارية
-                while (!isScreenOn && isActive) {
-                    delay(1000L)
-                }
+    /** وضع تفاعلي: استطلاع متدرج لخروج التطبيق ثم التوقف عبر Job مفردة. */
+    @Synchronized
+    private fun ensureReactiveLoop() {
+        val currentJob = watcherJob
+        if (currentJob != null && currentJob.isActive) {
+            // الحلقة قيد التشغيل بالفعل — تم تحديث الحزمة دون تكرار الحلقات
+            return
+        }
+        watcherJob = scope.launch {
+            try {
+                while (isActive) {
+                    // أثناء إطفاء الشاشة: انتظر بلا استطلاع لحفظ البطارية
+                    while (!isScreenOn && isActive) {
+                        delay(1000L)
+                    }
 
-                if (!ProtectedAppManager.isSuspended(
-                        this@ProtectedAppWatcherService
+                    if (!ProtectedAppManager.isSuspended(
+                            this@ProtectedAppWatcherService
+                        )
+                    ) {
+                        stopSelf()
+                        break
+                    }
+
+                    val elapsed = System.currentTimeMillis() - startedAt
+                    val pollIntervalMs = computePollIntervalMs(elapsed)
+                    delay(pollIntervalMs)
+
+                    if (!isActive) break
+
+                    val restored = ProtectedAppManager.checkAndRestore(
+                        context = this@ProtectedAppWatcherService,
+                        reason = "watcher"
                     )
-                ) {
-                    stopSelf()
-                    break
+                    if (restored) {
+                        Log.i(
+                            TAG,
+                            "Restored successfully via watcher. Stopping."
+                        )
+                        stopSelf()
+                        break
+                    }
                 }
-
-                val elapsed = System.currentTimeMillis() - startedAt
-                val pollIntervalMs = computePollIntervalMs(elapsed)
-                delay(pollIntervalMs)
-
-                if (!isActive) break
-
-                val restored = ProtectedAppManager.checkAndRestore(
-                    context = this@ProtectedAppWatcherService,
-                    reason = "watcher"
-                )
-                if (restored) {
-                    Log.i(TAG, "Restored successfully via watcher. Stopping.")
-                    stopSelf()
-                    break
-                }
+            } finally {
+                watcherJob = null
             }
         }
     }
@@ -244,6 +264,7 @@ class ProtectedAppWatcherService : Service() {
         screenReceiver?.let {
             runCatching { unregisterReceiver(it) }
         }
+        watcherJob?.cancel()
         serviceJob.cancel()
         super.onDestroy()
     }

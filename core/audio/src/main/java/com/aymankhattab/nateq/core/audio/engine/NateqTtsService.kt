@@ -2674,7 +2674,7 @@ class NateqTtsService : TextToSpeechService() {
             )
         }
         if (!success && !segment.text.isBlank()) {
-            Log.w(TAG, "مقطع محذوف: ${segment.text}")
+            Log.w(TAG, "مقطع محذوف: len=${segment.text.length}")
             SpeechLatencyTracker.recordDroppedSegment(segment.text)
         }
 

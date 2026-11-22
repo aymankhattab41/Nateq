@@ -22,8 +22,9 @@ class PreviousEngineTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        NextEngineSwitcher.switchToPrevious(applicationContext)
-        updateTile()
+        NextEngineSwitcher.triggerSwitch(applicationContext, isNext = false) {
+            updateTile()
+        }
     }
 
     private fun updateTile() {

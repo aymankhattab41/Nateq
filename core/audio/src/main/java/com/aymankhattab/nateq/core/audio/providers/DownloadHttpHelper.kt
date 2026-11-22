@@ -26,6 +26,9 @@ object DownloadHttpHelper {
     private const val ALLOWED_CLEARTEXT_HOST =
         "downloads.codefactoryglobal.com"
 
+    @androidx.annotation.VisibleForTesting
+    internal var allowedCleartextHostForTesting: String? = null
+
     /** مجلد التنزيلات المؤقتة الداخلي الدائم (ع٣٠-7). */
     fun getDownloadsDir(context: Context): File {
         val dir = File(context.filesDir, "downloads")
@@ -67,15 +70,28 @@ object DownloadHttpHelper {
 
     /**
      * التحقق من أن البروتوكول آمن https
-     * أو مسموح به صراحة في network_security_config.
+     * ويمنع تماماً التراجع (downgrade) من https إلى http عند التحويلات.
      */
-    fun validateProtocol(url: URL) {
+    fun validateProtocol(
+        url: URL,
+        isRedirect: Boolean = false,
+        initialWasHttps: Boolean = false
+    ) {
         val protocol = url.protocol.lowercase()
         val host = url.host.lowercase()
         if (protocol == "https") {
             return
         }
-        if (protocol == "http" && host == ALLOWED_CLEARTEXT_HOST) {
+        if (initialWasHttps && protocol == "http") {
+            throw DownloadError(
+                DownloadError.REDIRECT_BLOCKED,
+                "Protocol downgrade from HTTPS to HTTP blocked for host: $host"
+            )
+        }
+        if (protocol == "http" &&
+            (host == ALLOWED_CLEARTEXT_HOST ||
+                host == allowedCleartextHostForTesting)
+        ) {
             return
         }
         throw DownloadError(
@@ -86,7 +102,7 @@ object DownloadHttpHelper {
 
     /**
      * فتح اتصال HTTP مع معالجة التحويلات يدوياً وتتبع حتى 5 قفزات (ع٣٠-6)
-     * ودعم رأس Range للاستئناف (ع٣٠-7).
+     * ودعم رأس Range وIf-Range للاستئناف (ع٣٠-7).
      */
     fun openWithManualRedirects(
         urlString: String,
@@ -94,7 +110,8 @@ object DownloadHttpHelper {
         requestMethod: String = "GET",
         connectTimeoutMs: Int = 20_000,
         readTimeoutMs: Int = 30_000,
-        rangeBytes: Long = 0L
+        rangeBytes: Long = 0L,
+        ifRange: String? = null
     ): HttpURLConnection {
         var currentUrl = try {
             URL(urlString)
@@ -105,7 +122,12 @@ object DownloadHttpHelper {
             )
         }
 
-        validateProtocol(currentUrl)
+        val initialWasHttps = currentUrl.protocol.equals("https", true)
+        validateProtocol(
+            currentUrl,
+            isRedirect = false,
+            initialWasHttps = initialWasHttps
+        )
 
         var hops = 0
         while (hops < maxHops) {
@@ -122,6 +144,9 @@ object DownloadHttpHelper {
                 )
                 if (rangeBytes > 0 && requestMethod == "GET") {
                     conn.setRequestProperty("Range", "bytes=$rangeBytes-")
+                    if (!ifRange.isNullOrBlank()) {
+                        conn.setRequestProperty("If-Range", ifRange)
+                    }
                 }
                 conn.connect()
             } catch (st: SocketTimeoutException) {
@@ -183,7 +208,11 @@ object DownloadHttpHelper {
                         "$currentUrl -> $nextUrl (HTTP $code)"
                 )
 
-                validateProtocol(nextUrl)
+                validateProtocol(
+                    nextUrl,
+                    isRedirect = true,
+                    initialWasHttps = initialWasHttps
+                )
                 currentUrl = nextUrl
                 hops++
                 continue
@@ -258,7 +287,7 @@ object DownloadHttpHelper {
 
     /**
      * تنزيل ملف مع دعم الاستئناف عبر رأس Range وحفظ الملف المؤقت في
-     * filesDir/downloads/<id>.part (ع٣٠-7).
+     * filesDir/downloads/<id>.part مع التحقق من ETag وIf-Range والحجم النهائي.
      */
     suspend fun downloadToFileWithResume(
         urlString: String,
@@ -271,6 +300,7 @@ object DownloadHttpHelper {
     ): Result<File> = withContext(Dispatchers.IO) {
         val maxAttempts = 3
         var lastError: Throwable? = null
+        val metaFile = File(partFile.parentFile, "${partFile.name}.meta")
 
         for (attempt in 1..maxAttempts) {
             try {
@@ -278,34 +308,68 @@ object DownloadHttpHelper {
                 val initialBytes =
                     if (partFile.exists()) partFile.length() else 0L
 
+                var savedEtag: String? = null
+                var savedLastModified: String? = null
+                var savedTotal: Long = -1L
+                if (initialBytes > 0L && metaFile.isFile) {
+                    val lines = runCatching {
+                        metaFile.readLines()
+                    }.getOrNull()
+                    savedEtag = lines?.getOrNull(0)?.takeIf { it.isNotBlank() }
+                    savedLastModified = lines?.getOrNull(1)
+                        ?.takeIf { it.isNotBlank() }
+                    savedTotal = lines?.getOrNull(2)?.toLongOrNull() ?: -1L
+                }
+                val ifRange = savedEtag ?: savedLastModified
+
                 var conn: HttpURLConnection
                 var isResume = false
                 try {
                     conn = openWithManualRedirects(
                         urlString = urlString,
-                        rangeBytes = initialBytes
+                        rangeBytes = initialBytes,
+                        ifRange = ifRange
                     )
-                    if (conn.responseCode == 206) {
+                    val respCode = conn.responseCode
+                    if (respCode == 206) {
                         isResume = true
-                    } else if (conn.responseCode == 416) {
-                        // النطاق غير صالح -> بدء من الصفر
+                        val cr = conn.getHeaderField("Content-Range")
+                        if (cr != null) {
+                            val match = Regex(
+                                """bytes\s+(\d+)-(\d+)/(\d+|\*)"""
+                            ).find(cr)
+                            val startByte = match?.groupValues?.getOrNull(1)
+                                ?.toLongOrNull() ?: -1L
+                            if (startByte != initialBytes) {
+                                isResume = false
+                            }
+                        }
+                        val newEtag = conn.getHeaderField("ETag")
+                        if (savedEtag != null && newEtag != null &&
+                            savedEtag != newEtag
+                        ) {
+                            isResume = false
+                        }
+                    } else if (respCode == 416) {
                         conn.disconnect()
                         partFile.delete()
+                        metaFile.delete()
                         conn = openWithManualRedirects(
                             urlString = urlString,
                             rangeBytes = 0L
                         )
-                    } else if (conn.responseCode == 200 && initialBytes > 0L) {
+                    } else if (respCode == 200 && initialBytes > 0L) {
                         Log.w(
                             TAG,
-                            "الخادم رد بـ 200 بدل 206 لطلب استئناف؛ " +
-                                "الخادم لا يدعم الاستئناف، البدء من الصفر"
+                            "الخادم رد بـ 200 بدل 206 أو تغير المورد؛ " +
+                                "الاستئناف غير ممكن، البدء من الصفر"
                         )
                         isResume = false
                     }
                 } catch (e: DownloadError) {
                     if (e.code == "HTTP_416") {
                         partFile.delete()
+                        metaFile.delete()
                         conn = openWithManualRedirects(
                             urlString = urlString,
                             rangeBytes = 0L
@@ -320,13 +384,27 @@ object DownloadHttpHelper {
                     val baseDownloaded = if (appendMode) initialBytes else 0L
                     if (!appendMode && partFile.exists()) {
                         partFile.delete()
+                        metaFile.delete()
                     }
 
                     val contentLen = conn.contentLengthLong
                     val totalBytes = if (contentLen > 0) {
                         baseDownloaded + contentLen
+                    } else if (savedTotal > 0) {
+                        savedTotal
                     } else {
                         -1L
+                    }
+
+                    val currentEtag = conn.getHeaderField("ETag")
+                        ?: savedEtag.orEmpty()
+                    val currentLm = conn.getHeaderField("Last-Modified")
+                        ?: savedLastModified.orEmpty()
+                    runCatching {
+                        metaFile.writeText(
+                            "$currentEtag\n$currentLm\n$totalBytes",
+                            Charsets.UTF_8
+                        )
                     }
 
                     var currentDownloaded = baseDownloaded
@@ -361,6 +439,15 @@ object DownloadHttpHelper {
                             output.flush()
                         }
                     }
+                    if (totalBytes > 0 && partFile.length() != totalBytes) {
+                        partFile.delete()
+                        metaFile.delete()
+                        throw DownloadError(
+                            DownloadError.NETWORK,
+                            "الحجم النهائي للملف المُنزَّل لا يطابق المطلوب"
+                        )
+                    }
+                    metaFile.delete()
                     return@withContext Result.success(partFile)
                 } finally {
                     conn.disconnect()

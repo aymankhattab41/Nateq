@@ -44,7 +44,7 @@ class SettingsRepository(context: Context) :
 
     companion object {
         internal const val TAG = "NATEQ_TTS"
-        private const val NEW_PREFS = "nateq_settings"
+        internal const val NEW_PREFS = "nateq_settings"
         private const val OLD_PREFS = "nateq_secure_settings"
         private const val FALLBACK_PREFS = "nateq_fallback_settings"
         private const val KEY_MIGRATED = "_migrated_to_plain"
@@ -299,9 +299,53 @@ class SettingsRepository(context: Context) :
         const val KEY_APP_PROFILES = "app_profiles"
         const val KEY_CONTACT_VOICES = "contact_voices"
         const val KEY_READ_LATER = "read_later_queue"
+        const val KEY_READ_LATER_LONG_TEXT_POLICY =
+            "read_later_long_text_policy"
+        const val READ_LATER_POLICY_SAVE_FULL = "save_full"
+        const val READ_LATER_POLICY_TRUNCATE = "truncate"
         internal const val MAX_READ_LATER_ITEMS = 50
         internal const val MAX_READ_LATER_TEXT_CHARS = 20_000
         const val BOOT_MIRROR_PREFS = "nateq_boot_mirror"
+
+        private val BOOT_MIRROR_EXCLUDED_KEYS = setOf(
+            KEY_CONTACT_VOICES,
+            "contact_voice_overrides"
+        )
+
+        private val BOOT_MIRROR_EXCLUDED_PREFIXES = listOf(
+            "contact_", "caller_", "phone_", "call_record_"
+        )
+
+        private val BOOT_MIRROR_ALLOWED_EXACT_KEYS = setOf(
+            "app_language", "number_reading_language", "secondary_language",
+            "primary_engine", "preferred_engine", "default_engine",
+            "speech_rate", "speech_pitch", "speech_volume",
+            "boot_speech_enabled", "speak_on_boot"
+        )
+
+        private val BOOT_MIRROR_ALLOWED_PREFIXES = listOf(
+            "emergency_",
+            "preferred_voice_",
+            "primary_voice_",
+            "speech_rate_",
+            "speech_pitch_",
+            "speech_volume_",
+            "rate_",
+            "pitch_",
+            "volume_",
+            "engine_voice_",
+            "language_for_",
+            "filter_"
+        )
+
+        internal fun isAllowedInBootMirror(key: String): Boolean {
+            if (key in BOOT_MIRROR_EXCLUDED_KEYS) return false
+            if (BOOT_MIRROR_EXCLUDED_PREFIXES.any { key.startsWith(it) }) {
+                return false
+            }
+            if (key in BOOT_MIRROR_ALLOWED_EXACT_KEYS) return true
+            return BOOT_MIRROR_ALLOWED_PREFIXES.any { key.startsWith(it) }
+        }
         const val KEY_EMERGENCY_ENGINE = "emergency_engine"
         const val KEY_EMERGENCY_VOICE = "emergency_voice"
         const val KEY_EMERGENCY_RATE = "emergency_rate"
@@ -373,12 +417,16 @@ class SettingsRepository(context: Context) :
         @Volatile
         private var instance: SettingsRepository? = null
 
+        @androidx.annotation.VisibleForTesting
+        val activeInstancesCount =
+            java.util.concurrent.atomic.AtomicInteger(0)
+
         /**
          * المصنّع الموحّد الوحيد لمثيل SettingsRepository
-         * — مفرد على مستوى العملية.
+         * — مفرد على مستوى العملية ولا يحمل نشاطاً (Activity).
          */
         fun create(context: Context): SettingsRepository {
-            val app = context.applicationContext
+            val app = context.applicationContext ?: context
             val current = instance
             if (current != null && current.appContext === app) {
                 return current
@@ -398,7 +446,10 @@ class SettingsRepository(context: Context) :
         @androidx.annotation.VisibleForTesting
         fun resetInstanceForTesting() {
             synchronized(SettingsRepository::class.java) {
+                SnapshotPrefs.awaitPendingWritesForTesting(2000)
+                instance?.unregister()
                 instance = null
+                activeInstancesCount.set(0)
             }
         }
     }
@@ -420,7 +471,7 @@ class SettingsRepository(context: Context) :
     }
 
     /** سياق التطبيق العام لضمان عدم احتجاز سياق النشاط في المراقبين. */
-    private val appContext: Context = context.applicationContext
+    internal val appContext: Context = context.applicationContext
 
     /** جسر القراءة عبر العمليتين لملف الإعدادات المشترك. */
     private val prefsBridge = MultiProcessPrefsBridge(appContext)
@@ -460,63 +511,85 @@ class SettingsRepository(context: Context) :
      */
     internal val prefs: SnapshotPrefs = SnapshotPrefs(
         delegate = rawPrefs,
+        context = appContext,
         onChanged = ::notifySettingsChanged,
         stampProvider = ::prefsFileStamp
     )
 
+    private val isReloadScheduled =
+        java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** مراقب التغييرات بين العمليتين: يستيقظ عند إشعار [SettingsChangeProvider]
-     *  (كتابةٌ في العملية الأخرى) فيستدعي [reload] لتبديل اللقطة محلياً —
-     *  على [reloadExecutor] خارج الواجهة (بند الأداء). */
+     *  لتحديث اللقطة محلياً بتجميع المهام دون تراكم مهام نوم. */
     private val settingsObserver = object : ContentObserver(
         Handler(Looper.getMainLooper())
     ) {
         override fun onChange(selfChange: Boolean) {
-            reloadExecutor.execute {
-                reload(force = true)
-                // إن كانت الكتابة عبر apply() في العملية الأخرى، قد
-                // يستغرق تفريغ القرص بضع ميلي ثوانٍ؛ نعيد المحاولة
-                // لضمان التقاط التعديل فور استقرار القرص.
-                try {
-                    Thread.sleep(60)
-                    reload(force = true)
-                } catch (_: InterruptedException) {}
+            if (isReloadScheduled.compareAndSet(false, true)) {
+                reloadExecutor.execute {
+                    try {
+                        do {
+                            isReloadScheduled.set(false)
+                            reload(force = true)
+                        } while (isReloadScheduled.get())
+                    } finally {
+                        isReloadScheduled.set(false)
+                    }
+                }
             }
         }
     }
 
+    private val isObserverRegistered =
+        java.util.concurrent.atomic.AtomicBoolean(false)
+    private val isReceiverRegistered =
+        java.util.concurrent.atomic.AtomicBoolean(false)
+    private var userUnlockedReceiver: android.content.BroadcastReceiver? = null
+
     init {
         synchronized(SettingsRepository::class.java) {
             instance = this
+            activeInstancesCount.incrementAndGet()
         }
-        runCatching {
-            appContext.contentResolver.registerContentObserver(
-                SettingsChangeProvider.uri(), false, settingsObserver
-            )
+        if (isObserverRegistered.compareAndSet(false, true)) {
+            runCatching {
+                appContext.contentResolver.registerContentObserver(
+                    SettingsChangeProvider.uri(), false, settingsObserver
+                )
+            }
         }
         if (android.os.Build.VERSION.SDK_INT >=
             android.os.Build.VERSION_CODES.N
         ) {
-            try {
-                androidx.core.content.ContextCompat.registerReceiver(
-                    appContext,
-                    object : android.content.BroadcastReceiver() {
-                        override fun onReceive(
-                            context: Context?,
-                            intent: android.content.Intent?
+            if (isReceiverRegistered.compareAndSet(false, true)) {
+                val receiver = object : android.content.BroadcastReceiver() {
+                    override fun onReceive(
+                        context: Context?,
+                        intent: android.content.Intent?
+                    ) {
+                        if (intent?.action ==
+                            android.content.Intent.ACTION_USER_UNLOCKED
                         ) {
-                            if (intent?.action ==
-                                android.content.Intent.ACTION_USER_UNLOCKED
-                            ) {
-                                onUserUnlocked()
-                            }
+                            onUserUnlocked()
                         }
-                    },
-                    android.content.IntentFilter(
-                        android.content.Intent.ACTION_USER_UNLOCKED
-                    ),
-                    androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
-                )
-            } catch (_: Exception) {}
+                    }
+                }
+                userUnlockedReceiver = receiver
+                try {
+                    androidx.core.content.ContextCompat.registerReceiver(
+                        appContext,
+                        receiver,
+                        android.content.IntentFilter(
+                            android.content.Intent.ACTION_USER_UNLOCKED
+                        ),
+                        androidx.core.content.ContextCompat
+                            .RECEIVER_NOT_EXPORTED
+                    )
+                } catch (_: Exception) {
+                    isReceiverRegistered.set(false)
+                    userUnlockedReceiver = null
+                }
+            }
         }
         updateBootMirrorIfNeeded()
         VisibleLanguages.update(
@@ -530,15 +603,40 @@ class SettingsRepository(context: Context) :
     }
 
     /**
-     * يلغي تسجيل مراقب التغييرات عند الحاجة (إغلاق يدوي أو في بيئة الاختبار).
+     * يلغي تسجيل مراقب التغييرات ومستقبل فتح القفل بملكية وإغلاق واضحين.
      */
     fun unregister() {
-        runCatching {
-            appContext.contentResolver.unregisterContentObserver(
-                settingsObserver
-            )
+        SnapshotPrefs.awaitPendingWritesForTesting(2000)
+        if (isObserverRegistered.compareAndSet(true, false)) {
+            runCatching {
+                appContext.contentResolver.unregisterContentObserver(
+                    settingsObserver
+                )
+            }
+        }
+        if (isReceiverRegistered.compareAndSet(true, false)) {
+            userUnlockedReceiver?.let { receiver ->
+                runCatching {
+                    appContext.unregisterReceiver(receiver)
+                }
+            }
+            userUnlockedReceiver = null
+        }
+        synchronized(SettingsRepository::class.java) {
+            if (instance === this) {
+                instance = null
+            }
+            activeInstancesCount.decrementAndGet()
         }
     }
+
+    @androidx.annotation.VisibleForTesting
+    fun isObserverRegisteredForTesting(): Boolean =
+        isObserverRegistered.get()
+
+    @androidx.annotation.VisibleForTesting
+    fun isReceiverRegisteredForTesting(): Boolean =
+        isReceiverRegistered.get()
 
     private fun isUserUnlocked(): Boolean {
         if (android.os.Build.VERSION.SDK_INT >=
@@ -587,29 +685,12 @@ class SettingsRepository(context: Context) :
                 BOOT_MIRROR_PREFS, Context.MODE_PRIVATE
             )
             val editor = mirror.edit()
+            val currentMirrorKeys = mirror.all.keys.toSet()
+            val allowedInMain = mutableSetOf<String>()
+
             for ((key, value) in prefs.all) {
-                if (key.startsWith("emergency_") ||
-                    key.startsWith("filter_") ||
-                    key.startsWith("voice_") ||
-                    key.startsWith("preferred_voice_") ||
-                    key.startsWith("primary_voice_") ||
-                    key.startsWith("rate_") ||
-                    key.startsWith("speech_rate") ||
-                    key.startsWith("pitch_") ||
-                    key.startsWith("speech_pitch") ||
-                    key.startsWith("volume_") ||
-                    key.startsWith("engine_") ||
-                    key.startsWith("language_for_") ||
-                    key.startsWith("loudness_") ||
-                    key == "app_language" ||
-                    key == "number_reading_language" ||
-                    key == "secondary_language" ||
-                    key.contains("voice") ||
-                    key.contains("engine") ||
-                    key.contains("pitch") ||
-                    key.contains("rate") ||
-                    key.contains("volume")
-                ) {
+                if (isAllowedInBootMirror(key)) {
+                    allowedInMain.add(key)
                     when (value) {
                         is String -> editor.putString(key, value)
                         is Float -> editor.putFloat(key, value)
@@ -621,6 +702,13 @@ class SettingsRepository(context: Context) :
                             editor.putStringSet(key, value as Set<String>)
                         }
                     }
+                }
+            }
+
+            // ترحيل: حذف المفاتيح المستبعدة والمفاتيح المحذوفة من المرآة
+            for (oldKey in currentMirrorKeys) {
+                if (!allowedInMain.contains(oldKey)) {
+                    editor.remove(oldKey)
                 }
             }
             editor.apply()
@@ -647,47 +735,30 @@ class SettingsRepository(context: Context) :
 
     fun reload(force: Boolean = false) {
         if (localWriteSeq.get() != flushedSeq.get()) return
-        // التطبيق يعمل في عمليتين (main و :tts) وSharedPreferences يحتفظ
-        // بكاش في الذاكرة لكل عملية ولا يعيد قراءة القرص تلقائياً. لتخفيف
-        // عبء I/O لا نعيد القراءة إلا عندما يتغيّر توقيت الملف الفعلي (أي
-        // كتابة من العملية الأخرى) بدل قراءة قرص دائمة مع كل نطق.
-        // `force` يتجاوز بوابة التوقيت/الطول لأن تعديلاتٍ متتالية في نفس
-        // الثانية وبالطول نفسه (مثل تحريك سرعة النطق) لا تغيّر العلامة،
-        // فكان الإعداد الجديد يبدو كأنه لم يُحفظ في العملية الأخرى.
         if (!force && !prefsFileChanged()) return
-        // **بند 5.1:** نثبّت زمن الدخول (التوقيت والطول معاً — زمنٌ واحد
-        // قد يتطابق لكتابةٍ ثانيةٍ في نفس الثانية) لنكتشف لاحقاً أيَّ كتابةٍ
-        // متزامنةٍ من العملية الأخرى حدثت أثناء قراءتنا للملف — إن تغيّرت
-        // العلامة قبل التطبيق نتخلى عن هذه الجولة كي لا نكتب أقدم فوق أحدث.
+
         val stampAtEntry = prefsFileStamp()
-        // قراءة صريحة لملف القرص بتنسيق SharedPreferences التوثيقي ثم تبديل
-        // اللقطة المقروءة منها القيم — بلا أي كتابةٍ إلى الملف. لذلك لم يعد
-        // `reload` في حد ذاته يغيّر القرص فيطرد إشعاراً متكرراً بين العمليتين
-        // (بند 6: التحديث من العملية الأخرى يُلتقط بالقراءة لا بإعادة الكتابة).
-        val fresh = runCatching {
+        val diskFresh = runCatching {
             prefsBridge.parse(NEW_PREFS)
         }.getOrNull()
-            ?: return
+
+        val fresh = if (diskFresh != null && diskFresh.isNotEmpty()) {
+            diskFresh
+        } else {
+            val fromAuth = SettingsAuthority.getSnapshot(appContext).second
+            if (fromAuth.isNotEmpty()) fromAuth else diskFresh ?: return
+        }
+
         if (fresh.isEmpty() && prefs.all.isNotEmpty()) {
             return
         }
-        // بند 5.2: عند تطابق القراءة الجديدة مع الحالة الحالية
-        // (قراءةُ عمليةٍ أخرى لملفٍ لم يتبدّل مضمونه) لا نُحدّث شيئاً —
-        // المفتاح الداخلي KEY_MIGRATED يُستثنى من الطرفين معاً حتى لا
-        // يفشل التطابقُ لاختلافه الضمني (كان كل reloadٍ يعيد flash/apply).
-        if (prefs.all.minus(KEY_MIGRATED) ==
-            fresh.minus(KEY_MIGRATED)
-        ) {
+        if (prefs.all.minus(KEY_MIGRATED) == fresh.minus(KEY_MIGRATED)) {
             refreshPrefsStamp()
             return
         }
-        // **بند 5.1:** إعادة الفحص قبل التطبيق — إن تغيّر الملف أثناء
-        // القراءة (كتابة متزامنة من العملية الأخرى) نتخلى عن التحديث
-        // هذه الجولة وتُعالَج الأحدثُ في نداء reload() تالٍ.
         if (prefsFileStamp() != stampAtEntry) return
         if (localWriteSeq.get() != flushedSeq.get()) return
-        // تطبيق اللقطة في الذاكرة (مفتاح الترحيل محفوظ من القراءة الجديدة —
-        // الملف يُكتب عليه دائماً عند الترحيل فيبقى موجوداً في fresh).
+
         prefs.replaceSnapshot(fresh)
         refreshPrefsStamp()
         runCatching {
@@ -4256,6 +4327,7 @@ class SettingsRepository(context: Context) :
         EMPTY,
         DUPLICATE,
         SAVED,
+        SAVED_TRUNCATED,
         FAILED
     }
 
@@ -4264,6 +4336,16 @@ class SettingsRepository(context: Context) :
         val text: String,
         val timestampMs: Long
     )
+
+    fun getReadLaterLongTextPolicy(): String =
+        prefs.getString(
+            KEY_READ_LATER_LONG_TEXT_POLICY,
+            READ_LATER_POLICY_SAVE_FULL
+        ) ?: READ_LATER_POLICY_SAVE_FULL
+
+    fun setReadLaterLongTextPolicy(policy: String) {
+        prefs.edit().putString(KEY_READ_LATER_LONG_TEXT_POLICY, policy).apply()
+    }
 
     fun getReadLaterItems(): List<ReadLaterItem> =
         readLaterDelegate.getReadLaterItems()

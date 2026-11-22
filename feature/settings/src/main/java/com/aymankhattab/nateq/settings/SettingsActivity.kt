@@ -26,7 +26,11 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import android.widget.Toast
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 /**
@@ -148,6 +152,8 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
                 val msgRes = when (result) {
                     SettingsRepository.ReadLaterSaveResult.SAVED ->
                         R.string.read_later_saved_toast
+                    SettingsRepository.ReadLaterSaveResult.SAVED_TRUNCATED ->
+                        R.string.read_later_saved_truncated_toast
                     SettingsRepository.ReadLaterSaveResult.DUPLICATE ->
                         R.string.read_later_duplicate_toast
                     SettingsRepository.ReadLaterSaveResult.EMPTY ->
@@ -247,29 +253,174 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
     }
 
     private fun importZipVoicePackage(uri: Uri, fileName: String?) {
-        val displayName = fileName
-            ?: getString(R.string.voice_package_zip_label)
+        if (VoicePackageImporter.isImportInProgress()) {
+            Toast.makeText(
+                this,
+                R.string.zip_import_session_busy,
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val cancelSignal = AtomicBoolean(false)
+        var inspectJob: Job? = null
+
+        val inspectDialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.zip_import_title)
+            .setMessage(getString(R.string.zip_import_review_inspecting))
+            .setCancelable(false)
+            .setNegativeButton(R.string.zip_import_cancel_button) { dialog, _ ->
+                cancelSignal.set(true)
+                inspectJob?.cancel()
+                dialog.dismiss()
+                VoicePackageImporter.cancelActiveSession()
+                Toast.makeText(
+                    this@SettingsActivity,
+                    R.string.zip_import_cancelled_msg,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .create()
+        inspectDialog.show()
+
+        inspectJob = lifecycleScope.launch(Dispatchers.Main) {
+            val inspection = withContext(Dispatchers.IO) {
+                VoicePackageImporter.inspectZipPackage(
+                    context = applicationContext,
+                    zipUri = uri,
+                    suggestedName = fileName,
+                    cancellationSignal = cancelSignal
+                )
+            }
+
+            if (isFinishing || isDestroyed) {
+                VoicePackageImporter.cleanupInspection(inspection)
+                return@launch
+            }
+            runCatching { inspectDialog.dismiss() }
+
+            if (cancelSignal.get()) {
+                VoicePackageImporter.cleanupInspection(inspection)
+                Toast.makeText(
+                    this@SettingsActivity,
+                    R.string.zip_import_cancelled_msg,
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+
+            if (!inspection.isSupported ||
+                !inspection.errorMessage.isNullOrBlank()
+            ) {
+                VoicePackageImporter.cleanupInspection(inspection)
+                val err = inspection.errorMessage
+                    ?: getString(R.string.zip_import_unsupported_format)
+                MaterialAlertDialogBuilder(this@SettingsActivity)
+                    .setTitle(R.string.zip_import_error_title)
+                    .setMessage(err)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+                return@launch
+            }
+
+            showImportReviewDialog(inspection)
+        }
+    }
+
+    private fun showImportReviewDialog(
+        inspection: VoicePackageImporter.InspectionResult
+    ) {
+        val voicesStr = inspection.voicesFound.joinToString("، ")
+        val sizeMb = "%.1f".format(
+            Locale.US,
+            inspection.requiredSpaceBytes.toDouble() / (1024 * 1024)
+        ) + " ميجابايت"
+
+        val msgBuilder = StringBuilder()
+        msgBuilder.append("المحرك: ${inspection.engineDisplayName}\n")
+        msgBuilder.append("الأصوات المكتشفة في الحزمة: $voicesStr\n")
+        msgBuilder.append("المساحة التقديرية المطلوبة: $sizeMb\n")
+        if (inspection.voicesToReplace.isNotEmpty()) {
+            val replaceStr = inspection.voicesToReplace.joinToString("، ")
+            msgBuilder.append(
+                "\n⚠️ تنبيه: سيتم استبدال وتحديث الأصوات المثبتة التالية:\n" +
+                    "$replaceStr\n"
+            )
+        } else {
+            msgBuilder.append(
+                "\nسيتم تثبيت الأصوات كأصوات جديدة دون استبدال " +
+                    "أي أصوات سابقة.\n"
+            )
+        }
+        msgBuilder.append("\nهل ترغب في متابعة التثبيت الآن؟")
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.zip_import_review_title)
+            .setMessage(msgBuilder.toString())
+            .setCancelable(false)
+            .setPositiveButton(R.string.zip_import_confirm_button) { _, _ ->
+                executeZipImport(inspection)
+            }
+            .setNegativeButton(R.string.zip_import_cancel_button) { _, _ ->
+                VoicePackageImporter.cleanupInspection(inspection)
+                Toast.makeText(
+                    this,
+                    R.string.zip_import_cancelled_msg,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .show()
+    }
+
+    private fun executeZipImport(
+        inspection: VoicePackageImporter.InspectionResult
+    ) {
+        val cancelSignal = AtomicBoolean(false)
+        var importJob: Job? = null
 
         val progress = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.zip_import_title)
             .setMessage(
-                getString(R.string.zip_import_in_progress, displayName)
+                getString(
+                    R.string.zip_import_in_progress,
+                    inspection.voicesFound.joinToString("، ")
+                )
             )
             .setCancelable(false)
+            .setNegativeButton(R.string.zip_import_cancel_button) { dialog, _ ->
+                cancelSignal.set(true)
+                importJob?.cancel()
+                dialog.dismiss()
+                VoicePackageImporter.cancelActiveSession()
+                Toast.makeText(
+                    this@SettingsActivity,
+                    R.string.zip_import_cancelled_msg,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
             .create()
         progress.show()
 
-        lifecycleScope.launch(Dispatchers.Main) {
+        importJob = lifecycleScope.launch(Dispatchers.Main) {
             val result = withContext(Dispatchers.IO) {
-                VoicePackageImporter.importZip(
-                    applicationContext,
-                    uri,
-                    fileName
+                VoicePackageImporter.executeImport(
+                    context = applicationContext,
+                    inspection = inspection,
+                    cancellationSignal = cancelSignal
                 )
             }
 
             if (isFinishing || isDestroyed) return@launch
             runCatching { progress.dismiss() }
+
+            if (result.cancelled || cancelSignal.get()) {
+                Toast.makeText(
+                    this@SettingsActivity,
+                    R.string.zip_import_cancelled_msg,
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
 
             if (result.success) {
                 val voices = result.importedVoices.joinToString("، ")

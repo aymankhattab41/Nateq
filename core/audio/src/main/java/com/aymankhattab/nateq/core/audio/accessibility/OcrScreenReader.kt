@@ -14,46 +14,62 @@ import com.googlecode.tesseract.android.TessBaseAPI
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * قراءة العنصر المركّز بالتصوير والتعرّف الضوئي (ع٤١-ب12).
- *
- * - تتطلب أندرويد 11 (API 30) لالتقاط الشاشة عبر takeScreenshot.
- * - تُقصّ اللقطة على حدود العنصر المركّز إن وُجد.
- * - بيانات اللغة (ara.traineddata) تُنزَّل مرة واحدة إلى تخزين التطبيق
- *   الخاص عند أول استعمال (لا تُحزَم في الحزمة).
- * - خصوصية: لا تُحفظ الصور ولا يُرسل المحتوى لأي جهة خارجية.
+ * قراءة العنصر المركّز بالتصوير والتعرّف الضوئي (OCR):
+ * - عملية واحدة قيد التنفيذ أو الأحدث وإلغاء الأقدم وتحرير Bitmap فوراً.
+ * - منع تكديس لقطات الشاشة أثناء تنزيل بيانات اللغة.
+ * - تنزيل محدود محدد الحجم والحد الأقصى (تجنب الفروع المتحولة).
+ * - ربط HandlerThread وTesseract بدورة حياة الخدمة مع إغلاق آمن.
+ * - تعرّف محلي خالص دون رفع الصور أو حفظها في السجلات.
  */
 object OcrScreenReader {
 
     private const val TAG = "NATEQ_A11Y"
     private const val LANGUAGE = "ara"
     private const val MIN_DATA_BYTES = 100_000L
+    private const val MAX_DATA_BYTES = 10_000_000L // 10 ميغابايت كحد أقصى
+
+    // تثبيت المسار على وسم محدد مستقر (4.1.0) بدلاً من فرع main المتحول
     private const val DATA_URL =
-        "https://raw.githubusercontent.com/tesseract-ocr/" +
-            "tessdata_fast/main/ara.traineddata"
+        "https://github.com/tesseract-ocr/tessdata_fast/" +
+            "raw/4.1.0/ara.traineddata"
     private const val CONNECT_TIMEOUT_MS = 15_000
     private const val READ_TIMEOUT_MS = 30_000
     private const val THREAD_NAME = "NATEQ_OCR"
 
     private val lock = Any()
     private var workerThread: HandlerThread? = null
+    private val inFlightRequestId = AtomicLong(0L)
+    private val isDownloadingData = AtomicBoolean(false)
 
     fun readFocusedElement(service: AccessibilityService) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             announce(service, UNSUPPORTED)
             return
         }
+
+        // منع تكديس اللقطات أثناء تنزيل بيانات اللغة
+        if (isDownloadingData.get()) {
+            announce(service, DATA_DOWNLOADING_WAIT)
+            return
+        }
+
         val focusBounds = AccessibilityBridge.focusSnapshot()
             ?.boundsInScreen
             ?.takeUnless { it.isEmpty }
-        captureScreenshot(service, focusBounds)
+
+        val requestId = inFlightRequestId.incrementAndGet()
+        captureScreenshot(service, focusBounds, requestId)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureScreenshot(
         service: AccessibilityService,
-        bounds: Rect?
+        bounds: Rect?,
+        requestId: Long
     ) {
         runCatching {
             service.takeScreenshot(
@@ -63,12 +79,30 @@ object OcrScreenReader {
                     override fun onSuccess(
                         result: AccessibilityService.ScreenshotResult
                     ) {
+                        // إلغاء الطلب وتحرير الذاكرة إن تجاوزه طلب أحدث
+                        if (requestId != inFlightRequestId.get()) {
+                            runCatching { result.hardwareBuffer.close() }
+                            return
+                        }
+
                         val bitmap = decode(result)
                         if (bitmap == null) {
                             announce(service, CAPTURE_FAILED)
                             return
                         }
-                        handler().post { process(service, bitmap, bounds) }
+
+                        if (requestId != inFlightRequestId.get()) {
+                            bitmap.recycle()
+                            return
+                        }
+
+                        handler().post {
+                            if (requestId == inFlightRequestId.get()) {
+                                process(service, bitmap, bounds, requestId)
+                            } else {
+                                bitmap.recycle()
+                            }
+                        }
                     }
 
                     override fun onFailure(errorCode: Int) {
@@ -102,30 +136,42 @@ object OcrScreenReader {
     private fun process(
         service: AccessibilityService,
         source: Bitmap,
-        bounds: Rect?
+        bounds: Rect?,
+        requestId: Long
     ) {
         var image = source
         try {
+            if (requestId != inFlightRequestId.get()) return
+
             val cropped = crop(source, bounds)
             if (cropped !== source) {
                 source.recycle()
                 image = cropped
             }
+
+            if (requestId != inFlightRequestId.get()) return
+
             val dataDir = ensureLanguageData(service.applicationContext)
             if (dataDir == null) {
                 announce(service, DATA_FAILED)
                 return
             }
-            recognize(service, image, dataDir)
+
+            if (requestId != inFlightRequestId.get()) return
+
+            recognize(service, image, dataDir, requestId)
         } finally {
-            if (!image.isRecycled) image.recycle()
+            if (!image.isRecycled) {
+                image.recycle()
+            }
         }
     }
 
     private fun recognize(
         service: AccessibilityService,
         bitmap: Bitmap,
-        dataDir: File
+        dataDir: File,
+        requestId: Long
     ) {
         val api = TessBaseAPI()
         try {
@@ -133,9 +179,14 @@ object OcrScreenReader {
                 announce(service, ENGINE_FAILED)
                 return
             }
+            if (requestId != inFlightRequestId.get()) return
+
             api.setImage(bitmap)
             val text = api.utF8Text?.trim().orEmpty()
-            announce(service, if (text.isEmpty()) NO_TEXT else text)
+
+            if (requestId == inFlightRequestId.get()) {
+                announce(service, if (text.isEmpty()) NO_TEXT else text)
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "OCR failed", t)
             announce(service, READ_FAILED)
@@ -166,6 +217,11 @@ object OcrScreenReader {
         if (target.exists() && target.length() >= MIN_DATA_BYTES) {
             return context.filesDir
         }
+
+        if (!isDownloadingData.compareAndSet(false, true)) {
+            return null
+        }
+
         val temp = File(tessdata, "$LANGUAGE.traineddata.tmp")
         return try {
             download(DATA_URL, temp)
@@ -175,6 +231,8 @@ object OcrScreenReader {
             Log.w(TAG, "language data download failed", t)
             temp.delete()
             null
+        } finally {
+            isDownloadingData.set(false)
         }
     }
 
@@ -198,24 +256,56 @@ object OcrScreenReader {
         try {
             val code = connection.responseCode
             if (code !in 200..299) error("HTTP $code")
+
+            val contentLength = connection.contentLengthLong
+            if (contentLength > MAX_DATA_BYTES) {
+                error("تجاوز ملف اللغة الحد الأقصى المسموح")
+            }
+
+            var totalRead = 0L
+            val buffer = ByteArray(8192)
+
             connection.inputStream.use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
+                dest.outputStream().use { output ->
+                    var n = input.read(buffer)
+                    while (n != -1) {
+                        totalRead += n
+                        if (totalRead > MAX_DATA_BYTES) {
+                            error("تجاوز تدفق البيانات الحد الأقصى المسموح")
+                        }
+                        output.write(buffer, 0, n)
+                        n = input.read(buffer)
+                    }
+                }
             }
         } finally {
             connection.disconnect()
         }
-        if (dest.length() < MIN_DATA_BYTES) error("incomplete language data")
+        if (dest.length() < MIN_DATA_BYTES) {
+            error("ملف بيانات اللغة غير مكتمل")
+        }
     }
 
     private fun handler(): Handler {
         synchronized(lock) {
             var thread = workerThread
-            if (thread == null) {
+            if (thread == null || !thread.isAlive) {
                 thread = HandlerThread(THREAD_NAME)
                 thread.start()
                 workerThread = thread
             }
             return Handler(thread.looper)
+        }
+    }
+
+    /**
+     * إغلاق خيط المعالجة الخلفية وإلغاء أي مهام معلقة عند تدمير الخدمة.
+     */
+    fun shutdown() {
+        synchronized(lock) {
+            inFlightRequestId.incrementAndGet()
+            workerThread?.quitSafely()
+            workerThread = null
         }
     }
 
@@ -231,6 +321,8 @@ object OcrScreenReader {
     private const val CAPTURE_FAILED = "تعذّر التقاط الشاشة"
     private const val NO_TEXT = "لا يوجد نصّ في العنصر"
     private const val DATA_FAILED = "تعذّر تجهيز بيانات اللغة"
+    private const val DATA_DOWNLOADING_WAIT =
+        "جاري تجهيز بيانات قراءة الصور، يرجى الانتظار"
     private const val ENGINE_FAILED = "تعذّر تهيئة محرّك قراءة الصور"
     private const val READ_FAILED = "تعذّر قراءة الصورة"
 }

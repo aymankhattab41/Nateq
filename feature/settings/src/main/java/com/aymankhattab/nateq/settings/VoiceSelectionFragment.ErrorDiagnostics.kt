@@ -1391,7 +1391,9 @@ internal fun VoiceSelectionFragment.retryEngineSwitch(ctx: Context) {
                 .NextEngineSwitcher.switchToNext(ctx)
             if (res != null) {
                 Toast.makeText(
-                    ctx, "تم التبديل إلى ${res.label}", Toast.LENGTH_SHORT
+                    ctx,
+                    "تم التبديل إلى ${res.label}",
+                    Toast.LENGTH_SHORT
                 ).show()
             }
         }

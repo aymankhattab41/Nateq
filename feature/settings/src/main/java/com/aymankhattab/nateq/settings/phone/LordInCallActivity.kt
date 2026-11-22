@@ -45,6 +45,8 @@ class LordInCallActivity : AppCompatActivity() {
     private var llDtmfContainer: View? = null
     private var tvDtmfDigits: TextView? = null
     private var dialpadInCall: LordDialpadView? = null
+    private var btnAnswer: MaterialButton? = null
+    private var btnReject: MaterialButton? = null
 
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
@@ -168,12 +170,12 @@ class LordInCallActivity : AppCompatActivity() {
         tvDtmfDigits = findViewById(R.id.tv_dtmf_digits)
         dialpadInCall = findViewById(R.id.dialpad_incall)
 
-        val btnAnswer = findViewById<MaterialButton>(R.id.btn_incall_answer)
-        val btnReject = findViewById<MaterialButton>(R.id.btn_incall_reject)
+        btnAnswer = findViewById(R.id.btn_incall_answer)
+        btnReject = findViewById(R.id.btn_incall_reject)
         val btnKeypad = findViewById<MaterialButton>(R.id.btn_incall_keypad)
         val btnCloseDtmf = findViewById<MaterialButton>(R.id.btn_close_dtmf)
 
-        btnAnswer.setOnClickListener {
+        btnAnswer?.setOnClickListener {
             llIncomingActions?.visibility = View.GONE
             llActiveControls?.visibility = View.VISIBLE
             btnEndCall?.visibility = View.VISIBLE
@@ -181,7 +183,7 @@ class LordInCallActivity : AppCompatActivity() {
             LordInCallService.instance?.answerCall()
         }
 
-        btnReject.setOnClickListener {
+        btnReject?.setOnClickListener {
             llIncomingActions?.visibility = View.GONE
             LordInCallService.instance?.rejectCall()
             finish()
@@ -291,6 +293,32 @@ class LordInCallActivity : AppCompatActivity() {
             btnEndCall?.visibility = View.GONE
             tvDuration?.visibility = View.GONE
             mainHandler.removeCallbacks(durationRunnable)
+
+            val displayName = if (!name.isNullOrEmpty()) name else number
+            val calls = LordInCallService.instance?.calls ?: emptyList()
+            val hasMultipleCalls = calls.size > 1
+
+            if (hasMultipleCalls && displayName.isNotEmpty()) {
+                btnAnswer?.text = "رد: $displayName"
+                btnAnswer?.contentDescription =
+                    "الرد على مكالمة $displayName"
+                btnReject?.text = "رفض: $displayName"
+                btnReject?.contentDescription =
+                    "رفض مكالمة $displayName"
+            } else {
+                btnAnswer?.text = getString(R.string.phone_answer_call)
+                btnAnswer?.contentDescription = if (displayName.isNotEmpty()) {
+                    "رد على $displayName"
+                } else {
+                    getString(R.string.phone_answer_call)
+                }
+                btnReject?.text = getString(R.string.phone_reject_call)
+                btnReject?.contentDescription = if (displayName.isNotEmpty()) {
+                    "رفض مكالمة $displayName"
+                } else {
+                    getString(R.string.phone_reject_call)
+                }
+            }
         } else {
             llIncomingActions?.visibility = View.GONE
             llActiveControls?.visibility = View.VISIBLE

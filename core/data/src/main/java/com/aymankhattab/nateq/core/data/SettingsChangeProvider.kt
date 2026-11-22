@@ -42,6 +42,25 @@ class SettingsChangeProvider : ContentProvider() {
 
     override fun onCreate(): Boolean = true
 
+    override fun call(
+        method: String,
+        arg: String?,
+        extras: android.os.Bundle?
+    ): android.os.Bundle? {
+        val appCtx = context?.applicationContext ?: context ?: return null
+        return when (method) {
+            SettingsAuthority.METHOD_APPLY_CHANGES -> {
+                if (extras != null) {
+                    SettingsAuthority.applyFromIpc(appCtx, extras)
+                } else null
+            }
+            SettingsAuthority.METHOD_GET_SNAPSHOT -> {
+                SettingsAuthority.getSnapshotBundle(appCtx)
+            }
+            else -> super.call(method, arg, extras)
+        }
+    }
+
     override fun query(
         uri: Uri,
         projection: Array<String>?,

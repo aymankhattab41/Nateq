@@ -102,4 +102,95 @@ class SpeedDialManagerTest {
         assertEquals(16, all[1].slot)
         assertEquals(19, all[2].slot)
     }
+
+    @Test
+    fun saveAndGetSlot_withContactIdentity_preservesAllFields() {
+        assertTrue(
+            SpeedDialManager.saveSlot(
+                context = context,
+                slot = 5,
+                name = "سعيد",
+                phoneNumber = "01099998888",
+                contactId = 12345L,
+                lookupKey = "lookup_12345",
+                phoneRowId = 67890L
+            )
+        )
+
+        val entry = SpeedDialManager.getSlot(context, 5)
+        assertNotNull(entry)
+        assertEquals(5, entry?.slot)
+        assertEquals("سعيد", entry?.name)
+        assertEquals("01099998888", entry?.phoneNumber)
+        assertEquals(12345L, entry?.contactId)
+        assertEquals("lookup_12345", entry?.lookupKey)
+        assertEquals(67890L, entry?.phoneRowId)
+    }
+
+    @Test
+    fun migrateSlotIfPossible_singleMatch_migratesCleanly() {
+        SpeedDialManager.saveSlot(context, 10, "أحمد", "01011111111")
+        val matches = listOf(
+            SpeedDialManager.SystemContactMatch(
+                contactId = 42L,
+                lookupKey = "key_42",
+                phoneRowId = 101L,
+                name = "أحمد",
+                number = "01011111111"
+            )
+        )
+
+        val result =
+            SpeedDialManager.migrateSlotIfPossible(context, 10, matches)
+        assertTrue(result is SpeedDialManager.MigrationResult.Migrated)
+        val updated = SpeedDialManager.getSlot(context, 10)
+        assertEquals(42L, updated?.contactId)
+        assertEquals("key_42", updated?.lookupKey)
+        assertEquals(101L, updated?.phoneRowId)
+    }
+
+    @Test
+    fun migrateSlotIfPossible_ambiguousMatches_doesNotGuess() {
+        SpeedDialManager.saveSlot(context, 11, "أحمد", "01011111111")
+        val matches = listOf(
+            SpeedDialManager.SystemContactMatch(
+                contactId = 42L,
+                lookupKey = "key_42",
+                phoneRowId = 101L,
+                name = "أحمد الأول",
+                number = "01011111111"
+            ),
+            SpeedDialManager.SystemContactMatch(
+                contactId = 99L,
+                lookupKey = "key_99",
+                phoneRowId = 202L,
+                name = "أحمد الثاني",
+                number = "01011111111"
+            )
+        )
+
+        val result =
+            SpeedDialManager.migrateSlotIfPossible(context, 11, matches)
+        assertTrue(result is SpeedDialManager.MigrationResult.Ambiguous)
+        val entry = SpeedDialManager.getSlot(context, 11)
+        assertNull(entry?.contactId)
+    }
+
+    @Test
+    fun migrateSlotIfPossible_alreadyHasContactId_returnsNotNeeded() {
+        SpeedDialManager.saveSlot(
+            context = context,
+            slot = 12,
+            name = "محمود",
+            phoneNumber = "01022222222",
+            contactId = 777L
+        )
+
+        val result = SpeedDialManager.migrateSlotIfPossible(
+            context,
+            12,
+            emptyList()
+        )
+        assertTrue(result is SpeedDialManager.MigrationResult.NotNeeded)
+    }
 }

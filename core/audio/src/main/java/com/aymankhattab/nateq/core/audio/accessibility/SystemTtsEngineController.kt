@@ -108,7 +108,10 @@ object SystemTtsEngineController {
      * 3. مسار الأتمتة عبر خدمة إمكانية الوصول.
      * 4. مسار احتياطي أخير: فتح شاشة إعدادات النطق للمستخدم.
      */
-    fun setSystemEngine(context: Context, pkg: String): SetEngineResult {
+    suspend fun setSystemEngine(
+        context: Context,
+        pkg: String
+    ): SetEngineResult {
         val resolver = context.contentResolver
         val initialRate = try {
             Settings.Secure.getString(resolver, KEY_TTS_DEFAULT_RATE)
@@ -131,8 +134,8 @@ object SystemTtsEngineController {
                 false
             }
             if (written) {
-                val verified = currentSystemEngine(context)
-                if (verified == pkg) {
+                val verified = verifySystemEngine(context, pkg)
+                if (verified) {
                     restoreDefaults(
                         resolver, initialRate, initialPitch, initialLocale
                     )
@@ -143,8 +146,8 @@ object SystemTtsEngineController {
 
         // 2. مسار root/su الاختياري للتسريع
         if (trySetViaSu(pkg)) {
-            val verified = currentSystemEngine(context)
-            if (verified == pkg) {
+            val verified = verifySystemEngine(context, pkg)
+            if (verified) {
                 restoreDefaults(
                     resolver, initialRate, initialPitch, initialLocale
                 )
@@ -154,12 +157,10 @@ object SystemTtsEngineController {
 
         // 3. مسار الأتمتة عبر خدمة إمكانية الوصول
         if (AccessibilityBridge.isServiceConnected()) {
-            val autoResult = kotlinx.coroutines.runBlocking {
-                TtsSettingsAutomation.run(context, pkg)
-            }
+            val autoResult = TtsSettingsAutomation.run(context, pkg)
             if (autoResult.success) {
-                val verified = currentSystemEngine(context)
-                if (verified == pkg) {
+                val verified = verifySystemEngine(context, pkg)
+                if (verified) {
                     restoreDefaults(
                         resolver, initialRate, initialPitch, initialLocale
                     )
@@ -198,21 +199,54 @@ object SystemTtsEngineController {
         )
     }
 
-    private fun trySetViaSu(pkg: String): Boolean {
-        return try {
-            val proc = Runtime.getRuntime().exec(
-                arrayOf(
-                    "su",
-                    "-c",
-                    "settings put secure $KEY_TTS_DEFAULT_SYNTH $pkg"
-                )
-            )
-            proc.waitFor(2, java.util.concurrent.TimeUnit.SECONDS) &&
-                proc.exitValue() == 0
-        } catch (_: Throwable) {
-            false
-        }
+    /** نسخة متزامنة للاختبارات الآلية واستدعاءات التوافق. */
+    fun setSystemEngineBlocking(
+        context: Context,
+        pkg: String
+    ): SetEngineResult = kotlinx.coroutines.runBlocking {
+        setSystemEngine(context, pkg)
     }
+
+    private suspend fun verifySystemEngine(
+        context: Context,
+        pkg: String,
+        maxWaitMs: Long = 800L
+    ): Boolean {
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start <= maxWaitMs) {
+            if (currentSystemEngine(context) == pkg) return true
+            kotlinx.coroutines.delay(50L)
+        }
+        return currentSystemEngine(context) == pkg
+    }
+
+    private suspend fun trySetViaSu(pkg: String): Boolean =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            var proc: Process? = null
+            try {
+                proc = Runtime.getRuntime().exec(
+                    arrayOf(
+                        "su",
+                        "-c",
+                        "settings put secure $KEY_TTS_DEFAULT_SYNTH $pkg"
+                    )
+                )
+                val completed = kotlinx.coroutines.withTimeoutOrNull(2000L) {
+                    proc.waitFor()
+                }
+                if (completed != null && completed == 0) {
+                    true
+                } else {
+                    proc.destroyForcibly()
+                    false
+                }
+            } catch (_: Throwable) {
+                try {
+                    proc?.destroyForcibly()
+                } catch (_: Throwable) {}
+                false
+            }
+        }
 
     private fun openAccessibilitySettings(context: Context) {
         try {

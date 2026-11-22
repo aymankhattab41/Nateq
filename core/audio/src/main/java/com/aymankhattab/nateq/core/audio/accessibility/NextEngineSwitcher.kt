@@ -6,6 +6,14 @@ import android.util.Log
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * يبدّل محرك TTS الافتراضي على مستوى النظام بالكامل.
@@ -16,6 +24,11 @@ object NextEngineSwitcher {
 
     private const val TAG = "NATEQ_TTS"
     const val LORD_TTS_PACKAGE = "com.aymankhattab.nateq.default"
+
+    private val switchScope =
+        CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private var activeSwitchJob: Job? = null
+    private val accumulatedSteps = AtomicInteger(0)
 
     data class SwitchResult(
         val packageName: String,
@@ -106,9 +119,9 @@ object NextEngineSwitcher {
     }
 
     /**
-     * يبدّل محرك النطق الافتراضي للنظام إلى المحرك التالي.
+     * يبدّل محرك النطق الافتراضي للنظام إلى المحرك التالي بشكل غير متزامن.
      */
-    fun switchToNext(context: Context): SwitchResult? {
+    suspend fun switchToNext(context: Context): SwitchResult? {
         val appContext = context.applicationContext
         val engines = availableEngines(appContext)
         if (engines.isEmpty()) {
@@ -116,8 +129,9 @@ object NextEngineSwitcher {
             return null
         }
 
-        val current = SystemTtsEngineController.currentSystemEngine(appContext)
-            ?: appContext.packageName
+        val current =
+            SystemTtsEngineController.currentSystemEngine(appContext)
+                ?: appContext.packageName
         val next = nextEngine(engines, current) ?: return null
 
         val result = SystemTtsEngineController.setSystemEngine(
@@ -134,10 +148,13 @@ object NextEngineSwitcher {
         }
     }
 
+    fun switchToNextBlocking(context: Context): SwitchResult? =
+        kotlinx.coroutines.runBlocking { switchToNext(context) }
+
     /**
-     * يبدّل محرك النطق الافتراضي للنظام إلى المحرك السابق.
+     * يبدّل محرك النطق الافتراضي للنظام إلى المحرك السابق بشكل غير متزامن.
      */
-    fun switchToPrevious(context: Context): SwitchResult? {
+    suspend fun switchToPrevious(context: Context): SwitchResult? {
         val appContext = context.applicationContext
         val engines = availableEngines(appContext)
         if (engines.isEmpty()) {
@@ -145,8 +162,9 @@ object NextEngineSwitcher {
             return null
         }
 
-        val current = SystemTtsEngineController.currentSystemEngine(appContext)
-            ?: appContext.packageName
+        val current =
+            SystemTtsEngineController.currentSystemEngine(appContext)
+                ?: appContext.packageName
         val prev = previousEngine(engines, current) ?: return null
 
         val result = SystemTtsEngineController.setSystemEngine(
@@ -160,6 +178,68 @@ object NextEngineSwitcher {
             val reason = result.reason ?: "خطأ غير معروف"
             announce(appContext, "فشل تبديل المحرك: $reason")
             null
+        }
+    }
+
+    fun switchToPreviousBlocking(context: Context): SwitchResult? =
+        kotlinx.coroutines.runBlocking { switchToPrevious(context) }
+
+    /**
+     * تشغيل عملية التبديل بجلسة قابلة للإلغاء وتجميع الضغطات المتلاحقة.
+     * تضمن عدم حجز خيط الواجهة أو خدمة إمكانية الوصول.
+     */
+    fun triggerSwitch(
+        context: Context,
+        isNext: Boolean,
+        onComplete: ((SwitchResult?) -> Unit)? = null
+    ) {
+        val appContext = context.applicationContext
+        val step = if (isNext) 1 else -1
+        accumulatedSteps.addAndGet(step)
+
+        activeSwitchJob?.cancel()
+        activeSwitchJob = switchScope.launch {
+            delay(120L)
+            val steps = accumulatedSteps.getAndSet(0)
+            if (steps == 0) return@launch
+
+            val engines = availableEngines(appContext)
+            if (engines.isEmpty()) {
+                announce(appContext, "لا يوجد محرك نطق مثبت")
+                onComplete?.invoke(null)
+                return@launch
+            }
+
+            val current =
+                SystemTtsEngineController.currentSystemEngine(appContext)
+                    ?: appContext.packageName
+
+            val curIndex = engines.indexOfFirst {
+                it.packageName == current ||
+                    (current == LORD_TTS_PACKAGE &&
+                        (it.packageName == LORD_TTS_PACKAGE ||
+                            it.packageName == "com.aymankhattab.nateq")) ||
+                    (current == "com.aymankhattab.nateq" &&
+                        (it.packageName == LORD_TTS_PACKAGE ||
+                            it.packageName == "com.aymankhattab.nateq"))
+            }.let { if (it < 0) 0 else it }
+
+            val targetIndex = (curIndex + steps).mod(engines.size)
+            val target = engines[targetIndex]
+
+            val result = SystemTtsEngineController.setSystemEngine(
+                appContext,
+                target.packageName
+            )
+            val switchRes = if (result.success) {
+                announce(appContext, "محرك الهاتف الآن: ${target.label}")
+                SwitchResult(target.packageName, target.label, engines.size)
+            } else {
+                val reason = result.reason ?: "خطأ غير معروف"
+                announce(appContext, "فشل تبديل المحرك: $reason")
+                null
+            }
+            onComplete?.invoke(switchRes)
         }
     }
 
@@ -189,7 +269,11 @@ object NextEngineSwitcher {
                 isInterruptAllowed = true
             )
         } catch (t: Throwable) {
-            Log.w(TAG, "Failed to speak announcement: $text", t)
+            Log.w(
+                TAG,
+                "Failed to speak announcement (len=${text.length})",
+                t
+            )
         }
     }
 

@@ -31,8 +31,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyModel
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyType
@@ -92,6 +99,15 @@ class LordPhoneActivity : AppCompatActivity() {
     private var tvRecordingsEmpty: View? = null
     private var tvRecordingsPath: TextView? = null
     private var btnOpenRecordingsFolder: MaterialButton? = null
+
+    private var searchJob: Job? = null
+    private var callLogJob: Job? = null
+    private var contactsJob: Job? = null
+    private var recordingsJob: Job? = null
+
+    private lateinit var callLogAdapter: CallLogAdapter
+    private lateinit var contactsAdapter: ContactsAdapter
+    private lateinit var recordingsAdapter: RecordingsAdapter
 
     private var mediaPlayer: MediaPlayer? = null
     private var tts: TextToSpeech? = null
@@ -200,6 +216,14 @@ class LordPhoneActivity : AppCompatActivity() {
         rvCallLog?.layoutManager = LinearLayoutManager(this)
         rvContacts?.layoutManager = LinearLayoutManager(this)
         rvRecordings?.layoutManager = LinearLayoutManager(this)
+
+        callLogAdapter = CallLogAdapter(mutableListOf())
+        contactsAdapter = ContactsAdapter(mutableListOf())
+        recordingsAdapter = RecordingsAdapter(mutableListOf())
+
+        rvCallLog?.adapter = callLogAdapter
+        rvContacts?.adapter = contactsAdapter
+        rvRecordings?.adapter = recordingsAdapter
 
         val btnSettings =
             findViewById<MaterialButton>(R.id.btn_phone_settings)
@@ -551,7 +575,12 @@ class LordPhoneActivity : AppCompatActivity() {
                 before: Int,
                 count: Int
             ) {
-                loadContacts(s?.toString() ?: "")
+                val query = s?.toString() ?: ""
+                searchJob?.cancel()
+                searchJob = lifecycleScope.launch {
+                    delay(150L)
+                    loadContacts(query)
+                }
             }
             override fun afterTextChanged(s: Editable?) {}
         })
@@ -716,9 +745,22 @@ class LordPhoneActivity : AppCompatActivity() {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             tvCallLogEmpty?.visibility = View.VISIBLE
+            callLogAdapter.updateItems(emptyList())
             return
         }
 
+        callLogJob?.cancel()
+        callLogJob = lifecycleScope.launch {
+            val items = withContext(Dispatchers.IO) {
+                queryCallLog()
+            }
+            tvCallLogEmpty?.visibility =
+                if (items.isEmpty()) View.VISIBLE else View.GONE
+            callLogAdapter.updateItems(items)
+        }
+    }
+
+    private fun queryCallLog(): List<CallLogEntry> {
         val items = mutableListOf<CallLogEntry>()
         val uri = CallLog.Calls.CONTENT_URI
         val projection = arrayOf(
@@ -737,28 +779,42 @@ class LordPhoneActivity : AppCompatActivity() {
                 null,
                 "${CallLog.Calls.DATE} DESC LIMIT 50"
             )
-            cursor?.let { c ->
-                val numIdx = c.getColumnIndex(CallLog.Calls.NUMBER)
-                val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
-                val typeIdx = c.getColumnIndex(CallLog.Calls.TYPE)
-                val dateIdx = c.getColumnIndex(CallLog.Calls.DATE)
-
-                while (c.moveToNext()) {
-                    val number = c.getString(numIdx) ?: ""
-                    val name = c.getString(nameIdx) ?: ""
-                    val type = c.getInt(typeIdx)
-                    val date = c.getLong(dateIdx)
-                    items.add(CallLogEntry(number, name, type, date))
-                }
+        } catch (e: Exception) {
+            Log.w(
+                "LordPhone",
+                "CallLog query with LIMIT failed, retrying without LIMIT",
+                e
+            )
+            try {
+                cursor = contentResolver.query(
+                    uri,
+                    projection,
+                    null,
+                    null,
+                    "${CallLog.Calls.DATE} DESC"
+                )
+            } catch (e2: Exception) {
+                Log.e("LordPhone", "CallLog query failed", e2)
             }
-        } catch (_: Exception) {
-        } finally {
-            cursor?.close()
         }
 
-        tvCallLogEmpty?.visibility =
-            if (items.isEmpty()) View.VISIBLE else View.GONE
-        rvCallLog?.adapter = CallLogAdapter(items)
+        cursor?.use { c ->
+            val numIdx = c.getColumnIndex(CallLog.Calls.NUMBER)
+            val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
+            val typeIdx = c.getColumnIndex(CallLog.Calls.TYPE)
+            val dateIdx = c.getColumnIndex(CallLog.Calls.DATE)
+
+            var count = 0
+            while (c.moveToNext() && count < 50) {
+                val number = if (numIdx >= 0) c.getString(numIdx) ?: "" else ""
+                val name = if (nameIdx >= 0) c.getString(nameIdx) ?: "" else ""
+                val type = if (typeIdx >= 0) c.getInt(typeIdx) else 0
+                val date = if (dateIdx >= 0) c.getLong(dateIdx) else 0L
+                items.add(CallLogEntry(number, name, type, date))
+                count++
+            }
+        }
+        return items
     }
 
     private fun loadContacts(query: String = "") {
@@ -768,71 +824,145 @@ class LordPhoneActivity : AppCompatActivity() {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             tvContactsEmpty?.visibility = View.VISIBLE
+            contactsAdapter.updateItems(emptyList())
             return
         }
 
-        val items = mutableListOf<ContactEntry>()
+        contactsJob?.cancel()
+        contactsJob = lifecycleScope.launch {
+            val items = withContext(Dispatchers.IO) {
+                queryContacts(query)
+            }
+            tvContactsEmpty?.visibility =
+                if (items.isEmpty()) View.VISIBLE else View.GONE
+            contactsAdapter.updateItems(items)
+        }
+    }
+
+    private fun queryContacts(query: String): List<ContactEntry> {
         val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
         val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+            ContactsContract.CommonDataKinds.Phone.LOOKUP_KEY,
+            ContactsContract.CommonDataKinds.Phone._ID,
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER
+            ContactsContract.CommonDataKinds.Phone.NUMBER,
+            ContactsContract.CommonDataKinds.Phone.TYPE,
+            ContactsContract.CommonDataKinds.Phone.LABEL
         )
+        val selection = if (query.isNotEmpty()) {
+            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
+        } else null
+        val selectionArgs = if (query.isNotEmpty()) {
+            arrayOf("%$query%")
+        } else null
+
+        val sortWithLimit =
+            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} " +
+                "ASC LIMIT 100"
+        val sortWithoutLimit =
+            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
 
         var cursor: Cursor? = null
         try {
-            val selection = if (query.isNotEmpty()) {
-                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-            } else null
-            val selectionArgs = if (query.isNotEmpty()) {
-                arrayOf("%$query%")
-            } else null
-
-            val sortOrder =
-                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} " +
-                    "ASC LIMIT 100"
             cursor = contentResolver.query(
                 uri,
                 projection,
                 selection,
                 selectionArgs,
-                sortOrder
+                sortWithLimit
             )
-            cursor?.let { c ->
-                val nameIdx =
-                    c.getColumnIndex(
-                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
-                    )
-                val numIdx =
-                    c.getColumnIndex(
-                        ContactsContract.CommonDataKinds.Phone.NUMBER
-                    )
-
-                while (c.moveToNext()) {
-                    val name = c.getString(nameIdx) ?: ""
-                    val num = c.getString(numIdx) ?: ""
-                    items.add(ContactEntry(name, num))
-                }
+        } catch (e: Exception) {
+            Log.w(
+                "LordPhone",
+                "Contacts query with LIMIT failed, retrying without LIMIT",
+                e
+            )
+            try {
+                cursor = contentResolver.query(
+                    uri,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    sortWithoutLimit
+                )
+            } catch (e2: Exception) {
+                Log.e("LordPhone", "Contacts query failed", e2)
             }
-        } catch (_: Exception) {
-        } finally {
-            cursor?.close()
         }
 
-        tvContactsEmpty?.visibility =
-            if (items.isEmpty()) View.VISIBLE else View.GONE
-        rvContacts?.adapter = ContactsAdapter(items)
+        val items = mutableListOf<ContactEntry>()
+        cursor?.use { c ->
+            val idIdx =
+                c.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.CONTACT_ID
+                )
+            val lookupIdx =
+                c.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.LOOKUP_KEY
+                )
+            val rowIdIdx =
+                c.getColumnIndex(ContactsContract.CommonDataKinds.Phone._ID)
+            val nameIdx =
+                c.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                )
+            val numIdx =
+                c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            val typeIdx =
+                c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.TYPE)
+            val labelIdx =
+                c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.LABEL)
+
+            var count = 0
+            while (c.moveToNext() && count < 100) {
+                val cId = if (idIdx >= 0) c.getLong(idIdx) else 0L
+                val lookup =
+                    if (lookupIdx >= 0) c.getString(lookupIdx) ?: "" else ""
+                val rowId = if (rowIdIdx >= 0) c.getLong(rowIdIdx) else 0L
+                val name = if (nameIdx >= 0) c.getString(nameIdx) ?: "" else ""
+                val num = if (numIdx >= 0) c.getString(numIdx) ?: "" else ""
+                val type = if (typeIdx >= 0) c.getInt(typeIdx) else 0
+                val label = if (labelIdx >= 0) c.getString(labelIdx) else null
+                val typeLabel =
+                    ContactsContract.CommonDataKinds.Phone.getTypeLabel(
+                        resources,
+                        type,
+                        label
+                    )?.toString()
+
+                items.add(
+                    ContactEntry(
+                        contactId = cId,
+                        lookupKey = lookup,
+                        phoneRowId = rowId,
+                        name = name,
+                        number = num,
+                        typeLabel = typeLabel
+                    )
+                )
+                count++
+            }
+        }
+        return items
     }
 
     private fun loadRecordings() {
-        val recordings = CallRecordManager.getRecordings(this)
-        tvRecordingsEmpty?.visibility =
-            if (recordings.isEmpty()) View.VISIBLE else View.GONE
-        val folderName = CallRecordManager.getRecordingFolderDisplayName()
-        tvRecordingsPath?.text = getString(
-            R.string.phone_record_folder_label,
-            folderName
-        )
-        rvRecordings?.adapter = RecordingsAdapter(recordings)
+        recordingsJob?.cancel()
+        recordingsJob = lifecycleScope.launch {
+            val items = withContext(Dispatchers.IO) {
+                CallRecordManager.getRecordings(this@LordPhoneActivity)
+            }
+            tvRecordingsEmpty?.visibility =
+                if (items.isEmpty()) View.VISIBLE else View.GONE
+            val folderName =
+                CallRecordManager.getRecordingFolderDisplayName()
+            tvRecordingsPath?.text = getString(
+                R.string.phone_record_folder_label,
+                folderName
+            )
+            recordingsAdapter.updateItems(items)
+        }
     }
 
     private fun openRecordingsFolder() {
@@ -1017,10 +1147,17 @@ class LordPhoneActivity : AppCompatActivity() {
         val date: Long
     )
 
-    data class ContactEntry(val name: String, val number: String)
+    data class ContactEntry(
+        val contactId: Long = 0L,
+        val lookupKey: String = "",
+        val phoneRowId: Long = 0L,
+        val name: String,
+        val number: String,
+        val typeLabel: String? = null
+    )
 
     private inner class CallLogAdapter(
-        private val list: List<CallLogEntry>
+        private val list: MutableList<CallLogEntry>
     ) : RecyclerView.Adapter<CallLogAdapter.VH>() {
 
         inner class VH(v: View) : RecyclerView.ViewHolder(v) {
@@ -1029,6 +1166,29 @@ class LordPhoneActivity : AppCompatActivity() {
             val btnCall: MaterialButton = v.findViewById(R.id.btn_call_log_call)
             val btnPlayRec: MaterialButton =
                 v.findViewById(R.id.btn_call_log_play_rec)
+        }
+
+        fun updateItems(newItems: List<CallLogEntry>) {
+            val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize(): Int = list.size
+                override fun getNewListSize(): Int = newItems.size
+                override fun areItemsTheSame(
+                    oldPos: Int,
+                    newPos: Int
+                ): Boolean {
+                    return list[oldPos].date == newItems[newPos].date &&
+                        list[oldPos].number == newItems[newPos].number
+                }
+                override fun areContentsTheSame(
+                    oldPos: Int,
+                    newPos: Int
+                ): Boolean {
+                    return list[oldPos] == newItems[newPos]
+                }
+            })
+            list.clear()
+            list.addAll(newItems)
+            diff.dispatchUpdatesTo(this)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -1081,13 +1241,43 @@ class LordPhoneActivity : AppCompatActivity() {
     }
 
     private inner class ContactsAdapter(
-        private val list: List<ContactEntry>
+        private val list: MutableList<ContactEntry>
     ) : RecyclerView.Adapter<ContactsAdapter.VH>() {
 
         inner class VH(v: View) : RecyclerView.ViewHolder(v) {
             val tvName: TextView = v.findViewById(R.id.tv_call_log_name)
             val tvDetails: TextView = v.findViewById(R.id.tv_call_log_details)
             val btnCall: MaterialButton = v.findViewById(R.id.btn_call_log_call)
+        }
+
+        fun updateItems(newItems: List<ContactEntry>) {
+            val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize(): Int = list.size
+                override fun getNewListSize(): Int = newItems.size
+                override fun areItemsTheSame(
+                    oldPos: Int,
+                    newPos: Int
+                ): Boolean {
+                    val o = list[oldPos]
+                    val n = newItems[newPos]
+                    return if (o.phoneRowId > 0 && n.phoneRowId > 0) {
+                        o.phoneRowId == n.phoneRowId
+                    } else if (o.contactId > 0 && n.contactId > 0) {
+                        o.contactId == n.contactId && o.number == n.number
+                    } else {
+                        o.name == n.name && o.number == n.number
+                    }
+                }
+                override fun areContentsTheSame(
+                    oldPos: Int,
+                    newPos: Int
+                ): Boolean {
+                    return list[oldPos] == newItems[newPos]
+                }
+            })
+            list.clear()
+            list.addAll(newItems)
+            diff.dispatchUpdatesTo(this)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -1102,7 +1292,12 @@ class LordPhoneActivity : AppCompatActivity() {
         override fun onBindViewHolder(holder: VH, position: Int) {
             val item = list[position]
             holder.tvName.text = item.name
-            holder.tvDetails.text = item.number
+            val details = if (!item.typeLabel.isNullOrBlank()) {
+                "${item.number} • ${item.typeLabel}"
+            } else {
+                item.number
+            }
+            holder.tvDetails.text = details
 
             val clickListener = View.OnClickListener {
                 if (speedDialTargetSlot > 0) {
@@ -1119,37 +1314,77 @@ class LordPhoneActivity : AppCompatActivity() {
         override fun getItemCount(): Int = list.size
     }
 
+    private data class PhoneOption(
+        val phoneRowId: Long,
+        val number: String,
+        val typeLabel: String?
+    )
+
     private fun assignContactToSpeedDial(item: ContactEntry) {
         val slot = speedDialTargetSlot
-        val numbers = getNumbersForContact(item.name)
-        if (numbers.size <= 1) {
-            val chosenNumber =
-                if (numbers.isNotEmpty()) numbers[0] else item.number
-            finalizeSpeedDialAssignment(slot, item.name, chosenNumber)
-        } else {
-            val options = numbers.toTypedArray()
-            MaterialAlertDialogBuilder(this)
-                .setTitle(
-                    getString(R.string.speed_dial_select_number_title, slot)
+        lifecycleScope.launch {
+            val options = withContext(Dispatchers.IO) {
+                getPhoneNumbersForContact(item.contactId, item.name)
+            }
+            if (options.size <= 1) {
+                val chosen = options.firstOrNull()
+                val chosenNumber = chosen?.number ?: item.number
+                val rowId = chosen?.phoneRowId ?: item.phoneRowId
+                finalizeSpeedDialAssignment(
+                    slot = slot,
+                    name = item.name,
+                    number = chosenNumber,
+                    contactId = item.contactId,
+                    lookupKey = item.lookupKey,
+                    phoneRowId = rowId
                 )
-                .setItems(options) { _, which ->
-                    finalizeSpeedDialAssignment(
-                        slot,
-                        item.name,
-                        numbers[which]
+            } else {
+                val displayOptions = options.map { opt ->
+                    if (!opt.typeLabel.isNullOrBlank()) {
+                        "${opt.number} (${opt.typeLabel})"
+                    } else {
+                        opt.number
+                    }
+                }.toTypedArray()
+
+                MaterialAlertDialogBuilder(this@LordPhoneActivity)
+                    .setTitle(
+                        getString(R.string.speed_dial_select_number_title, slot)
                     )
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
+                    .setItems(displayOptions) { _, which ->
+                        val chosen = options[which]
+                        finalizeSpeedDialAssignment(
+                            slot = slot,
+                            name = item.name,
+                            number = chosen.number,
+                            contactId = item.contactId,
+                            lookupKey = item.lookupKey,
+                            phoneRowId = chosen.phoneRowId
+                        )
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
         }
     }
 
     private fun finalizeSpeedDialAssignment(
         slot: Int,
         name: String,
-        number: String
+        number: String,
+        contactId: Long? = null,
+        lookupKey: String? = null,
+        phoneRowId: Long? = null
     ) {
-        SpeedDialManager.saveSlot(this, slot, name, number)
+        SpeedDialManager.saveSlot(
+            context = this,
+            slot = slot,
+            name = name,
+            phoneNumber = number,
+            contactId = contactId,
+            lookupKey = lookupKey,
+            phoneRowId = phoneRowId
+        )
         val msg = getString(R.string.speed_dial_added_toast, name, slot)
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         speak(msg)
@@ -1157,15 +1392,29 @@ class LordPhoneActivity : AppCompatActivity() {
         finish()
     }
 
-    private fun getNumbersForContact(name: String): List<String> {
-        val numbers = mutableListOf<String>()
+    private fun getPhoneNumbersForContact(
+        contactId: Long,
+        name: String
+    ): List<PhoneOption> {
+        val numbers = mutableListOf<PhoneOption>()
         val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
         val projection = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.NUMBER
+            ContactsContract.CommonDataKinds.Phone._ID,
+            ContactsContract.CommonDataKinds.Phone.NUMBER,
+            ContactsContract.CommonDataKinds.Phone.TYPE,
+            ContactsContract.CommonDataKinds.Phone.LABEL
         )
-        val selection =
+        val selection = if (contactId > 0L) {
+            "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?"
+        } else {
             "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ?"
-        val selectionArgs = arrayOf(name)
+        }
+        val selectionArgs = if (contactId > 0L) {
+            arrayOf(contactId.toString())
+        } else {
+            arrayOf(name)
+        }
+
         var cursor: Cursor? = null
         try {
             cursor = contentResolver.query(
@@ -1175,26 +1424,48 @@ class LordPhoneActivity : AppCompatActivity() {
                 selectionArgs,
                 null
             )
-            cursor?.let { c ->
-                val numIdx = c.getColumnIndex(
-                    ContactsContract.CommonDataKinds.Phone.NUMBER
-                )
+            cursor?.use { c ->
+                val rowIdIdx =
+                    c.getColumnIndex(ContactsContract.CommonDataKinds.Phone._ID)
+                val numIdx =
+                    c.getColumnIndex(
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    )
+                val typeIdx =
+                    c.getColumnIndex(
+                        ContactsContract.CommonDataKinds.Phone.TYPE
+                    )
+                val labelIdx =
+                    c.getColumnIndex(
+                        ContactsContract.CommonDataKinds.Phone.LABEL
+                    )
+
                 while (c.moveToNext()) {
-                    val num = c.getString(numIdx) ?: continue
-                    if (num.isNotBlank() && !numbers.contains(num)) {
-                        numbers.add(num)
+                    val rowId = if (rowIdIdx >= 0) c.getLong(rowIdIdx) else 0L
+                    val num = if (numIdx >= 0) c.getString(numIdx) ?: "" else ""
+                    val type = if (typeIdx >= 0) c.getInt(typeIdx) else 0
+                    val label =
+                        if (labelIdx >= 0) c.getString(labelIdx) else null
+                    val typeLabel =
+                        ContactsContract.CommonDataKinds.Phone.getTypeLabel(
+                            resources,
+                            type,
+                            label
+                        )?.toString()
+
+                    if (num.isNotBlank() && numbers.none { it.number == num }) {
+                        numbers.add(PhoneOption(rowId, num, typeLabel))
                     }
                 }
             }
-        } catch (_: Exception) {
-        } finally {
-            cursor?.close()
+        } catch (e: Exception) {
+            Log.w("LordPhone", "Error querying phone numbers for contact", e)
         }
         return numbers
     }
 
     private inner class RecordingsAdapter(
-        private val list: List<CallRecordItem>
+        private val list: MutableList<CallRecordItem>
     ) : RecyclerView.Adapter<RecordingsAdapter.VH>() {
 
         inner class VH(v: View) : RecyclerView.ViewHolder(v) {
@@ -1204,6 +1475,28 @@ class LordPhoneActivity : AppCompatActivity() {
             val btnShare: MaterialButton = v.findViewById(R.id.btn_record_share)
             val btnDelete: MaterialButton =
                 v.findViewById(R.id.btn_record_delete)
+        }
+
+        fun updateItems(newItems: List<CallRecordItem>) {
+            val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize(): Int = list.size
+                override fun getNewListSize(): Int = newItems.size
+                override fun areItemsTheSame(
+                    oldPos: Int,
+                    newPos: Int
+                ): Boolean {
+                    return list[oldPos].id == newItems[newPos].id
+                }
+                override fun areContentsTheSame(
+                    oldPos: Int,
+                    newPos: Int
+                ): Boolean {
+                    return list[oldPos] == newItems[newPos]
+                }
+            })
+            list.clear()
+            list.addAll(newItems)
+            diff.dispatchUpdatesTo(this)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -1257,6 +1550,10 @@ class LordPhoneActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        searchJob?.cancel()
+        callLogJob?.cancel()
+        contactsJob?.cancel()
+        recordingsJob?.cancel()
         mediaPlayer?.release()
         mediaPlayer = null
         tts?.stop()

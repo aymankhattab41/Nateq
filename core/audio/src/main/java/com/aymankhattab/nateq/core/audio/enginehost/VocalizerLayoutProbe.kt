@@ -12,34 +12,50 @@ import java.util.Date
  */
 object VocalizerLayoutProbe {
 
+    /** سقف بايتات فحص سلاسل ملفات الترويسة لدرء استنزاف الذاكرة (512 KB). */
+    const val MAX_PROBE_READ_BYTES = 512 * 1024L
+
+    /** سقف بايتات قراءة ملفات XML التشخيصية (512 KB). */
+    const val MAX_XML_READ_BYTES = 512 * 1024L
+
     /**
      * استخراج كل السلاسل النصية المقروءة (ASCII 32..126) بطول
-     * [minLen] على الأقل، بحد أقصى [maxStrings].
+     * [minLen] على الأقل، بحد أقصى [maxStrings]، مع قراءة تدفقية
+     * محدودة بسقف [maxBytesToScan] لدرء استنزاف الذاكرة (OOM).
      */
     fun extractPrintableStrings(
         file: File,
         minLen: Int = 6,
-        maxStrings: Int = 60
+        maxStrings: Int = 60,
+        maxBytesToScan: Long = MAX_PROBE_READ_BYTES
     ): List<String> {
         if (!file.exists() || !file.isFile) return emptyList()
-        val bytes = runCatching { file.readBytes() }.getOrNull()
-            ?: return emptyList()
         val strings = mutableListOf<String>()
         val sb = StringBuilder()
-        for (b in bytes) {
-            val c = b.toInt().toChar()
-            if (c in ' '..'~') {
-                sb.append(c)
-            } else {
-                if (sb.length >= minLen) {
-                    strings.add(sb.toString())
-                    if (strings.size >= maxStrings) break
+        var totalBytesRead = 0L
+
+        runCatching {
+            file.inputStream().buffered().use { input ->
+                var byteRead = 0
+                while (totalBytesRead < maxBytesToScan &&
+                    input.read().also { byteRead = it } != -1
+                ) {
+                    totalBytesRead++
+                    val c = byteRead.toChar()
+                    if (c in ' '..'~') {
+                        sb.append(c)
+                    } else {
+                        if (sb.length >= minLen) {
+                            strings.add(sb.toString())
+                            if (strings.size >= maxStrings) break
+                        }
+                        sb.setLength(0)
+                    }
                 }
-                sb.setLength(0)
+                if (sb.length >= minLen && strings.size < maxStrings) {
+                    strings.add(sb.toString())
+                }
             }
-        }
-        if (sb.length >= minLen && strings.size < maxStrings) {
-            strings.add(sb.toString())
         }
         return strings
     }
@@ -102,7 +118,11 @@ object VocalizerLayoutProbe {
         if (xmlFile != null) {
             sb.appendLine("\n--- محتوى ${xmlFile.name} ---")
             val content = runCatching {
-                xmlFile.readText(Charsets.UTF_8)
+                xmlFile.inputStream().bufferedReader(Charsets.UTF_8).use { r ->
+                    val buf = CharArray(MAX_XML_READ_BYTES.toInt())
+                    val n = r.read(buf)
+                    if (n > 0) String(buf, 0, n) else ""
+                }
             }.getOrElse { "تعذّرت قراءة الملف: ${it.message}" }
             sb.appendLine(content)
         } else {

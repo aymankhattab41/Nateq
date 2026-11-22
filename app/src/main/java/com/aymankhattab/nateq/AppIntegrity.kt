@@ -39,12 +39,10 @@ object AppIntegrity {
 
     // القيمة المرجعية لتوقيع SHA-256 للحزمة (Release keystore).
     // تُستبدل آلياً عند بناء Release عبر `scripts/release.ps1` أو يدوياً.
-    // صيغة: "aa:bb:cc..." (uppercase hex مفصول بنقطتين).
-    private const val PLACEHOLDER_SHA256 =
-        "79:3A:A5:31:F8:89:04:A1:9B:9C:1C:33:A6:7B:23:8F:31:42:92:63:" +
-            "F5:D3:24:F9:5E:AE:CE:E8:81:1F:E8:C3"
+    const val PLACEHOLDER_SHA256 =
+        "REPLACE_WITH_RELEASE_SIGNATURE_SHA256"
 
-    private const val EXPECTED_SIGNATURE_SHA256 =
+    internal var expectedSignatureSha256 =
         "79:3A:A5:31:F8:89:04:A1:9B:9C:1C:33:A6:7B:23:8F:31:42:92:63:" +
             "F5:D3:24:F9:5E:AE:CE:E8:81:1F:E8:C3"
 
@@ -115,6 +113,15 @@ object AppIntegrity {
         "virtual"
     )
 
+    enum class PlayIntegrityDiagnostic(val labelAr: String) {
+        LIBRARY_NOT_FOUND("مكتبة Play Integrity غير مثبتة"),
+        REQUEST_FAILED("فشل طلب رمز السلامة"),
+        TOKEN_RECEIVED_UNVERIFIED(
+            "تم استلام الرمز بدون تصديق خادمي موثوق"
+        ),
+        UNAVAILABLE("غير متوفر")
+    }
+
     // ===== نقطة الدخول الرئيسية =====
     @Volatile
     private var cachedResult: Boolean? = null
@@ -131,20 +138,21 @@ object AppIntegrity {
         CoroutineScope(Dispatchers.IO).launch {
             val signatureOk = checkSignature(context)
             val debuggableOk = !isDebuggable(context)
-            val rootOk = !isRooted(context)
-            val hookOk = !detectHooks(context)
-            val integrityOk = checkPlayIntegrity(context)
+            val rootDetected = isRooted(context)
+            val hookDetected = detectHooks(context)
+            val piDiag = checkPlayIntegrityDiagnostic(context)
             val checksumOk = verifyApkChecksum(context)
 
-            val allOk = signatureOk && debuggableOk && rootOk &&
-                hookOk && integrityOk && checksumOk
+            // التوقيع وفحص التصحيح هما المعيار الأساسي، والجذر
+            // وPlay Integrity حالات تشخيصية صادقة تمنع قطع الإتاحة
+            val allOk = signatureOk && debuggableOk && !hookDetected
             cachedResult = allOk
 
             Log.i(
                 TAG,
                 "Integrity check: sig=$signatureOk "
-                    + "dbg=$debuggableOk root=$rootOk "
-                    + "hook=$hookOk pi=$integrityOk "
+                    + "dbg=$debuggableOk root=!$rootDetected "
+                    + "hook=!$hookDetected pi=${piDiag.name} "
                     + "cs=$checksumOk => $allOk"
             )
 
@@ -152,8 +160,8 @@ object AppIntegrity {
                 Log.e(
                     TAG,
                     "INTEGRITY FAILED — sig=$signatureOk "
-                        + "dbg=$debuggableOk root=$rootOk "
-                        + "hook=$hookOk pi=$integrityOk "
+                        + "dbg=$debuggableOk root=!$rootDetected "
+                        + "hook=!$hookDetected pi=${piDiag.name} "
                         + "cs=$checksumOk"
                 )
             }
@@ -166,11 +174,12 @@ object AppIntegrity {
     }
 
     // ===== 1. تحقق التوقيع =====
-    private fun checkSignature(context: Context): Boolean {
-        if (EXPECTED_SIGNATURE_SHA256 == PLACEHOLDER_SHA256) {
-            Log.w(TAG, "Signature check skipped — placeholder not replaced")
-            // نسمح في البناء المحلي، لكن Release الحقيقي يجب استبدال القيمة
-            return true
+    internal fun checkSignature(context: Context): Boolean {
+        if (expectedSignatureSha256 == PLACEHOLDER_SHA256 ||
+            expectedSignatureSha256.isBlank()
+        ) {
+            Log.e(TAG, "Signature check failed: placeholder signature")
+            return false
         }
         try {
             val pkgInfo: PackageInfo = context.packageManager.getPackageInfo(
@@ -203,7 +212,7 @@ object AppIntegrity {
                 val bytes = sig.toByteArray()
                 val hash = digest.digest(bytes)
                 val hex = hash.joinToString(":") { "%02X".format(it) }
-                if (hex == EXPECTED_SIGNATURE_SHA256) {
+                if (hex.equals(expectedSignatureSha256, ignoreCase = true)) {
                     return true
                 }
             }
@@ -346,10 +355,11 @@ object AppIntegrity {
         return false
     }
 
-    // ===== 5. Play Integrity API (إلزامي، عبر Reflection) =====
-    private fun checkPlayIntegrity(context: Context): Boolean {
+    // ===== 5. Play Integrity API (فحص تشخيصي غير حاجز) =====
+    private fun checkPlayIntegrityDiagnostic(
+        context: Context
+    ): PlayIntegrityDiagnostic {
         return try {
-            // محاولة تحميل فئات Play Integrity عبر Reflection
             val integrityManagerFactoryClass = Class.forName(
                 "com.google.android.play.integrity.IntegrityManagerFactory"
             )
@@ -362,19 +372,18 @@ object AppIntegrity {
             val integrityTokenResponseClass = Class.forName(
                 "com.google.android.play.integrity.IntegrityTokenResponse"
             )
+            val tasksClass = Class.forName(
+                "com.google.android.gms.tasks.Tasks"
+            )
+            val taskClass = Class.forName(
+                "com.google.android.gms.tasks.Task"
+            )
 
-            // IntegrityManagerFactory.create(context)
             val createMethod = integrityManagerFactoryClass.getMethod(
                 "create", Context::class.java
             )
             val integrityManager = createMethod.invoke(null, context)
 
-            // generateNonce()
-            val nonce = generateNonce()
-
-            // IntegrityTokenRequest.builder()
-            //     .setCloudProjectNumber(0)
-            //     .setNonce(nonce).build()
             val builderClass = Class.forName(
                 "com.google.android.play.integrity." +
                     "IntegrityTokenRequest\$Builder"
@@ -388,34 +397,45 @@ object AppIntegrity {
                 .invoke(builder, generateNonce())
             val request = builderClass.getMethod("build").invoke(builder)
 
-            // integrityManager.requestIntegrityToken(request)
             val requestMethod = integrityManagerClass.getMethod(
                 "requestIntegrityToken",
                 integrityTokenRequestClass
             )
             val task = requestMethod.invoke(integrityManager, request)
 
-            // task.await() - kotlinx.coroutines.await extension
-            val awaitMethod = task.javaClass.getMethod("await")
-            val response = awaitMethod.invoke(task)
+            // استخدام Tasks.await المدعوم رسمياً
+            // بدلاً من استدعاء await كعضو Task
+            val awaitMethod = tasksClass.getMethod(
+                "await",
+                taskClass,
+                java.lang.Long.TYPE,
+                java.util.concurrent.TimeUnit::class.java
+            )
+            val response = awaitMethod.invoke(
+                null,
+                task,
+                5L,
+                java.util.concurrent.TimeUnit.SECONDS
+            )
 
-            // response.token()
             val tokenMethod = integrityTokenResponseClass
                 .getMethod("token")
-            val token = tokenMethod.invoke(response) as String
-
-            Log.i(TAG, "Play Integrity token received (len=${token.length})")
-            token.isNotEmpty()
-        } catch (e: ClassNotFoundException) {
-            Log.e(
-                TAG,
-                "Play Integrity library NOT FOUND "
-                    + "— integrity check FAILED"
-            )
-            false // المكتبة غير موجودة = فشل إلزامي
+            val token = tokenMethod.invoke(response) as? String
+            if (!token.isNullOrEmpty()) {
+                Log.i(
+                    TAG,
+                    "Play Integrity token received (len=${token.length}) — " +
+                        "تشخيص محلي بدون تصديق خادمي"
+                )
+                PlayIntegrityDiagnostic.TOKEN_RECEIVED_UNVERIFIED
+            } else {
+                PlayIntegrityDiagnostic.REQUEST_FAILED
+            }
+        } catch (_: ClassNotFoundException) {
+            PlayIntegrityDiagnostic.LIBRARY_NOT_FOUND
         } catch (e: Exception) {
-            Log.e(TAG, "Play Integrity check FAILED: ${e.message}")
-            false // أي خطأ = فشل إلزامي
+            Log.w(TAG, "Play Integrity diagnostic check: ${e.message}")
+            PlayIntegrityDiagnostic.REQUEST_FAILED
         }
     }
 

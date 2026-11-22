@@ -122,12 +122,12 @@ class KeyShortcutRouter(
 
     /** يبدّل محرك نطق النظام إلى المحرك التالي. */
     private fun switchToNextEngine(context: Context) {
-        NextEngineSwitcher.switchToNext(context)
+        NextEngineSwitcher.triggerSwitch(context, isNext = true)
     }
 
     /** يبدّل محرك نطق النظام إلى المحرك السابق. */
     private fun switchToPreviousEngine(context: Context) {
-        NextEngineSwitcher.switchToPrevious(context)
+        NextEngineSwitcher.triggerSwitch(context, isNext = false)
     }
 
     /** ع٤٣-1: تنفيذ صريح لإيماءة «قراءة المزيد» وتوسيع الرسالة المفوكسة. */

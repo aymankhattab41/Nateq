@@ -3,12 +3,22 @@ package com.aymankhattab.nateq.core.audio.engine
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
- * متتبع آخر النصوص المنطوقة في سجل دائري لآخر 20 نصاً (الجولة 53 - الأمر 4).
- * يسجل المصدر والنص الخام والنظام السداسي للمحارف غير الاعتيادية.
+ * متتبع آخر النصوص المنطوقة في سجل دائري لآخر 20 نصاً.
+ * يطبق سياسة خصوصية صارمة:
+ * 1. عدم حفظ المكالمات والرموز وكلمات المرور افتراضياً.
+ * 2. سقوف لحجم كل عبارة وإجمالي الذاكرة.
+ * 3. آلية مسح واضحة.
  */
 object LastSpokenTextsTracker {
 
     private const val MAX_ENTRIES = 20
+    private const val MAX_ENTRY_CHARS = 256
+    private const val MAX_TOTAL_CHARS = 4096
+
+    private val SENSITIVE_SOURCE_KEYWORDS = setOf(
+        "caller", "متصل", "مكالمة", "call", "password", "كلمة مرور",
+        "pin", "رمز", "token", "otp", "secret", "سر"
+    )
 
     data class SpokenEntry(
         val rawText: String,
@@ -23,26 +33,63 @@ object LastSpokenTextsTracker {
 
     private val buffer = ConcurrentLinkedQueue<SpokenEntry>()
 
-    fun record(rawText: String, source: Any? = null) {
+    fun record(
+        rawText: String,
+        source: Any? = null,
+        isSensitive: Boolean = false
+    ) {
         if (rawText.isBlank()) return
+        if (isSensitive) return
+
         val srcLabel = when (source) {
-            is SpeechEntryPoints.Source -> source.labelAr
-            is String -> source
+            is SpeechEntryPoints.Source -> {
+                if (source == SpeechEntryPoints.Source.CALLER) return
+                source.labelAr
+            }
+            is String -> {
+                val lower = source.lowercase()
+                if (SENSITIVE_SOURCE_KEYWORDS.any { lower.contains(it) }) {
+                    return
+                }
+                source
+            }
             null -> "قارئ الشاشة"
-            else -> source.toString()
+            else -> {
+                val s = source.toString()
+                val lower = s.lowercase()
+                if (SENSITIVE_SOURCE_KEYWORDS.any { lower.contains(it) }) {
+                    return
+                }
+                s
+            }
         }
-        val hexChars = extractNonStandardHex(rawText)
+
+        // قص العبارة بالسقف المحدد
+        val boundedText = if (rawText.length > MAX_ENTRY_CHARS) {
+            rawText.take(MAX_ENTRY_CHARS)
+        } else {
+            rawText
+        }
+
+        val hexChars = extractNonStandardHex(boundedText)
         buffer.add(
             SpokenEntry(
-                rawText = rawText,
+                rawText = boundedText,
                 source = srcLabel,
                 hexInfo = hexChars
             )
         )
-        while (buffer.size > MAX_ENTRIES) {
+
+        // تقليص بالعدد وسقف إجمالي الحروف
+        while (buffer.size > MAX_ENTRIES ||
+            calculateTotalChars() > MAX_TOTAL_CHARS
+        ) {
             buffer.poll()
         }
     }
+
+    private fun calculateTotalChars(): Int =
+        buffer.sumOf { it.rawText.length }
 
     fun getRecent(): List<String> = buffer.toList().reversed().map {
         it.rawText

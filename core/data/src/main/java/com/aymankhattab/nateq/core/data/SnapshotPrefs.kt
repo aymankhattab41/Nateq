@@ -18,9 +18,34 @@ import android.content.SharedPreferences
  */
 internal class SnapshotPrefs(
     @Volatile private var delegate: SharedPreferences,
+    private val context: android.content.Context? = null,
     private val onChanged: () -> Unit = {},
-    private val stampProvider: () -> Pair<Long, Long>
+    private val stampProvider: () -> Pair<Long, Long> = { 0L to 0L }
 ) : SharedPreferences {
+
+    companion object {
+        private val writeExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+                Thread(r, "nateq-prefs-writer").apply {
+                    isDaemon = true
+                    priority = Thread.NORM_PRIORITY - 1
+                }
+            }
+
+        fun awaitPendingWritesForTesting(timeoutMs: Long = 5000) {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            writeExecutor.execute { latch.countDown() }
+            latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+    }
+
+    /**
+     * رقم المراجعة المونوتوني للقطة الحالية.
+     */
+    @Volatile
+    private var revision: Long = 0L
+
+    fun getRevision(): Long = revision
 
     /**
      * كتابةٌ محلية أُطلقت بـ[apply] ولم يُعرف بعد أنها بلغت القرص، مع بصمةٍ
@@ -59,7 +84,16 @@ internal class SnapshotPrefs(
      * المحلية المعلّقة ما دامت بصمة الملف لم تتغيّر عن لحظة كتابتها: فحين
      * تتغيّر البصمة صار القرص أحدث (تفريغٌ أو كتابةُ عمليةٍ أخرى) فيُؤخذ.
      */
-    fun replaceSnapshot(values: Map<String, Any?>) {
+    fun replaceSnapshot(
+        values: Map<String, Any?>,
+        newRevision: Long = 0L
+    ) {
+        if (newRevision > 0 && newRevision < revision) {
+            return
+        }
+        if (newRevision > 0) {
+            revision = newRevision
+        }
         if (pendingLocalWrites.isEmpty()) {
             snapshot = values
             return
@@ -146,7 +180,7 @@ internal class SnapshotPrefs(
         listener: SharedPreferences.OnSharedPreferenceChangeListener
     ) = delegate.unregisterOnSharedPreferenceChangeListener(listener)
 
-    /** محرر يجمّع تعديلاته ثم يطبقها على [delegate] و[snapshot] معاً. */
+    /** محرر يجمّع تعديلاته ثم يطبقها معاملة موحدة. */
     private inner class SnapshotEditor : SharedPreferences.Editor {
         private var clearFirst = false
         private val removals = LinkedHashSet<String>()
@@ -177,47 +211,91 @@ internal class SnapshotPrefs(
             apply { puts[key] = value }
 
         override fun commit(): Boolean {
-            val ok = delegate.edit().also { applyOps(it) }.commit()
-            if (ok) {
-                // الكتابة بلغت القرص: لم تبق كتابةٌ محلية معلّقة
-                pendingLocalWrites.clear()
-                snapshot = delegate.all
-                onChanged()
+            val tx = SettingsTransaction(
+                clearFirst = clearFirst,
+                removals = removals.toList(),
+                puts = HashMap(puts)
+            )
+            val ctx = context
+            val isChildProcess = ctx != null &&
+                (!com.aymankhattab.nateq.util.ProcessUtils.isMainProcess(ctx) ||
+                    SettingsAuthority.forceIpcForTesting)
+            if (ctx != null && isChildProcess) {
+                val result = SettingsAuthority.commitTransaction(ctx, tx)
+                if (result.success) {
+                    revision = result.revision
+                    snapshot = result.snapshot
+                    pendingLocalWrites.clear()
+                    onChanged()
+                    return true
+                }
+                return false
+            } else {
+                val ok = delegate.edit().also { applyOps(it) }.commit()
+                if (ok) {
+                    pendingLocalWrites.clear()
+                    snapshot = delegate.all
+                    onChanged()
+                }
+                return ok
             }
-            return ok
         }
 
         override fun apply() {
-            // **بند الأداء:** كان يُنفَّذ commit() متزامناً (كتابة إلزامية
-            // على القرص داخل خيط المتصل) — الآن نقل كله إلى الآلية غير
-            // المتزامنة المدمجة للـ SharedPreferences (خيط QueuedWork):
-            // الذاكرة (يمكن قراءتها فوراً) تُحدَّث تزامنياً، وقرصُ الكتابة
-            // يخرج من خيط الواجهة. محفوظٌ أيضاً: أي commit لاحق على نفس
-            // المخزن يكتب كل الحالة المتضمنة هذه التعديلات فوراً (توثيق
-            // SharedPreferences.Editor) فلا تتسرب قراءة قديمة.
-            // البصمة تُؤخذ قبل الكتابة: تفريغُ apply يغيّرها، فيميّز
-            // [replaceSnapshot] بين قرصٍ لحق بالكتابة وقرصٍ لم يلحق بعد.
-            val stampAtWrite = stampProvider()
-            val keysBeforeClear = if (clearFirst) {
-                snapshot.keys.toList()
+            val tx = SettingsTransaction(
+                clearFirst = clearFirst,
+                removals = removals.toList(),
+                puts = HashMap(puts)
+            )
+            val ctx = context
+            val isChildProcess = ctx != null &&
+                (!com.aymankhattab.nateq.util.ProcessUtils.isMainProcess(ctx) ||
+                    SettingsAuthority.forceIpcForTesting)
+            if (ctx != null && isChildProcess) {
+                val stampAtWrite = stampProvider()
+                val optimistic = HashMap(snapshot)
+                if (clearFirst) optimistic.clear()
+                removals.forEach { optimistic.remove(it) }
+                for ((key, value) in puts) {
+                    if (value == null) {
+                        optimistic.remove(key)
+                    } else {
+                        optimistic[key] = value
+                    }
+                }
+                snapshot = optimistic
+                writeExecutor.execute {
+                    val result = SettingsAuthority.commitTransaction(ctx, tx)
+                    if (result.success) {
+                        revision = result.revision
+                        snapshot = result.snapshot
+                        pendingLocalWrites.clear()
+                        onChanged()
+                    }
+                }
             } else {
-                emptyList()
+                val stampAtWrite = stampProvider()
+                val keysBeforeClear = if (clearFirst) {
+                    snapshot.keys.toList()
+                } else {
+                    emptyList()
+                }
+                delegate.edit().also { applyOps(it) }.apply()
+                keysBeforeClear.forEach { key ->
+                    pendingLocalWrites[key] =
+                        PendingLocalWrite(null, stampAtWrite)
+                }
+                removals.forEach { key ->
+                    pendingLocalWrites[key] =
+                        PendingLocalWrite(null, stampAtWrite)
+                }
+                puts.forEach { (key, value) ->
+                    pendingLocalWrites[key] =
+                        PendingLocalWrite(value, stampAtWrite)
+                }
+                snapshot = delegate.all
+                onChanged()
             }
-            delegate.edit().also { applyOps(it) }.apply()
-            keysBeforeClear.forEach { key ->
-                pendingLocalWrites[key] =
-                    PendingLocalWrite(null, stampAtWrite)
-            }
-            removals.forEach { key ->
-                pendingLocalWrites[key] =
-                    PendingLocalWrite(null, stampAtWrite)
-            }
-            puts.forEach { (key, value) ->
-                pendingLocalWrites[key] =
-                    PendingLocalWrite(value, stampAtWrite)
-            }
-            snapshot = delegate.all
-            onChanged()
         }
 
         private fun applyOps(editor: SharedPreferences.Editor) {

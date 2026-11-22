@@ -1254,17 +1254,17 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     }
 
     Log.w(TAG, "[CallerDiag] === دورة إعلان جديدة ===")
-    Log.w(TAG, "[CallerDiag] rawNumber='${rawNumber ?: "null"}'")
+    Log.w(TAG, "[CallerDiag] hasRawNumber=${rawNumber != null}")
     Log.w(
         TAG,
-        "[CallerDiag] lastResolvedNumber=" +
-            "'${lastResolvedNumber ?: "null"}'"
+        "[CallerDiag] hasLastResolvedNumber=" +
+            "${lastResolvedNumber != null}"
     )
     Log.w(TAG, "[CallerDiag] ringingAnnounced=$ringingAnnounced")
     Log.w(
         TAG,
-        "[CallerDiag] announcedNumber=" +
-            "'${announcedNumber ?: "null"}'"
+        "[CallerDiag] hasAnnouncedNumber=" +
+            "${announcedNumber != null}"
     )
     Log.w(
         TAG,

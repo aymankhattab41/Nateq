@@ -379,3 +379,117 @@ test("forwardMessage: يستقبل الرسائل الصوتية (msg.voice) و�
     globalThis.fetch = realFetch;
   }
 });
+
+test("forwardMessage: فشل sendDocument HTTP500 وعدم إرسال نجاح", async () => {
+  const env = {
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    SUPPORT_CHAT_ID: "999",
+  };
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    if (url.includes("/sendDocument")) {
+      return new Response(JSON.stringify({ ok: false, error_code: 500 }), {
+        status: 500,
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const result = await forwardMessage(env, {
+      message: {
+        document: {
+          file_id: "FAIL_DOC_ID",
+          file_name: "crash_log.txt",
+          file_size: 1024,
+        },
+        from: { id: 104, first_name: "مستخدم" },
+        chat: { id: 104 },
+        date: 400,
+      },
+    });
+    assert.equal(result, "document_send_failed");
+    const hasConfirm = calls.some(
+      (c) =>
+        c.url.includes("/sendMessage") &&
+        c.options.body.toString().includes("chat_id=104") &&
+        c.options.body.toString().includes("بنجاح")
+    );
+    assert.equal(hasConfirm, false, "لا يجب إرسال تأكيد نجاح عند فشل sendDocument");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("forwardMessage: /start مع حصة ممتلئة يُرفض بـ rate_limited", async () => {
+  const kvMap = new Map();
+  kvMap.set("rate:200", JSON.stringify({ windowStart: Math.floor(Date.now() / 1000), count: 25 }));
+  const env = {
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    SUPPORT_CHAT_ID: "999",
+    RATE_LIMITS: {
+      get: async (k) => (kvMap.has(k) ? JSON.parse(kvMap.get(k)) : null),
+      put: async (k, v) => kvMap.set(k, v),
+    },
+  };
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const result = await forwardMessage(env, {
+      message: {
+        text: "/start",
+        from: { id: 200, first_name: "مهاجم" },
+        chat: { id: 200 },
+        date: 500,
+      },
+    });
+    assert.equal(result, "rate_limited");
+    assert.equal(calls.length, 0, "لا يجب إرسال أي رسالة ترحيبية عند تجاوز الحصة");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("forwardMessage: تكرار update_id يعيد duplicate_update دون تكرار الإرسال", async () => {
+  const kvMap = new Map();
+  const env = {
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    SUPPORT_CHAT_ID: "999",
+    RATE_LIMITS: {
+      get: async (k) => (kvMap.has(k) ? kvMap.get(k) : null),
+      put: async (k, v) => kvMap.set(k, v),
+    },
+  };
+  let sendCount = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    sendCount++;
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const update = {
+      update_id: 123456,
+      message: {
+        text: "مرحبا بالدعم",
+        from: { id: 300, first_name: "علي" },
+        chat: { id: 300 },
+        date: 600,
+      },
+    };
+    const res1 = await forwardMessage(env, update);
+    assert.equal(res1, "forwarded");
+    assert.ok(sendCount > 0);
+
+    const prevSendCount = sendCount;
+    const res2 = await forwardMessage(env, update);
+    assert.equal(res2, "duplicate_update");
+    assert.equal(sendCount, prevSendCount, "لا يجب تكرار الإرسال للـ update_id المكرر");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
