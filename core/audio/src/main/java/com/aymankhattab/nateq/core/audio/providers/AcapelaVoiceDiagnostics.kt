@@ -2,6 +2,9 @@ package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.os.Build
 import android.os.Process
 import android.os.SystemClock
@@ -19,6 +22,7 @@ import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * تشخيص فشل تحميل صوت Acapela من ملفات القرص (قراءة خالصة).
@@ -1636,18 +1640,45 @@ object AcapelaVoiceDiagnostics {
         if (!invoked) return false
         val code = speakCode ?: return false
         val pcm = samples ?: return false
-        val hasLangError = nativeLines.any { line ->
-            line.contains("Error init language", ignoreCase = true) ||
-                line.contains("not loaded", ignoreCase = true) ||
-                line.contains("load error", ignoreCase = true)
+
+        fun isWarningLine(line: String): Boolean {
+            return line.contains(
+                "tts_function_set_specific_params", ignoreCase = true
+            ) || line.contains("Reprep", ignoreCase = true) ||
+                line.contains("check_userdico", ignoreCase = true) ||
+                line.contains("PUNCTUATION_PAUSE", ignoreCase = true)
         }
-        val speakerLoaded = if (speaker != null) {
-            isSpeakerLoadedInLogs(speaker, nativeLines)
+
+        val fatalNativeError = nativeLines.any { line ->
+            if (isWarningLine(line)) {
+                false
+            } else {
+                line.contains("Fatal signal", ignoreCase = true) ||
+                    line.contains("SIGSEGV", ignoreCase = true) ||
+                    line.contains("SIGBUS", ignoreCase = true) ||
+                    line.contains("Error init language", ignoreCase = true) ||
+                    (speaker != null &&
+                        line.contains("voice $speaker", ignoreCase = true) &&
+                        line.contains("not loaded", ignoreCase = true)) ||
+                    (speaker == null &&
+                        line.contains("not loaded", ignoreCase = true) &&
+                        !line.contains("lang_name", ignoreCase = true))
+            }
+        }
+
+        val speakerFailed = if (speaker != null && nativeLines.isNotEmpty()) {
+            val ev = evaluateVoiceEvidenceState(
+                speaker = speaker,
+                logs = nativeLines,
+                boundariesFound = true
+            )
+            ev.state == VoiceEvidenceState.LOAD_FAILED
         } else {
-            true
+            false
         }
+
         return callbackConnected && code == 0 && pcm > 0L &&
-            !hasLangError && speakerLoaded
+            !fatalNativeError && !speakerFailed
     }
 
     fun evaluateTrialSuccess10723(
@@ -1666,10 +1697,25 @@ object AcapelaVoiceDiagnostics {
     fun findFirstErrorAndPreceding(
         lines: List<String>
     ): Pair<String, String>? {
-        val keywords = listOf("Error", "error", "not loaded", "load error")
+        fun isWarningLine(line: String): Boolean {
+            return line.contains(
+                "tts_function_set_specific_params", ignoreCase = true
+            ) || line.contains("Reprep", ignoreCase = true) ||
+                line.contains("check_userdico", ignoreCase = true) ||
+                line.contains("PUNCTUATION_PAUSE", ignoreCase = true) ||
+                Regex(
+                    """nlpInitError\s*[:=]?\s*0(?!\d)"""
+                ).containsMatchIn(line)
+        }
+        val keywords = listOf(
+            "Fatal signal", "SIGSEGV", "SIGBUS",
+            "Error", "error", "not loaded", "load error"
+        )
         for (i in lines.indices) {
             val line = lines[i]
-            if (keywords.any { line.contains(it) }) {
+            if (!isWarningLine(line) &&
+                keywords.any { line.contains(it, ignoreCase = true) }
+            ) {
                 val prev = if (i > 0) lines[i - 1] else "(لا يوجد سطر سابق)"
                 return Pair(line, prev)
             }
@@ -2649,13 +2695,91 @@ object AcapelaVoiceDiagnostics {
         return sb.toString()
     }
 
+    data class PlaybackResult(
+        val deliveredBytes: Long,
+        val state: String,
+        val error: String? = null
+    )
+
+    fun playAudioChunks(
+        chunks: List<ByteArray>,
+        sampleRate: Int,
+        cancelled: AtomicBoolean = AtomicBoolean(false)
+    ): PlaybackResult {
+        if (chunks.isEmpty()) {
+            return PlaybackResult(0L, "SKIPPED", "لا توجد عينات صوتية")
+        }
+        var deliveredBytes = 0L
+        try {
+            val channelConfig = AudioFormat.CHANNEL_OUT_MONO
+            val minBuf = AudioTrack.getMinBufferSize(
+                sampleRate,
+                channelConfig,
+                AudioFormat.ENCODING_PCM_16BIT
+            )
+            val bufSize = maxOf(minBuf * 2, 16384)
+            val audioAttrs = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            val format = AudioFormat.Builder()
+                .setSampleRate(sampleRate)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(channelConfig)
+                .build()
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(audioAttrs)
+                .setAudioFormat(format)
+                .setBufferSizeInBytes(bufSize)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+            try {
+                track.play()
+                for (chunk in chunks) {
+                    if (cancelled.get()) {
+                        return PlaybackResult(
+                            deliveredBytes, "CANCELLED", "أُلغي التشغيل"
+                        )
+                    }
+                    val written = track.write(chunk, 0, chunk.size)
+                    if (written > 0) {
+                        deliveredBytes += written
+                    }
+                }
+                val drainTimeoutMs =
+                    ((deliveredBytes * 1000L) / (sampleRate * 2)) + 300L
+                val startWait = System.currentTimeMillis()
+                while (track.playState == AudioTrack.PLAYSTATE_PLAYING &&
+                    System.currentTimeMillis() - startWait < drainTimeoutMs &&
+                    !cancelled.get()
+                ) {
+                    Thread.sleep(30)
+                }
+                val finalState = if (cancelled.get()) {
+                    "CANCELLED"
+                } else {
+                    "COMPLETED"
+                }
+                return PlaybackResult(deliveredBytes, finalState)
+            } finally {
+                runCatching {
+                    if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                        track.stop()
+                    }
+                    track.release()
+                }
+            }
+        } catch (t: Throwable) {
+            return PlaybackResult(
+                deliveredBytes, "ERROR", t.message ?: "خطأ مشغل الصوت"
+            )
+        }
+    }
+
     /**
-     * تشغيل محاولة تشخيص واحدة جديدة فقط لصوت Acapela: تنظيف آثار
-     * التشخيص القديمة في cache (بلا مسّ بيانات الأصوات)، ثم تنفيذ محاولة
-     * تخليق واحدة عبر المسار الطبيعي حتى يكتب المضيف سجل محاولة مقطوعاً
-     * (runId + وقت بداية + بيانات بناء فعلية) في
-     * [ACAPELA_FULL_DIAGNOSTIC_FILE].
-     * لا يُنشئ ملفات تشخيص قديمة ولا يُلحق بإرث سابق.
+     * تشغيل فحص تشخيص ومعاينة صوتية شاملة لكل أصوات Acapela المثبتة.
+     * يختبر كل صوت على حدة بهويته وlocale ومسارات دعمه عبر المراحل الأربع:
+     * 1. التحقق، 2. التخليق، 3. تسليم PCM للمشغل، 4. إكمال التشغيل.
      */
     suspend fun runDiagnosticProbe(context: Context) {
         clearOldLogs(context)
@@ -2712,46 +2836,154 @@ object AcapelaVoiceDiagnostics {
                 return
             }
 
-            val voices = provider.listVoices(java.util.Locale.ROOT)
-            val voice = voices.firstOrNull {
-                it.id.contains("salma", ignoreCase = true)
-            } ?: voices.firstOrNull()
-            if (voice == null) {
+            val searchDirs = EmbeddedStorage.allSearchDirs(
+                context,
+                EmbeddedStorage.Engine.ACAPELA
+            )
+            val allVoiceInfos = searchDirs.flatMap {
+                AcapelaVoiceManifest.cachedVoices(it)
+            }.distinctBy { it.id }
+
+            val voicesToProbe = if (allVoiceInfos.isNotEmpty()) {
+                allVoiceInfos
+            } else {
+                val descList = provider.listVoices(Locale.ROOT)
+                descList.map { d ->
+                    AcapelaVoiceManifest.VoiceInfo(
+                        id = d.id,
+                        voiceName = d.displayName,
+                        displayName = d.displayName,
+                        locale = d.locale,
+                        dir = File(baseDir, d.id),
+                        sampleRate = 22050,
+                        rawSpeaker = d.displayName
+                    )
+                }
+            }
+
+            if (voicesToProbe.isEmpty()) {
                 val file = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
-                if (!file.exists() || file.length() == 0L) {
-                    val msg = buildString {
-                        appendLine("=== محاولة تشخيص Acapela (لا صوت) ===")
-                        appendLine("لم يُعثر على أي صوت Acapela متاح.")
-                        appendLine("nSpeak: لم يُستدعَ (غير مقيس)")
-                        appendLine("PCM: غير مقيس")
-                    }
-                    runCatching {
-                        file.writeText(
-                            redactSensitiveText(msg),
-                            StandardCharsets.UTF_8
-                        )
-                    }
+                val msg = buildString {
+                    appendLine("=== محاولة تشخيص Acapela (لا صوت) ===")
+                    appendLine("لم يُعثر على أي صوت Acapela متاح.")
+                    appendLine("nSpeak: لم يُستدعَ (غير مقيس)")
+                    appendLine("PCM: غير مقيس")
+                }
+                runCatching {
+                    file.writeText(
+                        redactSensitiveText(msg),
+                        StandardCharsets.UTF_8
+                    )
                 }
                 return
             }
 
-            val voiceIdToPass = if (voice.id.isNotBlank()) {
-                voice.id
-            } else {
-                "Salma"
+            val reportSb = StringBuilder()
+            reportSb.appendLine("=== [تقرير تشخيص ومعاينة أصوات Acapela] ===")
+            reportSb.appendLine("عدد الأصوات المفحوصة: ${voicesToProbe.size}")
+            reportSb.appendLine("")
+
+            var anySuccess = false
+
+            for ((idx, voice) in voicesToProbe.withIndex()) {
+                val speaker = voice.rawSpeaker ?: voice.voiceName
+                reportSb.appendLine(
+                    "--- صوت (${idx + 1}/${voicesToProbe.size}): " +
+                        "$speaker [${voice.id}] ---"
+                )
+                reportSb.appendLine("اللغة: ${voice.locale}")
+                reportSb.appendLine("المجلد: ${voice.dir.absolutePath}")
+
+                // 1. التحقق
+                val verification = if (voice.dir.exists() &&
+                    voice.dir.isDirectory
+                ) {
+                    verifyAuthenticVoicePackage(
+                        voiceDir = voice.dir,
+                        expectedSpeakerHint = speaker
+                    )
+                } else null
+                val verOk = verification?.ok == true
+                val verDetails = if (verOk) {
+                    val count = verification?.checked?.size ?: 0
+                    "الحزمة أصلية ومكتملة ($count ملفات)"
+                } else {
+                    verification?.issues?.joinToString {
+                        "${it.dependency}: ${it.reason}"
+                    } ?: "مجلد الصوت غير موجود أو غير مكتمل"
+                }
+                reportSb.appendLine(
+                    "1. التحقق: ${if (verOk) "ناجح" else "فشل"} - $verDetails"
+                )
+
+                // 2. التخليق
+                val probeText = if (voice.locale.language.startsWith("ar")) {
+                    "مرحبا، هذا فحص صوتي تجريبي"
+                } else {
+                    "Hello, this is a voice test"
+                }
+                val chunks = mutableListOf<ByteArray>()
+                var totalBytes = 0L
+                var sampleRate = 22050
+
+                val synthRes = EngineHostClient.synthesize(
+                    context = context,
+                    engineId = HostProtocol.ENGINE_ACAPELA,
+                    voiceId = voice.id,
+                    text = probeText,
+                    rate = 1.0f,
+                    pitch = 1.0f,
+                    volume = 1.0f,
+                    onFormatInfo = { rate, _ ->
+                        if (rate > 0) sampleRate = rate
+                    },
+                    onAudioChunk = { bArr, len ->
+                        if (len > 0) {
+                            chunks.add(bArr.copyOf(len))
+                            totalBytes += len
+                        }
+                    }
+                )
+
+                val synthOk = synthRes.ok && totalBytes > 0L
+                val estSamples = totalBytes / 2L
+                val synthStatusDesc = if (synthOk) "ناجح" else "فشل"
+                reportSb.appendLine(
+                    "2. التخليق: $synthStatusDesc " +
+                        "(كود=${synthRes.code}, عينات=$estSamples, " +
+                        "بايتات=$totalBytes)"
+                )
+
+                // 3 & 4. تسليم PCM للمشغل والمعاينة الصوتية
+                var deliveredBytes = 0L
+                var playbackState = if (synthOk) "لم يبدأ" else "تخطي (لا صوت)"
+                var playbackErr: String? = null
+
+                if (synthOk && chunks.isNotEmpty()) {
+                    anySuccess = true
+                    val playResult = playAudioChunks(chunks, sampleRate)
+                    deliveredBytes = playResult.deliveredBytes
+                    playbackState = playResult.state
+                    playbackErr = playResult.error
+                }
+
+                reportSb.appendLine(
+                    "3. تسليم PCM للمشغل: " +
+                        "$deliveredBytes بايت سُلِّمت إلى AudioTrack"
+                )
+                val errSuffix = playbackErr?.let { " [خطأ: $it]" } ?: ""
+                reportSb.appendLine(
+                    "4. إكمال التشغيل: $playbackState$errSuffix"
+                )
+                reportSb.appendLine(
+                    "  * تنبيه السماع: وصول البايتات للمشغل يثبت السلامة " +
+                        "التقنية، لكن السماع الحقيقي من قبل المستخدم " +
+                        "يظل غير مؤكد حتى تجربته عيانياً."
+                )
+                reportSb.appendLine("")
             }
-            val synthRes = EngineHostClient.synthesize(
-                context = context,
-                engineId = HostProtocol.ENGINE_ACAPELA,
-                voiceId = voiceIdToPass,
-                text = "مرحبا",
-                rate = 1.0f,
-                pitch = 1.0f,
-                volume = 1.0f,
-                onFormatInfo = { _, _ -> },
-                onAudioChunk = { _, _ -> }
-            )
-            if (synthRes.ok) {
+
+            if (anySuccess) {
                 com.aymankhattab.nateq.core.audio.engine
                     .SpeechFallbackTracker.clearAcapelaFallbackState()
                 EngineStatusRegistry.noteReady(
@@ -2761,6 +2993,15 @@ object AcapelaVoiceDiagnostics {
                     AcapelaEmbeddedVoiceProvider.PROVIDER_ID
                 )
             }
+
+            val reportText = reportSb.toString().trimEnd()
+            val file = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
+            runCatching {
+                file.writeText(
+                    redactSensitiveText(reportText),
+                    StandardCharsets.UTF_8
+                )
+            }
         } catch (t: Throwable) {
             val sw = java.io.StringWriter()
             t.printStackTrace(java.io.PrintWriter(sw))
@@ -2768,7 +3009,7 @@ object AcapelaVoiceDiagnostics {
                 appendLine("=== محاولة تشخيص Acapela (استثناء) ===")
                 appendLine("النوع: ${t.javaClass.name}")
                 appendLine("الرسالة: ${t.message ?: "بدون رسالة"}")
-                appendLine("nSpeak: غير مقيس (استثناء قبل/أثناء المحاولة)")
+                appendLine("nSpeak: غير مقيس (استثناء أثناء الفحص)")
                 appendLine("PCM: غير مقيس")
                 appendLine("التتبع:")
                 appendLine(sw.toString())

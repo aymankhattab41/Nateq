@@ -1048,8 +1048,8 @@ class AcapelaVoiceDiagnosticsTest {
         )
         val result = AcapelaVoiceDiagnostics.findFirstErrorAndPreceding(lines)
         assertNotNull(result)
-        assertEquals("check_userdico : load error", result?.first)
-        assertEquals("after initLanguageDbaNewEx", result?.second)
+        assertEquals("voice Salma (0) not loaded", result?.first)
+        assertEquals("check_userdico : load error", result?.second)
 
         val linesAtZero = listOf("Error init language", "next line")
         val resultZero =

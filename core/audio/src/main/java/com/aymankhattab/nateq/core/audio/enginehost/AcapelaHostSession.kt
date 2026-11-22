@@ -615,6 +615,23 @@ internal class AcapelaHostSession(
         speaker: String
     ): Boolean {
         if (srv == null) return false
+        val managed = activeManagedService
+        if (managed != null &&
+            managed.service == srv &&
+            managed.state == ExtendedServiceState.VOICE_LOADED &&
+            managed.resolvedPackage?.speaker
+                ?.equals(speaker, ignoreCase = true) == true
+        ) {
+            val recentLogs = AcapelaVoiceDiagnostics.readNativeLogcatLines(60)
+            val hasExplicitFailure = recentLogs.any { line ->
+                (line.contains("voice $speaker", ignoreCase = true) &&
+                    line.contains("not loaded", ignoreCase = true)) ||
+                    (line.contains(
+                        "tts_function_load_voice : $speaker", ignoreCase = true
+                    ) && line.contains("- error", ignoreCase = true))
+            }
+            return !hasExplicitFailure
+        }
         val recentLogs = AcapelaVoiceDiagnostics
             .readNativeLogcatLines(60)
         return AcapelaVoiceDiagnostics.isSpeakerLoadedInLogs(
@@ -1954,6 +1971,12 @@ internal class AcapelaHostSession(
             }
         }
 
+        fun ensureVoiceLoadedOnSuccess() {
+            if (state != ExtendedServiceState.CLOSED) {
+                state = ExtendedServiceState.VOICE_LOADED
+            }
+        }
+
         fun markSynthesizing() {
             if (state == ExtendedServiceState.VOICE_LOADED) {
                 state = ExtendedServiceState.SYNTHESIZING
@@ -2087,6 +2110,7 @@ internal class AcapelaHostSession(
         val pcmInvoked: Boolean,
         val samples: Long?,
         val pcmBytes: Long?,
+        val rawPcmBytes: ByteArray? = null,
         val service: AcattsandroidService?,
         val audioHandler: TrialAudio,
         val synthCallback: AcapelaSynthesisCallback,
@@ -2785,17 +2809,11 @@ internal class AcapelaHostSession(
                                 )
                             }
                             else -> {
-                                managed.markPoisoned(
-                                    "غياب دليل تحميل الصوت $speaker " +
-                                        "(حدود المحاولة غير متاحة في السجل)"
-                                )
+                                // غياب الدليل في السجل لا يمنع المحاولة
                             }
                         }
                     } else {
-                        managed.markPoisoned(
-                            "غياب دليل تحميل الصوت $speaker " +
-                                "(حدود المحاولة غير متاحة في logcat)"
-                        )
+                        // غياب الدليل في logcat لا يمنع المحاولة
                     }
                 }
             }
@@ -2808,23 +2826,20 @@ internal class AcapelaHostSession(
         var voiceInvoked = false
         var voiceRes: Int? = null
 
-        if (managed.state == ExtendedServiceState.VOICE_LOADED) {
+        if (managed.state == ExtendedServiceState.VOICE_LOADED ||
+            managed.state == ExtendedServiceState.INITIALIZED
+        ) {
             utf8Invoked = true
             utf8Res = srv.nUtf8Mode(iso3.language, iso3.country)
             langInvoked = true
             langRes = srv.nSetLanguage(iso3.language, iso3.country, "")
             voiceInvoked = true
             voiceRes = srv.nSetCurrentVoice(speaker)
-            if (voiceRes != 0) {
+            if (voiceRes == 0) {
+                managed.markVoiceLoaded()
+            } else {
                 managed.markPoisoned("فشل nSetCurrentVoice: كود=$voiceRes")
             }
-        } else if (managed.state == ExtendedServiceState.INITIALIZED) {
-            langInvoked = true
-            langRes = srv.nSetLanguage(iso3.language, iso3.country, "")
-            recordAcapelaBreadcrumb(
-                "[$label] تم تخطي nSetCurrentVoice " +
-                    "لعدم نجاح تحميل الصوت $speaker"
-            )
         }
 
         val isVoiceReady =
@@ -3066,8 +3081,18 @@ internal class AcapelaHostSession(
 
         val isSynthesizedOk = speakInvoked && (finalSpeakCode == 0) &&
             ((totalSamples ?: 0L) > 0L)
-        val isTrialSuccessful = isSynthesizedOk &&
-            (ebCode == null || ebCode == 0 || ebCode == 1)
+        val isTrialSuccessful = AcapelaVoiceDiagnostics
+            .evaluateTrialSuccess10724(
+                speakCode = finalSpeakCode,
+                samples = totalSamples,
+                nativeLines = nativeTail,
+                callbackConnected = useRealCallback && speakInvoked,
+                invoked = speakInvoked && pcmInvoked,
+                speaker = speaker
+            )
+        if (isTrialSuccessful) {
+            managed.ensureVoiceLoadedOnSuccess()
+        }
 
         val firstProactiveFailure = proactiveAudits.firstOrNull {
             it.auditStatus == "MISSING" || it.auditStatus == "FAILED"
@@ -3101,11 +3126,12 @@ internal class AcapelaHostSession(
             else -> "NONE"
         }
 
-        val pcmBytesCount = if (pcmInvoked) {
-            audioHandler.pcmBytes.size().toLong()
+        val pcmBytesArray = if (pcmInvoked) {
+            audioHandler.pcmBytes.toByteArray()
         } else {
             null
         }
+        val pcmBytesCount = pcmBytesArray?.size?.toLong()
 
         val sb = StringBuilder()
         sb.appendLine("=== [ملخص تجربة تحميل الصوت] ===")
@@ -3489,6 +3515,7 @@ internal class AcapelaHostSession(
             pcmInvoked = pcmInvoked,
             samples = totalSamples,
             pcmBytes = pcmBytesCount,
+            rawPcmBytes = pcmBytesArray,
             service = srv,
             audioHandler = audioHandler,
             synthCallback = synthCallback,
@@ -3567,6 +3594,7 @@ internal class AcapelaHostSession(
             pcmInvoked = false,
             samples = null,
             pcmBytes = null,
+            rawPcmBytes = null,
             service = null,
             audioHandler = audioHandler,
             synthCallback = synthCallback,
@@ -3692,9 +3720,15 @@ internal class AcapelaHostSession(
             // 1. فحص ملفات config.yaml المباشرة دون مسح مجلدات أصوات شقيقة
             val directYaml = File(verifiedDir, "config.yaml")
                 .takeIf { it.isFile }
-            val parentYaml = parentContainer?.let {
+            val parentSpecificYaml = parentContainer?.let {
+                File(it, "${speakerToken}.yaml").takeIf { f -> f.isFile }
+                    ?: File(it, "config_${speakerToken}.yaml")
+                        .takeIf { f -> f.isFile }
+            }
+            val parentDefaultYaml = parentContainer?.let {
                 File(it, "config.yaml").takeIf { f -> f.isFile }
             }
+            val parentYaml = parentSpecificYaml ?: parentDefaultYaml
 
             fun isYamlMatchingSpeaker(yamlFile: File?): Boolean? {
                 if (yamlFile == null) return null
@@ -3713,8 +3747,8 @@ internal class AcapelaHostSession(
                     verifiedDir.canonicalPath
             }
 
-            if (parentYaml != null) {
-                val parentMatches = isYamlMatchingSpeaker(parentYaml)
+            if (parentDefaultYaml != null && parentSpecificYaml == null) {
+                val parentMatches = isYamlMatchingSpeaker(parentDefaultYaml)
                 if (parentMatches == false) {
                     val parentParam = AcapelaVoiceManifest
                         .readParamFromConfigYaml(parentContainer)
@@ -3738,7 +3772,10 @@ internal class AcapelaHostSession(
 
             val supportYaml = when {
                 isYamlMatchingSpeaker(directYaml) == true -> directYaml
-                isYamlMatchingSpeaker(parentYaml) == true -> parentYaml
+                isYamlMatchingSpeaker(parentSpecificYaml) == true ->
+                    parentSpecificYaml
+                isYamlMatchingSpeaker(parentDefaultYaml) == true ->
+                    parentDefaultYaml
                 directYaml != null -> directYaml
                 else -> null
             }
@@ -4035,6 +4072,7 @@ internal class AcapelaHostSession(
                 extendedService = trial.service
                 val trialKey = "$voiceKey|$regToUse"
                 consecutiveTrialFailures.remove(trialKey)
+                consecutiveTrialFailures.remove(voiceKey)
                 failedTrialKey = null
                 AcapelaVoiceDiagnostics.clearLastRealSpeechFailure(context)
                 runCatching {
@@ -4060,7 +4098,8 @@ internal class AcapelaHostSession(
                 appendAcapelaFullDiagnostic(trial.details)
             }
 
-            val pcmBytes = trial.audioHandler.pcmBytes.toByteArray()
+            val pcmBytes = trial.rawPcmBytes
+                ?: trial.audioHandler.pcmBytes.toByteArray()
             if (isTrialSuccessful && trial.pcmInvoked &&
                 pcmBytes.isNotEmpty()
             ) {
@@ -4088,7 +4127,7 @@ internal class AcapelaHostSession(
                 else (v?.toString() ?: "غير مقيس")
             fun fmtLong(inv: Boolean, v: Long?) =
                 if (!inv) "غير مقيس" else (v?.toString() ?: "غير مقيس")
-            val pcmBytesCount = trial.audioHandler.pcmBytes.size().toLong()
+            val pcmBytesCount = trial.pcmBytes ?: 0L
             val summary = buildString {
                 appendLine("=== [نتائج تجربة Acapela] ===")
                 appendLine("runId: $runId")
