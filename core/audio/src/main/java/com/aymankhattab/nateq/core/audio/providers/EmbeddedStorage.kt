@@ -103,11 +103,13 @@ object EmbeddedStorage {
     fun bumpVersion() {
         versionCounter.incrementAndGet()
         lastBumpTimestamp = System.currentTimeMillis()
+        AcapelaPackageResolver.invalidateCache()
     }
 
     /** تصفير زمن الـ bump للاختبارات فقط. */
     internal fun resetBumpTimeForTest(timestamp: Long = 0L) {
         lastBumpTimestamp = timestamp
+        AcapelaPackageResolver.invalidateCache()
     }
 
     private val ioScope = CoroutineScope(

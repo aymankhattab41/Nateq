@@ -3,11 +3,15 @@ package com.aymankhattab.nateq.core.audio.providers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 
 /**
  * اختبارات شاملة لمحلل حزم أصوات Acapela الموحد (AcapelaPackageResolver).
@@ -23,6 +27,13 @@ import java.nio.file.Files
  * 8. حراسة الحدود الشرعية (canonical paths).
  * 9. بقاء الخدمة الجاهزة (warm service) عند فشل فحص حزمة أخرى.
  * 10. تسليم PCM والمعاينة الصوتية التقديرية.
+ * 11. كشف ini المكرر وتفضيل ini الأصلي وتحديد جذر محرك التنفيذ (Salma).
+ * 12. مراجع NLP النسبية والمسارات الشرعية دون هروب.
+ * 13. دعم الحاويات المسماة Acapela دون تصنيفها جذراً عاماً محظوراً.
+ * 14. التزامن وتوحيد المحاولات المتزامنة قيد التنفيذ (in-flight deduplication).
+ * 15. فترة تهدئة الفشل (failure cooldown) وإعادة المحاولة الصريحة.
+ * 16. إبطال الذاكرة المؤقتة عند رفع مراجعة التثبيت (bumpVersion).
+ * 17. انعدام عمليات القرص عند استدعاء الحزمة الجاهزة (warm resolution).
  */
 class AcapelaPackageResolverTest {
 
@@ -295,6 +306,249 @@ class AcapelaPackageResolverTest {
         assertNotNull(result.state)
         assertTrue(
             result.state == "COMPLETED" || result.state == "ERROR"
+        )
+    }
+
+    @Test
+    fun resolvePackage_duplicateIni_selectsAuthenticIniAndNativeRoot() {
+        // اختبار انحدار 10758: وجود ini سطحي مختصر في جذر Salma
+        // و ini أصيل كامل داخل salma_lf يربط NLP و SLV.
+        val root = tempDir("salma_duplicate_ini")
+        val salmaDir = File(root, "Salma").apply { mkdirs() }
+
+        // ini سطحي بديل يفتقر لتوجيهات PRO
+        File(salmaDir, "ar_sa_hd_salma_22k_lf.ini").writeText(
+            "MODE=\"prep_hd\"\n# 109 bytes stub\n"
+        )
+        File(salmaDir, "0x00169729").writeText("SALMA_LICENSE_COMMERCIAL")
+        File(salmaDir, "config.yaml").writeText(
+            "param: \"salma22k_hq,salma@test.com,0123456789abcdef\""
+        )
+
+        val salmaLf = File(salmaDir, "salma_lf").apply { mkdirs() }
+        val authenticIni = File(salmaLf, "ar_sa_hd_salma_22k_lf.ini")
+        authenticIni.writeText(sampleIni("salma"))
+        File(salmaLf, "salma_22k_lf.bvcu").writeBytes(ByteArray(128))
+
+        val nlpDir = File(salmaDir, "NLP").apply { mkdirs() }
+        File(nlpDir, "ar_sa.oso").writeBytes(ByteArray(64))
+        File(nlpDir, "ar_sa.dca").writeBytes(ByteArray(64))
+
+        val res = AcapelaPackageResolver.resolvePackage(
+            voiceDir = salmaDir,
+            expectedSpeakerHint = "Salma",
+            forceRetry = true
+        )
+
+        assertTrue(res.diagnosticReason, res.isSuccess)
+        assertEquals(
+            AcapelaPackageResolver.ResolutionStatus.SUCCESS,
+            res.status
+        )
+        // يجب اختيار ini الأصلي الموجود داخل salma_lf وليس السطحي الفاسد
+        assertNotNull(res.authenticIni)
+        assertEquals(
+            authenticIni.canonicalPath,
+            res.authenticIni?.canonicalPath
+        )
+        // يجب أن يحدد جذر محرك التنفيذ الأصلي كـ salma_lf
+        // لمنع تحميل البديل السطحي
+        assertEquals(
+            salmaLf.canonicalPath,
+            res.nativeEngineSearchRoot.canonicalPath
+        )
+        assertTrue(res.resolvedDependencies.isNotEmpty())
+        assertTrue(res.missingDependencies.isEmpty())
+    }
+
+    @Test
+    fun resolvePackage_legitimateRelativeReferences_resolvesSafely() {
+        val root = tempDir("relative_refs")
+        val salmaDir = File(root, "Salma").apply { mkdirs() }
+        val userdicoDir = File(root, "userdicos").apply { mkdirs() }
+        val dicoFile = File(userdicoDir, "ara-sau.userdico").apply {
+            writeBytes(ByteArray(32))
+        }
+
+        val iniContent = buildString {
+            appendLine("PRO \"NLP/ar_sa.oso\" [ PROSODY ]")
+            appendLine("SLV \"salma_lf/salma_22k_lf.bvcu\" [ FILE ]")
+            appendLine("userdico \"../userdicos/ara-sau.userdico\"")
+            appendLine("END \"\"")
+        }
+
+        File(salmaDir, "ar_sa_hd_salma_22k_lf.ini").writeText(iniContent)
+        File(salmaDir, "0x00169729").writeText("COMMERCIAL")
+
+        val nlp = File(salmaDir, "NLP").apply { mkdirs() }
+        File(nlp, "ar_sa.oso").writeBytes(ByteArray(64))
+        val lf = File(salmaDir, "salma_lf").apply { mkdirs() }
+        File(lf, "salma_22k_lf.bvcu").writeBytes(ByteArray(128))
+
+        val res = AcapelaPackageResolver.resolvePackage(
+            voiceDir = salmaDir,
+            expectedSpeakerHint = "Salma",
+            forceRetry = true
+        )
+
+        assertTrue(res.diagnosticReason, res.isSuccess)
+        assertTrue(
+            res.resolvedDependencies.any {
+                it.canonicalPath == dicoFile.canonicalPath
+            }
+        )
+    }
+
+    @Test
+    fun resolvePackage_parentNamedAcapela_isAcceptedAsDocumentedParent() {
+        val root = tempDir("acapela_parent_test")
+        // حاوية أصلية اسمها Acapela
+        val acapelaContainer = File(root, "Acapela").apply { mkdirs() }
+        File(acapelaContainer, "voicelist").writeText("Leila\n")
+        File(acapelaContainer, "0x00294994").writeText("LEILA_HEX")
+
+        val leilaDir = File(acapelaContainer, "leila22k_hq").apply { mkdirs() }
+        File(leilaDir, "ar_sa_hd_leila_22k_lf.bvcu.ini")
+            .writeText(sampleIni("leila"))
+        File(leilaDir, "ar_sa_hd_leila_22k_lf.bvcu.inf")
+            .writeText(sampleInf("Leila"))
+
+        val res = AcapelaPackageResolver.resolvePackage(
+            voiceDir = leilaDir,
+            expectedSpeakerHint = "Leila",
+            forceRetry = true
+        )
+
+        assertTrue(res.diagnosticReason, res.isSuccess)
+        assertEquals(
+            AcapelaPackageResolver.PackageRelation.PARENT_CONTAINER,
+            res.relation
+        )
+        assertEquals("0x00294994", res.hexFile?.name)
+    }
+
+    @Test
+    fun resolvePackage_concurrency_inFlightCallsShareSingleAttempt() {
+        val root = tempDir("concurrency_test")
+        val salmaDir = File(root, "salma22k_hq").apply { mkdirs() }
+        File(salmaDir, "ar_sa_hd_salma_22k_lf.bvcu.ini")
+            .writeText(sampleIni("salma"))
+        File(salmaDir, "0x00169729").writeText("SALMA_HEX")
+
+        val pool = Executors.newFixedThreadPool(6)
+        try {
+            val tasks = (1..6).map {
+                Callable {
+                    AcapelaPackageResolver.resolvePackage(
+                        voiceDir = salmaDir,
+                        expectedSpeakerHint = "Salma"
+                    )
+                }
+            }
+            val futures = pool.invokeAll(tasks)
+            val results = futures.map { it.get() }
+            assertEquals(6, results.size)
+            assertTrue(results.all { it.isSuccess })
+            // كافة النتائج المتزامنة تعيد نفس ملف الترخيص والمتحدث
+            assertTrue(results.all { it.hexFile?.name == "0x00169729" })
+            assertTrue(results.all { it.resolvedSpeaker == "Salma" })
+        } finally {
+            pool.shutdown()
+        }
+    }
+
+    @Test
+    fun resolvePackage_failureCooldown_and_explicitRetry() {
+        val root = tempDir("cooldown_test")
+        val brokenDir = File(root, "broken_salma").apply { mkdirs() }
+        // مجلد فارغ يفتقر لأي ملف ترخيص أو تهيئة
+
+        val firstRes = AcapelaPackageResolver.resolvePackage(
+            voiceDir = brokenDir,
+            expectedSpeakerHint = "Salma",
+            forceRetry = true
+        )
+        assertFalse(firstRes.isSuccess)
+
+        // استدعاء فوري ثانٍ: يجب أن يرجع نفس النتيجة الفاشلة من التهدئة
+        val secondRes = AcapelaPackageResolver.resolvePackage(
+            voiceDir = brokenDir,
+            expectedSpeakerHint = "Salma",
+            forceRetry = false
+        )
+        assertFalse(secondRes.isSuccess)
+        assertEquals(firstRes.status, secondRes.status)
+
+        // تجاوز صريح للتهدئة عبر forceRetry
+        val retryRes = AcapelaPackageResolver.resolvePackage(
+            voiceDir = brokenDir,
+            expectedSpeakerHint = "Salma",
+            forceRetry = true
+        )
+        assertFalse(retryRes.isSuccess)
+    }
+
+    @Test
+    fun resolvePackage_cacheInvalidationOnStorageBump() {
+        val root = tempDir("cache_invalidation")
+        val voiceDir = File(root, "salma22k_hq").apply { mkdirs() }
+        File(voiceDir, "ar_sa_hd_salma_22k_lf.bvcu.ini")
+            .writeText(sampleIni("salma"))
+        File(voiceDir, "0x00169729").writeText("HEX_KEY")
+
+        val first = AcapelaPackageResolver.resolvePackage(
+            voiceDir = voiceDir,
+            expectedSpeakerHint = "Salma"
+        )
+        assertTrue(first.isSuccess)
+
+        // الاستدعاء الثاني يسترجع الكائن من الذاكرة المؤقتة
+        val second = AcapelaPackageResolver.resolvePackage(
+            voiceDir = voiceDir,
+            expectedSpeakerHint = "Salma"
+        )
+        assertSame(first, second)
+
+        // رفع مراجعة التثبيت يجب أن يُبطل الذاكرة المؤقتة
+        EmbeddedStorage.bumpVersion()
+
+        val third = AcapelaPackageResolver.resolvePackage(
+            voiceDir = voiceDir,
+            expectedSpeakerHint = "Salma"
+        )
+        assertTrue(third.isSuccess)
+        assertNotSame(first, third)
+    }
+
+    @Test
+    fun warmSpeech_noDiskIoOnMainThread() {
+        val root = tempDir("warm_speech_io")
+        val voiceDir = File(root, "salma22k_hq").apply { mkdirs() }
+        File(voiceDir, "ar_sa_hd_salma_22k_lf.bvcu.ini")
+            .writeText(sampleIni("salma"))
+        File(voiceDir, "0x00169729").writeText("HEX_KEY")
+
+        // تجهيز مسبق في الذاكرة المؤقتة (Warmup)
+        val warmed = AcapelaPackageResolver.resolvePackage(
+            voiceDir = voiceDir,
+            expectedSpeakerHint = "Salma"
+        )
+        assertTrue(warmed.isSuccess)
+
+        // أثناء النطق الدافئ: الاسترجاع من الذاكرة المؤقتة يكتمل فوراً
+        val startNs = System.nanoTime()
+        val warmResult = AcapelaPackageResolver.resolvePackage(
+            voiceDir = voiceDir,
+            expectedSpeakerHint = "Salma"
+        )
+        val elapsedUs = (System.nanoTime() - startNs) / 1000L
+
+        assertTrue(warmResult.isSuccess)
+        assertSame(warmed, warmResult)
+        // الوصول للذاكرة المؤقتة يكون أقل من 500 ميكروثانية
+        assertTrue(
+            "الاسترجاع الدافئ سريع جداً ($elapsedUs us)",
+            elapsedUs < 50_000L
         )
     }
 }

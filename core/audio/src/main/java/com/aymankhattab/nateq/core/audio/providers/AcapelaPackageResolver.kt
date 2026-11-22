@@ -3,20 +3,23 @@ package com.aymankhattab.nateq.core.audio.providers
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * محلل حزم أصوات Acapela الموحد بنطاق الحزمة (Package-Scoped Resolver).
  *
  * يعيد حزمة مترابطة ومتحققة للصوت المطلوب تتضمن:
  * 1. هوية الصوت (المتحدث) المستخلصة بدقة.
- * 2. ملف ini الأصلي وتوجيهاته النسبية.
- * 3. ملف metadata المحدد (config.yaml) إن وُجد وطابق المتحدث.
+ * 2. ملف ini الأصلي وتوجيهاته وتحديد جذور التنفيذ بدقة:
+ *    - جذر الحزمة (packageContainerRoot).
+ *    - ملف ini الأصلي المعتمد (authenticIni).
+ *    - قاعدة التبعيات النسبية (iniDependencyBase).
+ *    - جذر محرك التنفيذ الأصلي (nativeEngineSearchRoot) الممرر إلى nInit.
+ * 3. ملف metadata المحدد (config.yaml) إن وُجد وطابق المتحدث دون خلط.
  * 4. مراجع الدعم والترخيص الأصلية ومساراتها الشرعية (canonical).
- * 5. علاقة المجلدات: متجاور (CO_LOCATED)، متداخل (NESTED)،
- *    أو في حاوية أب موثقة (PARENT_CONTAINER).
- *
- * يمنع استعارة ملفات من أصوات شقيقة أو من جذر عام، ويفصل قراءة
- * config.yaml عن التسلق الشجري، ويعزل أخطاء ليلى عن سلمى.
+ * 5. كشف التكرار والتهيئات الغامضة دون تفضيل عشوائي بترتيب المسح.
+ * 6. التخزين المؤقت المربوط بمراجعة التثبيت ومسار الإلغاء الصريح.
+ * 7. تهدئة الفشل المحدودة (failure cooldown) ومنع تكرار الإجراءات المتزامنة.
  */
 object AcapelaPackageResolver {
 
@@ -39,20 +42,32 @@ object AcapelaPackageResolver {
 
     data class ResolvedPackage(
         val status: ResolutionStatus,
-        val voiceDir: File,
+        val packageContainerRoot: File,
+        val authenticIni: File?,
+        val iniDependencyBase: File?,
+        val nativeEngineSearchRoot: File,
         val expectedSpeaker: String,
         val resolvedSpeaker: String?,
-        val iniFile: File?,
         val infFile: File?,
         val metadataYaml: File?,
         val hexFile: File?,
         val registration: String,
         val relation: PackageRelation?,
         val supportFiles: List<File>,
+        val resolvedDependencies: List<File> = emptyList(),
+        val missingDependencies: List<String> = emptyList(),
         val diagnosticReason: String
     ) {
         val isSuccess: Boolean
             get() = status == ResolutionStatus.SUCCESS
+
+        /** توافق خلفي مع الكود القائم: يمثل جذر محرك التنفيذ الأصلي. */
+        val voiceDir: File
+            get() = nativeEngineSearchRoot
+
+        /** توافق خلفي: يمثل ملف ini المعتمد. */
+        val iniFile: File?
+            get() = authenticIni
     }
 
     private val PARAM_REGEX = Regex(
@@ -60,10 +75,44 @@ object AcapelaPackageResolver {
         setOf(RegexOption.MULTILINE)
     )
 
+    /**
+     * الجذور العامة الممنوع اعتبارها حزمة مستقلة.
+     * تم استبعاد "acapela" للسماح بحاويات أصوات صحيحة تحمل هذا الاسم.
+     */
     private val GENERIC_ROOTS = setOf(
         "", "/", "\\", "c:", "c:\\", "storage", "emulated", "0",
-        "android", "data", "app_voices", "files", "voice", "acapela"
+        "android", "data", "app_voices", "files", "voice"
     )
+
+    private data class CacheKey(
+        val canonicalPath: String,
+        val expectedSpeaker: String,
+        val revision: Long
+    )
+
+    private val packageCache =
+        ConcurrentHashMap<CacheKey, ResolvedPackage>()
+
+    private val inFlightLocks =
+        ConcurrentHashMap<String, Any>()
+
+    private data class FailureCooldown(
+        val failedAtMs: Long,
+        val backoffMs: Long,
+        val revision: Long,
+        val failedResult: ResolvedPackage
+    )
+
+    private val failureCooldowns =
+        ConcurrentHashMap<String, FailureCooldown>()
+
+    /**
+     * إبطال صريح للذاكرة المؤقتة وفترات التهدئة عند تعديل/حذف/استيراد أصوات.
+     */
+    fun invalidateCache() {
+        packageCache.clear()
+        failureCooldowns.clear()
+    }
 
     /**
      * فحص أمان المسار الشرعي لمنع directory traversal أو الهروب من المجلد.
@@ -169,22 +218,250 @@ object AcapelaPackageResolver {
     }
 
     /**
-     * حل حزمة صوت Acapela بنطاق الحزمة الصارم.
+     * جمع كل ملفات ini بأمان داخل الحاوية مع مراعاة حدود المسار الشرعي.
+     */
+    private fun collectSafeIniFiles(packageRoot: File): List<File> {
+        val inis = mutableListOf<File>()
+        val visited = mutableSetOf<String>()
+
+        fun walk(dir: File, depth: Int) {
+            if (depth > 5) return
+            val canonical = runCatching {
+                dir.canonicalFile
+            }.getOrNull() ?: return
+            if (!visited.add(canonical.canonicalPath)) return
+
+            dir.listFiles()?.forEach { file ->
+                if (file.isDirectory) {
+                    if (isSafeCanonicalChild(packageRoot, file)) {
+                        walk(file, depth + 1)
+                    }
+                } else if (file.isFile &&
+                    file.extension.equals("ini", ignoreCase = true)
+                ) {
+                    if (isSafeCanonicalChild(packageRoot, file)) {
+                        inis += file
+                    }
+                }
+            }
+        }
+
+        walk(packageRoot, 0)
+        return inis.distinctBy { it.canonicalPath }
+    }
+
+    private data class CandidateEvaluation(
+        val file: File,
+        val isAuthentic: Boolean,
+        val score: Int,
+        val resolvedFiles: List<File>,
+        val missingDirectives: List<String>,
+        val dependencyBase: File
+    )
+
+    /**
+     * حل المسار النسبي ضمن حدود حاوية محددة لمنع الهروب خارج حزمة الصوت.
+     */
+    private fun resolveRelativeWithinBoundary(
+        startDir: File,
+        boundaryDir: File,
+        relativePath: String
+    ): File? {
+        val canonicalBoundary = runCatching {
+            boundaryDir.canonicalFile
+        }.getOrNull() ?: return null
+        val boundaryPath = canonicalBoundary.canonicalPath
+
+        fun isInside(f: File): Boolean {
+            val p = runCatching { f.canonicalPath }
+                .getOrNull() ?: return false
+            return p == boundaryPath ||
+                p.startsWith(boundaryPath + File.separator)
+        }
+
+        val cleaned = relativePath.replace('\\', '/').trim()
+        if (cleaned.isEmpty()) return null
+        val parts = cleaned.split('/').filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return null
+
+        var current = startDir
+        for (part in parts) {
+            if (part == ".") continue
+            if (part == "..") {
+                val parent = current.parentFile ?: return null
+                if (!isInside(parent)) return null
+                current = parent
+                continue
+            }
+            if (!current.isDirectory) return null
+            val exact = File(current, part)
+            current = if (exact.exists()) {
+                exact
+            } else {
+                current.listFiles()?.firstOrNull {
+                    it.name.equals(part, ignoreCase = true)
+                } ?: return null
+            }
+            if (!isInside(current)) return null
+        }
+        return if (isInside(current) && current.exists()) current else null
+    }
+
+    /**
+     * فحص توجيهات ini وحل تبعياتها داخل حدود الحزمة بأمان.
+     */
+    private fun evaluateCandidate(
+        iniFile: File,
+        targetToken: String?,
+        packageRoot: File
+    ): CandidateEvaluation {
+        val classification = AcapelaVoiceManifest
+            .classifyIniCandidate(iniFile, targetToken ?: "")
+        val isAuthentic = classification.state ==
+            AcapelaVoiceManifest.IniDiscoveryState.AUTHENTIC
+
+        val dependencies = AcapelaVoiceManifest.parseIniDependencies(iniFile)
+        val resolved = mutableListOf<File>()
+        val missing = mutableListOf<String>()
+
+        val parentDir = iniFile.parentFile ?: packageRoot
+        val parentBound = packageRoot.parentFile
+        val isParentSafe = parentBound != null &&
+            parentBound.parentFile != null &&
+            parentBound.name.lowercase(Locale.ROOT) !in GENERIC_ROOTS
+        val boundary = if (isParentSafe) parentBound else packageRoot
+
+        var resolvedAtParent = 0
+        var resolvedAtRoot = 0
+
+        dependencies.forEach { dep ->
+            val rel = dep.relativePath
+            val fromParent = AcapelaVoiceManifest
+                .resolveRelativeFile(parentDir, rel)
+            val fromRoot = AcapelaVoiceManifest
+                .resolveRelativeFile(packageRoot, rel)
+
+            when {
+                fromParent != null && fromParent.exists() -> {
+                    resolved += fromParent
+                    resolvedAtParent++
+                }
+                fromRoot != null && fromRoot.exists() -> {
+                    resolved += fromRoot
+                    resolvedAtRoot++
+                }
+                rel.contains("..") -> {
+                    val fromParentBound = resolveRelativeWithinBoundary(
+                        parentDir,
+                        boundary,
+                        rel
+                    )
+                    val fromRootBound = resolveRelativeWithinBoundary(
+                        packageRoot,
+                        boundary,
+                        rel
+                    )
+                    val found = fromParentBound ?: fromRootBound
+                    if (found != null && found.exists()) {
+                        resolved += found
+                        if (fromParentBound != null) {
+                            resolvedAtParent++
+                        } else {
+                            resolvedAtRoot++
+                        }
+                    } else {
+                        missing += "${dep.key}: $rel"
+                    }
+                }
+                else -> {
+                    missing += "${dep.key}: $rel"
+                }
+            }
+        }
+
+        val chosenBase = if (resolvedAtParent >= resolvedAtRoot) {
+            parentDir
+        } else {
+            packageRoot
+        }
+
+        return CandidateEvaluation(
+            file = iniFile,
+            isAuthentic = isAuthentic,
+            score = classification.identityScore,
+            resolvedFiles = resolved.distinctBy { it.canonicalPath },
+            missingDirectives = missing,
+            dependencyBase = chosenBase
+        )
+    }
+
+    /**
+     * تحديد جذر محرك التنفيذ الأصلي الممرر إلى nInit وفق عقد التنفيذ الفعلي
+     * والمسار الناجح لسلمى، دون الاقتصار السطحي على ini.parentFile.
+     */
+    private fun determineNativeSearchRoot(
+        packageRoot: File,
+        canonicalVoiceDir: File,
+        authenticIni: File?,
+        dependencyBase: File?,
+        voiceSubpackageDir: File? = null
+    ): File {
+        if (authenticIni == null) {
+            return voiceSubpackageDir ?: canonicalVoiceDir
+        }
+        val iniParent = authenticIni.parentFile ?: voiceSubpackageDir
+            ?: canonicalVoiceDir
+
+        if (iniParent.canonicalPath == packageRoot.canonicalPath) {
+            return packageRoot
+        }
+
+        // إذا كان جذر الحزمة يحتوي على ini مكرر أو بديل سطحي يختلف عن الأصلي،
+        // فإن تمرير جذر الحزمة لـ nInit سيجعل المكتبة الأصلية تفتح الملف السطحي
+        // الفاسد وتفشل بـ eb=-27 و nlpInitError=-34. في هذه الحالة يجب تمرير
+        // المجلد الذي يحتوي على ini الأصلي المعتمد (مثل salma_lf).
+        val shallowInis = packageRoot.listFiles { f ->
+            f.isFile && f.extension.equals("ini", ignoreCase = true)
+        }?.toList().orEmpty()
+
+        val hasConflictingShallow = shallowInis.any {
+            it.canonicalPath != authenticIni.canonicalPath
+        }
+
+        if (hasConflictingShallow) {
+            return iniParent
+        }
+
+        return if (dependencyBase != null &&
+            dependencyBase.canonicalPath == iniParent.canonicalPath
+        ) {
+            iniParent
+        } else {
+            dependencyBase ?: iniParent
+        }
+    }
+
+    /**
+     * حل حزمة صوت Acapela بنطاق الحزمة الصارم وبشكل آمن متزامن.
      *
      * @param voiceDir مجلد حزمة الصوت المطلوب فحصها.
      * @param expectedSpeakerHint تلميح هوية المتحدث (اختياري).
+     * @param forceRetry تجاوز فترة التهدئة وإعادة الفحص الفعلي.
      */
     fun resolvePackage(
         voiceDir: File,
-        expectedSpeakerHint: String? = null
+        expectedSpeakerHint: String? = null,
+        forceRetry: Boolean = false
     ): ResolvedPackage {
         if (!voiceDir.exists() || !voiceDir.isDirectory) {
             return ResolvedPackage(
                 status = ResolutionStatus.FILE_NOT_FOUND,
-                voiceDir = voiceDir,
+                packageContainerRoot = voiceDir,
+                authenticIni = null,
+                iniDependencyBase = null,
+                nativeEngineSearchRoot = voiceDir,
                 expectedSpeaker = expectedSpeakerHint ?: voiceDir.name,
                 resolvedSpeaker = null,
-                iniFile = null,
                 infFile = null,
                 metadataYaml = null,
                 hexFile = null,
@@ -204,10 +481,12 @@ object AcapelaPackageResolver {
         ) {
             return ResolvedPackage(
                 status = ResolutionStatus.UNSUPPORTED_FORMAT,
-                voiceDir = voiceDir,
+                packageContainerRoot = voiceDir,
+                authenticIni = null,
+                iniDependencyBase = null,
+                nativeEngineSearchRoot = voiceDir,
                 expectedSpeaker = expectedSpeakerHint ?: voiceDir.name,
                 resolvedSpeaker = null,
-                iniFile = null,
                 infFile = null,
                 metadataYaml = null,
                 hexFile = null,
@@ -218,6 +497,69 @@ object AcapelaPackageResolver {
             )
         }
 
+        val normalizedSpeaker = expectedSpeakerHint?.trim()?.ifBlank { null }
+            ?: canonicalVoiceDir.name
+        val currentRevision = EmbeddedStorage.lastBumpTime
+        val cacheKey = CacheKey(
+            canonicalPath = canonicalVoiceDir.canonicalPath,
+            expectedSpeaker = normalizedSpeaker,
+            revision = currentRevision
+        )
+
+        if (!forceRetry) {
+            packageCache[cacheKey]?.let { return it }
+
+            val cooldownKey =
+                "${canonicalVoiceDir.canonicalPath}|$normalizedSpeaker"
+            val cooldown = failureCooldowns[cooldownKey]
+            if (cooldown != null && cooldown.revision == currentRevision) {
+                val elapsed = System.currentTimeMillis() - cooldown.failedAtMs
+                if (elapsed < cooldown.backoffMs) {
+                    return cooldown.failedResult
+                }
+            }
+        }
+
+        val lockKey = "${canonicalVoiceDir.canonicalPath}|$normalizedSpeaker"
+        val lock = inFlightLocks.computeIfAbsent(lockKey) { Any() }
+
+        return synchronized(lock) {
+            if (!forceRetry) {
+                packageCache[cacheKey]?.let { return@synchronized it }
+            }
+
+            val resolved = resolvePackageInternal(
+                canonicalVoiceDir = canonicalVoiceDir,
+                expectedSpeakerHint = expectedSpeakerHint
+            )
+
+            if (resolved.isSuccess) {
+                packageCache[cacheKey] = resolved
+                failureCooldowns.remove(lockKey)
+            } else {
+                val prevCooldown = failureCooldowns[lockKey]
+                val prevBackoff = prevCooldown?.backoffMs ?: 500L
+                val nextBackoff = (prevBackoff * 2L).coerceAtMost(15_000L)
+                failureCooldowns[lockKey] = FailureCooldown(
+                    failedAtMs = System.currentTimeMillis(),
+                    backoffMs = nextBackoff,
+                    revision = currentRevision,
+                    failedResult = resolved
+                )
+            }
+
+            resolved
+        }
+    }
+
+    private fun resolvePackageInternal(
+        canonicalVoiceDir: File,
+        expectedSpeakerHint: String?
+    ): ResolvedPackage {
+        val packageContainerRoot = runCatching {
+            AcapelaVoiceManifest.findPackageRoot(canonicalVoiceDir)
+        }.getOrDefault(canonicalVoiceDir)
+
         // 1. تحديد هوية المتحدث المبدئية
         val hintToken = expectedSpeakerHint?.let {
             AcapelaVoiceManifest.tokenOfIdentity(it)
@@ -226,30 +568,14 @@ object AcapelaPackageResolver {
             canonicalVoiceDir.name
         )
 
-        // 2. البحث عن ملفات .ini و .inf داخل حدود الحزمة فقط
-        val directInis = canonicalVoiceDir.listFiles { f ->
-            f.isFile && f.extension.equals("ini", ignoreCase = true)
-        }?.toList().orEmpty()
-
-        val subInis = if (directInis.isEmpty()) {
-            canonicalVoiceDir.listFiles { it.isDirectory }?.flatMap { sub ->
-                if (isSafeCanonicalChild(canonicalVoiceDir, sub)) {
-                    sub.listFiles { f ->
-                        f.isFile && f.extension.equals("ini", ignoreCase = true)
-                    }?.toList().orEmpty()
-                } else emptyList()
-            }.orEmpty()
-        } else emptyList()
-
-        val allInis = (directInis + subInis).distinct()
-
+        // 2. البحث عن ملفات .inf لاستخلاص المتحدث الرسمي
         val directInfs = canonicalVoiceDir.listFiles { f ->
             f.isFile && f.extension.equals("inf", ignoreCase = true)
         }?.toList().orEmpty()
 
         val subInfs = if (directInfs.isEmpty()) {
-            canonicalVoiceDir.listFiles { it.isDirectory }?.flatMap { sub ->
-                if (isSafeCanonicalChild(canonicalVoiceDir, sub)) {
+            packageContainerRoot.listFiles { it.isDirectory }?.flatMap { sub ->
+                if (isSafeCanonicalChild(packageContainerRoot, sub)) {
                     sub.listFiles { f ->
                         f.isFile && f.extension.equals("inf", ignoreCase = true)
                     }?.toList().orEmpty()
@@ -258,7 +584,6 @@ object AcapelaPackageResolver {
         } else emptyList()
 
         val allInfs = (directInfs + subInfs).distinct()
-
         val infFile = allInfs.firstOrNull()
         val parsedSpeakerFromInf = infFile?.let { f ->
             runCatching {
@@ -283,50 +608,168 @@ object AcapelaPackageResolver {
         val expectedSpeaker = expectedSpeakerHint?.trim()?.ifBlank { null }
             ?: resolvedSpeaker
 
-        // 3. اختيار ملف ini ومطابقة هويته
-        val authenticIniCandidate = allInis.firstOrNull { ini ->
-            val iniTok = AcapelaVoiceManifest.tokenOfIdentity(ini.name)
-            targetToken == null || iniTok == null || iniTok == targetToken
-        } ?: allInis.firstOrNull()
+        // 3. جمع وفحص كافة ملفات ini داخل الحزمة
+        val allInis = collectSafeIniFiles(packageContainerRoot)
+        val evaluations = allInis.map { ini ->
+            evaluateCandidate(ini, targetToken, packageContainerRoot)
+        }
 
-        if (authenticIniCandidate != null && targetToken != null) {
-            val iniTok = AcapelaVoiceManifest
-                .tokenOfIdentity(authenticIniCandidate.name)
-            if (iniTok != null && iniTok != targetToken) {
-                return ResolvedPackage(
-                    status = ResolutionStatus.SPEAKER_MISMATCH,
-                    voiceDir = canonicalVoiceDir,
-                    expectedSpeaker = expectedSpeaker,
-                    resolvedSpeaker = resolvedSpeaker,
-                    iniFile = authenticIniCandidate,
-                    infFile = infFile,
-                    metadataYaml = null,
-                    hexFile = null,
-                    registration = "",
-                    relation = null,
-                    supportFiles = emptyList(),
-                    diagnosticReason =
-                        "ملف ini (${authenticIniCandidate.name}) " +
-                        "يخص صوتاً آخر ولا يطابق " +
-                        "الصوت المطلوب ($expectedSpeaker)"
-                )
+        // فحص مطابقة الهوية لملفات ini المستبعدة
+        val speakerMismatches = allInis.filter { ini ->
+            val tok = AcapelaVoiceManifest.tokenOfIdentity(ini.name)
+            targetToken != null && tok != null && tok != targetToken
+        }
+
+        // عزل المرشحات المتطابقة مع هوية الصوت المطلوب
+        val matchingCandidates = evaluations.filter { ev ->
+            val tok = AcapelaVoiceManifest.tokenOfIdentity(ev.file.name)
+            targetToken == null || tok == null || tok == targetToken
+        }
+
+        val authenticCandidates = matchingCandidates.filter { it.isAuthentic }
+
+        val chosenEvaluation: CandidateEvaluation?
+        var ambiguousConflictReason: String? = null
+
+        when {
+            authenticCandidates.size == 1 -> {
+                chosenEvaluation = authenticCandidates.first()
+            }
+            authenticCandidates.size > 1 -> {
+                // كشف التكرار: إذا كانت التهيئات متطابقة تماماً في المحتوى
+                val byFingerprint = authenticCandidates.groupBy { c ->
+                    runCatching {
+                        c.file.readText(StandardCharsets.ISO_8859_1)
+                            .replace("\r\n", "\n").trim()
+                    }.getOrDefault(c.file.name)
+                }
+
+                if (byFingerprint.size == 1) {
+                    // اختيار النسخة التي تطابق قاعدة التبعيات المحلولة
+                    val best = authenticCandidates.maxByOrNull {
+                        it.resolvedFiles.size
+                    } ?: authenticCandidates.first()
+                    chosenEvaluation = best
+                } else {
+                    // مقارنة عدد التبعيات المحلولة على القرص
+                    val maxResolved = authenticCandidates.maxOf {
+                        it.resolvedFiles.size
+                    }
+                    val topResolved = authenticCandidates.filter {
+                        it.resolvedFiles.size == maxResolved &&
+                            it.missingDirectives.isEmpty()
+                    }
+                    if (topResolved.size == 1) {
+                        chosenEvaluation = topResolved.first()
+                    } else {
+                        // مرشحات أصيلة متعددة متعارضة دون حسم آمن
+                        chosenEvaluation = null
+                        ambiguousConflictReason =
+                            "تعدد ملفات ini الأصيلة " +
+                            "(${authenticCandidates.size}) " +
+                            "المتعارضة داخل الحزمة"
+                    }
+                }
+            }
+            else -> {
+                chosenEvaluation = null
             }
         }
 
-        // 4. فحص ملف config.yaml المباشر وفك الارتباط المتضارب
-        val directYaml = File(canonicalVoiceDir, "config.yaml")
+        if (ambiguousConflictReason != null) {
+            return ResolvedPackage(
+                status = ResolutionStatus.MULTIPLE_CANDIDATES,
+                packageContainerRoot = packageContainerRoot,
+                authenticIni = null,
+                iniDependencyBase = null,
+                nativeEngineSearchRoot = canonicalVoiceDir,
+                expectedSpeaker = expectedSpeaker,
+                resolvedSpeaker = resolvedSpeaker,
+                infFile = infFile,
+                metadataYaml = null,
+                hexFile = null,
+                registration = "",
+                relation = null,
+                supportFiles = emptyList(),
+                diagnosticReason = ambiguousConflictReason
+            )
+        }
+
+        if (chosenEvaluation == null &&
+            matchingCandidates.isEmpty() &&
+            speakerMismatches.isNotEmpty()
+        ) {
+            val foreign = speakerMismatches.first()
+            return ResolvedPackage(
+                status = ResolutionStatus.SPEAKER_MISMATCH,
+                packageContainerRoot = packageContainerRoot,
+                authenticIni = null,
+                iniDependencyBase = null,
+                nativeEngineSearchRoot = canonicalVoiceDir,
+                expectedSpeaker = expectedSpeaker,
+                resolvedSpeaker = resolvedSpeaker,
+                infFile = infFile,
+                metadataYaml = null,
+                hexFile = null,
+                registration = "",
+                relation = null,
+                supportFiles = emptyList(),
+                diagnosticReason = "ملف ini (${foreign.name}) يخص صوتاً آخر " +
+                    "ولا يطابق الصوت المطلوب ($expectedSpeaker)"
+            )
+        }
+
+        val voiceSubpackageDir = if (targetToken != null) {
+            val directSub = canonicalVoiceDir.listFiles { f ->
+                f.isDirectory &&
+                    f.name.lowercase(Locale.ROOT).contains(targetToken)
+            }?.firstOrNull()
+            directSub ?: canonicalVoiceDir
+        } else {
+            canonicalVoiceDir
+        }
+
+        val authenticIni = chosenEvaluation?.file
+        val iniDependencyBase = chosenEvaluation?.dependencyBase
+        val resolvedDeps = chosenEvaluation?.resolvedFiles.orEmpty()
+        val missingDeps = chosenEvaluation?.missingDirectives.orEmpty()
+
+        val nativeEngineSearchRoot = determineNativeSearchRoot(
+            packageRoot = packageContainerRoot,
+            canonicalVoiceDir = canonicalVoiceDir,
+            authenticIni = authenticIni,
+            dependencyBase = iniDependencyBase,
+            voiceSubpackageDir = voiceSubpackageDir
+        )
+
+        // 4. فحص ملف config.yaml (المجلد الفرعي أولاً ثم الحاوية)
+        val subYaml = File(voiceSubpackageDir, "config.yaml")
             .takeIf { it.isFile }
+        val rootYaml = File(canonicalVoiceDir, "config.yaml")
+            .takeIf { it.isFile }
+            ?: File(packageContainerRoot, "config.yaml").takeIf { it.isFile }
+
+        val directYaml = subYaml ?: rootYaml
         var matchingYaml: File? = null
         var hasConflictingMetadata = false
 
-        if (directYaml != null) {
-            val isMatch = checkYamlSpeakerMatch(directYaml, expectedSpeaker)
-            if (isMatch == true) {
-                matchingYaml = directYaml
-            } else if (isMatch == false) {
+        if (subYaml != null) {
+            val isSubMatch = checkYamlSpeakerMatch(subYaml, expectedSpeaker)
+            if (isSubMatch == true) {
+                matchingYaml = subYaml
+            } else if (isSubMatch == false) {
                 hasConflictingMetadata = true
             } else {
-                matchingYaml = directYaml
+                matchingYaml = subYaml
+            }
+        } else if (rootYaml != null) {
+            val isRootMatch = checkYamlSpeakerMatch(rootYaml, expectedSpeaker)
+            if (isRootMatch == true) {
+                matchingYaml = rootYaml
+            } else if (isRootMatch == false) {
+                hasConflictingMetadata = true
+            } else {
+                matchingYaml = rootYaml
             }
         }
 
@@ -377,10 +820,12 @@ object AcapelaPackageResolver {
             coLocatedHexList.size > 1 -> {
                 return ResolvedPackage(
                     status = ResolutionStatus.MULTIPLE_CANDIDATES,
-                    voiceDir = canonicalVoiceDir,
+                    packageContainerRoot = packageContainerRoot,
+                    authenticIni = authenticIni,
+                    iniDependencyBase = iniDependencyBase,
+                    nativeEngineSearchRoot = nativeEngineSearchRoot,
                     expectedSpeaker = expectedSpeaker,
                     resolvedSpeaker = resolvedSpeaker,
-                    iniFile = authenticIniCandidate,
                     infFile = infFile,
                     metadataYaml = matchingYaml,
                     hexFile = null,
@@ -398,10 +843,12 @@ object AcapelaPackageResolver {
             nestedHexList.size > 1 -> {
                 return ResolvedPackage(
                     status = ResolutionStatus.MULTIPLE_CANDIDATES,
-                    voiceDir = canonicalVoiceDir,
+                    packageContainerRoot = packageContainerRoot,
+                    authenticIni = authenticIni,
+                    iniDependencyBase = iniDependencyBase,
+                    nativeEngineSearchRoot = nativeEngineSearchRoot,
                     expectedSpeaker = expectedSpeaker,
                     resolvedSpeaker = resolvedSpeaker,
-                    iniFile = authenticIniCandidate,
                     infFile = infFile,
                     metadataYaml = matchingYaml,
                     hexFile = null,
@@ -419,10 +866,12 @@ object AcapelaPackageResolver {
             isParentDocumented && parentHexList.size > 1 -> {
                 return ResolvedPackage(
                     status = ResolutionStatus.MULTIPLE_CANDIDATES,
-                    voiceDir = canonicalVoiceDir,
+                    packageContainerRoot = packageContainerRoot,
+                    authenticIni = authenticIni,
+                    iniDependencyBase = iniDependencyBase,
+                    nativeEngineSearchRoot = nativeEngineSearchRoot,
                     expectedSpeaker = expectedSpeaker,
                     resolvedSpeaker = resolvedSpeaker,
-                    iniFile = authenticIniCandidate,
                     infFile = infFile,
                     metadataYaml = matchingYaml,
                     hexFile = null,
@@ -443,10 +892,12 @@ object AcapelaPackageResolver {
         if (hasConflictingMetadata && hexCandidate == null) {
             return ResolvedPackage(
                 status = ResolutionStatus.METADATA_CONFLICT,
-                voiceDir = canonicalVoiceDir,
+                packageContainerRoot = packageContainerRoot,
+                authenticIni = authenticIni,
+                iniDependencyBase = iniDependencyBase,
+                nativeEngineSearchRoot = nativeEngineSearchRoot,
                 expectedSpeaker = expectedSpeaker,
                 resolvedSpeaker = resolvedSpeaker,
-                iniFile = authenticIniCandidate,
                 infFile = infFile,
                 metadataYaml = null,
                 hexFile = null,
@@ -458,15 +909,17 @@ object AcapelaPackageResolver {
             )
         }
 
-        if (authenticIniCandidate == null && hexCandidate == null &&
+        if (authenticIni == null && hexCandidate == null &&
             matchingYaml == null
         ) {
             return ResolvedPackage(
                 status = ResolutionStatus.FILE_NOT_FOUND,
-                voiceDir = canonicalVoiceDir,
+                packageContainerRoot = packageContainerRoot,
+                authenticIni = null,
+                iniDependencyBase = null,
+                nativeEngineSearchRoot = nativeEngineSearchRoot,
                 expectedSpeaker = expectedSpeaker,
                 resolvedSpeaker = resolvedSpeaker,
-                iniFile = null,
                 infFile = infFile,
                 metadataYaml = null,
                 hexFile = null,
@@ -515,21 +968,22 @@ object AcapelaPackageResolver {
             "تم التحقق بنجاح من حزمة $expectedSpeaker (${relation?.name})"
         }
 
-        val actualVoiceDir = authenticIniCandidate?.parentFile
-            ?: canonicalVoiceDir
-
         return ResolvedPackage(
             status = ResolutionStatus.SUCCESS,
-            voiceDir = actualVoiceDir,
+            packageContainerRoot = packageContainerRoot,
+            authenticIni = authenticIni,
+            iniDependencyBase = iniDependencyBase,
+            nativeEngineSearchRoot = nativeEngineSearchRoot,
             expectedSpeaker = expectedSpeaker,
             resolvedSpeaker = resolvedSpeaker,
-            iniFile = authenticIniCandidate,
             infFile = infFile,
             metadataYaml = matchingYaml,
             hexFile = hexCandidate,
             registration = authenticReg,
             relation = relation,
             supportFiles = supportFiles,
+            resolvedDependencies = resolvedDeps,
+            missingDependencies = missingDeps,
             diagnosticReason = reason
         )
     }

@@ -445,6 +445,8 @@ internal class AcapelaHostSession(
     @Volatile
     private var speakStartRealtimeMs = 0L
     @Volatile
+    private var coldInitDurationMs = 0L
+    @Volatile
     private var currentSpeakerName: String? = null
     private val firstAudioChunkLogged = AtomicBoolean(false)
 
@@ -728,13 +730,21 @@ internal class AcapelaHostSession(
         if (!firstAudioChunkLogged.getAndSet(true) &&
             speakStartRealtimeMs > 0L
         ) {
-            val ttfbMs = SystemClock.elapsedRealtime() - speakStartRealtimeMs
-            val warmDesc = if (wasWarmAtSpeakStart) "جاهز/Warm" else "بارد/Cold"
+            val synthLatencyMs =
+                SystemClock.elapsedRealtime() - speakStartRealtimeMs
             val spk = currentSpeakerName ?: "unknown"
-            val ttfbLog = "[AcapelaTTFB] زمن أول بايت ($spk) " +
-                "[$warmDesc]: $ttfbMs ms"
-            Log.i(TAG, ttfbLog)
-            HostLog.i(HostProtocol.ENGINE_ACAPELA, ttfbLog)
+            val latencyLog = if (wasWarmAtSpeakStart) {
+                "[AcapelaLatency] نطق جاهز/Warm ($spk): " +
+                    "latency=$synthLatencyMs ms"
+            } else {
+                val totalMs = coldInitDurationMs + synthLatencyMs
+                "[AcapelaLatency] تهيئة باردة ($spk): " +
+                    "init=$coldInitDurationMs ms | " +
+                    "تخليق أول بايت=$synthLatencyMs ms | " +
+                    "الإجمالي=$totalMs ms"
+            }
+            Log.i(TAG, latencyLog)
+            HostLog.i(HostProtocol.ENGINE_ACAPELA, latencyLog)
         }
     }
 
@@ -1304,6 +1314,9 @@ internal class AcapelaHostSession(
         )
 
         wasWarmAtSpeakStart = warmBeforeOpen
+        if (warmBeforeOpen) {
+            coldInitDurationMs = 0L
+        }
         speakStartRealtimeMs = SystemClock.elapsedRealtime()
         currentSpeakerName = voice.rawSpeaker ?: voice.voiceName
         firstAudioChunkLogged.set(false)
@@ -1898,7 +1911,11 @@ internal class AcapelaHostSession(
             )
         }
 
-        closeExtended()
+        val previousExtended = extendedService
+        val previousManaged = activeManagedService
+        val previousPackage = lastResolvedPackage
+        val previousTrialOk = lastTrialSucceeded.get()
+        val previousKey = extendedKey
 
         val iso3 = iso3Of(voice.locale) ?: return HostResult.failure(
             "VOICE_LOCALE_UNKNOWN",
@@ -1957,9 +1974,43 @@ internal class AcapelaHostSession(
                         "لـ $voiceKey؛ سيُعاد في المحاولة التالية"
                 )
             }
-            closeExtended()
+
+            // استعادة الخدمة الجاهزة السابقة إن كانت صالحة ونشطة
+            if (previousExtended != null &&
+                previousManaged != null &&
+                previousManaged.state == ExtendedServiceState.VOICE_LOADED &&
+                previousPackage != null &&
+                isVoiceActuallyLoaded(previousExtended, previousPackage.speaker)
+            ) {
+                Log.w(
+                    TAG,
+                    "[AcapelaWarm] استعادة الخدمة الجاهزة السابقة " +
+                        "(${previousPackage.speaker}) بعد تعثر تحميل " +
+                        "$expectedSpeaker"
+                )
+                extendedService = previousExtended
+                activeManagedService = previousManaged
+                lastResolvedPackage = previousPackage
+                lastTrialSucceeded.set(previousTrialOk)
+                extendedKey = previousKey
+            } else {
+                closeExtended()
+            }
             return failure
         }
+
+        // تم التحميل والتجربة بنجاح: إغلاق الخدمة السابقة إن اختلفت
+        if (previousExtended != null &&
+            previousExtended !== extendedService
+        ) {
+            if (previousManaged != null) {
+                runCatching { previousManaged.safeRelease() }
+            } else {
+                runCatching { previousExtended.nStop() }
+                runCatching { previousExtended.nShutdown() }
+            }
+        }
+
         consecutiveTrialFailures.remove(voiceKey)
         failedTrialKey = null
         return null
@@ -3843,6 +3894,40 @@ internal class AcapelaHostSession(
                 }
             }
 
+            val pkgRoot = pkgResolution.packageContainerRoot
+            if (pkgRoot.canonicalPath != verifiedDir.canonicalPath) {
+                val nlpInPkg = File(pkgRoot, "NLP")
+                val nlpInVoice = File(verifiedDir, "NLP")
+                if (nlpInPkg.isDirectory && !nlpInVoice.exists()) {
+                    runCatching {
+                        java.nio.file.Files.createSymbolicLink(
+                            nlpInVoice.toPath(),
+                            nlpInPkg.toPath()
+                        )
+                    }.onFailure {
+                        runCatching {
+                            nlpInPkg.copyRecursively(
+                                nlpInVoice,
+                                overwrite = false
+                            )
+                        }
+                    }
+                }
+                val selfSubdir = File(verifiedDir, verifiedDir.name)
+                if (!selfSubdir.exists() &&
+                    verifiedDir.listFiles()?.any {
+                        it.isFile && it.extension.equals("bvcu", true)
+                    } == true
+                ) {
+                    runCatching {
+                        java.nio.file.Files.createSymbolicLink(
+                            selfSubdir.toPath(),
+                            verifiedDir.toPath()
+                        )
+                    }
+                }
+            }
+
             val rawParamFromVerified = verifiedYaml?.let { yamlFile ->
                 AcapelaVoiceManifest.readParamFromConfigYaml(verifiedDir)
                     ?: yamlFile.parentFile?.let { p ->
@@ -3993,6 +4078,7 @@ internal class AcapelaHostSession(
             )
             lastResolvedPackage = resolvedVerifiedPackage
 
+            val initStartRealtimeMs = SystemClock.elapsedRealtime()
             val trial = executeVoiceLoadTrial(
                 label = "AuthenticVoice (تحميل مباشر من الحزمة)",
                 runId = runId,
@@ -4007,6 +4093,8 @@ internal class AcapelaHostSession(
                 allowRetry = false,
                 probeFiles = true
             )
+            coldInitDurationMs =
+                SystemClock.elapsedRealtime() - initStartRealtimeMs
 
             val isSynthesizedOk = trial.speakInvoked && trial.speakCode == 0 &&
                 (trial.samples ?: 0L) > 0L

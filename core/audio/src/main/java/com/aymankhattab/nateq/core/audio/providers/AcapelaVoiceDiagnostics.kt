@@ -508,22 +508,55 @@ object AcapelaVoiceDiagnostics {
             startDir = voiceDir,
             expectedSpeakerHint = discoveryHint
         )
-        val ini = pkgRes.iniFile ?: discovery.iniFile
-        val effectiveVoiceDir = ini?.parentFile ?: discovery.voiceDir
-            ?: pkgRes.voiceDir
+        val ini = when {
+            pkgRes.isSuccess && pkgRes.authenticIni != null ->
+                pkgRes.authenticIni
+            discovery.state ==
+                AcapelaVoiceManifest.IniDiscoveryState.AUTHENTIC &&
+                discovery.iniFile != null ->
+                discovery.iniFile
+            else ->
+                pkgRes.authenticIni ?: discovery.iniFile
+        }
+        val effectiveVoiceDir = when {
+            pkgRes.isSuccess ->
+                pkgRes.nativeEngineSearchRoot
+            ini != null ->
+                ini.parentFile ?: discovery.voiceDir ?: pkgRes.voiceDir
+            else ->
+                discovery.voiceDir ?: pkgRes.voiceDir
+        }
 
         if (pkgRes.isSuccess) {
             checked += "package=${pkgRes.relation?.name ?: "UNKNOWN"}"
+            checked += "nativeRoot=${pkgRes.nativeEngineSearchRoot.name}"
             pkgRes.hexFile?.let { checked += "hex=${it.name}" }
             pkgRes.metadataYaml?.let { checked += "yaml=${it.name}" }
+            pkgRes.resolvedDependencies.forEach {
+                checked += "dep=${it.name}"
+            }
+            pkgRes.missingDependencies.forEach { missing ->
+                val isUserDico = missing.contains(
+                    ".userdico", ignoreCase = true
+                ) || missing.contains("userdico", ignoreCase = true)
+                if (!isUserDico) {
+                    issues += VoiceDependencyIssue(
+                        dependency = "missing-directive",
+                        expectedPath = effectiveVoiceDir.absolutePath,
+                        reason = "ملف تابع غير موجود على القرص: $missing"
+                    )
+                }
+            }
         }
 
         var state = when {
             discovery.state ==
-                AcapelaVoiceManifest.IniDiscoveryState.NO_INI ->
+                AcapelaVoiceManifest.IniDiscoveryState.NO_INI &&
+                !pkgRes.isSuccess ->
                 VoiceVerificationState.NO_INI
             discovery.state ==
-                AcapelaVoiceManifest.IniDiscoveryState.INCOMPATIBLE_INI ->
+                AcapelaVoiceManifest.IniDiscoveryState.INCOMPATIBLE_INI &&
+                !pkgRes.isSuccess ->
                 VoiceVerificationState.INCOMPATIBLE_INI
             discovery.state ==
                 AcapelaVoiceManifest.IniDiscoveryState.CONFLICT ->
@@ -537,9 +570,10 @@ object AcapelaVoiceDiagnostics {
             !pkgRes.isSuccess && pkgRes.status ==
                 AcapelaPackageResolver.ResolutionStatus.METADATA_CONFLICT ->
                 VoiceVerificationState.INCOMPATIBLE_INI
+            pkgRes.isSuccess && ini != null ->
+                VoiceVerificationState.AUTHENTIC_READY
             discovery.state ==
-                AcapelaVoiceManifest.IniDiscoveryState.AUTHENTIC ||
-                (pkgRes.isSuccess && ini != null) ->
+                AcapelaVoiceManifest.IniDiscoveryState.AUTHENTIC ->
                 VoiceVerificationState.AUTHENTIC_READY
             else -> VoiceVerificationState.AUTHENTIC_READY
         }

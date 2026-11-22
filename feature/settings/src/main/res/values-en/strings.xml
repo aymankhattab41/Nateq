@@ -733,6 +733,7 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Fixed Acapela native NLP initialization regression (eb=-27, nlpInitError=-34): unified package resolver (AcapelaPackageResolver) with distinct package root, authentic ini, dependency base, and native engine search root passed to nInit (such as salma_lf) preventing shallow stub collisions; disambiguated duplicate/substitute configs by authentic directives; safely resolved legitimate relative references (PRO/SLV/userdico) within package boundaries without escaping; unblocked containers named "Acapela"; preserved warm service on voice switch failure; added installation-revision-keyed cache with failure cooldown; and separated cold init duration from synthesis latency in logs.
 • Package-scoped Acapela voice resolver (AcapelaPackageResolver) decoupling config.yaml from tree-climbing and global roots, resolving co-located, nested, and documented parent-container layouts without foreign file borrowing or identity cross-mixing, handling copied metadata conflicts (such as Salma YAML in Leila) by ignoring foreign files and binding authentic 0x* license files, unifying package resolution across import, discovery, diagnostics, and host session lifecycle while preserving warm active services (Salma) on foreign probe failure, and measuring cold vs warm TTFB.
 • Enabled Acapela voices and unified trial success criteria by distinguishing non-fatal warnings (Reprep and check_userdico) from fatal errors, prevented service poisoning or closure on successful synthesis, captured immutable byte snapshots to avoid counter resets, isolated multi-voice testing with independent support files, and added real AudioTrack audio preview with cancellation and comprehensive regression tests.
 • Fixed settings lifecycle and multi-process write conflicts via dedicated change provider; hardened voice package importing with accessible pre-import review and resource bounds; enforced privacy by redacting passwords, numbers, and spoken text via unified sensitivity gate; upgraded Read Later by eliminating silent truncation, supporting dedicated file storage, collision-free atomic IDs, and canonicalization; passed true language context to semantics/pipeline for currency, time, and multilingual text; bounded OCR screen reading concurrency and protected app monitoring with a single job, and aligned quiet hours formatting.
@@ -930,7 +931,7 @@
 • Applied engine filtering to default event voices (clock, battery…
 • Added Emergency Voice fallback system and Crash Guard for automatic…
 • Protected number category and Vocalizer / Acapela engines against…
-</string>
+    </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
     <string name="diagnostics_copy">Copy</string>

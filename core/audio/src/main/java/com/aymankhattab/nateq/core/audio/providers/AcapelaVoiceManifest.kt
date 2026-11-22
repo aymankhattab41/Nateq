@@ -307,7 +307,7 @@ object AcapelaVoiceManifest {
     }
 
     /** تصنيف مرشح ini بالمحتوى والهوية (لا بالحجم وحده). */
-    private fun classifyIniCandidate(
+    internal fun classifyIniCandidate(
         file: File,
         expectedIdentity: String
     ): IniCandidate {
