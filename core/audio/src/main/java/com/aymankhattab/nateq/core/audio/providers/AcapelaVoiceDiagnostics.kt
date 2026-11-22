@@ -500,32 +500,60 @@ object AcapelaVoiceDiagnostics {
         val discoveryHint = hint.ifBlank {
             voiceDir.name.substringBeforeLast('.')
         }
+        val pkgRes = AcapelaPackageResolver.resolvePackage(
+            voiceDir = voiceDir,
+            expectedSpeakerHint = discoveryHint
+        )
         val discovery = AcapelaVoiceManifest.discoverVoiceConfig(
             startDir = voiceDir,
             expectedSpeakerHint = discoveryHint
         )
-        val ini = discovery.iniFile
-        val effectiveVoiceDir = discovery.voiceDir ?: voiceDir
+        val ini = pkgRes.iniFile ?: discovery.iniFile
+        val effectiveVoiceDir = ini?.parentFile ?: discovery.voiceDir
+            ?: pkgRes.voiceDir
 
-        var state = when (discovery.state) {
-            AcapelaVoiceManifest.IniDiscoveryState.NO_INI ->
+        if (pkgRes.isSuccess) {
+            checked += "package=${pkgRes.relation?.name ?: "UNKNOWN"}"
+            pkgRes.hexFile?.let { checked += "hex=${it.name}" }
+            pkgRes.metadataYaml?.let { checked += "yaml=${it.name}" }
+        }
+
+        var state = when {
+            discovery.state ==
+                AcapelaVoiceManifest.IniDiscoveryState.NO_INI ->
                 VoiceVerificationState.NO_INI
-            AcapelaVoiceManifest.IniDiscoveryState.INCOMPATIBLE_INI ->
+            discovery.state ==
+                AcapelaVoiceManifest.IniDiscoveryState.INCOMPATIBLE_INI ->
                 VoiceVerificationState.INCOMPATIBLE_INI
-            AcapelaVoiceManifest.IniDiscoveryState.CONFLICT ->
+            discovery.state ==
+                AcapelaVoiceManifest.IniDiscoveryState.CONFLICT ->
                 VoiceVerificationState.CONFLICT
-            AcapelaVoiceManifest.IniDiscoveryState.AUTHENTIC ->
+            !pkgRes.isSuccess && pkgRes.status ==
+                AcapelaPackageResolver.ResolutionStatus.SPEAKER_MISMATCH ->
+                VoiceVerificationState.INCOMPATIBLE_INI
+            !pkgRes.isSuccess && pkgRes.status ==
+                AcapelaPackageResolver.ResolutionStatus.MULTIPLE_CANDIDATES ->
+                VoiceVerificationState.CONFLICT
+            !pkgRes.isSuccess && pkgRes.status ==
+                AcapelaPackageResolver.ResolutionStatus.METADATA_CONFLICT ->
+                VoiceVerificationState.INCOMPATIBLE_INI
+            discovery.state ==
+                AcapelaVoiceManifest.IniDiscoveryState.AUTHENTIC ||
+                (pkgRes.isSuccess && ini != null) ->
                 VoiceVerificationState.AUTHENTIC_READY
+            else -> VoiceVerificationState.AUTHENTIC_READY
         }
 
         when (discovery.state) {
             AcapelaVoiceManifest.IniDiscoveryState.NO_INI -> {
-                issues += VoiceDependencyIssue(
-                    dependency = "ini",
-                    expectedPath = effectiveVoiceDir.absolutePath,
-                    reason = "لا يوجد ملف ini أصلية " +
-                        "كاملة متوافقة داخل حدود الحزمة"
-                )
+                if (ini == null) {
+                    issues += VoiceDependencyIssue(
+                        dependency = "ini",
+                        expectedPath = effectiveVoiceDir.absolutePath,
+                        reason = "لا يوجد ملف ini أصلية " +
+                            "كاملة متوافقة داخل حدود الحزمة"
+                    )
+                }
             }
             AcapelaVoiceManifest.IniDiscoveryState.INCOMPATIBLE_INI -> {
                 val found = discovery.candidates.firstOrNull()?.file
@@ -560,6 +588,27 @@ object AcapelaVoiceDiagnostics {
                 )
             }
             AcapelaVoiceManifest.IniDiscoveryState.AUTHENTIC -> {
+                if (!pkgRes.isSuccess) {
+                    val dep = when (pkgRes.status) {
+                        AcapelaPackageResolver.ResolutionStatus
+                            .SPEAKER_MISMATCH -> "voice-mixing"
+                        AcapelaPackageResolver.ResolutionStatus
+                            .MULTIPLE_CANDIDATES -> "multiple-candidates"
+                        AcapelaPackageResolver.ResolutionStatus
+                            .METADATA_CONFLICT -> "metadata-conflict"
+                        AcapelaPackageResolver.ResolutionStatus
+                            .SUPPORT_REFERENCE_MISMATCH ->
+                            "support-reference"
+                        AcapelaPackageResolver.ResolutionStatus
+                            .UNSUPPORTED_FORMAT -> "unsupported-format"
+                        else -> "voice-files"
+                    }
+                    issues += VoiceDependencyIssue(
+                        dependency = dep,
+                        expectedPath = effectiveVoiceDir.absolutePath,
+                        reason = pkgRes.diagnosticReason
+                    )
+                }
                 if (ini != null) {
                     checked += "ini=${ini.absolutePath} " +
                         "(${fingerprintOf(ini)})"
@@ -2785,10 +2834,6 @@ object AcapelaVoiceDiagnostics {
         clearOldLogs(context)
         try {
             val provider = AcapelaEmbeddedVoiceProvider(context)
-            runCatching { provider.shutdown() }
-            EngineHostClient.release(context, HostProtocol.ENGINE_ACAPELA)
-            EngineHostClient.clearInitialized(HostProtocol.ENGINE_ACAPELA)
-
             val baseDir = provider.resolveDataDir()
             if (baseDir == null) {
                 val msg = buildString {
@@ -2812,7 +2857,7 @@ object AcapelaVoiceDiagnostics {
                 context = context,
                 engineId = HostProtocol.ENGINE_ACAPELA,
                 dataDir = baseDir.absolutePath,
-                force = true
+                force = false
             )
             if (!initRes.ok) {
                 val file = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
@@ -2916,6 +2961,17 @@ object AcapelaVoiceDiagnostics {
                     "1. التحقق: ${if (verOk) "ناجح" else "فشل"} - $verDetails"
                 )
 
+                if (!verOk) {
+                    reportSb.appendLine(
+                        "2. التخليق: تخطي (فشل التحقق من الحزمة - " +
+                            "عُزلت لحماية الخدمة الجاهزة)"
+                    )
+                    reportSb.appendLine("3. تسليم PCM للمشغل: 0 بايت")
+                    reportSb.appendLine("4. إكمال التشغيل: تخطي")
+                    reportSb.appendLine("")
+                    continue
+                }
+
                 // 2. التخليق
                 val probeText = if (voice.locale.language.startsWith("ar")) {
                     "مرحبا، هذا فحص صوتي تجريبي"
@@ -2925,6 +2981,8 @@ object AcapelaVoiceDiagnostics {
                 val chunks = mutableListOf<ByteArray>()
                 var totalBytes = 0L
                 var sampleRate = 22050
+                val ttfbStartMs = SystemClock.elapsedRealtime()
+                var ttfbMeasuredMs: Long? = null
 
                 val synthRes = EngineHostClient.synthesize(
                     context = context,
@@ -2939,6 +2997,10 @@ object AcapelaVoiceDiagnostics {
                     },
                     onAudioChunk = { bArr, len ->
                         if (len > 0) {
+                            if (ttfbMeasuredMs == null) {
+                                ttfbMeasuredMs =
+                                    SystemClock.elapsedRealtime() - ttfbStartMs
+                            }
                             chunks.add(bArr.copyOf(len))
                             totalBytes += len
                         }
@@ -2948,10 +3010,11 @@ object AcapelaVoiceDiagnostics {
                 val synthOk = synthRes.ok && totalBytes > 0L
                 val estSamples = totalBytes / 2L
                 val synthStatusDesc = if (synthOk) "ناجح" else "فشل"
+                val ttfbDesc = ttfbMeasuredMs?.let { " | TTFB=${it}ms" } ?: ""
                 reportSb.appendLine(
                     "2. التخليق: $synthStatusDesc " +
                         "(كود=${synthRes.code}, عينات=$estSamples, " +
-                        "بايتات=$totalBytes)"
+                        "بايتات=$totalBytes$ttfbDesc)"
                 )
 
                 // 3 & 4. تسليم PCM للمشغل والمعاينة الصوتية

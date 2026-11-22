@@ -661,16 +661,21 @@ object AcapelaVoiceImporter {
                 }
                 for (vd in AcapelaVoiceManifest.completeVoiceDirs(baseDir)) {
                     File(vd, "userdicos").mkdirs()
-                    if (hexFile != null && hexFile.parentFile != vd) {
+                    val resolved = AcapelaPackageResolver.resolvePackage(vd)
+                    if (hexFile != null && hexFile.parentFile != vd &&
+                        resolved.hexFile == null
+                    ) {
                         runCatching {
                             hexFile.copyTo(
                                 File(vd, hexFile.name),
-                                overwrite = true
+                                overwrite = false
                             )
                         }
                     }
-                    val matchingYaml = baseYaml?.let {
-                        findMatchingConfigYamlForVoice(vd, listOf(it))
+                    val matchingYaml = baseYaml?.takeIf {
+                        AcapelaPackageResolver.checkYamlSpeakerMatch(
+                            it, vd.name
+                        ) == true
                     }
                     if (matchingYaml != null &&
                         !File(vd, "config.yaml").isFile
@@ -956,12 +961,20 @@ object AcapelaVoiceImporter {
                         )
                     }
                 }
-                val yamlToCopy = File(vd, "config.yaml").takeIf { it.isFile }
+                val candidateYaml = File(vd, "config.yaml")
+                    .takeIf { it.isFile }
                     ?: allDirYamls.firstOrNull { it.parentFile == vd }
                     ?: allDirYamls.firstOrNull {
-                        it.parentFile == vd.parentFile
+                        it.parentFile == vd.parentFile &&
+                            AcapelaPackageResolver.checkYamlSpeakerMatch(
+                                it, vd.name
+                            ) == true
                     }
-                    ?: dirYamlSource
+                val yamlToCopy = candidateYaml?.takeIf {
+                    AcapelaPackageResolver.checkYamlSpeakerMatch(
+                        it, vd.name
+                    ) != false
+                }
                 if (yamlToCopy != null && yamlToCopy.isFile) {
                     runCatching {
                         yamlToCopy.copyTo(

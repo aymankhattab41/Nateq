@@ -936,7 +936,7 @@ object AcapelaVoiceManifest {
                 result.add(vDir)
             }
         }
-        // حزم HD الممتدة (قد لا تملك .ini أصلية).
+        // حزم HD الممتدة والأصوات المحلولة عبر AcapelaPackageResolver
         val hdCandidates = linkedSetOf<File>()
         runCatching {
             baseDir.walkTopDown().maxDepth(5).forEach { f ->
@@ -945,7 +945,9 @@ object AcapelaVoiceManifest {
         }
         hdCandidates.add(baseDir)
         for (d in hdCandidates) {
-            if (isHdExtendedVoiceDir(d)) result.add(d)
+            if (isHdExtendedVoiceDir(d)) {
+                result.add(d)
+            }
         }
         return result.distinctBy {
             runCatching { it.canonicalPath }.getOrDefault(it.absolutePath)
@@ -1302,7 +1304,14 @@ object AcapelaVoiceManifest {
                 (!hasAnyHex && hasYamlParam)
         )
         val reg = if (isValidRegistered) {
-            resolveRegistration(parentDir, rawReg, rawParam)
+            val resolvedPkg = AcapelaPackageResolver.resolvePackage(parentDir)
+            if (resolvedPkg.isSuccess &&
+                resolvedPkg.registration.isNotEmpty()
+            ) {
+                resolvedPkg.registration
+            } else {
+                resolveRegistration(parentDir, rawReg, rawParam)
+            }
         } else {
             ""
         }
@@ -1348,10 +1357,17 @@ object AcapelaVoiceManifest {
             f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)
         } == true
         val hasYamlParam = findConfigYamlWithParam(dir) != null
-        val reg = if ((hexFile != null && hexFile.length() > 0L) ||
+        val isValidRegistered = (hexFile != null && hexFile.length() > 0L) ||
             (!hasAnyHex && hasYamlParam)
-        ) {
-            resolveRegistration(dir, null, null)
+        val reg = if (isValidRegistered) {
+            val resolvedPkg = AcapelaPackageResolver.resolvePackage(dir)
+            if (resolvedPkg.isSuccess &&
+                resolvedPkg.registration.isNotEmpty()
+            ) {
+                resolvedPkg.registration
+            } else {
+                resolveRegistration(dir, null, null)
+            }
         } else {
             ""
         }
@@ -2165,22 +2181,7 @@ object AcapelaVoiceManifest {
             return file to raw
         }
 
-        // 1. فحص مباشر داخل dir نفسه
-        paramFrom(File(dir, "config.yaml"))?.let { return it }
-
-        // 2. فحص داخل المجلدات الفرعية التابعة لـ dir نفسه
-        val localSub = runCatching {
-            dir.walkTopDown().maxDepth(4).firstNotNullOfOrNull { f ->
-                if (f.isFile &&
-                    f.name.equals("config.yaml", ignoreCase = true)
-                ) {
-                    paramFrom(f)
-                } else null
-            }
-        }.getOrNull()
-        if (localSub != null) return localSub
-
-        // 3. تحديد هوية الصوت لمنع استعارة تهيئة صوت آخر
+        // تحديد هوية الصوت لمنع استعارة تهيئة صوت آخر
         val dirSpeaker = cleanAcapelaSpeaker(dir.name).lowercase(Locale.ROOT)
         val dirToken = tokenOfIdentity(dir.name)
         val genericContainers = setOf(
@@ -2191,25 +2192,40 @@ object AcapelaVoiceManifest {
             (dirToken == null && dirSpeaker in genericContainers)
 
         fun isParamConflicting(rawParam: String): Boolean {
-            if (isGeneric) return false
             val parsed = splitConfigYamlParam(rawParam)
             val pSpeaker = parsed?.first?.let {
                 cleanAcapelaSpeaker(it).lowercase(Locale.ROOT)
             }.orEmpty()
             if (pSpeaker.isBlank()) return false
-            val pToken = tokenOfIdentity(pSpeaker)
-            if (dirToken != null && pToken != null) {
-                return dirToken != pToken
-            }
-            if (dirSpeaker.isNotBlank() && dirSpeaker !in genericContainers) {
-                return pSpeaker != dirSpeaker &&
-                    !dir.name.lowercase(Locale.ROOT).contains(pSpeaker) &&
-                    !pSpeaker.contains(dirSpeaker)
+            val pToken = tokenOfIdentity(pSpeaker) ?: return false
+            val explicitDirToken = dirToken ?: tokenOfIdentity(dirSpeaker)
+            if (explicitDirToken != null) {
+                return explicitDirToken != pToken
             }
             return false
         }
 
-        // 4. فحص المجلد الأب المباشر dir.parentFile
+        // 1. فحص مباشر داخل dir نفسه مع التحقق من عدم التعارض
+        paramFrom(File(dir, "config.yaml"))?.let { cand ->
+            if (!isParamConflicting(cand.second)) return cand
+        }
+
+        // 2. فحص داخل المجلدات الفرعية التابعة لـ dir نفسه
+        val localSub = runCatching {
+            dir.walkTopDown().maxDepth(4).firstNotNullOfOrNull { f ->
+                if (f.isFile &&
+                    f.name.equals("config.yaml", ignoreCase = true)
+                ) {
+                    val cand = paramFrom(f)
+                    if (cand != null && !isParamConflicting(cand.second)) {
+                        cand
+                    } else null
+                } else null
+            }
+        }.getOrNull()
+        if (localSub != null) return localSub
+
+        // 3. فحص المجلد الأب المباشر dir.parentFile
         val parentYaml = dir.parentFile?.let { File(it, "config.yaml") }
         if (parentYaml != null && parentYaml.isFile) {
             val candidate = paramFrom(parentYaml)
@@ -2218,72 +2234,8 @@ object AcapelaVoiceManifest {
             }
         }
 
-        val namedRoot = findNamedAcapelaRoot(dir)
-        if (namedRoot != null && namedRoot.exists() && namedRoot.isDirectory) {
-            val rootYaml = File(namedRoot, "config.yaml")
-            if (rootYaml.isFile) {
-                val candidate = paramFrom(rootYaml)
-                if (candidate != null &&
-                    !isParamConflicting(candidate.second)
-                ) {
-                    return candidate
-                }
-            }
-
-            if (!isGeneric) {
-                val matchingSubFound = runCatching {
-                    namedRoot.listFiles { f ->
-                        f.isDirectory && (
-                            (dirToken != null &&
-                                tokenOfIdentity(f.name) == dirToken) ||
-                            cleanAcapelaSpeaker(f.name)
-                                .lowercase(Locale.ROOT).contains(dirSpeaker)
-                        )
-                    }?.firstNotNullOfOrNull { sub ->
-                        sub.walkTopDown().maxDepth(4)
-                            .firstNotNullOfOrNull { f ->
-                            if (f.isFile &&
-                                f.name.equals("config.yaml", ignoreCase = true)
-                            ) {
-                                val c = paramFrom(f)
-                                if (c != null &&
-                                    !isParamConflicting(c.second)
-                                ) c else null
-                            } else null
-                        }
-                    }
-                }.getOrNull()
-                if (matchingSubFound != null) return matchingSubFound
-            } else {
-                val foundInContainer = runCatching {
-                    namedRoot.walkTopDown().maxDepth(6)
-                        .firstNotNullOfOrNull { f ->
-                            if (f.isFile &&
-                                f.name.equals("config.yaml", ignoreCase = true)
-                            ) {
-                                paramFrom(f)
-                            } else null
-                        }
-                }.getOrNull()
-                if (foundInContainer != null) return foundInContainer
-            }
-        }
-
-        if (isGeneric) {
-            if (dir.exists() && dir.isDirectory) {
-                val found = runCatching {
-                    dir.walkTopDown().maxDepth(4)
-                        .firstNotNullOfOrNull { f ->
-                            if (f.isFile &&
-                                f.name.equals("config.yaml", ignoreCase = true)
-                            ) {
-                                paramFrom(f)
-                            } else null
-                        }
-                }.getOrNull()
-                if (found != null) return found
-            }
-        } else {
+        // 4. فحص المجلدات الفرعية في الأب المطابقة لهوية نفس المتحدث
+        if (!isGeneric) {
             val parent = dir.parentFile
             if (parent != null && parent.isDirectory) {
                 val matchingInParent = runCatching {
@@ -2312,6 +2264,44 @@ object AcapelaVoiceManifest {
                     }
                 }.getOrNull()
                 if (matchingInParent != null) return matchingInParent
+            }
+        }
+
+        // 5. للحاويات المسماة Acapela أو الحاويات العامة
+        val namedRoot = findNamedAcapelaRoot(dir)
+        if (namedRoot != null && namedRoot.exists() &&
+            namedRoot.isDirectory
+        ) {
+            val rootYaml = File(namedRoot, "config.yaml")
+            if (rootYaml.isFile) {
+                val candidate = paramFrom(rootYaml)
+                if (candidate != null &&
+                    !isParamConflicting(candidate.second)
+                ) {
+                    return candidate
+                }
+            }
+        }
+        if (isGeneric) {
+            val genericTarget = namedRoot ?: dir
+            if (genericTarget.exists() && genericTarget.isDirectory) {
+                val foundInContainer = runCatching {
+                    genericTarget.walkTopDown().maxDepth(4)
+                        .firstNotNullOfOrNull { f ->
+                            if (f.isFile &&
+                                f.name.equals(
+                                    "config.yaml",
+                                    ignoreCase = true
+                                )
+                            ) {
+                                val c = paramFrom(f)
+                                if (c != null &&
+                                    !isParamConflicting(c.second)
+                                ) c else null
+                            } else null
+                        }
+                }.getOrNull()
+                if (foundInContainer != null) return foundInContainer
             }
         }
 
