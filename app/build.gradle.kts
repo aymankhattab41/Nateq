@@ -26,8 +26,8 @@ android {
         minSdk = 24
         // أندرويد 17 = API 37: أحدث نسخة مثبّتة محلياً وهدف التوافق الحالي
         targetSdk = 37
-        versionCode = 10759
-        versionName = "1.6.159"
+        versionCode = 10760
+        versionName = "1.6.160"
         // ع٤٢-1: دعم كامل لمعماريتَي 64-بت (arm64-v8a) و32-بت (armeabi-v7a).
         // مكتبة Vocalizer الأصلية (libNuanceVocalizer.so) متوفرة للمعماريتين.
         // تم اعتماد splits.abi أدناه لإنتاج APK مستقل لكل معمارية
