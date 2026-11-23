@@ -302,12 +302,27 @@ object EmbeddedStorage {
             }
         }
 
-        return EngineInventory(
+        val inv = EngineInventory(
             engine = engine,
             files = inventoryFiles,
             totalSize = totalSize,
             completedVoices = completedVoices.distinct()
         )
+        when (engine) {
+            Engine.VOCALIZER ->
+                VocalizerVoiceRepository.updateFromInventory(
+                    inv.isCompleteVoicePresent
+                )
+            Engine.MICROSOFT ->
+                MicrosoftVoiceRepository.updateFromInventory(
+                    inv.isCompleteVoicePresent
+                )
+            Engine.ACAPELA ->
+                AcapelaVoiceRepository.updateFromInventory(
+                    inv.isCompleteVoicePresent
+                )
+        }
+        return inv
     }
 
     /**

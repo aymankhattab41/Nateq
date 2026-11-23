@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.SystemClock
+import com.aymankhattab.nateq.core.audio.engine.EnginePerformanceCounters
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.VoiceIdContract
@@ -226,7 +227,7 @@ internal class VocalizerHostSession(
         }
 
         /**
-         * مطابقة رمز اللغة بعد التطبيع (بند 8) — بلا contains/startsWith مفتوحة.
+         * مطابقة رمز اللغة بعد التطبيع (بند 8) — بلا contains مفتوحة.
          */
         internal fun matchesLanguage(
             voice: VocalizerVoice,
@@ -435,6 +436,7 @@ internal class VocalizerHostSession(
         }
         releaseEngineBeforeRebuild()
 
+        EnginePerformanceCounters.vocalizer.engineInitCount.incrementAndGet()
         val eng = VocalizerEngine(context)
         val createErr = eng.createError
         HostLog.logInitDetails(
@@ -865,6 +867,8 @@ internal class VocalizerHostSession(
         if (loadedVoiceKey != targetVoiceKey ||
             loadedEngineVoiceName != targetVoiceName
         ) {
+            EnginePerformanceCounters.vocalizer.loadVoiceMisses
+                .incrementAndGet()
             if (!eng.loadVoice(matched)) {
                 HostLog.e(
                     ENGINE_ID,
@@ -888,6 +892,9 @@ internal class VocalizerHostSession(
                     "lang=${matched.language} " +
                     "rate=${matched.sampleRate}"
             )
+        } else {
+            EnginePerformanceCounters.vocalizer.loadVoiceHits
+                .incrementAndGet()
         }
 
         val rateInt = (req.rate * 100).toInt().coerceIn(20, 400)
@@ -1018,6 +1025,8 @@ internal class VocalizerHostSession(
 
     override fun shutdown() {
         synchronized(engineLock) {
+            EnginePerformanceCounters.vocalizer.serviceCloseCount
+                .incrementAndGet()
             loadedVoiceKey = null
             loadedEngineVoiceName = null
             val eng = engine
@@ -1032,6 +1041,15 @@ internal class VocalizerHostSession(
             engineThread.shutdown()
         }
     }
+
+    fun trimResources() {
+        synchronized(engineLock) {
+            releaseEngineBeforeRebuild()
+        }
+    }
+
+    internal fun isWarmVoiceLoaded(variantKey: String): Boolean =
+        loadedVoiceKey == variantKey
 
     private fun toLePcm(samples: ShortArray): ByteArray {
         val buffer = ByteBuffer.allocate(samples.size * 2)

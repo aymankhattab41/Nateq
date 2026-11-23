@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
 import android.os.Build
+import android.os.Looper
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.announcement.LoudnessStage
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
@@ -58,11 +59,28 @@ class MicrosoftEmbeddedVoiceProvider(
             Log.e(TAG, apiRejectionReason(sdk))
             return false
         }
-        return EmbeddedStorage.inventory(
-            context,
-            EmbeddedStorage.Engine.MICROSOFT,
-            listOfNotNull(customVoiceDir)
-        ).isCompleteVoicePresent
+        if (customVoiceDir != null) {
+            return EmbeddedStorage.inventory(
+                context,
+                EmbeddedStorage.Engine.MICROSOFT,
+                listOfNotNull(customVoiceDir)
+            ).isCompleteVoicePresent
+        }
+        val snapshot = MicrosoftVoiceRepository.getSnapshot()
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            if (!snapshot.isLoaded) {
+                MicrosoftVoiceRepository.triggerBackgroundRefresh(context)
+            }
+            return snapshot.isConfigured
+        }
+        return if (snapshot.isLoaded) {
+            snapshot.isConfigured
+        } else {
+            EmbeddedStorage.inventory(
+                context,
+                EmbeddedStorage.Engine.MICROSOFT
+            ).isCompleteVoicePresent
+        }
     }
 
     override suspend fun listVoices(locale: Locale): List<VoiceDescriptor> =

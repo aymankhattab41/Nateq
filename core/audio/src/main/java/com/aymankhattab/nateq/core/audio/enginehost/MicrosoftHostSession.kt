@@ -1,7 +1,10 @@
 package com.aymankhattab.nateq.core.audio.enginehost
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.VisibleForTesting
+import com.aymankhattab.nateq.core.audio.engine.EnginePerformanceCounters
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftModelCatalog
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftVoiceManifest
 import com.microsoft.cognitiveservices.speech.EmbeddedSpeechConfig
@@ -15,10 +18,17 @@ import com.microsoft.cognitiveservices.speech.audio.AudioConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * جلسة محرك مايكروسوفت المدمج (Microsoft Neural Embedded) داخل :engine_host.
+ *
+ * الخصائص:
+ *  1. الاحتفاظ بمثيل دافئ من [SpeechSynthesizer] و [EmbeddedSpeechConfig]
+ *     عبر العبارات المتتابعة لنفس الصوت لتفادي إعادة قراءة وتحميل أوزان ONNX.
+ *  2. تخزين مؤقت لمفتاح الترخيص واسم النموذج لتجنب فحص القرص المتكرر.
+ *  3. إفراغ وإغلاق آمن للموارد الأصلية عند تبديل الصوت أو الإغلاق.
  */
 internal class MicrosoftHostSession(
     private val context: Context
@@ -29,8 +39,20 @@ internal class MicrosoftHostSession(
         private const val SAMPLE_RATE_HZ = 24000
     }
 
+    private data class WarmSession(
+        val key: String,
+        val config: EmbeddedSpeechConfig,
+        val synthesizer: SpeechSynthesizer,
+        val lastUsedRealtimeMs: Long
+    )
+
     private var baseDataDir: File? = null
     @Volatile private var activeSynthesizer: SpeechSynthesizer? = null
+    @Volatile private var warmSession: WarmSession? = null
+    private val sessionLock = Any()
+
+    private val licenseKeyCache = ConcurrentHashMap<String, String>()
+    private val modelNameCache = ConcurrentHashMap<String, String>()
 
     override fun init(dataDir: String): HostResult {
         val dir = File(dataDir)
@@ -62,7 +84,22 @@ internal class MicrosoftHostSession(
                 "تعذر العثور على مجلد الصوت: ${req.voiceId}"
             )
 
-        val licenseKey = MicrosoftLicenseExtractor.extractLicense(voiceDir)
+        val dirPath = voiceDir.absolutePath
+        val cachedLic = licenseKeyCache[dirPath]
+        val licenseKey = if (cachedLic != null && cachedLic.isNotBlank()) {
+            EnginePerformanceCounters.microsoft.licenseCacheHits
+                .incrementAndGet()
+            cachedLic
+        } else {
+            EnginePerformanceCounters.microsoft.licenseCacheMisses
+                .incrementAndGet()
+            val lic = MicrosoftLicenseExtractor.extractLicense(voiceDir)
+            if (lic.isNotBlank()) {
+                licenseKeyCache[dirPath] = lic
+            }
+            lic
+        }
+
         if (licenseKey.isBlank()) {
             return@withContext HostResult.failure(
                 "LICENSE_MISSING",
@@ -70,7 +107,21 @@ internal class MicrosoftHostSession(
             )
         }
 
-        val extractedModel = extractModelName(voiceDir)
+        val cachedModel = modelNameCache[dirPath]
+        val extractedModel = if (cachedModel != null) {
+            EnginePerformanceCounters.microsoft.modelNameCacheHits
+                .incrementAndGet()
+            cachedModel
+        } else {
+            EnginePerformanceCounters.microsoft.modelNameCacheMisses
+                .incrementAndGet()
+            val m = extractModelName(voiceDir)
+            if (!m.isNullOrBlank()) {
+                modelNameCache[dirPath] = m
+            }
+            m
+        }
+
         val catalogItem = MicrosoftModelCatalog.findItemByNameOrModel(
             context,
             req.voiceId
@@ -83,38 +134,78 @@ internal class MicrosoftHostSession(
                 .find(modelName)?.groupValues?.get(1)
             ?: "ar-EG"
 
-        var config: EmbeddedSpeechConfig? = null
+        val warmKey = "$dirPath|$modelName"
         var synthesizer: SpeechSynthesizer? = null
+        var config: EmbeddedSpeechConfig? = null
+        var isWarmHit = false
+
+        synchronized(sessionLock) {
+            val warm = warmSession
+            if (warm != null && warm.key == warmKey) {
+                EnginePerformanceCounters.microsoft.synthWarmHits
+                    .incrementAndGet()
+                synthesizer = warm.synthesizer
+                config = warm.config
+                isWarmHit = true
+                warmSession = warm.copy(
+                    lastUsedRealtimeMs = SystemClock.elapsedRealtime()
+                )
+            } else {
+                EnginePerformanceCounters.microsoft.synthWarmMisses
+                    .incrementAndGet()
+                closeWarmSessionLocked()
+
+                try {
+                    EnginePerformanceCounters.microsoft.engineInitCount
+                        .incrementAndGet()
+                    val newConfig = EmbeddedSpeechConfig.fromPaths(
+                        listOf(dirPath)
+                    )
+                    newConfig.setSpeechSynthesisVoice(modelName, licenseKey)
+                    newConfig.setProperty(
+                        PropertyId.SpeechServiceConnection_SynthModelKey,
+                        licenseKey
+                    )
+                    newConfig.setSpeechSynthesisOutputFormat(
+                        SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm
+                    )
+
+                    // تمرير `null` كـ AudioConfig مقصود لعدم إخراج الصوت مرتين
+                    val newSynth = SpeechSynthesizer(
+                        newConfig,
+                        null as AudioConfig?
+                    )
+                    config = newConfig
+                    synthesizer = newSynth
+                    warmSession = WarmSession(
+                        key = warmKey,
+                        config = newConfig,
+                        synthesizer = newSynth,
+                        lastUsedRealtimeMs = SystemClock.elapsedRealtime()
+                    )
+                } catch (t: Throwable) {
+                    Log.e(TAG, "فشل إنشاء جلسة مايكروسوفت الدافئة", t)
+                    return@withContext HostResult.failure(
+                        "INIT_FAILED",
+                        t.message ?: "Failed to create synthesizer"
+                    )
+                }
+            }
+        }
+
+        val activeSynth = synthesizer ?: return@withContext HostResult.failure(
+            "SYNTH_UNAVAILABLE",
+            "محرك مايكروسوفت غير متاح"
+        )
+        activeSynthesizer = activeSynth
+
         var synthResult: SpeechSynthesisResult? = null
 
         try {
-            config = EmbeddedSpeechConfig.fromPaths(
-                listOf(voiceDir.absolutePath)
-            )
-            config.setSpeechSynthesisVoice(modelName, licenseKey)
-            config.setProperty(
-                PropertyId.SpeechServiceConnection_SynthModelKey,
-                licenseKey
-            )
-            config.setSpeechSynthesisOutputFormat(
-                SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm
-            )
-
-            // تمرير `null` كـ AudioConfig مقصود: البانية ذات المعامل الواحد
-            // تُنشئ `AudioConfig.fromDefaultSpeakerOutput()` داخلياً فينطق
-            // SDK إلى مكبّر الصوت، ثم نكتب نحن نفس PCM إلى AudioTrack
-            // فنسمع العبارة مرتين (الازدواج المُبلَّغ عنه). غياب مخرج
-            // الصوت يجعل SDK يكتفي بإرجاع `audioData` للتشغيل عندنا.
-            synthesizer = SpeechSynthesizer(
-                config,
-                null as AudioConfig?
-            )
-            activeSynthesizer = synthesizer
-
             val isSsml = req.text.trimStart()
                 .startsWith("<speak", ignoreCase = true)
             synthResult = if (isSsml) {
-                synthesizer.SpeakSsml(req.text)
+                activeSynth.SpeakSsml(req.text)
             } else {
                 val ssml = MicrosoftSsml.build(
                     text = req.text,
@@ -122,7 +213,7 @@ internal class MicrosoftHostSession(
                     langTag = langTag,
                     rate = req.rate
                 )
-                val res = synthesizer.SpeakSsml(ssml)
+                val res = activeSynth.SpeakSsml(ssml)
                 if (res.reason == ResultReason.Canceled) {
                     val cancelDetails = SpeechSynthesisCancellationDetails
                         .fromResult(res)
@@ -131,7 +222,7 @@ internal class MicrosoftHostSession(
                         "SpeakSsml canceled: [${cancelDetails.errorCode}] " +
                             "${cancelDetails.errorDetails}; trying SpeakText"
                     )
-                    synthesizer.SpeakText(req.text)
+                    activeSynth.SpeakText(req.text)
                 } else {
                     res
                 }
@@ -184,8 +275,10 @@ internal class MicrosoftHostSession(
         } finally {
             activeSynthesizer = null
             runCatching { synthResult?.close() }
-            runCatching { synthesizer?.close() }
-            runCatching { config?.close() }
+            if (!isWarmHit && warmSession?.synthesizer != activeSynth) {
+                runCatching { activeSynth.close() }
+                runCatching { config?.close() }
+            }
         }
     }
 
@@ -195,8 +288,40 @@ internal class MicrosoftHostSession(
         }
     }
 
+    private fun closeWarmSessionLocked() {
+        val warm = warmSession
+        warmSession = null
+        if (warm != null) {
+            EnginePerformanceCounters.microsoft.serviceCloseCount
+                .incrementAndGet()
+            runCatching { warm.synthesizer.close() }
+            runCatching { warm.config.close() }
+        }
+    }
+
+    fun closeWarmSynthesizer() {
+        synchronized(sessionLock) {
+            closeWarmSessionLocked()
+        }
+    }
+
+    fun trimResources() {
+        synchronized(sessionLock) {
+            closeWarmSessionLocked()
+            licenseKeyCache.clear()
+            modelNameCache.clear()
+        }
+    }
+
+    @VisibleForTesting
+    internal fun isWarmReady(voiceDirPath: String, modelName: String): Boolean {
+        val warm = warmSession
+        return warm != null && warm.key == "$voiceDirPath|$modelName"
+    }
+
     override fun shutdown() {
         stop()
+        trimResources()
         activeSynthesizer = null
     }
 
@@ -249,5 +374,4 @@ internal class MicrosoftHostSession(
             if (matcher.find()) matcher.group(1) else null
         }.getOrNull()
     }
-
 }

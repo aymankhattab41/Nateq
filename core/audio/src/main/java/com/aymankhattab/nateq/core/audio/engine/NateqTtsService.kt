@@ -414,6 +414,7 @@ class NateqTtsService : TextToSpeechService() {
             // (onSynthesizeText يستدعي warmupJob?.cancel())، Debounce
             // يجمع سيل الإشعارات، وsingle-flight يمنع التداخل.
             warmupJob?.cancel()
+        VoiceReadinessCoordinator.onSpeechRequested()
             warmupJob = serviceScope.launch(AppDispatchers.io) {
                 try {
                     delay(NUMBER_WARM_DEBOUNCE_MS)
@@ -546,6 +547,7 @@ class NateqTtsService : TextToSpeechService() {
             contentResolver.unregisterContentObserver(settingsChangeObserver)
         }
         warmupJob?.cancel()
+        VoiceReadinessCoordinator.onSpeechRequested()
         serviceScope.cancel()
         synthesisScope.cancel()
         synthesisExecutor.shutdown()
@@ -826,6 +828,7 @@ class NateqTtsService : TextToSpeechService() {
         // اللغات/كاش كلمات التنقل) حتى تتفرغ منافذُها وأعمدتُها لهذا
         // النطق ولا تزاحمه على المحركات/المسبح (بند ب.txt 3.5-1).
         warmupJob?.cancel()
+        VoiceReadinessCoordinator.onSpeechRequested()
         // سجلّ مجرّد: طول النص واللغة فقط
         // (النص قد يحوي OTP/حساسيات يقرؤها TalkBack).
         val reqText = request.charSequenceText?.toString()
@@ -1318,6 +1321,7 @@ class NateqTtsService : TextToSpeechService() {
             // علم «نطق جارٍ» — يُنبَّه المراقبون (متحدث الإعلانات) فوراً
             // فينطلق الإعلانُ المؤجَّل خلف القراءة.
             SpeechLock.setSpeaking(applicationContext, false)
+            VoiceReadinessCoordinator.onSpeechCompleted()
             // بند ١٠: إغلاق خيط النداءات بعد أن أنهت كل الدفعات عملها.
             callbackDispatcher.close()
         }
@@ -3098,61 +3102,12 @@ class NateqTtsService : TextToSpeechService() {
     )
 
     private suspend fun prewarmEmbeddedHostIfNeeded() {
-        val usesVoc = settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_NUMBERS
-        ) == VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForLanguage(LanguageCode.AR.tag) ==
-                VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForLanguage(LanguageCode.EN.tag) ==
-                VocalizerEmbeddedVoiceProvider.PROVIDER_ID
-        if (usesVoc) {
-            val vocProvider = EmbeddedProviders.vocalizer(
-                applicationContext
-            )
-            if (vocProvider.isConfigured()) {
-                Log.i(
-                    TAG,
-                    "تدفئة مضيف الأصوات المدمجة في الخلفية بلا نطق"
-                )
-                runCatching {
-                    vocProvider.listVoices(Locale.getDefault())
-                }
-            }
-        }
-        val usesMs = settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_NUMBERS
-        ) == MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForLanguage(LanguageCode.AR.tag) ==
-                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForLanguage(LanguageCode.EN.tag) ==
-                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
-        if (usesMs) {
-            val msProvider = EmbeddedProviders.microsoft(
-                applicationContext
-            )
-            if (msProvider.isConfigured()) {
-                runCatching {
-                    msProvider.listVoices(Locale.getDefault())
-                }
-            }
-        }
-        val usesAcapela = settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_NUMBERS
-        ) == AcapelaEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForLanguage(LanguageCode.AR.tag) ==
-                AcapelaEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForLanguage(LanguageCode.EN.tag) ==
-                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-        if (usesAcapela) {
-            val acProvider = EmbeddedProviders.acapela(
-                applicationContext
-            )
-            if (acProvider.isConfigured()) {
-                runCatching {
-                    acProvider.listVoices(Locale.getDefault())
-                }
-            }
-        }
+        VoiceReadinessCoordinator.prepareActiveVoices(applicationContext)
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        VoiceReadinessCoordinator.onTrimMemory(level)
     }
 
     /** بند ٨: المحركات التي تُشير إليها الإعدادات فعلاً (افتراضي/أرقام/

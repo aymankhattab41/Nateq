@@ -16,6 +16,7 @@ import java.util.UUID
  *  4. شمول الحالات الملغاة والفاشلة وغير المقيسة في إحصائيات المقام.
  *  5. فصل القياسات بين البارد (COLD) والدافئ (WARM) والتشخيصي (DIAGNOSTIC)
  *     والعادي (REGULAR) مع حساب p95 والمتوسط.
+ *  6. متوافق ومدمج مع [UnifiedSpeechTracker].
  */
 object SalmaSpeechTracker {
 
@@ -206,7 +207,46 @@ object SalmaSpeechTracker {
                 failureReason = reason
             )
             recordCall(record)
+            mirrorToUnifiedTracker(record)
             return record
+        }
+
+        private fun mirrorToUnifiedTracker(rec: Record) {
+            val uCat = when (rec.category) {
+                Category.COLD -> UnifiedSpeechTracker.Category.COLD
+                Category.WARM -> UnifiedSpeechTracker.Category.WARM
+                Category.DIAGNOSTIC -> UnifiedSpeechTracker.Category.DIAGNOSTIC
+                Category.REGULAR -> UnifiedSpeechTracker.Category.REGULAR
+            }
+            val uStat = when (rec.status) {
+                Status.SUCCESS -> UnifiedSpeechTracker.Status.SUCCESS
+                Status.CANCELLED -> UnifiedSpeechTracker.Status.CANCELLED
+                Status.FAILED -> UnifiedSpeechTracker.Status.FAILED
+                Status.UNMEASURED -> UnifiedSpeechTracker.Status.UNMEASURED
+            }
+            UnifiedSpeechTracker.recordCall(
+                UnifiedSpeechTracker.Record(
+                    correlationId = rec.correlationId,
+                    engine = UnifiedSpeechTracker.Engine.ACAPELA,
+                    requestStartTimeMs = rec.requestStartTimeMs,
+                    category = uCat,
+                    status = uStat,
+                    textLength = rec.textLength,
+                    voiceName = rec.voiceName,
+                    queueWaitMs = rec.queueWaitMs,
+                    voiceResolveMs = rec.voiceResolveMs,
+                    discoveryVerifyMs = rec.discoveryVerifyMs,
+                    hostBindMs = rec.hostBindMs,
+                    engineInitMs = rec.engineInitMs,
+                    warmupMs = rec.warmupMs,
+                    speakCallMs = rec.speakCallMs,
+                    firstPcmMs = rec.firstPcmMs,
+                    firstTrackWriteMs = rec.firstTrackWriteMs,
+                    playbackHeadStartMs = rec.playbackHeadStartMs,
+                    totalDurationMs = rec.totalDurationMs,
+                    failureReason = rec.failureReason
+                )
+            )
         }
     }
 
@@ -315,6 +355,9 @@ object SalmaSpeechTracker {
                     SystemClock.elapsedRealtime() - last.requestStartTimeMs
                 val updated = last.copy(playbackHeadStartMs = advanceMs)
                 history[history.size - 1] = updated
+                UnifiedSpeechTracker.notePlaybackHeadAdvance(
+                    UnifiedSpeechTracker.Engine.ACAPELA
+                )
             }
         }
     }

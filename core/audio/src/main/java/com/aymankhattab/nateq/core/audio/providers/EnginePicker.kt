@@ -139,6 +139,7 @@ object EnginePicker {
         try {
             val vocalizer = EmbeddedProviders.vocalizer(context)
             scanOneEmbedded(
+                context,
                 engines,
                 vocalizer,
                 VocalizerEmbeddedVoiceProvider.PROVIDER_ID
@@ -155,6 +156,7 @@ object EnginePicker {
         try {
             val ms = EmbeddedProviders.microsoft(context)
             scanOneEmbedded(
+                context,
                 engines,
                 ms,
                 MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
@@ -170,6 +172,7 @@ object EnginePicker {
         try {
             val acapela = EmbeddedProviders.acapela(context)
             scanOneEmbedded(
+                context,
                 engines,
                 acapela,
                 AcapelaEmbeddedVoiceProvider.PROVIDER_ID
@@ -191,11 +194,27 @@ object EnginePicker {
      * ولكن المحرك يُعرض دائماً في القائمة مع شارة توضح حالته.
      */
     private fun scanOneEmbedded(
+        context: Context,
         engines: MutableList<InstalledEngine>,
         provider: VoiceProvider,
         providerId: String
     ) {
-        if (provider.isConfigured()) {
+        val configured = when (providerId) {
+            VocalizerEmbeddedVoiceProvider.PROVIDER_ID ->
+                EmbeddedStorage.inventory(
+                    context, EmbeddedStorage.Engine.VOCALIZER
+                ).isCompleteVoicePresent
+            MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ->
+                EmbeddedStorage.inventory(
+                    context, EmbeddedStorage.Engine.MICROSOFT
+                ).isCompleteVoicePresent
+            AcapelaEmbeddedVoiceProvider.PROVIDER_ID ->
+                EmbeddedStorage.inventory(
+                    context, EmbeddedStorage.Engine.ACAPELA
+                ).isCompleteVoicePresent
+            else -> provider.isConfigured()
+        }
+        if (configured) {
             EngineStatusRegistry.noteFilesPresent(providerId)
             engines.add(InstalledEngine(providerId, provider.displayName))
         } else {

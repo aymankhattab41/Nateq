@@ -199,6 +199,14 @@ object AcapelaVoiceRepository {
     /**
      * تصفير كامل للاختبارات فقط.
      */
+    fun updateFromInventory(isConfigured: Boolean) {
+        val old = currentSnapshot
+        currentSnapshot = old.copy(
+            isConfigured = isConfigured,
+            isLoaded = true
+        )
+    }
+
     internal fun resetForTests() {
         currentSnapshot = EMPTY_SNAPSHOT
         localRevisionCounter.set(0L)

@@ -143,11 +143,28 @@ class VocalizerEmbeddedVoiceProvider(
      * فقط عند وجود صوت مكتمل واحد على الأقل (.hdr + .dat >= 1MB).
      */
     override fun isConfigured(): Boolean {
-        return EmbeddedStorage.inventory(
-            context,
-            EmbeddedStorage.Engine.VOCALIZER,
-            listOfNotNull(customVoiceDir)
-        ).isCompleteVoicePresent
+        if (customVoiceDir != null) {
+            return EmbeddedStorage.inventory(
+                context,
+                EmbeddedStorage.Engine.VOCALIZER,
+                listOfNotNull(customVoiceDir)
+            ).isCompleteVoicePresent
+        }
+        val snapshot = VocalizerVoiceRepository.getSnapshot()
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            if (!snapshot.isLoaded) {
+                VocalizerVoiceRepository.triggerBackgroundRefresh(context)
+            }
+            return snapshot.isConfigured
+        }
+        return if (snapshot.isLoaded) {
+            snapshot.isConfigured
+        } else {
+            EmbeddedStorage.inventory(
+                context,
+                EmbeddedStorage.Engine.VOCALIZER
+            ).isCompleteVoicePresent
+        }
     }
 
     /**
@@ -238,7 +255,9 @@ class VocalizerEmbeddedVoiceProvider(
                 val st = EngineStatusRegistry.statusOf(context, PROVIDER_ID)
                 val reason = st.lastError ?: st.code
                 if (reason.isNullOrBlank()) {
-                    val msg = "تعذّرت تهيئة محرك Vocalizer أو لم يُعثر على بيانات أصوات"
+                    val msg =
+                        "تعذّرت تهيئة محرك Vocalizer أو لم " +
+                            "يُعثر على بيانات أصوات"
                     EngineStatusRegistry.noteFailure(
                         PROVIDER_ID, "NOT_INITIALIZED", msg
                     )
@@ -346,7 +365,8 @@ class VocalizerEmbeddedVoiceProvider(
     ): Locale {
         if (candidate.language.isNotBlank()) return candidate
         val inferredTag = inferLanguageTag(voiceId, voiceName, rawLang)
-            ?: fallback.toLanguageTag().takeIf { fallback.language.isNotBlank() }
+            ?: fallback.toLanguageTag()
+                .takeIf { fallback.language.isNotBlank() }
             ?: LanguageCode.AR.tag
         return runCatching { Locale.forLanguageTag(inferredTag) }
             .getOrDefault(fallback)
@@ -433,10 +453,8 @@ class VocalizerEmbeddedVoiceProvider(
                         )
                     }?.id ?: resolution.name
                 }
-                com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
-                    .isLanguageOnlyVoiceId(rawName) ||
-                    com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
-                    .isLanguageOnlyVoiceId(requestedId) -> {
+                VocalizerHostSession.isLanguageOnlyVoiceId(rawName) ||
+                    VocalizerHostSession.isLanguageOnlyVoiceId(requestedId) -> {
                     val msg = "معرّف لغة فقط بلا صوت محدد: $requestedId"
                     Log.e(TAG, msg)
                     EngineStatusRegistry.noteFailure(

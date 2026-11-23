@@ -43,6 +43,7 @@ import kotlinx.coroutines.withContext
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.aymankhattab.nateq.core.audio.engine.VoiceReadinessCoordinator
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.data.UpdateChecker
@@ -1148,6 +1149,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
             // ÙØ­Øµ ØªÙ„Ù‚Ø§Ø¦ÙŠ Ø¹Ù†Ø¯ ÙØªØ­ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚: ÙŠÙÙ†Ø¨Ù‡ Ø¨ÙˆØ¬ÙˆØ¯ ØªØ­Ø¯ÙŠØ« (ØµØ§Ù…Øª Ø¥Ù† Ù„Ù… ÙŠÙˆØ¬Ø¯)
             checkForUpdatesOnStart()
+            VoiceReadinessCoordinator.prepareActiveVoices(requireContext())
         } finally {
             Trace.endSection()
         }
