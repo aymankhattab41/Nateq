@@ -558,21 +558,26 @@ if ($null -eq $relData) {
     Write-Host "=> الإصدار $targetTag موجود مسبقاً (Draft=$($relData.isDraft))."
 }
 
-$releaseId = $relData.id
+function Get-RemoteReleaseAssets {
+    param([string]$Tag)
+    $viewOut = & gh release view $Tag --repo aymankhattab41/Nateq --json assets 2>$null
+    if ($LASTEXITCODE -eq 0 -and $viewOut) {
+        return @(($viewOut | ConvertFrom-Json).assets)
+    }
+    return @()
+}
 
 # تنظيف أي مرفقات معلقة أو تالفة في حالة starter أو بحجم صفري
 Write-Host "=> فحص وتنظيف المرفقات المعلقة (starter/0 bytes)..."
 $prevEfGh = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
-    $assetsJson = & gh api "repos/aymankhattab41/Nateq/releases/$releaseId/assets" 2>$null
-    if ($LASTEXITCODE -eq 0 -and $assetsJson) {
-        $existingAssets = $assetsJson | ConvertFrom-Json
-        foreach ($a in $existingAssets) {
-            if ($a.state -eq 'starter' -or $a.size -eq 0) {
-                Write-Warning "حذف مرفق معلق أو غير مكتمل: $($a.name) (id=$($a.id), state=$($a.state))"
-                & gh api -X DELETE "repos/aymankhattab41/Nateq/releases/assets/$($a.id)" | Out-Null
-            }
+    $existingAssets = Get-RemoteReleaseAssets $targetTag
+    foreach ($a in $existingAssets) {
+        if ($a.state -eq 'starter' -or $a.size -eq 0) {
+            $numId = Split-Path -Leaf $a.apiUrl
+            Write-Warning "حذف مرفق معلق أو غير مكتمل: $($a.name) (id=$numId, state=$($a.state))"
+            & gh api -X DELETE "repos/aymankhattab41/Nateq/releases/assets/$numId" | Out-Null
         }
     }
 } finally {
@@ -589,14 +594,11 @@ foreach ($apkPath in $targetApkFiles) {
     $prevEfGh = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $curAssetsJson = & gh api "repos/aymankhattab41/Nateq/releases/$releaseId/assets" 2>$null
-        if ($LASTEXITCODE -eq 0 -and $curAssetsJson) {
-            $curAssets = $curAssetsJson | ConvertFrom-Json
-            $matching = $curAssets | Where-Object { $_.name -eq $apkLeaf -and $_.state -eq 'uploaded' -and $_.size -eq $apkLocalSize }
-            if ($null -ne $matching) {
-                Write-Host "=> المرفق $apkLeaf موجود مسبقاً بحجم سليم ($apkLocalSize بايت)."
-                $needsUpload = $false
-            }
+        $curAssets = Get-RemoteReleaseAssets $targetTag
+        $matching = $curAssets | Where-Object { $_.name -eq $apkLeaf -and $_.state -eq 'uploaded' -and $_.size -eq $apkLocalSize }
+        if ($null -ne $matching) {
+            Write-Host "=> المرفق $apkLeaf موجود مسبقاً بحجم سليم ($apkLocalSize بايت)."
+            $needsUpload = $false
         }
     } finally {
         $ErrorActionPreference = $prevEfGh
@@ -619,8 +621,7 @@ if (-not (Test-Path -LiteralPath $verifyTempDir)) {
 }
 
 try {
-    $finalAssetsJson = & gh api "repos/aymankhattab41/Nateq/releases/$releaseId/assets"
-    $finalAssets = $finalAssetsJson | ConvertFrom-Json
+    $finalAssets = Get-RemoteReleaseAssets $targetTag
 
     foreach ($apkPath in $targetApkFiles) {
         $apkLeaf = Split-Path -Leaf $apkPath
@@ -642,12 +643,12 @@ try {
         Write-Host "=> تنزيل $apkLeaf للتحقق من البصمة الرقمية..."
         $downloadedFile = Join-Path $verifyTempDir $apkLeaf
         $ghToken = (& gh auth token 2>$null).Trim()
-        & curl.exe -s -L -H "Authorization: Bearer $ghToken" -H "Accept: application/octet-stream" "https://api.github.com/repos/aymankhattab41/Nateq/releases/assets/$($remoteAsset.id)" -o $downloadedFile
+        $downloadUrl = if ($remoteAsset.apiUrl) { $remoteAsset.apiUrl } else { "https://api.github.com/repos/aymankhattab41/Nateq/releases/assets/$($remoteAsset.id)" }
+        & curl.exe -s -L -H "Authorization: Bearer $ghToken" -H "Accept: application/octet-stream" $downloadUrl -o $downloadedFile
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $downloadedFile)) {
             throw "فشل تنزيل $apkLeaf للتحقق عبر API الموثق"
         }
 
-        $downloadedFile = Join-Path $verifyTempDir $apkLeaf
         $downloadedHash = (Get-FileHash -LiteralPath $downloadedFile -Algorithm SHA256).Hash.ToLowerInvariant()
         Remove-Item -LiteralPath $downloadedFile -Force -ErrorAction SilentlyContinue
 
