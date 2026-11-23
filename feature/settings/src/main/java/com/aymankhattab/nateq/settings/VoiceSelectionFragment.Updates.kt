@@ -155,6 +155,17 @@ internal fun VoiceSelectionFragment.performUpdateCheck(showFeedback: Boolean) {
                     )
                 }
             }
+            is UpdateChecker.CheckResult.ReleaseNotReady -> {
+                if (showFeedback) {
+                    val msg = getString(
+                        R.string.check_updates_release_not_ready
+                    )
+                    Toast.makeText(
+                        context, msg, Toast.LENGTH_SHORT
+                    ).show()
+                    view?.announceCompat(msg)
+                }
+            }
             is UpdateChecker.CheckResult.NoCompatibleVersion -> {
                 // بند ٢٢: لا نعرض مرفق معمارية أخرى — نُعلن صراحةً.
                 if (showFeedback) {

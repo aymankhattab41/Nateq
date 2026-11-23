@@ -11,9 +11,12 @@ import androidx.core.content.FileProvider
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.util.NateqJson
 import com.aymankhattab.nateq.util.optArray
+import com.aymankhattab.nateq.util.optLong
 import com.aymankhattab.nateq.util.optMember
 import com.aymankhattab.nateq.util.optObject
 import com.aymankhattab.nateq.util.optString
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -59,14 +62,23 @@ object UpdateChecker {
     /** مصدر الزمن — حقنة اختبار لتقادم الكاش. */
     internal var nowProvider: () -> Long = { System.currentTimeMillis() }
 
-    /** حفظ نتيجة للحصاد لاحقاً — خطأ الشبكة لا يُخزَّن (عرضي). */
+    /** حفظ نتيجة للحصاد لاحقاً — خطأ الشبكة والجاهزية الناقصة لا يُخزَّنان. */
     internal fun rememberCheck(
         result: CheckResult,
         versionChecked: String,
         now: Long
     ) {
-        if (result is CheckResult.NetworkError) return
+        if (result is CheckResult.NetworkError ||
+            result is CheckResult.ReleaseNotReady
+        ) {
+            return
+        }
         checkCache = CheckedAt(now, versionChecked, result)
+    }
+
+    /** تصفير الكاش يدوياً للاختبار أو التحديث الفوري. */
+    internal fun clearCache() {
+        checkCache = null
     }
 
     /** استرجاع نتيجة الفحص المخزَّنة ضمن [CACHE_TTL_MS] ولنفس النسخة، فقط
@@ -212,6 +224,54 @@ object UpdateChecker {
         return ApkPick.NoCompatible
     }
 
+    /** مرفق APK مكتمل التنزيل والرفع وجاهز للتوزيع. */
+    internal data class CompletedApkAsset(
+        val name: String,
+        val downloadUrl: String,
+        val size: Long,
+        val state: String,
+        val digest: String? = null,
+        val rawObject: JsonObject? = null
+    )
+
+    /**
+     * استخراج مرفقات الـ APK المكتملة فقط:
+     * - ينتهي الاسم بـ `.apk`
+     * - الحالة `state == "uploaded"` (استبعاد starter وما شابه)
+     * - الحجم `size > 0` ورابط التنزيل غير فارغ
+     */
+    internal fun parseCompletedApkAssets(
+        assetsArray: JsonArray?
+    ): List<CompletedApkAsset> {
+        if (assetsArray == null || assetsArray.size() == 0) {
+            return emptyList()
+        }
+        val list = mutableListOf<CompletedApkAsset>()
+        for (i in 0 until assetsArray.size()) {
+            val obj = assetsArray.get(i).optObject() ?: continue
+            val name = obj.optString("name")
+            val state = obj.optString("state")
+            val size = obj.optLong("size", 0L)
+            val downloadUrl = obj.optString("browser_download_url")
+            val isApk = name.endsWith(".apk", ignoreCase = true)
+            val isUploaded = state.equals("uploaded", ignoreCase = true)
+            if (isApk && isUploaded && size > 0L && downloadUrl.isNotBlank()) {
+                val digest = obj.optMember("digest")?.optString()
+                list.add(
+                    CompletedApkAsset(
+                        name = name,
+                        downloadUrl = downloadUrl,
+                        size = size,
+                        state = state,
+                        digest = digest,
+                        rawObject = obj
+                    )
+                )
+            }
+        }
+        return list
+    }
+
     sealed class CheckResult {
         data class UpdateAvailable(
             val tag: String,
@@ -224,6 +284,15 @@ object UpdateChecker {
         ) : CheckResult()
         object UpToDate : CheckResult()
         object NetworkError : CheckResult()
+
+        /**
+         * إصدار أحدث منشور لكنه قيد التجهيز أو لم تكتمل ملفاته بعد
+         * (مرفقات فارغة، حالة starter، صفر بايت، أو غير APK).
+         */
+        data class ReleaseNotReady(
+            val tag: String,
+            val reason: String = ""
+        ) : CheckResult()
 
         /** إصدار أحدث منشور لكن كل مرفقاته بمعمارية أخرى — لا يوجد ملف
          *  متوافق مع الجهاز، فلا يُقدَّم للمستخدم مرفق خاطئ. */
@@ -299,22 +368,34 @@ object UpdateChecker {
                         return@withContext CheckResult.UpToDate
                     }
                     val assets = root.optArray("assets")
-                    val apkAssets = (0 until (assets?.size() ?: 0))
-                        .mapNotNull { assets?.get(it)?.optObject() }
+                    val rawAssetsCount = assets?.size() ?: 0
+                    if (rawAssetsCount == 0) {
+                        return@withContext CheckResult.ReleaseNotReady(
+                            tag = tag,
+                            reason = "EMPTY_ASSET_LIST"
+                        )
+                    }
+                    val completedApkAssets = parseCompletedApkAssets(assets)
+                    if (completedApkAssets.isEmpty()) {
+                        return@withContext CheckResult.ReleaseNotReady(
+                            tag = tag,
+                            reason = "NO_COMPLETED_UPLOADED_ASSETS"
+                        )
+                    }
                     // معمارية الجهاز أولاً ثم المرفق العام الشامل — ولا شيء
                     // بعدهما: مرفق معمارية أخرى لا يُقدَّم كتحديث.
                     val apkAsset = pickApkAsset(
-                        apkAssets,
+                        completedApkAssets,
                         preferredNames = deviceApkCandidates(),
-                        nameOf = { it.optString("name") }
+                        nameOf = { it.name }
                     ).assetOrNull
                     // إصدار أحدث لكن بلا مرفق متوافق مع معمارية الجهاز:
                     // نُعلن عدم التوافق بدل تنزيل ملف معمارية أخرى.
                     if (apkAsset == null) {
                         return@withContext CheckResult.NoCompatibleVersion
                     }
-                    val urlEl = apkAsset.optMember("browser_download_url")
-                    if (urlEl == null) {
+                    val downloadUrl = apkAsset.downloadUrl
+                    if (downloadUrl.isBlank()) {
                         return@withContext CheckResult.NetworkError
                     }
                     // بصمة الـ APK من `digest` الخاص بأصل GitHub: تُسجَّل
@@ -324,17 +405,16 @@ object UpdateChecker {
                     // ويتجاوز الفحص؛ نُكمل من سطر «SHA-256: …» في ملاحظات
                     // الإصدار الذي يدرجه سكربت النشر، أو بصمة من ملف
                     // SHA256SUMS مرفقٍ بالإصدار إن وُجد في نص الملاحظات.
-                    val digestFromAsset = apkAsset.optMember("digest")
-                        ?.optString()
+                    val digestFromAsset = apkAsset.digest
                         ?.takeIf { it.startsWith("sha256:") }
                         ?.removePrefix("sha256:")
                     val expectedSha = digestFromAsset
                         ?: extractSha256FromReleaseNote(
                             root.optString("body"),
-                            apkAsset.optString("name")
+                            apkAsset.name
                         )
                     CheckResult.UpdateAvailable(
-                        tag, urlEl.optString(), expectedSha
+                        tag, downloadUrl, expectedSha
                     )
                 } finally {
                     conn.disconnect()

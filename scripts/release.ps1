@@ -377,14 +377,48 @@ try {
 
 # ناتج البناء صار APK مستقلاً لكل معمارية (nateq-<abi>.apk) — نجمع
 # كل الأرفاق الناتجة ولا نفترض اسماً واحداً ثابتاً.
-$apkFiles = @(Get-ChildItem -Path $apkDir -Filter '*.apk' `
-    -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
-if ($apkFiles.Count -eq 0) {
-    throw "لم يُعثر على أي ملف APK ناتج في: $apkDir"
+# ناتج البناء صار APK مستقلاً لكل معمارية (nateq-<abi>.apk) بالإضافة للمرفق العام (nateq.apk).
+# تحقق صارم من كافة المخرجات الإلزامية قبل الشروع في أي نشر.
+$expectedApkNames = @('nateq-arm64-v8a.apk', 'nateq-armeabi-v7a.apk', 'nateq.apk')
+$targetApkFiles = @()
+foreach ($apkName in $expectedApkNames) {
+    $apkPath = Join-Path $apkDir $apkName
+    if (-not (Test-Path -LiteralPath $apkPath)) {
+        throw "ملف APK إلزامي مفقود بعد البناء: $apkName في $apkDir"
+    }
+    $apkInfo = Get-Item -LiteralPath $apkPath
+    if ($apkInfo.Length -lt 10000000) { # 10MB كحد أدنى
+        throw "حجم الـ APK غير طبيعي أو تالف: $apkName ($($apkInfo.Length) بايت)"
+    }
+
+    # تحقق من سلامة بنية حزمة الـ APK (ملفات Manifest و Dex والمكتبات الأصلية)
+    $zip = $null
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($apkPath)
+        $hasManifest = $null -ne ($zip.Entries | Where-Object { $_.FullName -eq 'AndroidManifest.xml' })
+        $hasDex = $null -ne ($zip.Entries | Where-Object { $_.FullName -like '*.dex' })
+        if (-not $hasManifest -or -not $hasDex) {
+            throw "ملف $apkName تالف ولا يحتوي على AndroidManifest.xml أو classes.dex"
+        }
+        if ($apkName -match 'arm64-v8a') {
+            $hasSo = $null -ne ($zip.Entries | Where-Object { $_.FullName -like 'lib/arm64-v8a/*.so' })
+            if (-not $hasSo) {
+                throw "ملف $apkName لا يحتوي على مكتبات arm64-v8a"
+            }
+        } elseif ($apkName -match 'armeabi-v7a') {
+            $hasSo = $null -ne ($zip.Entries | Where-Object { $_.FullName -like 'lib/armeabi-v7a/*.so' })
+            if (-not $hasSo) {
+                throw "ملف $apkName لا يحتوي على مكتبات armeabi-v7a"
+            }
+        }
+    } finally {
+        if ($null -ne $zip) { $zip.Dispose() }
+    }
+    $targetApkFiles += $apkPath
 }
 
-# ===== حساب توقيع التوقيع (SHA-256) من الـ keystore وتحديث AppIntegrity.kt =====
-Write-Host "=> حساب توقيع Release keystore SHA-256..."
+# ===== فحص توقيع Release keystore والتحقق من مطابقته لتوقيع الإنتاج =====
+Write-Host "=> فحص توقيع Release keystore..."
 try {
     $keyPropsFile = Join-Path $repoRoot 'key.properties'
     if (Test-Path -LiteralPath $keyPropsFile) {
@@ -402,55 +436,38 @@ try {
         if ($storeFile -and $storePassword -and $keyAlias -and $keyPassword) {
             $fullStorePath = Join-Path $repoRoot $storeFile
             if (Test-Path -LiteralPath $fullStorePath) {
-                # استخراج الشهادة من الـ keystore وحساب SHA-256
                 $certBytes = & keytool -exportcert -keystore $fullStorePath `
                     -storepass $storePassword -keypass $keyPassword `
                     -alias $keyAlias -rfc 2>$null
                 if ($LASTEXITCODE -eq 0 -and $certBytes) {
-                    # تحويل PEM إلى بايتات وحساب SHA-256
                     $pem = $certBytes -join "`n"
                     $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
                         [System.Text.Encoding]::UTF8.GetBytes($pem)
                     )
                     $sha256 = $cert.GetCertHashString([System.Security.Cryptography.HashAlgorithmName]::SHA256)
-                    # تنسيق بالـ uppercase مفصول بنقطتين
                     $formattedSig = ($sha256 -replace '(.{2})', '$1:').TrimEnd(':')
-                    Write-Host "=> توقيع Release: $formattedSig"
-
-                    # تحديث AppIntegrity.kt
-                    $integrityFile = Join-Path $repoRoot 'app\src\main\java\com\aymankhattab\nateq\AppIntegrity.kt'
-                    if (Test-Path -LiteralPath $integrityFile) {
-                        $content = [System.IO.File]::ReadAllText($integrityFile, [System.Text.UTF8Encoding]::new($false))
-                        $newContent = $content -replace 'REPLACE_WITH_RELEASE_SIGNATURE_SHA256', $formattedSig
-                        if ($newContent -cne $content) {
-                            [System.IO.File]::WriteAllText($integrityFile, $newContent, [System.Text.UTF8Encoding]::new($false))
-                            Write-Host "=> تم تحديث AppIntegrity.kt بالتوقيع الفعلي"
-                        }
+                    Write-Host "=> توقيع Keystore الفعلي: $formattedSig"
+                    $expectedSig = "79:3A:A5:31:F8:89:04:A1:9B:9C:1C:33:A6:7B:23:8F:31:42:92:63:F5:D3:24:F9:5E:AE:CE:E8:81:1F:E8:C3"
+                    if ($formattedSig -ne $expectedSig) {
+                        throw "توقيع Keystore ($formattedSig) لا يطابق توقيع الإنتاج الرسمي ($expectedSig)!"
                     }
-                } else {
-                    Write-Warning "فشل استخراج الشهادة من keystore (keytool exit code: $LASTEXITCODE)"
                 }
-            } else {
-                Write-Warning "ملف keystore غير موجود: $fullStorePath"
             }
-        } else {
-            Write-Warning "معلومات keystore ناقصة في key.properties"
         }
-    } else {
-        Write-Warning "ملف key.properties غير موجود — تخطيت تحديث التوقيع"
     }
 } catch {
-    Write-Warning "خطأ أثناء حساب/تحديث التوقيع: $_"
+    Write-Warning "تحذير أثناء فحص التوقيع: $_"
 }
 
 # **بند 5.3:** سطر SHA-256 لكل APK يُلحق بملاحظات الإصدار — يُحسب من
 # القرص مباشرةً بمجرد وجود الملف (بلا نسخ مؤقتة) ويتيح التحققَ من سلامة
 # المرفق قبل التثبيت (سطر بصمة لكل معمارية باسم مرفقها).
-$targetApkFiles = $apkFiles
 $releaseNotes = $releaseNotes + "`r`n`r`n### المجموع الاختباري SHA-256`r`n"
+$apkHashDict = @{}
 foreach ($f in $targetApkFiles) {
     $sha = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash.ToLowerInvariant()
     $leaf = Split-Path -Leaf $f
+    $apkHashDict[$leaf] = $sha
     $releaseNotes = $releaseNotes + "``$sha``  $leaf`r`n"
 }
 
@@ -481,29 +498,151 @@ Invoke-Git @('tag', $targetTag)
 Invoke-Git @('push', 'origin', 'master')
 Invoke-Git @('push', 'origin', $targetTag)
 
-# 5) إنشاء Release على GitHub مع مرفق الـ APK.
+# 5) إدارة ونشر الـ Release على GitHub بدقة وحصانة تامة ضد التلف أو الانقطاع
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-    Write-Warning 'gh غير مثبت/موثّق — الدفع والوسم تمّا.'
-    Write-Warning ("أنشئ الـ Release يدوياً: gh release create " +
-        "$targetTag $($targetApkFiles -join ' ')")
-    Write-Warning "    --title `"Lord TTS $targetVersion`" --notes"
-    exit 0
+    throw "أداة GitHub CLI (gh) غير مثبتة أو غير موجودة في المسار. تم الالتزام والوسم ولكن يلزم gh للنشر الآمن."
 }
-Write-Host "=> إنشاء Release $targetTag على GitHub..."
-$ghArgs = @('release', 'create', $targetTag) + $targetApkFiles + @(
-    '--repo', 'aymankhattab41/Nateq',
-    '--title', "Lord TTS $targetVersion",
-    '--notes', $releaseNotes
-)
-$ghOut = & gh @ghArgs 2>&1 | ForEach-Object { "$_" }
-if ($LASTEXITCODE -ne 0) {
-    Write-Warning "فشل gh release create: $(($ghOut | Out-String).Trim())"
-    Write-Warning ("أعده لاحقاً بـ: gh release create " +
-        "$targetTag $($targetApkFiles -join ' ')")
-    Write-Warning "    --title `"Lord TTS $targetVersion`" --notes"
-} else {
-    Write-Host "=> نُشر الإصدار $targetVersion على GitHub ($targetTag)."
-    foreach ($f in $targetApkFiles) {
-        Write-Host "=> الـ APK: $f"
+
+Write-Host "=> التحقق من حالة الإصدار $targetTag على GitHub..."
+$prevEfGh = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    $relViewJson = & gh release view $targetTag --repo aymankhattab41/Nateq --json id,isDraft,assets,tagName 2>$null
+    $relData = if ($LASTEXITCODE -eq 0 -and $relViewJson) { $relViewJson | ConvertFrom-Json } else { $null }
+} finally {
+    $ErrorActionPreference = $prevEfGh
+}
+
+if ($null -eq $relData) {
+    Write-Host "=> إنشاء الإصدار كمسودة أولية (Draft Release) لمنع وصول المستخدمين لملفات غير مكتملة..."
+    $ghCreateArgs = @(
+        'release', 'create', $targetTag,
+        '--repo', 'aymankhattab41/Nateq',
+        '--title', "Lord TTS $targetVersion",
+        '--notes', $releaseNotes,
+        '--draft'
+    )
+    $createOut = & gh @ghCreateArgs 2>&1 | ForEach-Object { "$_" }
+    if ($LASTEXITCODE -ne 0) {
+        throw "فشل إنشاء مسودة الإصدار $targetTag على GitHub: $(($createOut | Out-String).Trim())"
     }
+    $relViewJson = & gh release view $targetTag --repo aymankhattab41/Nateq --json id,isDraft,assets,tagName
+    $relData = $relViewJson | ConvertFrom-Json
+} else {
+    Write-Host "=> الإصدار $targetTag موجود مسبقاً (Draft=$($relData.isDraft))."
+}
+
+$releaseId = $relData.id
+
+# تنظيف أي مرفقات معلقة أو تالفة في حالة starter أو بحجم صفري
+Write-Host "=> فحص وتنظيف المرفقات المعلقة (starter/0 bytes)..."
+$prevEfGh = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    $assetsJson = & gh api "repos/aymankhattab41/Nateq/releases/$releaseId/assets" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $assetsJson) {
+        $existingAssets = $assetsJson | ConvertFrom-Json
+        foreach ($a in $existingAssets) {
+            if ($a.state -eq 'starter' -or $a.size -eq 0) {
+                Write-Warning "حذف مرفق معلق أو غير مكتمل: $($a.name) (id=$($a.id), state=$($a.state))"
+                & gh api -X DELETE "repos/aymankhattab41/Nateq/releases/assets/$($a.id)" | Out-Null
+            }
+        }
+    }
+} finally {
+    $ErrorActionPreference = $prevEfGh
+}
+
+# رفع كافة ملفات APK المطلوبة مع إعادة المحاولة
+foreach ($apkPath in $targetApkFiles) {
+    $apkLeaf = Split-Path -Leaf $apkPath
+    $apkLocalSize = (Get-Item -LiteralPath $apkPath).Length
+    
+    # فحص ما إذا كان المرفق مرفوعاً بالفعل بحجم مطابق
+    $needsUpload = $true
+    $prevEfGh = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $curAssetsJson = & gh api "repos/aymankhattab41/Nateq/releases/$releaseId/assets" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $curAssetsJson) {
+            $curAssets = $curAssetsJson | ConvertFrom-Json
+            $matching = $curAssets | Where-Object { $_.name -eq $apkLeaf -and $_.state -eq 'uploaded' -and $_.size -eq $apkLocalSize }
+            if ($null -ne $matching) {
+                Write-Host "=> المرفق $apkLeaf موجود مسبقاً بحجم سليم ($apkLocalSize بايت)."
+                $needsUpload = $false
+            }
+        }
+    } finally {
+        $ErrorActionPreference = $prevEfGh
+    }
+
+    if ($needsUpload) {
+        Write-Host "=> رفع المرفق $apkLeaf..."
+        $upOut = & gh release upload $targetTag $apkPath --repo aymankhattab41/Nateq --clobber 2>&1 | ForEach-Object { "$_" }
+        if ($LASTEXITCODE -ne 0) {
+            throw "فشل رفع المرفق $apkLeaf إلى GitHub: $(($upOut | Out-String).Trim())"
+        }
+    }
+}
+
+# التحقق الصارم من كافة المرفقات المرفوعة (تنزيل موثق + فحص الحجم و SHA-256) قبل النشر
+Write-Host "=> التحقق الصارم من سلامة كافة المرفقات المرفوعة وتطابق SHA-256..."
+$verifyTempDir = Join-Path ([System.IO.Path]::GetTempPath()) "nateq_verify_$targetTag"
+if (-not (Test-Path -LiteralPath $verifyTempDir)) {
+    New-Item -ItemType Directory -Path $verifyTempDir -Force | Out-Null
+}
+
+try {
+    $finalAssetsJson = & gh api "repos/aymankhattab41/Nateq/releases/$releaseId/assets"
+    $finalAssets = $finalAssetsJson | ConvertFrom-Json
+
+    foreach ($apkPath in $targetApkFiles) {
+        $apkLeaf = Split-Path -Leaf $apkPath
+        $apkLocalSize = (Get-Item -LiteralPath $apkPath).Length
+        $apkLocalHash = $apkHashDict[$apkLeaf]
+
+        $remoteAsset = $finalAssets | Where-Object { $_.name -eq $apkLeaf }
+        if ($null -eq $remoteAsset) {
+            throw "فشل التحقق: المرفق $apkLeaf غير مدرج في مرفقات الإصدار على GitHub"
+        }
+        if ($remoteAsset.state -ne 'uploaded') {
+            throw "فشل التحقق: المرفق $apkLeaf ليس في حالة uploaded (حالته الحالية: $($remoteAsset.state))"
+        }
+        if ($remoteAsset.size -ne $apkLocalSize) {
+            throw "فشل التحقق: حجم $apkLeaf على GitHub ($($remoteAsset.size)) لا يطابق المحلي ($apkLocalSize)"
+        }
+
+        # تنزيل الملف المرفوع والتحقق من بصمة SHA-256 الفعلية
+        Write-Host "=> تنزيل $apkLeaf للتحقق من البصمة الرقمية..."
+        $dlOut = & gh release download $targetTag --repo aymankhattab41/Nateq -p $apkLeaf -D $verifyTempDir --clobber 2>&1 | ForEach-Object { "$_" }
+        if ($LASTEXITCODE -ne 0) {
+            throw "فشل تنزيل $apkLeaf للتحقق: $(($dlOut | Out-String).Trim())"
+        }
+
+        $downloadedFile = Join-Path $verifyTempDir $apkLeaf
+        $downloadedHash = (Get-FileHash -LiteralPath $downloadedFile -Algorithm SHA256).Hash.ToLowerInvariant()
+        Remove-Item -LiteralPath $downloadedFile -Force -ErrorAction SilentlyContinue
+
+        if ($downloadedHash -ne $apkLocalHash) {
+            throw "عدم تطابق SHA-256 في المرفق $apkLeaf! (المحلي: $apkLocalHash، المرفوع: $downloadedHash)"
+        }
+        Write-Host "=> المرفق $apkLeaf سليم ومطابق تماماً (SHA-256: $downloadedHash)."
+    }
+} catch {
+    Write-Error "فشل التحقق من مرفقات الإصدار. سيبقى الإصدار كمسودة (Draft) ولن يُنشر للمستخدمين."
+    throw
+} finally {
+    Remove-Item -LiteralPath $verifyTempDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# نشر الإصدار وإلغاء صفة المسودة (draft=false) بعد التأكد من سلامة كافة المرفقات 100%
+Write-Host "=> تم التحقق بنجاح 100% لكافة المرفقات. جارٍ نشر الإصدار للعامة (draft=false)..."
+$pubOut = & gh release edit $targetTag --repo aymankhattab41/Nateq --draft=false 2>&1 | ForEach-Object { "$_" }
+if ($LASTEXITCODE -ne 0) {
+    throw "فشل تحويل الإصدار $targetTag إلى إصدار عام: $(($pubOut | Out-String).Trim())"
+}
+
+Write-Host "=> تم نشر الإصدار $targetVersion بنجاح تام على GitHub ($targetTag)."
+foreach ($f in $targetApkFiles) {
+    Write-Host "=> الـ APK المعتمد والمنشور: $f"
 }

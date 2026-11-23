@@ -265,6 +265,7 @@
 <string name="check_updates_download_failed">فشل تنزيل ملف التحديث. تحقق من اتصال الإنترنت أو استخدم متصفحاً</string>
 <string name="check_updates_checksum_failed">فشل التحقق من سلامة الملف المُنزَّل (SHA-256) — لا تثبيت. أعد المحاولة أو استخدم اتصالاً مستقراً</string>
 <string name="check_updates_network_error">تعذّر الوصول للخادم. تحقق من اتصال الإنترنت</string>
+<string name="check_updates_release_not_ready">الإصدار الجديد قيد التجهيز أو لم تكتمل ملفاته بعد. يُرجى المحاولة لاحقاً</string>
 <string name="check_updates_no_compatible">لا توجد نسخة متوافقة مع معمارية هذا الجهاز</string>
 <string name="check_updates_up_to_date">التطبيق محدّث لأحدث إصدار</string>
 <string name="check_updates_confirm_title">يتوفر تحديث جديد</string>

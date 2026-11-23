@@ -266,6 +266,7 @@
 <string name="check_updates_download_failed">Failed to download the update. Check your internet connection or use a browser</string>
 <string name="check_updates_checksum_failed">Integrity check (SHA-256) of the downloaded file failed — not installing. Try again or use a stable connection</string>
 <string name="check_updates_network_error">Could not reach the server. Check your internet connection</string>
+<string name="check_updates_release_not_ready">The new release is being prepared or its files are not ready yet. Please try again later</string>
 <string name="check_updates_no_compatible">No version compatible with this device architecture</string>
 <string name="check_updates_up_to_date">App is up to date</string>
 <string name="check_updates_confirm_title">Update available</string>
