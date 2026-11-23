@@ -29,6 +29,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
 # جذر المستودع = أعلى مجلد السكربت.
 $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $gradleFile = Join-Path $repoRoot 'app\build.gradle.kts'
