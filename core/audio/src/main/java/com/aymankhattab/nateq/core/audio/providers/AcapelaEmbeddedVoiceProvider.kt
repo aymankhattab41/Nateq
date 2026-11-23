@@ -56,6 +56,12 @@ class AcapelaEmbeddedVoiceProvider(
     }
 
     override fun isConfigured(): Boolean {
+        if (customVoiceDir == null) {
+            val snapshot = AcapelaVoiceRepository.getSnapshot()
+            if (snapshot.revision >= 0L) {
+                return snapshot.isConfigured
+            }
+        }
         return EmbeddedStorage.inventory(
             context,
             EmbeddedStorage.Engine.ACAPELA,
@@ -65,16 +71,19 @@ class AcapelaEmbeddedVoiceProvider(
 
     override suspend fun listVoices(locale: Locale): List<VoiceDescriptor> =
         withContext(Dispatchers.IO) {
-            val searchDirs = EmbeddedStorage.allSearchDirs(
-                context,
-                EmbeddedStorage.Engine.ACAPELA,
-                listOfNotNull(customVoiceDir)
-            )
+            val voices = if (customVoiceDir == null) {
+                AcapelaVoiceRepository.getOrRefreshSnapshot(context).voices
+            } else {
+                val searchDirs = EmbeddedStorage.allSearchDirs(
+                    context,
+                    EmbeddedStorage.Engine.ACAPELA,
+                    listOfNotNull(customVoiceDir)
+                )
+                searchDirs.flatMap { AcapelaVoiceManifest.cachedVoices(it) }
+            }
             val result = mutableListOf<VoiceDescriptor>()
 
-            for (dir in searchDirs) {
-                val voices = AcapelaVoiceManifest.cachedVoices(dir)
-                for (v in voices) {
+            for (v in voices) {
                     val resolvedLocale =
                         if (v.locale.language.isNotBlank()) {
                             v.locale
@@ -113,7 +122,6 @@ class AcapelaEmbeddedVoiceProvider(
                         )
                     }
                 }
-            }
             result.distinctBy {
                 "${it.id}|${it.locale.toLanguageTag()}"
             }
@@ -261,7 +269,8 @@ class AcapelaEmbeddedVoiceProvider(
             if (!result.ok) {
                 Log.e(
                     TAG,
-                    "نطق Acapela المدمج فشل [${result.code}]: ${result.message}"
+                    "نطق Acapela المدمج فشل [${result.code}]: " +
+                        result.message
                 )
                 com.aymankhattab.nateq.core.audio.engine
                     .SpeechFallbackTracker.noteAcapelaFailure(

@@ -638,8 +638,18 @@ object AcapelaVoiceManifest {
     private val voicesCache =
         ConcurrentHashMap<String, VoicesCacheEntry>()
 
+    private data class CompleteDirsCacheKey(
+        val canonicalPath: String,
+        val revision: Long
+    )
+
+    private val completeDirsCache =
+        ConcurrentHashMap<CompleteDirsCacheKey, List<File>>()
+
     /** يمنع تعدادين متوازيين فيُقرأ القرص مرتين لنفس المجلد. */
     private val voicesCacheMutex = Mutex()
+
+    private val loggedDiags = ConcurrentHashMap.newKeySet<String>()
 
     private fun monotonicMs(): Long = System.nanoTime() / 1_000_000L
 
@@ -918,6 +928,12 @@ object AcapelaVoiceManifest {
      */
     fun completeVoiceDirs(baseDir: File): List<File> {
         if (!baseDir.exists() || !baseDir.isDirectory) return emptyList()
+        val canonical = runCatching { baseDir.canonicalPath }
+            .getOrDefault(baseDir.absolutePath)
+        val rev = AcapelaVoiceRepository.getStorageRevision()
+        val cacheKey = CompleteDirsCacheKey(canonical, rev)
+        completeDirsCache[cacheKey]?.let { return it }
+
         val result = linkedSetOf<File>()
         val inis = collectIniFiles(baseDir, 6)
         for (ini in inis) {
@@ -949,9 +965,11 @@ object AcapelaVoiceManifest {
                 result.add(d)
             }
         }
-        return result.distinctBy {
+        val distinct = result.distinctBy {
             runCatching { it.canonicalPath }.getOrDefault(it.absolutePath)
         }
+        completeDirsCache[cacheKey] = distinct
+        return distinct
     }
     /** تلميح هوية الصوت المستخلص من اسم/محتوى ini ومجلده. */
     private fun voiceHintFromIni(ini: File, dir: File): String {
@@ -1383,8 +1401,13 @@ object AcapelaVoiceManifest {
     }
 
     private fun diagLog(msg: String) {
+        if (!loggedDiags.add(msg)) return
         runCatching { Log.i("AcapelaManifest", msg) }
         runCatching { HostLog.i(HostProtocol.ENGINE_ACAPELA, msg) }
+    }
+
+    fun clearDiagnosticLogs() {
+        loggedDiags.clear()
     }
 
     /**
@@ -2515,7 +2538,8 @@ object AcapelaVoiceManifest {
         val hit = voicesCache[baseDir.absolutePath]
             ?: return VoicesSnapshot(emptyList(), fresh = false)
         val age = clockMs() - hit.stampMs
-        val fresh = hit.bumpTime == EmbeddedStorage.lastBumpTime &&
+        val currentBump = EmbeddedStorage.lastBumpTime
+        val fresh = hit.bumpTime == currentBump &&
             age in 0..VOICES_CACHE_TTL_MS
         return VoicesSnapshot(hit.voices, fresh)
     }
@@ -2529,6 +2553,8 @@ object AcapelaVoiceManifest {
      */
     fun invalidateVoicesCache() {
         voicesCache.clear()
+        completeDirsCache.clear()
+        loggedDiags.clear()
     }
 
     /**

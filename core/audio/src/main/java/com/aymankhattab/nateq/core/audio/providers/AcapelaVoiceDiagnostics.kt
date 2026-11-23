@@ -22,6 +22,7 @@ import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -452,9 +453,34 @@ object AcapelaVoiceDiagnostics {
         val discovery: AcapelaVoiceManifest.VoiceDiscoveryResult? = null
     )
 
-    /** بصمة غير سرية (حجم + SHA-256) لمقارنة المصدر بالمرحلي. */
-    fun fingerprintOf(file: File): String {
+    private data class VerificationCacheKey(
+        val canonicalPath: String,
+        val speakerHint: String,
+        val revision: Long,
+        val computeFullHashes: Boolean
+    )
+
+    private val verificationCache =
+        ConcurrentHashMap<VerificationCacheKey, VoiceDependencyVerification>()
+
+    private const val MAX_VERIFICATION_CACHE_ENTRIES = 50
+
+    fun invalidateVerificationCache() {
+        verificationCache.clear()
+    }
+
+    /**
+     * بصمة غير سرية لمقارنة المصدر بالمرحلي:
+     * حجم وتاريخ التعديل افتراضياً للسرعة، أو SHA-256 عند الطلب الصريح.
+     */
+    fun fingerprintOf(
+        file: File,
+        computeFullHash: Boolean = false
+    ): String {
         if (!file.isFile) return "missing"
+        if (!computeFullHash) {
+            return "size=${file.length()},mod=${file.lastModified()}"
+        }
         val sha = runCatching {
             val md = MessageDigest.getInstance("SHA-256")
             file.inputStream().use { input ->
@@ -492,11 +518,25 @@ object AcapelaVoiceDiagnostics {
     fun verifyAuthenticVoicePackage(
         voiceDir: File,
         stagedDir: File? = null,
-        expectedSpeakerHint: String? = null
+        expectedSpeakerHint: String? = null,
+        computeFullHashes: Boolean = false
     ): VoiceDependencyVerification {
+        val canonicalPath = runCatching { voiceDir.canonicalPath }
+            .getOrDefault(voiceDir.absolutePath)
+        val hint = expectedSpeakerHint?.trim().orEmpty()
+        val rev = AcapelaVoiceRepository.getStorageRevision()
+        val cacheKey = VerificationCacheKey(
+            canonicalPath = canonicalPath,
+            speakerHint = hint,
+            revision = rev,
+            computeFullHashes = computeFullHashes
+        )
+        if (stagedDir == null) {
+            verificationCache[cacheKey]?.let { return it }
+        }
+
         val issues = mutableListOf<VoiceDependencyIssue>()
         val checked = mutableListOf<String>()
-        val hint = expectedSpeakerHint?.trim().orEmpty()
         val discoveryHint = hint.ifBlank {
             voiceDir.name.substringBeforeLast('.')
         }
@@ -645,7 +685,7 @@ object AcapelaVoiceDiagnostics {
                 }
                 if (ini != null) {
                     checked += "ini=${ini.absolutePath} " +
-                        "(${fingerprintOf(ini)})"
+                        "(${fingerprintOf(ini, computeFullHashes)})"
                     val deps = AcapelaVoiceManifest.parseIniDependencies(ini)
                     if (deps.isEmpty()) {
                         issues += VoiceDependencyIssue(
@@ -717,8 +757,11 @@ object AcapelaVoiceDiagnostics {
                                 val dName = File(dep.relativePath).name
                                 val cand = File(siblingUserdicos, dName)
                                 if (cand.exists() && cand.isFile) {
-                                    checked += "userdico-sibling:$dName " +
-                                        "(${fingerprintOf(cand)})"
+                                    val cfp = fingerprintOf(
+                                        cand,
+                                        computeFullHashes
+                                    )
+                                    checked += "userdico-sibling:$dName ($cfp)"
                                 } else {
                                     checked += "userdico-optional-missing:" +
                                         "${dep.key} -> ${dep.relativePath}"
@@ -763,7 +806,7 @@ object AcapelaVoiceDiagnostics {
                             }
                             continue
                         }
-                        val fp = fingerprintOf(resolved)
+                        val fp = fingerprintOf(resolved, computeFullHashes)
                         checked += "${dep.key}:${dep.relativePath} " +
                             "-> ${resolved.absolutePath} ($fp)"
                         if (stagedDir != null) {
@@ -812,7 +855,10 @@ object AcapelaVoiceDiagnostics {
                                         "${dep.key} -> ${dep.relativePath}"
                                 }
                             } else {
-                                val sfp = fingerprintOf(staged)
+                                val sfp = fingerprintOf(
+                                    staged,
+                                    computeFullHashes
+                                )
                                 if (sfp != fp) {
                                     if (isUserDico) {
                                         checked +=
@@ -952,7 +998,7 @@ object AcapelaVoiceDiagnostics {
             }
         }.trimEnd()
 
-        return VoiceDependencyVerification(
+        val result = VoiceDependencyVerification(
             ok = ok,
             voiceDir = effectiveVoiceDir,
             iniFile = ini,
@@ -962,6 +1008,14 @@ object AcapelaVoiceDiagnostics {
             state = state,
             discovery = discovery
         )
+        if (stagedDir == null) {
+            if (verificationCache.size >= MAX_VERIFICATION_CACHE_ENTRIES) {
+                val oldest = verificationCache.keys().toList().firstOrNull()
+                if (oldest != null) verificationCache.remove(oldest)
+            }
+            verificationCache[cacheKey] = result
+        }
+        return result
     }
 
     /** توحيد مسار الملف ليكون تحت /data/user/0 بدل /data/data. */
@@ -3827,8 +3881,8 @@ object AcapelaVoiceDiagnostics {
                         }.getOrNull(),
                         auditStatus = "PASSED",
                         notes = "عُثر على عينات الصوت في " +
-                            "${directFile.parentFile?.name ?: voiceDir.name} " +
-                            "(${directFile.length()} بايت)"
+                            (directFile.parentFile?.name ?: voiceDir.name) +
+                            " (${directFile.length()} بايت)"
                     )
                 )
             } else {

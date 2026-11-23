@@ -84,6 +84,9 @@ object AcapelaPackageResolver {
         "android", "data", "app_voices", "files", "voice"
     )
 
+    private const val MAX_PACKAGE_CACHE_SIZE = 50
+    private const val MAX_COOLDOWN_CACHE_SIZE = 50
+
     private data class CacheKey(
         val canonicalPath: String,
         val expectedSpeaker: String,
@@ -112,6 +115,7 @@ object AcapelaPackageResolver {
     fun invalidateCache() {
         packageCache.clear()
         failureCooldowns.clear()
+        inFlightLocks.clear()
     }
 
     /**
@@ -499,7 +503,7 @@ object AcapelaPackageResolver {
 
         val normalizedSpeaker = expectedSpeakerHint?.trim()?.ifBlank { null }
             ?: canonicalVoiceDir.name
-        val currentRevision = EmbeddedStorage.lastBumpTime
+        val currentRevision = AcapelaVoiceRepository.getStorageRevision()
         val cacheKey = CacheKey(
             canonicalPath = canonicalVoiceDir.canonicalPath,
             expectedSpeaker = normalizedSpeaker,
@@ -534,12 +538,20 @@ object AcapelaPackageResolver {
             )
 
             if (resolved.isSuccess) {
+                if (packageCache.size >= MAX_PACKAGE_CACHE_SIZE) {
+                    val oldest = packageCache.keys().toList().firstOrNull()
+                    if (oldest != null) packageCache.remove(oldest)
+                }
                 packageCache[cacheKey] = resolved
                 failureCooldowns.remove(lockKey)
             } else {
                 val prevCooldown = failureCooldowns[lockKey]
                 val prevBackoff = prevCooldown?.backoffMs ?: 500L
                 val nextBackoff = (prevBackoff * 2L).coerceAtMost(15_000L)
+                if (failureCooldowns.size >= MAX_COOLDOWN_CACHE_SIZE) {
+                    val oldest = failureCooldowns.keys().toList().firstOrNull()
+                    if (oldest != null) failureCooldowns.remove(oldest)
+                }
                 failureCooldowns[lockKey] = FailureCooldown(
                     failedAtMs = System.currentTimeMillis(),
                     backoffMs = nextBackoff,

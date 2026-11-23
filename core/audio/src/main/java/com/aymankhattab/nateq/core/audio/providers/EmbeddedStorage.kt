@@ -103,7 +103,7 @@ object EmbeddedStorage {
     fun bumpVersion() {
         versionCounter.incrementAndGet()
         lastBumpTimestamp = System.currentTimeMillis()
-        AcapelaPackageResolver.invalidateCache()
+        AcapelaVoiceRepository.invalidate()
     }
 
     /** تصفير زمن الـ bump للاختبارات فقط. */

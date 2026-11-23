@@ -26,6 +26,7 @@ import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceDiagnostics
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceRepository
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftCatalogItem
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftDownloader
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
@@ -231,19 +232,11 @@ internal class EmbeddedEngineDownloaderController(
             MicrosoftModelCatalog.isVoiceInstalled(msDir, item)
         }
 
-        val acSearch = EmbeddedStorage.allSearchDirs(
-            ctx,
-            EmbeddedStorage.Engine.ACAPELA
-        )
-        // لقطة من التخزين المؤقت فقط: هذا الملخص يُطلب من الخيط الرئيسي
-        // في كل تحديث لحالة الأقسام، وقراءة المانيفست هنا كانت تشقّ شجرة
-        // الملفات كاملة عند كل طلب.
-        val acSnapshots = acSearch.map {
-            AcapelaVoiceManifest.voicesSnapshot(it)
+        val acSnapshot = AcapelaVoiceRepository.getSnapshot()
+        val acCount = acSnapshot.voices.size
+        if (acSnapshot.revision < 0L) {
+            warmAcapelaCache()
         }
-        val acCount = acSnapshots.flatMap { it.voices }
-            .distinctBy { it.id }.size
-        if (acSnapshots.any { !it.fresh }) warmAcapelaCache()
         val total = vocCount + msCount + acCount
         val isAr = LanguageCode.isArabic(Locale.getDefault().language)
         val result = if (total > 0) {
@@ -307,9 +300,7 @@ internal class EmbeddedEngineDownloaderController(
         val generation = ++acapelaRenderGeneration
         acapelaRenderJob = fragment.viewLifecycleOwner.lifecycleScope.launch {
             val voices = withContext(AppDispatchers.io) {
-                searchDirs
-                    .flatMap { AcapelaVoiceManifest.cachedVoices(it) }
-                    .distinctBy { it.id }
+                AcapelaVoiceRepository.getOrRefreshSnapshot(ctx).voices
             }
             if (generation != acapelaRenderGeneration) return@launch
             if (!fragment.isAdded) return@launch
@@ -355,13 +346,9 @@ internal class EmbeddedEngineDownloaderController(
         val ctx = fragment.context ?: return
         if (acapelaWarmJob?.isActive == true) return
         if (fragment.view == null) return
-        val searchDirs = EmbeddedStorage.allSearchDirs(
-            ctx,
-            EmbeddedStorage.Engine.ACAPELA
-        )
         acapelaWarmJob = fragment.viewLifecycleOwner.lifecycleScope.launch {
             withContext(AppDispatchers.io) {
-                searchDirs.forEach { AcapelaVoiceManifest.cachedVoices(it) }
+                AcapelaVoiceRepository.getOrRefreshSnapshot(ctx)
             }
             if (fragment.isAdded) {
                 onStatusChanged()
@@ -863,7 +850,9 @@ internal class EmbeddedEngineDownloaderController(
         MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.embedded_download_confirm_title)
             .setMessage(msg)
-            .setPositiveButton(R.string.embedded_download_confirm_btn) { _, _ ->
+            .setPositiveButton(
+                R.string.embedded_download_confirm_btn
+            ) { _, _ ->
                 startVocalizerDownload(item)
             }
             .setNegativeButton(android.R.string.cancel, null)
