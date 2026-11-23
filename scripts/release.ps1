@@ -166,6 +166,18 @@ if ($null -eq $latestVersion -and
     $latestTag = "v$localTag"
 }
 
+# فحص ما إذا كان أحدث وسم يمثل مسودة معلقة لم تُنشر بعد على GitHub (استئناف نشر آمن)
+$isResumingDraft = $false
+if ($null -ne $latestTag -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+    $chkRel = & gh release view $latestTag --repo aymankhattab41/Nateq --json isDraft 2>$null
+    if ($LASTEXITCODE -eq 0 -and $chkRel) {
+        $isResumingDraft = (($chkRel | ConvertFrom-Json).isDraft -eq $true)
+        if ($isResumingDraft) {
+            Write-Host "=> رُصدت مسودة معلقة لم تُنشر بعد للإصدار $latestTag على GitHub — استئناف التحقق والنشر."
+        }
+    }
+}
+
 # versionCode الحالي في build.gradle.kts (عرض/ملف فقط — لا يُرجع).
 $gradleRaw = [System.IO.File]::ReadAllText($gradleFile)
 $codeMatch = [regex]::Match($gradleRaw, 'versionCode = (\d+)')
@@ -198,7 +210,7 @@ if ($null -ne $latestTag) {
     $sinceTag = '(لا وسوم بعد)'
 }
 $newCommitCount = [int]($commitOut | Out-String).Trim()
-if ($newCommitCount -lt 1) {
+if (-not $isResumingDraft -and $newCommitCount -lt 1) {
     throw "لا التزامات جديدة منذ $sinceTag — لا حاجة لإصدار."
 }
 
@@ -213,6 +225,11 @@ $targetMinor = 6
 $targetPatch = 1
 if ($TargetVersionOverride) {
     $parts = @($TargetVersionOverride.TrimStart('v').Split('.') | ForEach-Object { [int]$_ })
+    $targetMajor = $parts[0]
+    $targetMinor = $parts[1]
+    $targetPatch = $parts[2]
+} elseif ($isResumingDraft) {
+    $parts = @($latestVersion.Split('.') | ForEach-Object { [int]$_ })
     $targetMajor = $parts[0]
     $targetMinor = $parts[1]
     $targetPatch = $parts[2]
@@ -243,28 +260,30 @@ if ($targetCode -lt $currentCode) {
         "استعدْ الترقيم أو استخدم وسمَ الإصدار كمرجع.")
 }
 
-# منع النشر المتكرر لنفس الإصدار (محلياً وعلى الـ remote).
-$previousEf = $ErrorActionPreference
-$ErrorActionPreference = 'SilentlyContinue'
-try {
-    & git rev-parse --verify --quiet "refs/tags/$targetTag" 2>$null
-    $localHas = ($LASTEXITCODE -eq 0)
-} finally {
-    $ErrorActionPreference = $previousEf
-}
-if ($localHas) {
-    throw "الوسم $targetTag موجود محلياً — لا نشر متكرر."
-}
-$previousEf = $ErrorActionPreference
-$ErrorActionPreference = 'SilentlyContinue'
-try {
-    $remoteHas = & git ls-remote --tags origin 2>$null |
-        Select-String -Pattern "refs/tags/$targetTag`$"
-} finally {
-    $ErrorActionPreference = $previousEf
-}
-if ($null -ne $remoteHas) {
-    throw "الوسم $targetTag موجود على الـ remote — لا نشر متكرر."
+# منع النشر المتكرر لنفس الإصدار (محلياً وعلى الـ remote) إلا إذا كنا نستأنف مسودة غير منشورة.
+if (-not $isResumingDraft) {
+    $previousEf = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    try {
+        & git rev-parse --verify --quiet "refs/tags/$targetTag" 2>$null
+        $localHas = ($LASTEXITCODE -eq 0)
+    } finally {
+        $ErrorActionPreference = $previousEf
+    }
+    if ($localHas) {
+        throw "الوسم $targetTag موجود محلياً — لا نشر متكرر."
+    }
+    $previousEf = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    try {
+        $remoteHas = & git ls-remote --tags origin 2>$null |
+            Select-String -Pattern "refs/tags/$targetTag`$"
+    } finally {
+        $ErrorActionPreference = $previousEf
+    }
+    if ($null -ne $remoteHas) {
+        throw "الوسم $targetTag موجود على الـ remote — لا نشر متكرر."
+    }
 }
 
 # فحص نظافة شجرة العمل قبل النشر (منع حزم تعديلات محلية غير ملتزمة داخل الـ APK)
@@ -495,10 +514,15 @@ if ($hasStaged) {
     Write-Host "=> لا تغييرات مرحّلة في app/build.gradle.kts — تخطي commit الترقيم."
 }
 
-# 4) الوسم ثم الدفع (الفرع والوسم معاً).
-Invoke-Git @('tag', $targetTag)
-Invoke-Git @('push', 'origin', 'master')
-Invoke-Git @('push', 'origin', $targetTag)
+# 4) الوسم ثم الدفع (الفرع والوسم معاً) إن لم يكن الوسم موجوداً مسبقاً.
+& git rev-parse --verify --quiet "refs/tags/$targetTag" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Invoke-Git @('tag', $targetTag)
+    Invoke-Git @('push', 'origin', 'master')
+    Invoke-Git @('push', 'origin', $targetTag)
+} else {
+    Write-Host "=> الوسم $targetTag مطبّق مسبقاً — متابعة استكمال نشر المسودة."
+}
 
 # 5) إدارة ونشر الـ Release على GitHub بدقة وحصانة تامة ضد التلف أو الانقطاع
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
@@ -614,11 +638,13 @@ try {
             throw "فشل التحقق: حجم $apkLeaf على GitHub ($($remoteAsset.size)) لا يطابق المحلي ($apkLocalSize)"
         }
 
-        # تنزيل الملف المرفوع والتحقق من بصمة SHA-256 الفعلية
+        # تنزيل الملف المرفوع والتحقق من بصمة SHA-256 الفعلية عبر API الموثق
         Write-Host "=> تنزيل $apkLeaf للتحقق من البصمة الرقمية..."
-        $dlOut = & gh release download $targetTag --repo aymankhattab41/Nateq -p $apkLeaf -D $verifyTempDir --clobber 2>&1 | ForEach-Object { "$_" }
-        if ($LASTEXITCODE -ne 0) {
-            throw "فشل تنزيل $apkLeaf للتحقق: $(($dlOut | Out-String).Trim())"
+        $downloadedFile = Join-Path $verifyTempDir $apkLeaf
+        $ghToken = (& gh auth token 2>$null).Trim()
+        & curl.exe -s -L -H "Authorization: Bearer $ghToken" -H "Accept: application/octet-stream" "https://api.github.com/repos/aymankhattab41/Nateq/releases/assets/$($remoteAsset.id)" -o $downloadedFile
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $downloadedFile)) {
+            throw "فشل تنزيل $apkLeaf للتحقق عبر API الموثق"
         }
 
         $downloadedFile = Join-Path $verifyTempDir $apkLeaf
