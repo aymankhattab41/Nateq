@@ -4,6 +4,8 @@ import android.content.ComponentCallbacks2
 import android.content.Context
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.enginehost.AcapelaHostSession
+import com.aymankhattab.nateq.core.audio.enginehost.MicrosoftHostSession
+import com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
@@ -168,22 +170,48 @@ object VoiceReadinessCoordinator {
         success
     }
 
+    private fun isEnglishVoice(voiceId: String): Boolean {
+        val lower = voiceId.lowercase(Locale.ROOT)
+        return lower.contains("en-") ||
+            lower.contains("en_") ||
+            lower.contains("-en") ||
+            lower.contains("_en") ||
+            lower.contains("us") ||
+            lower.contains("uk") ||
+            lower.contains("gb") ||
+            lower.contains("jenny") ||
+            lower.contains("guy") ||
+            lower.contains("aria") ||
+            lower.contains("samantha") ||
+            lower.contains("tom") ||
+            lower.contains("will") ||
+            lower.contains("ava") ||
+            lower.contains("andrew") ||
+            lower.contains("brian") ||
+            lower.contains("emma") ||
+            lower.contains("oliver")
+    }
+
     private suspend fun executeSilentWarmup(
         context: Context,
         engineId: String,
         voiceId: String
     ): Boolean {
         val appCtx = context.applicationContext ?: context
+        val isEn = isEnglishVoice(voiceId)
+        val probeText = if (isEn) "Hello" else "مرحبا"
+        val probeLocale = if (isEn) Locale.US else Locale.forLanguageTag("ar")
+
         when (engineId) {
             AcapelaEmbeddedVoiceProvider.PROVIDER_ID -> {
                 val provider = EmbeddedProviders.acapela(appCtx)
                 if (!provider.isConfigured()) return false
-                val probeText = "مرحبا"
+                var hasPcmSamples = false
                 val descriptor = VoiceDescriptor(
                     id = voiceId,
                     providerId = engineId,
                     displayName = voiceId,
-                    locale = Locale("ar")
+                    locale = probeLocale
                 )
                 provider.synthesize(
                     text = probeText,
@@ -192,23 +220,28 @@ object VoiceReadinessCoordinator {
                     pitch = 1.0f,
                     volume = 0.0f,
                     onFormatInfo = { _, _ -> },
-                    onAudioChunk = { _, _ -> },
+                    onAudioChunk = { chunk, validLen ->
+                        if (validLen > 0 && chunk.isNotEmpty()) {
+                            hasPcmSamples = true
+                        }
+                    },
                     enginePackage = null,
-                    voiceLocale = Locale("ar"),
+                    voiceLocale = probeLocale,
                     desiredVoiceName = voiceId,
                     category = "warmup"
                 )
-                return AcapelaHostSession.isWarmVoiceReady(voiceId)
+                return hasPcmSamples &&
+                    AcapelaHostSession.isWarmVoiceReady(voiceId)
             }
             VocalizerEmbeddedVoiceProvider.PROVIDER_ID -> {
                 val provider = EmbeddedProviders.vocalizer(appCtx)
                 if (!provider.isConfigured()) return false
-                val probeText = "مرحبا"
+                var hasPcmSamples = false
                 val descriptor = VoiceDescriptor(
                     id = voiceId,
                     providerId = engineId,
                     displayName = voiceId,
-                    locale = Locale("ar")
+                    locale = probeLocale
                 )
                 provider.synthesize(
                     text = probeText,
@@ -217,23 +250,28 @@ object VoiceReadinessCoordinator {
                     pitch = 1.0f,
                     volume = 0.0f,
                     onFormatInfo = { _, _ -> },
-                    onAudioChunk = { _, _ -> },
+                    onAudioChunk = { chunk, validLen ->
+                        if (validLen > 0 && chunk.isNotEmpty()) {
+                            hasPcmSamples = true
+                        }
+                    },
                     enginePackage = null,
-                    voiceLocale = Locale("ar"),
+                    voiceLocale = probeLocale,
                     desiredVoiceName = voiceId,
                     category = "warmup"
                 )
-                return true
+                return hasPcmSamples &&
+                    VocalizerHostSession.isWarmVoiceLoaded(voiceId)
             }
             MicrosoftEmbeddedVoiceProvider.PROVIDER_ID -> {
                 val provider = EmbeddedProviders.microsoft(appCtx)
                 if (!provider.isConfigured()) return false
-                val probeText = "مرحبا"
+                var hasPcmSamples = false
                 val descriptor = VoiceDescriptor(
                     id = voiceId,
                     providerId = engineId,
                     displayName = voiceId,
-                    locale = Locale("ar")
+                    locale = probeLocale
                 )
                 provider.synthesize(
                     text = probeText,
@@ -242,13 +280,18 @@ object VoiceReadinessCoordinator {
                     pitch = 1.0f,
                     volume = 0.0f,
                     onFormatInfo = { _, _ -> },
-                    onAudioChunk = { _, _ -> },
+                    onAudioChunk = { chunk, validLen ->
+                        if (validLen > 0 && chunk.isNotEmpty()) {
+                            hasPcmSamples = true
+                        }
+                    },
                     enginePackage = null,
-                    voiceLocale = Locale("ar"),
+                    voiceLocale = probeLocale,
                     desiredVoiceName = voiceId,
                     category = "warmup"
                 )
-                return true
+                return hasPcmSamples &&
+                    MicrosoftHostSession.isWarmReady(voiceId)
             }
             else -> return false
         }
@@ -292,8 +335,24 @@ object VoiceReadinessCoordinator {
         return when (engineId) {
             AcapelaEmbeddedVoiceProvider.PROVIDER_ID ->
                 AcapelaHostSession.isWarmVoiceReady(voiceId)
+            MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ->
+                MicrosoftHostSession.isWarmReady(voiceId)
+            VocalizerEmbeddedVoiceProvider.PROVIDER_ID ->
+                VocalizerHostSession.isWarmVoiceLoaded(voiceId)
             else -> readyVoices["$engineId:$voiceId"] == true
         }
+    }
+
+    /**
+     * انتظار مهمة التجهيز إذا كانت جارية لنفس الصوت دون إطلاق نداء ثانٍ.
+     */
+    suspend fun awaitIfInProgress(
+        engineId: String,
+        voiceId: String
+    ): Boolean {
+        val key = "$engineId:$voiceId"
+        val inFlight = inFlightJobs[key] ?: return false
+        return runCatching { inFlight.await() }.getOrDefault(false)
     }
 
     /**
@@ -308,6 +367,8 @@ object VoiceReadinessCoordinator {
             }
             inFlightJobs.clear()
             readyVoices.clear()
+            MicrosoftHostSession.trimResources()
+            VocalizerHostSession.trimResources()
         }
     }
 

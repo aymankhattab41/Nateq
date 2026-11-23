@@ -5,8 +5,10 @@ import android.os.Build
 import android.os.Looper
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.announcement.LoudnessStage
+import com.aymankhattab.nateq.core.audio.engine.UnifiedSpeechTracker
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.audio.enginehost.MicrosoftHostSession
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -193,6 +195,31 @@ class MicrosoftEmbeddedVoiceProvider(
                 onAudioChunk
             }
 
+            val callCategory = when {
+                category == "warmup" ->
+                    UnifiedSpeechTracker.Category.WARMUP
+                category == "preview" || category == "diagnostic" ->
+                    UnifiedSpeechTracker.Category.DIAGNOSTIC
+                MicrosoftHostSession.isWarmReady(targetVoiceName) ->
+                    UnifiedSpeechTracker.Category.WARM
+                else -> UnifiedSpeechTracker.Category.COLD
+            }
+            val tracker = UnifiedSpeechTracker.startRequest(
+                engine = UnifiedSpeechTracker.Engine.MICROSOFT,
+                category = callCategory,
+                voiceName = targetVoiceName,
+                textLength = text.length
+            )
+            tracker.markSpeakCallStart()
+            var firstPcmRecorded = false
+            val trackedChunkConsumer: (ByteArray, Int) -> Unit = { chunk, len ->
+                if (!firstPcmRecorded && len > 0) {
+                    firstPcmRecorded = true
+                    tracker.markFirstPcm()
+                }
+                chunkConsumer(chunk, len)
+            }
+
             val result = EngineHostClient.synthesize(
                 context = context,
                 engineId = HostProtocol.ENGINE_MICROSOFT,
@@ -202,8 +229,18 @@ class MicrosoftEmbeddedVoiceProvider(
                 pitch = pitch,
                 volume = volume,
                 onFormatInfo = onFormatInfo,
-                onAudioChunk = chunkConsumer
+                onAudioChunk = trackedChunkConsumer
             )
+
+            tracker.markSpeakCallEnd()
+            if (result.ok) {
+                tracker.complete(UnifiedSpeechTracker.Status.SUCCESS)
+            } else {
+                tracker.complete(
+                    UnifiedSpeechTracker.Status.FAILED,
+                    result.message
+                )
+            }
 
             if (!result.ok) {
                 Log.e(

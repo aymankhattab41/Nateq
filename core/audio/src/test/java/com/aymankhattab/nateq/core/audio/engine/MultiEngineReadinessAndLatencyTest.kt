@@ -7,12 +7,14 @@ import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.audio.enginehost.MicrosoftHostSession
 import com.aymankhattab.nateq.core.audio.enginehost.PcmSink
 import com.aymankhattab.nateq.core.audio.enginehost.SpeakRequest
+import com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceRepository
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftVoiceRepository
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerVoiceRepository
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -255,5 +257,122 @@ class MultiEngineReadinessAndLatencyTest {
             0L,
             EnginePerformanceCounters.vocalizer.loadVoiceHits.get()
         )
+    }
+
+    @Test
+    fun testVoiceReadinessCoordinator_probeLanguageSelection_matchesVoice() =
+        runBlocking {
+            // التحقق من فحص الجاهزية المباشر عبر المحركات
+            MicrosoftHostSession.noteWarmVoiceLoaded("JennyNeural")
+            assertTrue(
+                VoiceReadinessCoordinator.isVoiceReady(
+                    MicrosoftEmbeddedVoiceProvider.PROVIDER_ID,
+                    "en-US-JennyNeural"
+                )
+            )
+
+            VocalizerHostSession.noteWarmVoiceLoaded("tarik_embedded")
+            assertTrue(
+                VoiceReadinessCoordinator.isVoiceReady(
+                    VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
+                    "tarik_embedded"
+                )
+            )
+
+            MicrosoftHostSession.noteWarmVoiceClosed()
+            assertFalse(
+                VoiceReadinessCoordinator.isVoiceReady(
+                    MicrosoftEmbeddedVoiceProvider.PROVIDER_ID,
+                    "en-US-JennyNeural"
+                )
+            )
+        }
+
+    @Test
+    fun testVoiceReadinessCoordinator_concurrentRequests_coalesce() =
+        runBlocking {
+            // محاكاة طلبين متزامنين لنفس الصوت
+            val j1 = async {
+                VoiceReadinessCoordinator.prepareVoice(
+                    context,
+                    "vocalizer_embedded",
+                    "tarek",
+                    priority = true
+                )
+            }
+            val j2 = async {
+                VoiceReadinessCoordinator.prepareVoice(
+                    context,
+                    "vocalizer_embedded",
+                    "tarek",
+                    priority = true
+                )
+            }
+            val res1 = j1.await()
+            val res2 = j2.await()
+            assertEquals(res1, res2)
+        }
+
+    @Test
+    fun testHostSessions_switchingVoices_updatesWarmState() {
+        MicrosoftHostSession.noteWarmVoiceLoaded("ar-EG-SalmaNeural")
+        assertTrue(
+            MicrosoftHostSession.isWarmReady("SalmaNeural")
+        )
+        // تبديل إلى شاكر
+        MicrosoftHostSession.noteWarmVoiceLoaded("ar-SA-ShakirNeural")
+        assertTrue(
+            MicrosoftHostSession.isWarmReady("ShakirNeural")
+        )
+        assertFalse(
+            MicrosoftHostSession.isWarmReady("SalmaNeural")
+        )
+
+        VocalizerHostSession.noteWarmVoiceLoaded("tarik")
+        assertTrue(
+            VocalizerHostSession.isWarmVoiceLoaded("tarik")
+        )
+        // تبديل إلى مريم
+        VocalizerHostSession.noteWarmVoiceLoaded("mariam")
+        assertTrue(
+            VocalizerHostSession.isWarmVoiceLoaded("mariam")
+        )
+        assertFalse(
+            VocalizerHostSession.isWarmVoiceLoaded("tarik")
+        )
+    }
+
+    @Test
+    fun testUnifiedSpeechTracker_tenWarmUtterancesPerEngine() {
+        val engines = listOf(
+            UnifiedSpeechTracker.Engine.ACAPELA,
+            UnifiedSpeechTracker.Engine.VOCALIZER,
+            UnifiedSpeechTracker.Engine.MICROSOFT
+        )
+
+        for (eng in engines) {
+            for (i in 1..10) {
+                val req = UnifiedSpeechTracker.startRequest(
+                    engine = eng,
+                    category = UnifiedSpeechTracker.Category.WARM,
+                    voiceName = "warm_voice",
+                    textLength = 15
+                )
+                req.markSpeakCallStart()
+                req.markFirstPcm()
+                req.markSpeakCallEnd()
+                req.complete(UnifiedSpeechTracker.Status.SUCCESS)
+            }
+            val stats = UnifiedSpeechTracker.getStats(
+                engine = eng,
+                category = UnifiedSpeechTracker.Category.WARM
+            )
+            assertEquals(10, stats.totalCount)
+            assertEquals(10, stats.successCount)
+            assertEquals(0, stats.failedCount)
+            assertEquals(0, stats.unmeasuredCount)
+            assertTrue(stats.avgFirstPcmMs >= 0.0)
+            assertTrue(stats.p50FirstPcmMs <= stats.p95FirstPcmMs)
+        }
     }
 }

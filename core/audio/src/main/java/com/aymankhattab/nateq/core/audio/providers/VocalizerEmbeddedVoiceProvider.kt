@@ -8,6 +8,7 @@ import android.util.Log
 import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.announcement.LoudnessStage
 import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
+import com.aymankhattab.nateq.core.audio.engine.UnifiedSpeechTracker
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
@@ -506,6 +507,31 @@ class VocalizerEmbeddedVoiceProvider(
             } else {
                 onAudioChunk
             }
+            val callCategory = when {
+                category == "warmup" ->
+                    UnifiedSpeechTracker.Category.WARMUP
+                category == "preview" || category == "diagnostic" ->
+                    UnifiedSpeechTracker.Category.DIAGNOSTIC
+                VocalizerHostSession.isWarmVoiceLoaded(targetVoiceId) ->
+                    UnifiedSpeechTracker.Category.WARM
+                else -> UnifiedSpeechTracker.Category.COLD
+            }
+            val tracker = UnifiedSpeechTracker.startRequest(
+                engine = UnifiedSpeechTracker.Engine.VOCALIZER,
+                category = callCategory,
+                voiceName = targetVoiceId,
+                textLength = text.length
+            )
+            tracker.markSpeakCallStart()
+            var firstPcmRecorded = false
+            val trackedChunkConsumer: (ByteArray, Int) -> Unit = { chunk, len ->
+                if (!firstPcmRecorded && len > 0) {
+                    firstPcmRecorded = true
+                    tracker.markFirstPcm()
+                }
+                chunkConsumer(chunk, len)
+            }
+
             val synthResult = EngineHostClient.synthesize(
                 context = context,
                 engineId = HostProtocol.ENGINE_VOCALIZER,
@@ -515,8 +541,18 @@ class VocalizerEmbeddedVoiceProvider(
                 pitch = pitch,
                 volume = volume,
                 onFormatInfo = onFormatInfo,
-                onAudioChunk = chunkConsumer
+                onAudioChunk = trackedChunkConsumer
             )
+
+            tracker.markSpeakCallEnd()
+            if (synthResult.ok) {
+                tracker.complete(UnifiedSpeechTracker.Status.SUCCESS)
+            } else {
+                tracker.complete(
+                    UnifiedSpeechTracker.Status.FAILED,
+                    synthResult.message
+                )
+            }
             if (!synthResult.ok) {
                 val msg = synthResult.message
                     ?: "فشل تخليق صوت Vocalizer"

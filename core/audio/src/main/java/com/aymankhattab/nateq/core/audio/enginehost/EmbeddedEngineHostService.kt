@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.enginehost
 
 import android.app.Service
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
@@ -9,6 +10,7 @@ import android.system.Os
 import android.system.OsConstants
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
+import com.aymankhattab.nateq.core.audio.engine.VoiceReadinessCoordinator
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import java.io.File
 import java.io.FileOutputStream
@@ -389,6 +391,19 @@ class EmbeddedEngineHostService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
+        ) {
+            (sessions[HostProtocol.ENGINE_MICROSOFT] as? MicrosoftHostSession)
+                ?.trimResources()
+            (sessions[HostProtocol.ENGINE_VOCALIZER] as? VocalizerHostSession)
+                ?.trimResources()
+            VoiceReadinessCoordinator.onTrimMemory(level)
+        }
+    }
 
     override fun onDestroy() {
         for (session in sessions.values) {

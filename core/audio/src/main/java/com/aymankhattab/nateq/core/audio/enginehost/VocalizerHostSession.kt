@@ -88,6 +88,37 @@ internal class VocalizerHostSession(
             else -> DEFAULT_OUTPUT_SAMPLE_RATE_HZ
         }
 
+        @Volatile
+        private var activeSession: VocalizerHostSession? = null
+
+        @Volatile
+        private var warmVoiceVariant: String? = null
+
+        fun isWarmVoiceLoaded(variantKey: String): Boolean {
+            val session = activeSession
+            if (session != null) {
+                return session.isWarmVoiceLoaded(variantKey)
+            }
+            val warm = warmVoiceVariant ?: return false
+            val clean = variantKey.trim()
+            return warm.equals(clean, ignoreCase = true) ||
+                warm.contains(clean, ignoreCase = true) ||
+                clean.contains(warm, ignoreCase = true)
+        }
+
+        internal fun noteWarmVoiceLoaded(variantKey: String) {
+            warmVoiceVariant = variantKey.trim()
+        }
+
+        internal fun noteWarmVoiceClosed() {
+            warmVoiceVariant = null
+        }
+
+        fun trimResources() {
+            activeSession?.trimResources()
+            noteWarmVoiceClosed()
+        }
+
         /**
          * حجم مخزن الصوت الأصلي بالبايت، مطابقاً لـ
          * {@code SynthThread.run} في SDK:
@@ -361,7 +392,14 @@ internal class VocalizerHostSession(
     @Volatile
     private var loadedHeadersText: String? = null
 
+    @Volatile
+    private var cachedEngineVoices: List<VocalizerVoice>? = null
+
+    @Volatile
+    private var cachedHostVoices: List<HostVoice>? = null
+
     override fun init(dataDir: String): HostResult {
+        activeSession = this
         synchronized(engineLock) {
             if (dataDir.isBlank()) {
                 HostLog.w(ENGINE_ID, "مسار مجلد البيانات فارغ")
@@ -413,6 +451,9 @@ internal class VocalizerHostSession(
         loadedEngineVoiceName = null
         loadedDataDir = null
         loadedHeadersText = null
+        cachedEngineVoices = null
+        cachedHostVoices = null
+        noteWarmVoiceClosed()
         if (old != null) {
             runCatching { old.release() }
         }
@@ -556,12 +597,20 @@ internal class VocalizerHostSession(
      * والاسم يميّز الجودة للعرض.
      */
     fun listVoices(): List<HostVoice> {
+        val cached = cachedHostVoices
+        if (cached != null) return cached
         val eng = engine ?: return emptyList()
         val dataDirPath = loadedDataDir
         return try {
             engineThread.submit(INIT_TIMEOUT_MS, "listVoices") {
-                val engineVoices = eng.voiceList?.toList().orEmpty()
-                buildVariantVoices(engineVoices, dataDirPath)
+                val engineVoices = cachedEngineVoices ?: run {
+                    val ev = eng.voiceList?.toList().orEmpty()
+                    cachedEngineVoices = ev
+                    ev
+                }
+                val result = buildVariantVoices(engineVoices, dataDirPath)
+                cachedHostVoices = result
+                result
             }
         } catch (t: Throwable) {
             HostLog.e(ENGINE_ID, "voiceList فشل: ${t.message}", t)
@@ -840,8 +889,10 @@ internal class VocalizerHostSession(
             return HostProtocol.success()
         }
 
-        val voices: List<VocalizerVoice> = try {
-            eng.voiceList?.toList().orEmpty()
+        val voices: List<VocalizerVoice> = cachedEngineVoices ?: try {
+            val v = eng.voiceList?.toList().orEmpty()
+            cachedEngineVoices = v
+            v
         } catch (t: Throwable) {
             HostLog.e(ENGINE_ID, "voiceList فشل: ${t.message}", t)
             return HostResult.failure(
@@ -885,6 +936,7 @@ internal class VocalizerHostSession(
             }
             loadedVoiceKey = targetVoiceKey
             loadedEngineVoiceName = targetVoiceName
+            noteWarmVoiceLoaded(targetVoiceKey)
             HostLog.i(
                 ENGINE_ID,
                 "حُمّل الصوت: ${matched.voiceName} " +
@@ -1027,6 +1079,12 @@ internal class VocalizerHostSession(
         synchronized(engineLock) {
             EnginePerformanceCounters.vocalizer.serviceCloseCount
                 .incrementAndGet()
+            if (activeSession === this) {
+                activeSession = null
+            }
+            noteWarmVoiceClosed()
+            cachedEngineVoices = null
+            cachedHostVoices = null
             loadedVoiceKey = null
             loadedEngineVoiceName = null
             val eng = engine
@@ -1044,6 +1102,8 @@ internal class VocalizerHostSession(
 
     fun trimResources() {
         synchronized(engineLock) {
+            cachedEngineVoices = null
+            cachedHostVoices = null
             releaseEngineBeforeRebuild()
         }
     }

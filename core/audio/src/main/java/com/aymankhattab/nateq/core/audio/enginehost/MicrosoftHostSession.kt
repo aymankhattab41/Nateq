@@ -37,6 +37,48 @@ internal class MicrosoftHostSession(
     companion object {
         private const val TAG = "MsHostSession"
         private const val SAMPLE_RATE_HZ = 24000
+
+        @Volatile
+        private var activeSession: MicrosoftHostSession? = null
+
+        @Volatile
+        private var warmVoiceKey: String? = null
+
+        fun isWarmReady(voiceId: String): Boolean {
+            val session = activeSession
+            if (session != null) {
+                val warm = session.warmSession
+                if (warm != null) {
+                    val clean = voiceId.trim()
+                    if (warm.key.contains(clean, ignoreCase = true) ||
+                        clean.contains(
+                            warm.key.substringAfter('|'),
+                            ignoreCase = true
+                        )
+                    ) {
+                        return true
+                    }
+                }
+            }
+            val warm = warmVoiceKey ?: return false
+            val clean = voiceId.trim()
+            return warm.equals(clean, ignoreCase = true) ||
+                warm.contains(clean, ignoreCase = true) ||
+                clean.contains(warm, ignoreCase = true)
+        }
+
+        internal fun noteWarmVoiceLoaded(voiceId: String) {
+            warmVoiceKey = voiceId.trim()
+        }
+
+        internal fun noteWarmVoiceClosed() {
+            warmVoiceKey = null
+        }
+
+        fun trimResources() {
+            activeSession?.trimResources()
+            noteWarmVoiceClosed()
+        }
     }
 
     private data class WarmSession(
@@ -51,10 +93,12 @@ internal class MicrosoftHostSession(
     @Volatile private var warmSession: WarmSession? = null
     private val sessionLock = Any()
 
+    private val voiceDirCache = ConcurrentHashMap<String, File>()
     private val licenseKeyCache = ConcurrentHashMap<String, String>()
     private val modelNameCache = ConcurrentHashMap<String, String>()
 
     override fun init(dataDir: String): HostResult {
+        activeSession = this
         val dir = File(dataDir)
         baseDataDir = dir
         HostLog.i(
@@ -183,6 +227,7 @@ internal class MicrosoftHostSession(
                         synthesizer = newSynth,
                         lastUsedRealtimeMs = SystemClock.elapsedRealtime()
                     )
+                    noteWarmVoiceLoaded(modelName)
                 } catch (t: Throwable) {
                     Log.e(TAG, "فشل إنشاء جلسة مايكروسوفت الدافئة", t)
                     return@withContext HostResult.failure(
@@ -291,6 +336,7 @@ internal class MicrosoftHostSession(
     private fun closeWarmSessionLocked() {
         val warm = warmSession
         warmSession = null
+        noteWarmVoiceClosed()
         if (warm != null) {
             EnginePerformanceCounters.microsoft.serviceCloseCount
                 .incrementAndGet()
@@ -308,6 +354,7 @@ internal class MicrosoftHostSession(
     fun trimResources() {
         synchronized(sessionLock) {
             closeWarmSessionLocked()
+            voiceDirCache.clear()
             licenseKeyCache.clear()
             modelNameCache.clear()
         }
@@ -323,26 +370,39 @@ internal class MicrosoftHostSession(
         stop()
         trimResources()
         activeSynthesizer = null
+        if (activeSession === this) {
+            activeSession = null
+        }
     }
 
     private fun resolveVoiceDirectory(
         base: File,
         voiceId: String
     ): File? {
+        val cached = voiceDirCache[voiceId]
+        if (cached != null && cached.exists() && cached.isDirectory) {
+            return cached
+        }
         val completeDirs = MicrosoftVoiceManifest.completeVoiceDirs(base)
         if (completeDirs.isEmpty()) return null
 
         val exactMatch = completeDirs.firstOrNull {
             it.name.equals(voiceId, ignoreCase = true)
         }
-        if (exactMatch != null) return exactMatch
+        if (exactMatch != null) {
+            voiceDirCache[voiceId] = exactMatch
+            return exactMatch
+        }
 
         val q = voiceId.trim()
         val partial = completeDirs.firstOrNull {
             it.name.contains(q, ignoreCase = true) ||
                 q.contains(it.name, ignoreCase = true)
         }
-        if (partial != null) return partial
+        if (partial != null) {
+            voiceDirCache[voiceId] = partial
+            return partial
+        }
 
         val item = MicrosoftModelCatalog.findItemByNameOrModel(context, q)
         if (item != null) {
@@ -350,10 +410,17 @@ internal class MicrosoftHostSession(
                 base,
                 item
             )
-            if (fromItem != null) return fromItem
+            if (fromItem != null) {
+                voiceDirCache[voiceId] = fromItem
+                return fromItem
+            }
         }
 
-        return completeDirs.firstOrNull()
+        val fallback = completeDirs.firstOrNull()
+        if (fallback != null) {
+            voiceDirCache[voiceId] = fallback
+        }
+        return fallback
     }
 
     private fun extractModelName(voiceDir: File): String? {

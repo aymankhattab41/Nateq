@@ -253,23 +253,20 @@ class AcapelaEmbeddedVoiceProvider(
                 .substringBefore('(')
                 .trim()
 
-            val isSalma = targetVoiceName.contains("salma", ignoreCase = true)
             val callCategory = when {
+                category == "warmup" ->
+                    SalmaSpeechTracker.Category.WARMUP
                 category == "preview" || category == "diagnostic" ->
                     SalmaSpeechTracker.Category.DIAGNOSTIC
                 AcapelaHostSession.isWarmVoiceReady(targetVoiceName) ->
                     SalmaSpeechTracker.Category.WARM
                 else -> SalmaSpeechTracker.Category.COLD
             }
-            val tracker = if (isSalma) {
-                SalmaSpeechTracker.startRequest(
-                    category = callCategory,
-                    voiceName = targetVoiceName,
-                    textLength = text.length
-                )
-            } else {
-                null
-            }
+            val tracker = SalmaSpeechTracker.startRequest(
+                category = callCategory,
+                voiceName = targetVoiceName,
+                textLength = text.length
+            )
 
             tracker?.markQueueWaitStart()
             val initOk = withTimeoutOrNull(5000L) {

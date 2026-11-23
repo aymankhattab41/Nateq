@@ -14,6 +14,7 @@ import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementAppContext
 import com.aymankhattab.nateq.core.audio.announcement.EventLoudnessPolicy
 import com.aymankhattab.nateq.core.audio.announcement.TimeAnnouncementManager
+import com.aymankhattab.nateq.core.audio.engine.VoiceReadinessCoordinator
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.LegacySherpaMigrator
@@ -64,6 +65,9 @@ class NateqApplication : Application(), AnnouncementAppContext {
         super.onCreate()
         com.aymankhattab.nateq.core.audio.CrashGuard
             .installUncaughtExceptionHandler(this)
+
+        // تجهيز استباقي للأصوات المحددة على IO عند بدء التطبيق
+        VoiceReadinessCoordinator.prepareActiveVoices(this)
 
         // ===== التحقق من سلامة التطبيق
         // (Anti-tamper / Anti-debug / Play Integrity) =====

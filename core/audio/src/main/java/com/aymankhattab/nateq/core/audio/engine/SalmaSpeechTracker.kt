@@ -23,6 +23,7 @@ object SalmaSpeechTracker {
     enum class Category {
         COLD,
         WARM,
+        WARMUP,
         DIAGNOSTIC,
         REGULAR
     }
@@ -215,6 +216,7 @@ object SalmaSpeechTracker {
             val uCat = when (rec.category) {
                 Category.COLD -> UnifiedSpeechTracker.Category.COLD
                 Category.WARM -> UnifiedSpeechTracker.Category.WARM
+                Category.WARMUP -> UnifiedSpeechTracker.Category.WARMUP
                 Category.DIAGNOSTIC -> UnifiedSpeechTracker.Category.DIAGNOSTIC
                 Category.REGULAR -> UnifiedSpeechTracker.Category.REGULAR
             }
