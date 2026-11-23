@@ -1963,7 +1963,9 @@ fun `waiting call announces only once without repeat schedule`() {
     }
 
 
-    /** إصلاح 1.6.142 ع3: صوت متصل لا يتبع المحرك -> بديل آمن ضمن نفس المحرك وتسجيل. */
+    /**
+     * إصلاح 1.6.142 ع3: صوت متصل لا يتبع المحرك -> بديل آمن ضمن نفس المحرك.
+     */
     @Test
     fun applySafeCallerVoiceSelection_fallsBackWithinSameEngine() {
         val settings = SettingsRepository.create(context)
@@ -2002,4 +2004,73 @@ fun `waiting call announces only once without repeat schedule`() {
         assertFalse(sel.fallbackApplied)
     }
 
+    @Test
+    fun `canonicalizeCallerNumber strips spaces dashes and non-digits`() {
+        assertEquals("01012345678", canonicalizeCallerNumber("010 1234 5678"))
+        assertEquals("01012345678", canonicalizeCallerNumber(" 010-1234-5678 "))
+        assertEquals(
+            "201012345678",
+            canonicalizeCallerNumber("+20 10 1234 5678")
+        )
+    }
+
+    @Test
+    fun `canonicalizeCallerNumber rejects unknown and private markers`() {
+        assertNull(canonicalizeCallerNumber("-1"))
+        assertNull(canonicalizeCallerNumber("UNKNOWN"))
+        assertNull(canonicalizeCallerNumber("unknown number"))
+        assertNull(canonicalizeCallerNumber("PRIVATE"))
+        assertNull(canonicalizeCallerNumber("WITHHELD"))
+        assertNull(canonicalizeCallerNumber("RESTRICTED"))
+        assertNull(canonicalizeCallerNumber("0"))
+        assertNull(canonicalizeCallerNumber("   "))
+        assertNull(canonicalizeCallerNumber(null))
+    }
+
+    @Test
+    fun `areCallerNumbersEquivalent matches formatted and unformatted forms`() {
+        assertTrue(
+            areCallerNumbersEquivalent("010 1234 5678", "01012345678")
+        )
+        assertTrue(
+            areCallerNumbersEquivalent("+20 10 1234 5678", "01012345678")
+        )
+        assertFalse(
+            areCallerNumbersEquivalent("01012345678", "01098765432")
+        )
+    }
+
+    @Test
+    fun `shouldSuppressDuplicateAnnouncement recognizes spaced number`() {
+        val suppressSpaced =
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = true,
+                announcedNumber = "01012345678",
+                incomingNumber = "010 1234 5678",
+                hadName = true,
+                currentHasName = true
+            )
+        assertTrue(
+            "يجب كبح التكرار للرقم نفسه رغم وجود مسافات",
+            suppressSpaced
+        )
+    }
+
+    @Test
+    fun applySafeCallerVoiceSelection_resolvesEnglishAcapelaNoVocalizerLeak() {
+        val settings = SettingsRepository.create(context)
+        val receiver = CallerAnnouncementReceiver()
+        val sel = receiver.applySafeCallerVoiceSelection(
+            settings = settings,
+            requestedEngine = "vocalizer_embedded",
+            requestedVoice = "Will",
+            isArabic = false,
+            languageTag = "en",
+            text = "Incoming call"
+        )
+        assertFalse(
+            "يجب ألا يتم تمرير صوت Will إلى Vocalizer",
+            sel.engine == "vocalizer_embedded" && sel.voiceId == "Will"
+        )
+    }
 }

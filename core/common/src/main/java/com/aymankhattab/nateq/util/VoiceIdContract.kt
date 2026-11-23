@@ -109,7 +109,10 @@ object VoiceIdContract {
     }
 
     /** هل المعرّف/الاسم يتطابق مع صوتٍ قانونيٍّ معيّن بعد التوحيد؟ */
-    fun matchesCanonicalVoiceName(candidate: String?, target: String?): Boolean {
+    fun matchesCanonicalVoiceName(
+        candidate: String?,
+        target: String?
+    ): Boolean {
         if (candidate.isNullOrBlank() || target.isNullOrBlank()) return false
         if (sameVoiceName(candidate, target)) return true
         val c = canonicalVoiceName(candidate)
@@ -186,6 +189,38 @@ object VoiceIdContract {
         return false
     }
 
+    private val KNOWN_ACAPELA_VOICE_NAMES = setOf(
+        "salma", "leila", "mehdi", "nizar", "youssef",
+        "will", "willsad", "willhappy", "willbadguy",
+        "willlittlecreature", "willupclose", "willfromafar",
+        "sharon", "graham", "peter", "ryan", "tracy", "rod",
+        "lucy", "heather", "kenny", "micah", "nelly", "karen",
+        "laura", "michelle", "saul", "tyler", "antoine", "alice",
+        "bruno", "claire", "julie", "andreas", "julia", "klaus",
+        "sarah", "antonio", "inés", "maria", "rodrigo", "rosa"
+    )
+
+    /**
+     * هل اسم الصوت يتبع عائلة أصوات Acapela المعروفة؟
+     */
+    fun isAcapelaVoiceName(voiceId: String?): Boolean {
+        if (voiceId.isNullOrBlank()) return false
+        val clean = voiceId.trim().lowercase(Locale.ROOT)
+        if (clean.contains("acapela")) return true
+        if (clean.startsWith("ara-") || clean.startsWith("eng-") ||
+            clean.startsWith("fra-") || clean.startsWith("deu-") ||
+            clean.startsWith("ar_") || clean.startsWith("en_")
+        ) {
+            return clean.contains("acapela") ||
+                KNOWN_ACAPELA_VOICE_NAMES.any { clean.contains(it) }
+        }
+        val base = clean.substringBefore(':').substringBefore('-')
+            .substringBefore('_')
+        return KNOWN_ACAPELA_VOICE_NAMES.any {
+            clean == it || clean.startsWith(it) || base == it
+        }
+    }
+
     /**
      * التحقق مما إذا كان اسم الصوت ينتمي للمحرك المعين (الجولة 53 - الأمر 3).
      */
@@ -209,7 +244,8 @@ object VoiceIdContract {
             }
             val isGoogle = voiceId.contains("-x-") ||
                 voiceId.endsWith("-local")
-            val isAcapela = voiceId.startsWith("ar_", ignoreCase = true) ||
+            val isAcapela = isAcapelaVoiceName(voiceId) ||
+                voiceId.startsWith("ar_", ignoreCase = true) ||
                 voiceId.startsWith("en_", ignoreCase = true) ||
                 voiceId.startsWith("ara-", ignoreCase = true) ||
                 voiceId.startsWith("eng-", ignoreCase = true) ||

@@ -142,6 +142,38 @@ internal class AcapelaHostSession(
         /** نصٌّ قصير لفحص قبول بيانات التسجيل قبل النطق الحقيقي. */
         private const val REGISTRATION_PROBE_TEXT = "مرحبا"
 
+        /**
+         * محدد نص تجربة وتحميل أصوات Acapela بحسب لغة الصوت.
+         * يمنع فشل الأصوات الإنجليزية (مثل Will) بسبب تجربة نص عربي.
+         */
+        internal object AcapelaProbeSelector {
+            const val PROBE_TEXT_AR = "مرحبا"
+            const val PROBE_TEXT_EN = "Hello"
+
+            fun resolveProbeText(
+                locale: Locale?,
+                iso3Language: String? = null
+            ): String {
+                val lang = (iso3Language ?: locale?.language ?: "ar")
+                    .lowercase(Locale.ROOT)
+                return when {
+                    lang.startsWith("ar") -> PROBE_TEXT_AR
+                    lang.startsWith("en") -> PROBE_TEXT_EN
+                    lang.startsWith("fr") -> "Bonjour"
+                    lang.startsWith("de") -> "Hallo"
+                    lang.startsWith("es") -> "Hola"
+                    lang.startsWith("it") -> "Ciao"
+                    lang.startsWith("ru") -> "Привет"
+                    lang.startsWith("tr") -> "Merhaba"
+                    else -> if (lang.contains("ara")) {
+                        PROBE_TEXT_AR
+                    } else {
+                        PROBE_TEXT_EN
+                    }
+                }
+            }
+        }
+
         /** ملف حفظ حرف المرشح الناجح بجانب الصوت (بقاء بعد إعادة التشغيل). */
         private const val REGISTRATION_CHOICE_FILE =
             ".nateq_acapela_registration"
@@ -1728,7 +1760,8 @@ internal class AcapelaHostSession(
                     "(${voice.locale.toLanguageTag()})"
             )
             appendLine("المسار: ${trial.method}")
-            appendLine("النص: \"مرحبا\"")
+            val currentProbe = trial.probeText.ifBlank { "مرحبا" }
+            appendLine("النص: \"$currentProbe\"")
             appendLine("كود رجوع nSpeak الرقمي: $speakCodeText")
             appendLine("كود nSpeak: $speakCodeText")
             appendLine("عدد العينات: $pcmSamplesText")
@@ -2240,7 +2273,8 @@ internal class AcapelaHostSession(
             AcapelaVoiceDiagnostics.VoiceEvidenceState.EVIDENCE_UNAVAILABLE,
         val evidenceSource: String = "none",
         val missingEvidenceElements: List<String> = emptyList(),
-        val firstFailedResource: String = "غير محدد"
+        val firstFailedResource: String = "غير محدد",
+        val probeText: String = ""
     ) {
         val isSuccess: Boolean
             get() = speakInvoked && (speakCode == 0) &&
@@ -2616,7 +2650,9 @@ internal class AcapelaHostSession(
         registration: String,
         voiceMode: String = VOICE_MODE_HD,
         extraProperties: Map<String, String> = emptyMap(),
-        probeText: String = REGISTRATION_PROBE_TEXT,
+        probeText: String = AcapelaProbeSelector.resolveProbeText(
+            null, iso3.language
+        ),
         order: AcapelaSequenceOrder = AcapelaSequenceOrder.UTF8_LANG_VOICE,
         useRealCallback: Boolean = true,
         allowRetry: Boolean = false,
@@ -3644,7 +3680,8 @@ internal class AcapelaHostSession(
             evidenceState = evidenceResult.state,
             evidenceSource = evidenceResult.source,
             missingEvidenceElements = evidenceResult.missingElements,
-            firstFailedResource = firstProvenFailedResource
+            firstFailedResource = firstProvenFailedResource,
+            probeText = probeText
         )
         } finally {
             logcatReader.close()
@@ -4079,6 +4116,9 @@ internal class AcapelaHostSession(
             lastResolvedPackage = resolvedVerifiedPackage
 
             val initStartRealtimeMs = SystemClock.elapsedRealtime()
+            val dynamicProbe = AcapelaProbeSelector.resolveProbeText(
+                voice.locale, iso3.language
+            )
             val trial = executeVoiceLoadTrial(
                 label = "AuthenticVoice (تحميل مباشر من الحزمة)",
                 runId = runId,
@@ -4087,7 +4127,7 @@ internal class AcapelaHostSession(
                 iso3 = iso3,
                 registration = regToUse ?: "",
                 voiceMode = VOICE_MODE_HD,
-                probeText = "مرحبا",
+                probeText = dynamicProbe,
                 order = AcapelaSequenceOrder.UTF8_LANG_VOICE,
                 useRealCallback = true,
                 allowRetry = false,

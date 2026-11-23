@@ -297,4 +297,46 @@ class AcapelaHostSessionVoiceResolutionTest {
         assertTrue(content.contains("أول خطأ أصلي في الأسطر:"))
         assertTrue(content.contains("=== آخر محاولة نطق حقيقية فاشلة ==="))
     }
+
+    @Test
+    fun probeSelector_resolvesLocaleSpecificProbes() {
+        assertEquals(
+            "مرحبا",
+            AcapelaHostSession.Companion.AcapelaProbeSelector.resolveProbeText(
+                Locale.forLanguageTag("ar-SA")
+            )
+        )
+        assertEquals(
+            "Hello",
+            AcapelaHostSession.Companion.AcapelaProbeSelector.resolveProbeText(
+                Locale.forLanguageTag("en-US")
+            )
+        )
+        assertEquals(
+            "Hello",
+            AcapelaHostSession.Companion.AcapelaProbeSelector.resolveProbeText(
+                Locale.forLanguageTag("en-GB")
+            )
+        )
+        assertEquals(
+            "Bonjour",
+            AcapelaHostSession.Companion.AcapelaProbeSelector.resolveProbeText(
+                Locale.forLanguageTag("fr-FR")
+            )
+        )
+        assertEquals(
+            "Hello",
+            AcapelaHostSession.Companion.AcapelaProbeSelector.resolveProbeText(
+                null,
+                "eng"
+            )
+        )
+        assertEquals(
+            "مرحبا",
+            AcapelaHostSession.Companion.AcapelaProbeSelector.resolveProbeText(
+                null,
+                "ara"
+            )
+        )
+    }
 }

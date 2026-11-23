@@ -1237,6 +1237,15 @@ if (!dirtyPanel) {
             settings.setPreferredVoiceIdForCategory(
                 categoryKey, voice.name
             )
+            if (categoryKey ==
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
+            ) {
+                settings.setCallerAnnouncementArabicVoiceId(voice.name)
+            } else if (categoryKey ==
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+            ) {
+                settings.setCallerAnnouncementEnglishVoiceId(voice.name)
+            }
         }
         return true
     }

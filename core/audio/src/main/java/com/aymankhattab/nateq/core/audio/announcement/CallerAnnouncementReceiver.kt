@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.announcement
 
 import android.Manifest
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -10,6 +11,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.ContactsContract
 import android.telephony.PhoneNumberUtils
 import android.telephony.TelephonyManager
@@ -18,7 +21,10 @@ import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
 import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
+import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.data.ContactVoiceStore
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.VoiceProfile
@@ -28,6 +34,7 @@ import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.VoiceIdContract
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import kotlinx.coroutines.CompletableDeferred
@@ -566,9 +573,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             incomingNumber: String?
         ): Boolean {
             if (alreadyAnnounced || !cycleActive) return false
-            return pendingNumber.isNullOrBlank() ||
-                incomingNumber.isNullOrBlank() ||
-                pendingNumber == incomingNumber
+            val canonPending = canonicalizeCallerNumber(pendingNumber)
+            val canonIncoming = canonicalizeCallerNumber(incomingNumber)
+            if (canonPending == null || canonIncoming == null) return true
+            return areCallerNumbersEquivalent(canonPending, canonIncoming)
         }
 
         /**
@@ -606,10 +614,15 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             if (!alreadyAnnounced) return false
             // الدورة السابقة أُعلنت بلا اسم والآن فيه اسم → لا تكتم
             if (!hadName && currentHasName) return false
-            if (announcedNumber.isNullOrBlank()) return true
-            if (incomingNumber.isNullOrBlank()) return true
-            if (announcedNumber != incomingNumber) return false
-            return true
+            val canonAnnounced = canonicalizeCallerNumber(announcedNumber)
+            val canonIncoming = canonicalizeCallerNumber(incomingNumber)
+            if (canonAnnounced == null && canonIncoming == null) {
+                return true
+            }
+            if (canonAnnounced == null || canonIncoming == null) {
+                return true
+            }
+            return areCallerNumbersEquivalent(canonAnnounced, canonIncoming)
         }
 
         /**
@@ -1117,6 +1130,67 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 AnnouncementSpeaker.getInstance(context).stop()
             }
         }
+
+        @Volatile
+        internal var lastCompletedCallDiagnostic:
+            CallerCallDiagnostics? = null
+
+        /**
+         * تشخيص جلسة إعلان مكالمة واحدة مقيد ومحمي الخصوصية (بند 5).
+         */
+        internal data class CallerCallDiagnostics(
+            val correlationId: String = UUID.randomUUID().toString().take(8),
+            val tReceiveMs: Long = SystemClock.elapsedRealtime(),
+            var tResolvedMs: Long? = null,
+            var tRouteMs: Long? = null,
+            var tInitMs: Long? = null,
+            var tSpeakMs: Long? = null,
+            var tFirstPcmMs: Long? = null,
+            var tCompletionMs: Long? = null,
+            var isScreenInteractive: Boolean? = null,
+            var isKeyguardLocked: Boolean? = null,
+            var isDeviceIdle: Boolean? = null,
+            var isPowerSave: Boolean? = null,
+            var audioFocusOutcome: String? = null,
+            var resolvedEngine: String? = null,
+            var fallbackApplied: Boolean = false,
+            var fallbackReason: String? = null,
+            var cancellationReason: String? = null,
+            var numDigits: Int? = null,
+            var hasContactName: Boolean = false,
+            var isWaitingCall: Boolean = false,
+            var isNotificationCall: Boolean = false
+        ) {
+            fun captureSystemState(context: Context) {
+                runCatching {
+                    val pm = context.getSystemService(PowerManager::class.java)
+                    val km =
+                        context.getSystemService(KeyguardManager::class.java)
+                    isScreenInteractive = pm?.isInteractive
+                    isKeyguardLocked = km?.isKeyguardLocked
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        isDeviceIdle = pm?.isDeviceIdleMode
+                    }
+                    isPowerSave = pm?.isPowerSaveMode
+                }
+            }
+
+            fun logSummary(tag: String, prefix: String = "curr") {
+                val dur = SystemClock.elapsedRealtime() - tReceiveMs
+                Log.w(
+                    tag,
+                    "[CallDiag:$prefix:$correlationId] dur=${dur}ms " +
+                        "digits=${numDigits ?: 0} name=$hasContactName " +
+                        "interactive=$isScreenInteractive " +
+                        "keyguard=$isKeyguardLocked idle=$isDeviceIdle " +
+                        "powerSave=$isPowerSave " +
+                        "engine=${resolvedEngine ?: "none"} " +
+                        "fallback=$fallbackApplied " +
+                        "focus=${audioFocusOutcome ?: "ok"} " +
+                        "cancel=${cancellationReason ?: "none"}"
+                )
+            }
+        }
     }
 
     /**
@@ -1173,6 +1247,11 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         isNotificationCall: Boolean,
         finish: () -> Unit
     ) {
+    val diag = CallerCallDiagnostics()
+    diag.captureSystemState(context)
+    val cleanDigits = canonicalizeCallerNumber(rawNumber)
+    diag.numDigits = cleanDigits?.length
+    diag.isNotificationCall = isNotificationCall
     var wakeLock: android.os.PowerManager.WakeLock? = null
     val state = if (isNotificationCall) {
         TelephonyManager.EXTRA_STATE_RINGING
@@ -1234,7 +1313,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     }
 
     // **تتبّع تشخيصي مؤقّت:** يُظهر تسلسلَ البثوث كاملاً (الحالة
-    // السابقة والحالية والرقم) فميّز بثّاً مكرراً لمكالمةٍ واحدة
+    // السابقة والحالية) فميّز بثّاً مكرراً لمكالمةٍ واحدة
     // من مكالمةٍ جديدة فعلاً، وميّز إعادةَ الجلسة من IDLE.
     // **المستوى `w` لا `d`:** قواعد ProGuard تحذف `Log.d`
     // بالكامل من نسخة release، فالتتبّع بـ`d` لا يُكتب أصلاً
@@ -1242,7 +1321,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     Log.w(
         TAG,
         "RX state=$state prev=$previousState" +
-            " num=${rawNumber ?: "?"} announced=$announcedNumber" +
+            " hasNum=${rawNumber != null}" +
+            " hasAnnounced=${announcedNumber != null}" +
             " flag=$ringingAnnounced" +
             " cycle=${activeCallCycle?.isActive}" +
             " t=${System.currentTimeMillis()}"
@@ -1312,8 +1392,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         Log.w(
             TAG,
             "suppressed duplicate ring announcement" +
-                " (announced=${announcedNumber ?: "?"}," +
-                " incoming=${rawNumber ?: "?"})"
+                " (hasAnnounced=${announcedNumber != null}," +
+                " hasIncoming=${rawNumber != null})"
         )
         finish()
         return
@@ -1332,7 +1412,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         Log.w(
             TAG,
             "joined in-flight cycle (same call," +
-                " pending=${pendingRingNumber ?: "?"})"
+                " hasPending=${pendingRingNumber != null})"
         )
         finish()
         return
@@ -1354,7 +1434,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         TAG,
         "START new cycle (replacingLive=${previousCycleActive}," +
             " announcedWas=$ringingAnnounced," +
-            " num=${rawNumber ?: "?"})"
+            " hasNum=${rawNumber != null})"
     )
     // مستمعُ اكتمالٍ يُسجَّل في try ويُزال في finally (بند [8]) —
     // لا يبقى مسجلاً بعد نافذة البث فلا يُستدعى في دورةٍ لا تخصنا.
@@ -1457,14 +1537,21 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         val estimatedTotalMs = repeat * (
             ESTIMATED_SPEECH_DURATION_MS + intervalMs
         )
-        wakeLock = TimeAlarmReceiver.acquireShortWakeLock(
-            context,
-            (CALLER_RESOLVE_GRACE_PERIOD_MS + estimatedTotalMs)
-                .coerceIn(
-                    TimeAlarmReceiver.SHORT_WAKE_LOCK_MS,
-                    CALLER_WAKE_LOCK_CAP_MS
-                )
-        )
+        val pm = context.getSystemService(PowerManager::class.java)
+        val safeLockTimeout = (CALLER_RESOLVE_GRACE_PERIOD_MS +
+            estimatedTotalMs).coerceIn(
+                TimeAlarmReceiver.SHORT_WAKE_LOCK_MS,
+                CALLER_WAKE_LOCK_CAP_MS
+            )
+        wakeLock = runCatching {
+            pm?.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "$TAG:caller_speech"
+            )?.apply {
+                setReferenceCounted(false)
+                acquire(safeLockTimeout)
+            }
+        }.getOrNull()
 
         if (rawNumber.isNullOrBlank() && !ringingAnnounced) {
             Log.w(
@@ -1476,12 +1563,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             val resolvedNumber = pendingRingNumber ?: lastResolvedNumber
                 ?: RingCallerIdentity.snapshot().first
             if (!resolvedNumber.isNullOrBlank()) {
-                Log.w(
-                    TAG,
-                    "[CallerDiag] number arrived after delay: $resolvedNumber"
-                )
-                incomingNumber = resolvedNumber
-                lastResolvedNumber = resolvedNumber
+                val canonResolved = canonicalizeCallerNumber(resolvedNumber)
+                incomingNumber = canonResolved ?: resolvedNumber
+                lastResolvedNumber = incomingNumber
             }
             val resolvedName = RingCallerIdentity.snapshot().second
             if (!resolvedName.isNullOrBlank()) {
@@ -1775,17 +1859,23 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                         callerVoice = safe.voiceId
                     }
                     speaker.resetVoice(safe.voiceId)
+                    val callerCat = if (hasArabic) {
+                        SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
+                    } else {
+                        SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+                    }
                     speaker.speak(
                         text, locale, speechRate, pitch, volume,
                         engineOverride = safe.engine,
-                        category =
-                            SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                        category = callerCat
                     )
                     ringingAnnounced = true
                     lastAnnouncedHadName = !contactName.isNullOrBlank()
                     pendingRingNumber = null
                     if (announcedNumber == null) {
-                        announcedNumber = lastResolvedNumber ?: rawNumber
+                        announcedNumber = canonicalizeCallerNumber(
+                            lastResolvedNumber ?: rawNumber
+                        )
                     }
                     withTimeoutOrNull(SPEECH_COMPLETION_TIMEOUT_MS) {
                         speechDeferred.await()
@@ -1804,6 +1894,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 }
             },
             onFirstFinished = {
+                if (repeat > 1) {
+                    AnnouncementSchedulerService.startForSpeech(context)
+                }
                 finish()
             }
         )
@@ -2054,11 +2147,23 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 requestedEngine, requestedVoice, false, null
             )
         }
-        val resolvedEngine = requestedEngine?.takeIf { it.isNotBlank() }
-            ?: settings.getEngineForLanguage(languageTag)
+        var targetEngine = requestedEngine?.takeIf { it.isNotBlank() }
+        val isAcapelaVoice = VoiceIdContract.isAcapelaVoiceName(requestedVoice)
+        if (isAcapelaVoice && targetEngine == null) {
+            val installed = runCatching {
+                EnginePicker.installedEnginePackages(settings.appContext)
+            }.getOrDefault(emptyList())
+            val acapelaPkg = installed.firstOrNull {
+                it.contains("acapela", ignoreCase = true)
+            } ?: AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+            targetEngine = acapelaPkg
+        }
+        val resolvedEngine = targetEngine ?: settings.getEngineForLanguage(
+            languageTag
+        )
         if (resolvedEngine.isNullOrBlank()) {
             return CallerSpeechSelection(
-                requestedEngine, requestedVoice, false, null
+                targetEngine, requestedVoice, false, null
             )
         }
         if (VoiceIdContract.isVoiceBelongingToEngine(
@@ -2066,7 +2171,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             )
         ) {
             return CallerSpeechSelection(
-                requestedEngine, requestedVoice, false, null
+                resolvedEngine, requestedVoice, false, null
             )
         }
         val isVocalizer = resolvedEngine.equals(
@@ -2088,8 +2193,29 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         } else {
             null
         }
+        var fallbackEngine = resolvedEngine
         val fallbackVoice = safeCatVoice ?: if (isArabic && isVocalizer) {
             "Tarik"
+        } else if (!isArabic && isVocalizer) {
+            val acapelaPkg = if (isAcapelaVoice) {
+                val installed = runCatching {
+                    EnginePicker.installedEnginePackages(settings.appContext)
+                }.getOrDefault(emptyList())
+                installed.firstOrNull {
+                    it.contains("acapela", ignoreCase = true)
+                } ?: AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+            } else {
+                null
+            }
+            val altEngine = acapelaPkg
+                ?: settings.getAnnouncementFallbackEngine()?.takeIf {
+                    VisibleEngines.isVisible(it) &&
+                        !it.contains("vocalizer", ignoreCase = true)
+                }
+            if (altEngine != null) {
+                fallbackEngine = altEngine
+            }
+            if (isAcapelaVoice) requestedVoice else null
         } else {
             null
         }
@@ -2102,7 +2228,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 languageTag = languageTag,
                 requestedEngine = resolvedEngine,
                 requestedVoice = requestedVoice,
-                actualEngine = resolvedEngine,
+                actualEngine = fallbackEngine,
                 actualVoice = fallbackVoice,
                 isFallback = true,
                 fallbackReason = reason,
@@ -2116,7 +2242,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         }
         Log.w(TAG, "caller voice fallback: $reason voice=$requestedVoice")
         return CallerSpeechSelection(
-            resolvedEngine, fallbackVoice, true, reason
+            fallbackEngine, fallbackVoice, true, reason
         )
     }
 
@@ -2706,7 +2832,41 @@ private const val MIN_EQUIV_DIGITS = 7
  */
 internal fun callerNumbersEquivalent(a: String, b: String): Boolean {
     if (a == b) return true
-    val shorter = if (a.length <= b.length) a else b
-    val longer = if (a.length <= b.length) b else a
+    val sigA = a.trimStart('0')
+    val sigB = b.trimStart('0')
+    if (sigA == sigB) return true
+    val shorter = if (sigA.length <= sigB.length) sigA else sigB
+    val longer = if (sigA.length <= sigB.length) sigB else sigA
     return shorter.length >= MIN_EQUIV_DIGITS && longer.endsWith(shorter)
+}
+
+/**
+ * تطبيع رقم المتصل لإزالة المسافات والرموز مع استبعاد الأرقام الخاصة/المجهولة.
+ */
+internal fun canonicalizeCallerNumber(number: String?): String? {
+    if (number.isNullOrBlank()) return null
+    val trimmed = number.trim()
+    if (trimmed == "-1" || trimmed.equals("UNKNOWN", ignoreCase = true) ||
+        trimmed.startsWith("unknown", ignoreCase = true) ||
+        trimmed.equals("PRIVATE", ignoreCase = true) ||
+        trimmed.equals("WITHHELD", ignoreCase = true) ||
+        trimmed.equals("RESTRICTED", ignoreCase = true) ||
+        trimmed.equals("P", ignoreCase = true) ||
+        trimmed == "0"
+    ) {
+        return null
+    }
+    val digits = trimmed.filter { it.isDigit() }
+    return digits.takeIf { it.isNotEmpty() }
+}
+
+/**
+ * فحص تكافؤ رقمين بعد التطبيع الشامل.
+ */
+internal fun areCallerNumbersEquivalent(a: String?, b: String?): Boolean {
+    val canonA = canonicalizeCallerNumber(a)
+    val canonB = canonicalizeCallerNumber(b)
+    if (canonA == null && canonB == null) return true
+    if (canonA == null || canonB == null) return false
+    return callerNumbersEquivalent(canonA, canonB)
 }

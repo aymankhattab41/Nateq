@@ -471,7 +471,7 @@ class SettingsRepository(context: Context) :
     }
 
     /** سياق التطبيق العام لضمان عدم احتجاز سياق النشاط في المراقبين. */
-    internal val appContext: Context = context.applicationContext
+    val appContext: Context = context.applicationContext
 
     /** جسر القراءة عبر العمليتين لملف الإعدادات المشترك. */
     private val prefsBridge = MultiProcessPrefsBridge(appContext)

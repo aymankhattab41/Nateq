@@ -222,4 +222,39 @@ class VoiceIdContractTest {
             )
         )
     }
+
+    @Test
+    fun isVoiceBelongingToEngine_preventsAcapelaVoicesLeakingToVocalizer() {
+        val vocalizer = "vocalizer_embedded"
+        val vocalizerExt = "vocalizer"
+        val acapela = "acapela_embedded"
+        val acapelaExt = "com.acapela.tts"
+
+        // أصوات أكابيلا الإنجليزية والعربية
+        assertTrue(VoiceIdContract.isAcapelaVoiceName("Will"))
+        assertTrue(VoiceIdContract.isAcapelaVoiceName("willsad"))
+        assertTrue(VoiceIdContract.isAcapelaVoiceName("Sharon"))
+        assertTrue(VoiceIdContract.isAcapelaVoiceName("Graham"))
+        assertTrue(VoiceIdContract.isAcapelaVoiceName("Salma"))
+        assertTrue(VoiceIdContract.isAcapelaVoiceName("Leila"))
+
+        // يجب ألا تُنسب أصوات أكابيلا إلى فوكلايزر
+        org.junit.Assert.assertFalse(
+            VoiceIdContract.isVoiceBelongingToEngine(vocalizer, "Will")
+        )
+        org.junit.Assert.assertFalse(
+            VoiceIdContract.isVoiceBelongingToEngine(vocalizer, "WillSad")
+        )
+        org.junit.Assert.assertFalse(
+            VoiceIdContract.isVoiceBelongingToEngine(vocalizerExt, "Will")
+        )
+
+        // يجب أن تُنسب أصوات أكابيلا إلى محرك أكابيلا
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(acapela, "Will")
+        )
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(acapelaExt, "Will")
+        )
+    }
 }

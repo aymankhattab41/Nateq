@@ -119,23 +119,43 @@ internal class SettingsCallerAnnouncementDelegate(
     fun getCallerAnnouncementArabicVoiceId(): String? =
         repo.normalizeVoiceId(
             prefs.getString("caller_announcement_voice_ar", null)
+        ) ?: repo.getPreferredVoiceIdForCategory(
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
         )
 
     fun setCallerAnnouncementArabicVoiceId(voiceId: String?) {
         prefs.edit()
             .putString("caller_announcement_voice_ar", voiceId)
             .apply()
+        if (voiceId != null) {
+            runCatching {
+                repo.setPreferredVoiceIdForCategory(
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
+                    voiceId
+                )
+            }
+        }
     }
 
     fun getCallerAnnouncementEnglishVoiceId(): String? =
         repo.normalizeVoiceId(
             prefs.getString("caller_announcement_voice_en", null)
+        ) ?: repo.getPreferredVoiceIdForCategory(
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
         )
 
     fun setCallerAnnouncementEnglishVoiceId(voiceId: String?) {
         prefs.edit()
             .putString("caller_announcement_voice_en", voiceId)
             .apply()
+        if (voiceId != null) {
+            runCatching {
+                repo.setPreferredVoiceIdForCategory(
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN,
+                    voiceId
+                )
+            }
+        }
     }
 
     fun getCallerAnnouncementRate(): Float =

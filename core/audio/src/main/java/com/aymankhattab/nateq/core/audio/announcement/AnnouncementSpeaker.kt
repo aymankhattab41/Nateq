@@ -970,7 +970,8 @@ class AnnouncementSpeaker(
         val fallbackEngine = runCatching {
             settings?.getAnnouncementFallbackEngine()
         }.getOrNull()
-        // صوت القراءة لكل لغة (محرك اللغة) كبديل عام بدلاً من فئة «الافتراضي» المحذوفة
+        // صوت القراءة لكل لغة (محرك اللغة) كبديل عام بدلاً من فئة «الافتراضي»
+        // المحذوفة
         val resolved = safeEngineForAnnouncement(
             appContext,
             requested,
@@ -1385,18 +1386,29 @@ class AnnouncementSpeaker(
             null
         }
 
+        val effectiveCategory = if (category ==
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+        ) {
+            if (LanguageCode.isEnglish(locale.language)) {
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+            } else {
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
+            }
+        } else {
+            category
+        }
         val isLordSys =
-            category == SettingsRepository.VOICE_CATEGORY_LORD_SYSTEM
-        var categoryVoice = if (category != null) {
-            settings?.getPreferredVoiceIdForCategory(category)
+            effectiveCategory == SettingsRepository.VOICE_CATEGORY_LORD_SYSTEM
+        var categoryVoice = if (effectiveCategory != null) {
+            settings?.getPreferredVoiceIdForCategory(effectiveCategory)
                 ?: if (isLordSys) {
                     settings?.getVoiceForLanguage(locale.language)
                         ?: settings?.getPreferredVoiceId(locale.language)
                 } else null
         } else null
         val originalCategoryVoice = categoryVoice
-        val categoryEngine = if (category != null) {
-            settings?.getEngineForCategory(category)
+        val categoryEngine = if (effectiveCategory != null) {
+            settings?.getEngineForCategory(effectiveCategory)
                 ?: if (isLordSys) {
                     settings?.getEngineForLanguage(locale.language)
                 } else null
