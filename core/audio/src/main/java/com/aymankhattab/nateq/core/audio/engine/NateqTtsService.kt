@@ -40,6 +40,7 @@ import kotlinx.coroutines.delay
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceRepository
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
@@ -1153,7 +1154,12 @@ class NateqTtsService : TextToSpeechService() {
                     synthesizeSingle(
                         segments[0].text, segments[0].languageTag,
                         monitoredCallback, readerRate, effectCategory,
-                        segments[0].role, activeAppVoice, reqVoiceName
+                        segments[0].role, activeAppVoice, reqVoiceName,
+                        onFirstByteEmitted = {
+                            ttfbMs.compareAndSet(
+                                0L, SystemClock.uptimeMillis() - startUptime
+                            )
+                        }
                     )
                 } else {
                     // نص مختلط الكتابات: نطق كل مقطع بلغته/محركه ثم مزج الصوت
@@ -1414,7 +1420,8 @@ class NateqTtsService : TextToSpeechService() {
         effectCategory: String = "",
         role: SpeechRole = SpeechRole.TEXT,
         appVoice: EffectiveVoice? = null,
-        reqVoiceName: String? = null
+        reqVoiceName: String? = null,
+        onFirstByteEmitted: (() -> Unit)? = null
     ) {
         val (voice, foundProvider) = resolveVoiceWithFallback(languageTag)
         val provider = foundProvider ?: run {
@@ -1875,6 +1882,7 @@ class NateqTtsService : TextToSpeechService() {
                         )
                         started = true
                     }
+                    onFirstByteEmitted?.invoke()
                     val maxBytes = callback.maxBufferSize
                     var offset = 0
                     while (offset < validLength) {
@@ -2124,13 +2132,12 @@ class NateqTtsService : TextToSpeechService() {
     private suspend fun collectAcapelaVoices(
         dirs: List<File>
     ): List<AcapelaVoiceManifest.VoiceInfo> {
-        val all = mutableListOf<AcapelaVoiceManifest.VoiceInfo>()
-        for (dir in dirs) {
-            all.addAll(AcapelaVoiceManifest.cachedVoices(dir))
+        val snapshot = AcapelaVoiceRepository.getSnapshot()
+        if (snapshot.isLoaded && snapshot.voices.isNotEmpty()) {
+            return snapshot.voices
         }
-        return all.distinctBy {
-            "${it.dir.absolutePath}|${it.id.lowercase(Locale.ROOT)}"
-        }
+        return AcapelaVoiceRepository
+            .getOrRefreshSnapshot(applicationContext).voices
     }
 
     /** يحلّ مقطعاً لغوياً كاملاً: تجهيز النص بدليل لغته، حل الصوت مع سقوط

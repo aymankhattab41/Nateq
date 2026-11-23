@@ -18,6 +18,7 @@ import com.aymankhattab.nateq.core.audio.announcement.prepareArabicForEngine
 import com.aymankhattab.nateq.core.audio.announcement.EventLoudnessPolicy
 import com.aymankhattab.nateq.core.audio.announcement.ResolvedAudioRoute
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
+import com.aymankhattab.nateq.core.audio.engine.SalmaSpeechTracker
 import com.aymankhattab.nateq.core.audio.engine.SpeechRole
 import com.aymankhattab.nateq.core.audio.engine.VoiceResolutionPolicy
 import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
@@ -538,11 +539,12 @@ internal class VoicePreviewHelper(private val context: Context) {
                             ?: if (params.isCallerCategory) {
                                 SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                             } else {
-                                null
+                                "preview"
                             }
                     )
                     track?.let { t ->
                         val startWait = System.currentTimeMillis()
+                        var headNoted = false
                         while (t.playState ==
                             AudioTrack.PLAYSTATE_PLAYING &&
                             t.playbackHeadPosition <
@@ -550,6 +552,10 @@ internal class VoicePreviewHelper(private val context: Context) {
                             System.currentTimeMillis() - startWait
                             < 3000L
                         ) {
+                            if (!headNoted && t.playbackHeadPosition > 0) {
+                                headNoted = true
+                                SalmaSpeechTracker.notePlaybackHeadAdvance()
+                            }
                             Thread.sleep(25)
                         }
                         runCatching { t.stop() }

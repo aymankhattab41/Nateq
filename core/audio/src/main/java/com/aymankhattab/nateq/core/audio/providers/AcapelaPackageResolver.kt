@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import com.aymankhattab.nateq.core.audio.engine.AcapelaPerformanceCounters
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -532,6 +533,7 @@ object AcapelaPackageResolver {
                 packageCache[cacheKey]?.let { return@synchronized it }
             }
 
+            AcapelaPerformanceCounters.recordScan("AcapelaPackageResolver")
             val resolved = resolvePackageInternal(
                 canonicalVoiceDir = canonicalVoiceDir,
                 expectedSpeakerHint = expectedSpeakerHint

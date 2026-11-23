@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.engine.AcapelaPerformanceCounters
 import com.aymankhattab.nateq.core.audio.enginehost.HostLog
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import java.io.File
@@ -2191,6 +2192,7 @@ object AcapelaVoiceManifest {
         fun paramFrom(file: File): Pair<File, String>? {
             if (!file.isFile || !file.exists()) return null
             if (file.length() > 512 * 1024L) return null
+            AcapelaPerformanceCounters.recordConfigRead("config.yaml")
             val content = runCatching {
                 file.readText(StandardCharsets.UTF_8)
             }.getOrNull() ?: return null
@@ -2507,6 +2509,7 @@ object AcapelaVoiceManifest {
             ) {
                 hit.voices
             } else {
+                AcapelaPerformanceCounters.recordScan("AcapelaVoiceManifest")
                 val fresh = listVoices(baseDir)
                 voicesCache[key] = VoicesCacheEntry(bump, now, fresh)
                 fresh

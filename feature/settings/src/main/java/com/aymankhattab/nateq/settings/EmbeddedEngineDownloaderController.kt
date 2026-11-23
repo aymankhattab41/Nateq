@@ -233,13 +233,20 @@ internal class EmbeddedEngineDownloaderController(
         }
 
         val acSnapshot = AcapelaVoiceRepository.getSnapshot()
-        val acCount = acSnapshot.voices.size
-        if (acSnapshot.revision < 0L) {
+        val isAcLoading = !acSnapshot.isLoaded
+        if (isAcLoading) {
             warmAcapelaCache()
         }
+        val acCount = acSnapshot.voices.size
         val total = vocCount + msCount + acCount
         val isAr = LanguageCode.isArabic(Locale.getDefault().language)
-        val result = if (total > 0) {
+        val result = if (isAcLoading && total == 0) {
+            if (isAr) {
+                "جاري فحص الأصوات..."
+            } else {
+                "Checking installed voices..."
+            }
+        } else if (total > 0) {
             if (isAr) {
                 "$total أصوات مثبتة"
             } else {
@@ -289,10 +296,6 @@ internal class EmbeddedEngineDownloaderController(
         emptyView: TextView?
     ) {
         val ctx = fragment.context ?: return
-        val searchDirs = EmbeddedStorage.allSearchDirs(
-            ctx,
-            EmbeddedStorage.Engine.ACAPELA
-        )
         // قراءة المانيفست على IO: كانت تُنفَّذ على الخيط الرئيسي عند كل
         // تحديث (Skipped frames أثناء النطق). أي طلب أحدث يُلغي السابق
         // فيمنع ازدواج البطاقات، والتخزين المؤقت يجعل التكرار بلا قراءة.

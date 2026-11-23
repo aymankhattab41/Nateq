@@ -1,7 +1,12 @@
 package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
+import android.os.Looper
+import com.aymankhattab.nateq.core.audio.engine.AcapelaPerformanceCounters
 import com.aymankhattab.nateq.core.common.AppDispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -22,15 +27,13 @@ import java.util.concurrent.atomic.AtomicLong
  */
 object AcapelaVoiceRepository {
 
-    /** مدة صلاحية اللقطة في الذاكرة (10 ثوانٍ) ما لم تتغير مراجعة التخزين. */
-    private const val SNAPSHOT_TTL_MS = 10_000L
-
     data class AcapelaSnapshot(
         val revision: Long,
         val timestampMs: Long,
         val voices: List<AcapelaVoiceManifest.VoiceInfo>,
         val searchDirs: List<File>,
-        val isConfigured: Boolean
+        val isConfigured: Boolean,
+        val isLoaded: Boolean = revision >= 0L
     )
 
     private val EMPTY_SNAPSHOT = AcapelaSnapshot(
@@ -38,7 +41,8 @@ object AcapelaVoiceRepository {
         timestampMs = 0L,
         voices = emptyList(),
         searchDirs = emptyList(),
-        isConfigured = false
+        isConfigured = false,
+        isLoaded = false
     )
 
     @Volatile
@@ -46,12 +50,25 @@ object AcapelaVoiceRepository {
 
     private val refreshMutex = Mutex()
     private val localRevisionCounter = AtomicLong(1L)
+    private val repositoryScope = CoroutineScope(
+        SupervisorJob() + AppDispatchers.io
+    )
 
     /**
      * قراءة اللقطة الحالية المحفوظة في الذاكرة فوراً ودون مس القرص إطلاقاً.
      * آمنة 100% للاستدعاء من الخيط الرئيسي (Main Thread) ومكونات الواجهة.
      */
     fun getSnapshot(): AcapelaSnapshot = currentSnapshot
+
+    /**
+     * جدولة تحديث خلفي للقطة على [AppDispatchers.io] دون حظر الخيط المستدعي.
+     */
+    fun triggerBackgroundRefresh(context: Context) {
+        if (currentSnapshot.isLoaded) return
+        repositoryScope.launch {
+            getOrRefreshSnapshot(context)
+        }
+    }
 
     /**
      * الحصول على لقطة حديثة أو تحديثها على [AppDispatchers.io] عند الحاجة.
@@ -63,12 +80,10 @@ object AcapelaVoiceRepository {
     ): AcapelaSnapshot = withContext(AppDispatchers.io) {
         val targetRevision = getStorageRevision(context)
         val cached = currentSnapshot
-        val now = System.currentTimeMillis()
 
         if (!forceRefresh &&
             cached.revision == targetRevision &&
-            cached.revision >= 0L &&
-            (now - cached.timestampMs) < SNAPSHOT_TTL_MS
+            cached.isLoaded
         ) {
             return@withContext cached
         }
@@ -76,16 +91,15 @@ object AcapelaVoiceRepository {
         refreshMutex.withLock {
             val innerRevision = getStorageRevision(context)
             val innerCached = currentSnapshot
-            val innerNow = System.currentTimeMillis()
 
             if (!forceRefresh &&
                 innerCached.revision == innerRevision &&
-                innerCached.revision >= 0L &&
-                (innerNow - innerCached.timestampMs) < SNAPSHOT_TTL_MS
+                innerCached.isLoaded
             ) {
                 return@withLock innerCached
             }
 
+            AcapelaPerformanceCounters.recordScan("AcapelaVoiceRepository")
             val searchDirs = EmbeddedStorage.allSearchDirs(
                 context,
                 EmbeddedStorage.Engine.ACAPELA
@@ -99,10 +113,11 @@ object AcapelaVoiceRepository {
 
             val newSnapshot = AcapelaSnapshot(
                 revision = innerRevision,
-                timestampMs = innerNow,
+                timestampMs = System.currentTimeMillis(),
                 voices = distinctVoices,
                 searchDirs = searchDirs,
-                isConfigured = distinctVoices.isNotEmpty()
+                isConfigured = distinctVoices.isNotEmpty(),
+                isLoaded = true
             )
             currentSnapshot = newSnapshot
             newSnapshot
@@ -128,8 +143,11 @@ object AcapelaVoiceRepository {
      */
     fun getStorageRevision(context: Context? = null): Long {
         val bumpTime = EmbeddedStorage.lastBumpTime
-        val markerMod = getRevisionMarkerTime(context)
         val localRev = localRevisionCounter.get()
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return maxOf(bumpTime, localRev)
+        }
+        val markerMod = getRevisionMarkerTime(context)
         return maxOf(bumpTime, maxOf(markerMod, localRev))
     }
 
@@ -163,7 +181,8 @@ object AcapelaVoiceRepository {
     /**
      * إبطال شامل لكافة كاشات Acapela وتحديث علامة المراجعة.
      */
-    fun invalidate(context: Context? = null) {
+    fun invalidate(context: Context? = null, reason: String = "explicit") {
+        AcapelaPerformanceCounters.recordInvalidation(reason)
         val nextRev = maxOf(
             localRevisionCounter.get() + 1L,
             System.currentTimeMillis()

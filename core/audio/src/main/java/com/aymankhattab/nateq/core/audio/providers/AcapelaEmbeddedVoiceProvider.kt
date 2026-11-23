@@ -1,8 +1,11 @@
 package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
+import android.os.Looper
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.announcement.LoudnessStage
+import com.aymankhattab.nateq.core.audio.engine.SalmaSpeechTracker
+import com.aymankhattab.nateq.core.audio.enginehost.AcapelaHostSession
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -34,12 +37,39 @@ class AcapelaEmbeddedVoiceProvider(
     override val providerId: String = PROVIDER_ID
     override val displayName: String = "Acapela (مدمج)"
 
+    @Volatile
+    private var cachedResolvedDir: File? = null
+    @Volatile
+    private var lastResolvedDirRevision: Long = -1L
+
     fun resolveDataDir(): File? {
-        val base = customVoiceDir ?: EmbeddedStorage.baseDir(
+        if (customVoiceDir != null) return customVoiceDir
+        val curRev = AcapelaVoiceRepository.getStorageRevision()
+        val cached = cachedResolvedDir
+        if (cached != null &&
+            lastResolvedDirRevision == curRev &&
+            cached.isDirectory
+        ) {
+            return cached
+        }
+        val snapshot = AcapelaVoiceRepository.getSnapshot()
+        if (snapshot.isLoaded && snapshot.searchDirs.isNotEmpty()) {
+            val candidate = snapshot.searchDirs.firstOrNull { dir ->
+                snapshot.voices.any {
+                    it.dir.canonicalPath.startsWith(dir.canonicalPath)
+                }
+            } ?: snapshot.searchDirs.firstOrNull()
+            if (candidate != null) {
+                cachedResolvedDir = candidate
+                lastResolvedDirRevision = curRev
+                return candidate
+            }
+        }
+        val base = EmbeddedStorage.baseDir(
             context,
             EmbeddedStorage.Engine.ACAPELA
         )
-        return if (AcapelaVoiceManifest.isCompleteVoiceDir(base) ||
+        val resolved = if (AcapelaVoiceManifest.isCompleteVoiceDir(base) ||
             AcapelaVoiceManifest.completeVoiceDirs(base).isNotEmpty()
         ) {
             base
@@ -53,14 +83,21 @@ class AcapelaEmbeddedVoiceProvider(
                 AcapelaVoiceManifest.completeVoiceDirs(it).isNotEmpty()
             }
         }
+        cachedResolvedDir = resolved
+        lastResolvedDirRevision = curRev
+        return resolved
     }
 
     override fun isConfigured(): Boolean {
         if (customVoiceDir == null) {
             val snapshot = AcapelaVoiceRepository.getSnapshot()
-            if (snapshot.revision >= 0L) {
-                return snapshot.isConfigured
+            if (!snapshot.isLoaded) {
+                AcapelaVoiceRepository.triggerBackgroundRefresh(context)
             }
+            return snapshot.isConfigured
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return AcapelaVoiceRepository.getSnapshot().isConfigured
         }
         return EmbeddedStorage.inventory(
             context,
@@ -209,10 +246,42 @@ class AcapelaEmbeddedVoiceProvider(
         category: String?
     ) {
         withContext(Dispatchers.IO) {
+            val targetVoiceName = (desiredVoiceName ?: voice.id)
+                .removePrefix("acapela_embedded:")
+                .removePrefix("acapela:")
+                .removePrefix("acapela_")
+                .substringBefore('(')
+                .trim()
+
+            val isSalma = targetVoiceName.contains("salma", ignoreCase = true)
+            val callCategory = when {
+                category == "preview" || category == "diagnostic" ->
+                    SalmaSpeechTracker.Category.DIAGNOSTIC
+                AcapelaHostSession.isWarmVoiceReady(targetVoiceName) ->
+                    SalmaSpeechTracker.Category.WARM
+                else -> SalmaSpeechTracker.Category.COLD
+            }
+            val tracker = if (isSalma) {
+                SalmaSpeechTracker.startRequest(
+                    category = callCategory,
+                    voiceName = targetVoiceName,
+                    textLength = text.length
+                )
+            } else {
+                null
+            }
+
+            tracker?.markQueueWaitStart()
             val initOk = withTimeoutOrNull(5000L) {
                 ensureInitialized()
             } ?: false
+            tracker?.markQueueWaitEnd()
+
             if (!initOk) {
+                tracker?.complete(
+                    SalmaSpeechTracker.Status.FAILED,
+                    "تأخرت تهيئة مضيف Acapela"
+                )
                 Log.w(
                     TAG,
                     "تأخرت تهيئة مضيف Acapela؛ تحويل آمن دون خطأ حرج"
@@ -226,13 +295,6 @@ class AcapelaEmbeddedVoiceProvider(
                 return@withContext
             }
 
-            val targetVoiceName = (desiredVoiceName ?: voice.id)
-                .removePrefix("acapela_embedded:")
-                .removePrefix("acapela:")
-                .removePrefix("acapela_")
-                .substringBefore('(')
-                .trim()
-
             val isEvent = LoudnessStage.isEventCategory(category)
             val chunkConsumer: (ByteArray, Int) -> Unit = if (isEvent) {
                 val gainDb = runCatching {
@@ -241,6 +303,8 @@ class AcapelaEmbeddedVoiceProvider(
                 if (gainDb > 0f) {
                     { chunk, validLength ->
                         if (validLength > 0) {
+                            tracker?.markFirstPcm()
+                            tracker?.markFirstTrackWrite()
                             LoudnessStage.processPcm16(
                                 chunk, 0, validLength, gainDb
                             )
@@ -248,12 +312,25 @@ class AcapelaEmbeddedVoiceProvider(
                         onAudioChunk(chunk, validLength)
                     }
                 } else {
-                    onAudioChunk
+                    { chunk, validLength ->
+                        if (validLength > 0) {
+                            tracker?.markFirstPcm()
+                            tracker?.markFirstTrackWrite()
+                        }
+                        onAudioChunk(chunk, validLength)
+                    }
                 }
             } else {
-                onAudioChunk
+                { chunk, validLength ->
+                    if (validLength > 0) {
+                        tracker?.markFirstPcm()
+                        tracker?.markFirstTrackWrite()
+                    }
+                    onAudioChunk(chunk, validLength)
+                }
             }
 
+            tracker?.markSpeakCallStart()
             val result = EngineHostClient.synthesize(
                 context = context,
                 engineId = HostProtocol.ENGINE_ACAPELA,
@@ -265,8 +342,13 @@ class AcapelaEmbeddedVoiceProvider(
                 onFormatInfo = onFormatInfo,
                 onAudioChunk = chunkConsumer
             )
+            tracker?.markSpeakCallEnd()
 
             if (!result.ok) {
+                tracker?.complete(
+                    SalmaSpeechTracker.Status.FAILED,
+                    result.message
+                )
                 Log.e(
                     TAG,
                     "نطق Acapela المدمج فشل [${result.code}]: " +
@@ -290,6 +372,7 @@ class AcapelaEmbeddedVoiceProvider(
                     result.message
                 )
             } else {
+                tracker?.complete(SalmaSpeechTracker.Status.SUCCESS)
                 com.aymankhattab.nateq.core.audio.engine
                     .SpeechFallbackTracker.clearAcapelaFallbackState()
                 EngineStatusRegistry.noteReady(PROVIDER_ID)

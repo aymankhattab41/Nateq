@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
  * اختبارات وحدة لمدير تسجيل المكالمات وتضخيم الصوت البرمجي.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [37])
+@Config(sdk = [35])
 class CallRecordManagerTest {
 
     private lateinit var context: Context

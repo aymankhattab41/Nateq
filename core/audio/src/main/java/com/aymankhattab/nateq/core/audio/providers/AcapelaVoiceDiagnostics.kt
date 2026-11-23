@@ -10,6 +10,7 @@ import android.os.Process
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.engine.AcapelaPerformanceCounters
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostCrashDiagnostics
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
@@ -488,6 +489,7 @@ object AcapelaVoiceDiagnostics {
                 var r: Int
                 while (input.read(buf).also { r = it } != -1) {
                     md.update(buf, 0, r)
+                    AcapelaPerformanceCounters.recordHashBytes(r.toLong())
                 }
             }
             md.digest().joinToString("") { "%02x".format(it) }
@@ -532,8 +534,12 @@ object AcapelaVoiceDiagnostics {
             computeFullHashes = computeFullHashes
         )
         if (stagedDir == null) {
-            verificationCache[cacheKey]?.let { return it }
+            verificationCache[cacheKey]?.let {
+                AcapelaPerformanceCounters.recordVerificationHit()
+                return it
+            }
         }
+        AcapelaPerformanceCounters.recordVerificationMiss()
 
         val issues = mutableListOf<VoiceDependencyIssue>()
         val checked = mutableListOf<String>()

@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.core.content.pm.PackageInfoCompat
 import com.acapelagroup.android.tts.AcattsandroidService
 import com.acapelagroup.android.tts.acattsandroid
+import com.aymankhattab.nateq.core.audio.engine.AcapelaPerformanceCounters
 import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
@@ -113,6 +114,25 @@ internal class AcapelaHostSession(
     companion object {
         private const val TAG = "AcapelaHostSession"
         private const val DEFAULT_SAMPLE_RATE = 22050
+
+        @Volatile
+        private var warmVoiceSpeaker: String? = null
+
+        fun isWarmVoiceReady(speaker: String): Boolean {
+            val warm = warmVoiceSpeaker ?: return false
+            val clean = speaker.trim()
+            return warm.equals(clean, ignoreCase = true) ||
+                (clean.contains("salma", ignoreCase = true) &&
+                    warm.contains("salma", ignoreCase = true))
+        }
+
+        internal fun noteWarmVoiceLoaded(speaker: String) {
+            warmVoiceSpeaker = speaker.trim()
+        }
+
+        internal fun noteWarmVoiceClosed() {
+            warmVoiceSpeaker = null
+        }
 
         /** الحد الأقصى لمرات الفشل المتتالية قبل تثبيت قفل الجلسة. */
         private const val MAX_CONSECUTIVE_FAILURES = 3
@@ -665,22 +685,14 @@ internal class AcapelaHostSession(
             managed.resolvedPackage?.speaker
                 ?.equals(speaker, ignoreCase = true) == true
         ) {
-            val recentLogs = AcapelaVoiceDiagnostics.readNativeLogcatLines(60)
-            val hasExplicitFailure = recentLogs.any { line ->
-                (line.contains("voice $speaker", ignoreCase = true) &&
-                    line.contains("not loaded", ignoreCase = true)) ||
-                    (line.contains(
-                        "tts_function_load_voice : $speaker", ignoreCase = true
-                    ) && line.contains("- error", ignoreCase = true))
-            }
-            return !hasExplicitFailure
+            return true
         }
-        val recentLogs = AcapelaVoiceDiagnostics
-            .readNativeLogcatLines(60)
-        return AcapelaVoiceDiagnostics.isSpeakerLoadedInLogs(
-            speaker = speaker,
-            logs = recentLogs
-        )
+        val clean = speaker.trim()
+        val loaded = warmVoiceSpeaker
+        return loaded != null &&
+            (loaded.equals(clean, ignoreCase = true) ||
+                (clean.contains("salma", ignoreCase = true) &&
+                    loaded.contains("salma", ignoreCase = true)))
     }
 
     private suspend fun performUnifiedWarmup(
@@ -794,6 +806,8 @@ internal class AcapelaHostSession(
         extendedKey = null
         lastTrialSucceeded.set(false)
         activeStageDir = null
+        noteWarmVoiceClosed()
+        AcapelaPerformanceCounters.recordServiceClose()
         runCatching {
             AcapelaVoiceDiagnostics.cleanupOldStagingDirectories(context, null)
         }
@@ -848,16 +862,21 @@ internal class AcapelaHostSession(
         req: SpeakRequest,
         sink: PcmSink,
         cancelled: AtomicBoolean
-    ): HostResult = sessionMutex.withLock {
-        if (dataDirectory == null) {
-            val waitStart = SystemClock.uptimeMillis()
-            while (dataDirectory == null &&
-                SystemClock.uptimeMillis() - waitStart < 3000L
-            ) {
-                delay(100L)
+    ): HostResult {
+        val lockStart = SystemClock.elapsedRealtime()
+        return sessionMutex.withLock {
+            val lockWait = SystemClock.elapsedRealtime() - lockStart
+            AcapelaPerformanceCounters.recordQueueWait(lockWait)
+            if (dataDirectory == null) {
+                val waitStart = SystemClock.uptimeMillis()
+                while (dataDirectory == null &&
+                    SystemClock.uptimeMillis() - waitStart < 3000L
+                ) {
+                    delay(100L)
+                }
             }
+            doSpeak(req, sink, cancelled)
         }
-        doSpeak(req, sink, cancelled)
     }
 
     private suspend fun doSpeak(
@@ -1899,13 +1918,16 @@ internal class AcapelaHostSession(
         val voiceKey = registrationKey(voice)
         val expectedSpeaker = voice.rawSpeaker ?: voice.voiceName
         val cachedPackage = lastResolvedPackage
+        val normalizedReg = cachedPackage?.registration.orEmpty()
+        val expectedKey = "$voiceKey|$normalizedReg"
         if (cachedPackage != null &&
             extendedService != null &&
             lastTrialSucceeded.get() &&
-            extendedKey == "$voiceKey|${cachedPackage.registration}" &&
+            extendedKey == expectedKey &&
             activeManagedService?.state == ExtendedServiceState.VOICE_LOADED &&
             isVoiceActuallyLoaded(extendedService, expectedSpeaker)
         ) {
+            AcapelaPerformanceCounters.recordVerificationHit()
             Log.i(
                 TAG,
                 "[AcapelaWarm] إعادة استخدام الخدمة الجاهزة " +
@@ -2013,7 +2035,10 @@ internal class AcapelaHostSession(
                 previousManaged != null &&
                 previousManaged.state == ExtendedServiceState.VOICE_LOADED &&
                 previousPackage != null &&
-                isVoiceActuallyLoaded(previousExtended, previousPackage.speaker)
+                isVoiceActuallyLoaded(
+                    previousExtended,
+                    previousPackage.speaker
+                )
             ) {
                 Log.w(
                     TAG,
@@ -2052,8 +2077,14 @@ internal class AcapelaHostSession(
     /** مفتاح حفظ اختيار التسجيل لكل صوت (مجلد + متحدث). */
     private fun registrationKey(
         voice: AcapelaVoiceManifest.VoiceInfo
-    ): String = "${voice.dir.absolutePath}|" +
-        (voice.rawSpeaker ?: voice.voiceName)
+    ): String {
+        val canonicalDir = runCatching {
+            AcapelaVoiceDiagnostics.normalizeToUser0(voice.dir).canonicalPath
+        }.getOrDefault(voice.dir.absolutePath)
+        val speaker = (voice.rawSpeaker ?: voice.voiceName)
+            .trim().lowercase(Locale.ROOT)
+        return "$canonicalDir|$speaker"
+    }
 
     /** إسقاط الاختيار المحفوظ فيُعاد الفحص عند الطلب التالي. */
     private fun forgetRegistration(
@@ -2085,6 +2116,14 @@ internal class AcapelaHostSession(
             }
             if (!probeOnly) {
                 onSamples(bArr, i)
+            }
+        }
+
+        fun writeIfEmpty(bytes: ByteArray) {
+            synchronized(pcmBytes) {
+                if (pcmBytes.size() == 0) {
+                    pcmBytes.write(bytes)
+                }
             }
         }
     }
@@ -2855,6 +2894,7 @@ internal class AcapelaHostSession(
         var probeReport = ""
         var initRes: Int? = null
         try {
+            AcapelaPerformanceCounters.recordEngineInit()
             initRes = srv.nInit(stagePath)
         } catch (t: Throwable) {
             Log.e(TAG, "[$label] استثناء أثناء nInit", t)
@@ -3111,12 +3151,9 @@ internal class AcapelaHostSession(
             null
         }
         if (synthCallback.pcmStream.size() > 0) {
-            val synthBytes = synthCallback.pcmStream.toByteArray()
-            synchronized(audioHandler.pcmBytes) {
-                if (audioHandler.pcmBytes.size() == 0) {
-                    audioHandler.pcmBytes.write(synthBytes)
-                }
-            }
+            audioHandler.writeIfEmpty(
+                synthCallback.pcmStream.toByteArray()
+            )
         }
 
         logcatReader.emitEndMarker()
@@ -4288,10 +4325,12 @@ internal class AcapelaHostSession(
             )
             activeManagedService = trial.managedService
             extendedService = srv
-            extendedKey = "$voiceKey|$regToUse"
+            val regClean = regToUse.orEmpty()
+            extendedKey = "$voiceKey|$regClean"
+            noteWarmVoiceLoaded(expectedSpeaker)
             lastTrialSucceeded.set(true)
             failedTrialKey = null
-            consecutiveTrialFailures.remove("$voiceKey|$regToUse")
+            consecutiveTrialFailures.remove("$voiceKey|$regClean")
             runCatching {
                 com.aymankhattab.nateq.core.audio.engine
                     .SpeechFallbackTracker.clearAcapelaFallbackState()
