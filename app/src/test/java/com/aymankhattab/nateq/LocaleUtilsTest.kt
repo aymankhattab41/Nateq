@@ -288,4 +288,21 @@ class LocaleUtilsTest {
         assertTrue(LocaleUtils.containsOtp("کد ورود 54321"))
         assertTrue(LocaleUtils.containsOtp("رمز ورود 65432"))
     }
+
+    @Test
+    fun containsOtp_hyphenAndSpaceSeparatedCodes() {
+        assertTrue(LocaleUtils.containsOtp("رمز التحقق 1234-5678"))
+        assertTrue(LocaleUtils.containsOtp("رمز التحقق 1234 5678"))
+        assertTrue(LocaleUtils.containsOtp("رمز التحقق 123-456"))
+        assertTrue(LocaleUtils.containsOtp("رمز التحقق 0123-4567"))
+        assertTrue(LocaleUtils.containsOtp("رمز التحقق ١٢٣٤-٥٦٧٨"))
+        assertTrue(LocaleUtils.containsOtp("کد تأیید ۱۲۳۴ ۵۶۷۸"))
+    }
+
+    @Test
+    fun containsOtp_datesAndPhoneNumbersExcluded() {
+        assertFalse(LocaleUtils.containsOtp("رمز التحقق 10-23-1987"))
+        assertFalse(LocaleUtils.containsOtp("رمز التحقق 2024-11-25"))
+        assertFalse(LocaleUtils.containsOtp("رمز التحقق 010-1234-5678"))
+    }
 }

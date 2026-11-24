@@ -201,9 +201,21 @@ object LocaleUtils {
         if (text.isBlank()) return false
         val norm = normalizeIndicDigits(text)
         val keyword = OTP_KEYWORD.containsMatchIn(norm)
-        val code = OTP_CODE.containsMatchIn(norm)
-        return keyword && code
+        if (!keyword) return false
+        val matches = OTP_CODE.findAll(norm)
+        for (match in matches) {
+            val candidate = match.value
+            if (!DATE_STRUCTURE.matches(candidate)) {
+                return true
+            }
+        }
+        return false
     }
+
+    private val DATE_STRUCTURE = Regex(
+        """^(?:(?:19|20)\d{2}[- /]\d{1,2}[- /]\d{1,2}|""" +
+            """\d{1,2}[- /]\d{1,2}[- /](?:19|20)\d{2})$"""
+    )
 
     private val OTP_KEYWORD = Regex(
         "رمز التحقق|رمز التفعيل|رمز التأكيد|كود التحقق|" +
@@ -220,7 +232,11 @@ object LocaleUtils {
 
     /** كود 4-8 خانات قد تحوي فاصلَ - أو مسافة بين خاناتها
      *  (مثل 123-456 أو 1234 5678). */
-    private val OTP_CODE = Regex("(?<![0-9])[0-9](?:[- ]?[0-9]){3,7}(?![0-9])")
+    private val OTP_CODE = Regex(
+        """(?:G-)?(?<![0-9]|(?:[0-9][- ]))""" +
+            """[0-9](?:[- ]?[0-9]){3,7}""" +
+            """(?!(?:[- ]?[0-9]))"""
+    )
 
     /** جلب سلسلة مورد بلغة نطق محددة (وليست لغة واجهة التطبيق):
      * تتيح لمستقبلات النطق (رسائل/مكالمات/بطارية) أن تُعلن بلسان

@@ -471,4 +471,96 @@ class NateqNotificationListenerTest {
             )
         )
     }
+
+    @Test
+    fun resolveOtpSpeechText_separatedCodes_hyphensAndSpaces() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val text1 = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "1234-5678",
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4 5 6 7 8", text1)
+
+        val text2 = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "1234 5678",
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4 5 6 7 8", text2)
+
+        val text3 = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "123-456",
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4 5 6", text3)
+
+        val text4 = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "0123-4567",
+            otpReadingEnabled = true
+        )
+        assertEquals("0 1 2 3 4 5 6 7", text4)
+
+        val textArabic = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "١٢٣٤-٥٦٧٨",
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4 5 6 7 8", textArabic)
+
+        val textArabicZero = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "٠١٢٣-٤٥٦٧",
+            otpReadingEnabled = true
+        )
+        assertEquals("0 1 2 3 4 5 6 7", textArabicZero)
+
+        val textPersian = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "کد تأیید",
+            text = "۱۲۳۴ ۵۶۷۸",
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4 5 6 7 8", textPersian)
+
+        val textPersianZero = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "کد تایید",
+            text = "۰۱۲۳-۴۵۶۷",
+            otpReadingEnabled = true
+        )
+        assertEquals("0 1 2 3 4 5 6 7", textPersianZero)
+    }
+
+    @Test
+    fun resolveSpeechText_lockScreenPrivacyWithSeparatedOtp() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val lockedText = NateqNotificationListener.resolveSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "1234-5678",
+            privacyLocked = true,
+            isOtp = true,
+            otpReadingEnabled = true
+        )
+        assertEquals("إشعار جديد من Lord TTS", lockedText)
+        assertFalse(lockedText.contains("1 2 3 4 5 6 7 8"))
+    }
 }
