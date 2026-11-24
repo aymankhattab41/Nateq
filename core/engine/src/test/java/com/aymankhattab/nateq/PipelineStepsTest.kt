@@ -1302,6 +1302,301 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun currency_fractionRounding_halfUp_order3() {
+        // فحص تقريب نصف الوحدة لأعلى (HALF_UP) بدقة رياضية بلا خطأ فاصلة عائمة
+        // 1.005 USD -> dollar and one cent (0.005 * 100 = 0.5 -> 1 cent)
+        assertEquals(
+            "one US dollar and one cent",
+            CurrencyStep.applyEnglish("USD 1.005")
+        )
+        assertEquals(
+            "one US dollar and one cent",
+            CurrencyStep.applyEnglish("1.005 USD")
+        )
+        assertEquals(
+            "one dollar and one cent",
+            CurrencyStep.applyEnglish("$1.005")
+        )
+        assertEquals(
+            "دولار أمريكي واحد وسنت واحد",
+            CurrencyStep.apply("USD 1.005")
+        )
+        assertEquals(
+            "دولار أمريكي واحد وسنت واحد",
+            CurrencyStep.apply("1.005 USD")
+        )
+        assertEquals(
+            "دولار واحد وسنت واحد",
+            CurrencyStep.apply("$1.005")
+        )
+
+        // 2.675 USD -> 2 dollars and 68 cents (0.675 * 100 = 67.5 -> 68 cents)
+        assertEquals(
+            "two US dollars and sixty eight cents",
+            CurrencyStep.applyEnglish("USD 2.675")
+        )
+        assertEquals(
+            "two US dollars and sixty eight cents",
+            CurrencyStep.applyEnglish("2.675 USD")
+        )
+        assertEquals(
+            "two dollars and sixty eight cents",
+            CurrencyStep.applyEnglish("$2.675")
+        )
+        assertEquals(
+            "دولاران أمريكيان وثمانية وستون سنتاً",
+            CurrencyStep.apply("USD 2.675")
+        )
+        assertEquals(
+            "دولاران أمريكيان وثمانية وستون سنتاً",
+            CurrencyStep.apply("2.675 USD")
+        )
+        assertEquals(
+            "دولاران وثمانية وستون سنتاً",
+            CurrencyStep.apply("$2.675")
+        )
+
+        // 1.999 USD -> carry to whole unit (99.9 -> 100 -> +1 unit)
+        assertEquals(
+            "two US dollars",
+            CurrencyStep.applyEnglish("USD 1.999")
+        )
+        assertEquals(
+            "two US dollars",
+            CurrencyStep.applyEnglish("1.999 USD")
+        )
+        assertEquals(
+            "two dollars",
+            CurrencyStep.applyEnglish("$1.999")
+        )
+        assertEquals(
+            "دولاران أمريكيان",
+            CurrencyStep.apply("USD 1.999")
+        )
+        assertEquals(
+            "دولاران أمريكيان",
+            CurrencyStep.apply("1.999 USD")
+        )
+        assertEquals(
+            "دولاران",
+            CurrencyStep.apply("$1.999")
+        )
+
+        // -1.005 USD -> minus preservation
+        assertEquals(
+            "minus one US dollar and one cent",
+            CurrencyStep.applyEnglish("USD -1.005")
+        )
+        assertEquals(
+            "minus one US dollar and one cent",
+            CurrencyStep.applyEnglish("-1.005 USD")
+        )
+        assertEquals(
+            "minus one dollar and one cent",
+            CurrencyStep.applyEnglish("$-1.005")
+        )
+        assertEquals(
+            "minus one dollar and one cent",
+            CurrencyStep.applyEnglish("-1.005$")
+        )
+        assertEquals(
+            "ناقص دولار أمريكي واحد وسنت واحد",
+            CurrencyStep.apply("USD -1.005")
+        )
+        assertEquals(
+            "ناقص دولار أمريكي واحد وسنت واحد",
+            CurrencyStep.apply("-1.005 USD")
+        )
+        assertEquals(
+            "ناقص دولار واحد وسنت واحد",
+            CurrencyStep.apply("$-1.005")
+        )
+        assertEquals(
+            "ناقص دولار واحد وسنت واحد",
+            CurrencyStep.apply("-1.005$")
+        )
+
+        // -2.675 USD
+        assertEquals(
+            "minus two US dollars and sixty eight cents",
+            CurrencyStep.applyEnglish("USD -2.675")
+        )
+        assertEquals(
+            "minus two dollars and sixty eight cents",
+            CurrencyStep.applyEnglish("$-2.675")
+        )
+        assertEquals(
+            "ناقص دولاران أمريكيان وثمانية وستون سنتاً",
+            CurrencyStep.apply("USD -2.675")
+        )
+        assertEquals(
+            "ناقص دولاران وثمانية وستون سنتاً",
+            CurrencyStep.apply("$-2.675")
+        )
+    }
+
+    @Test
+    fun currency_fractionRounding_1000subunits_order3() {
+        // عملات الـ 1000 وحدة فرعية (دينار كويتي/بحريني/تونسي وريال عماني)
+        // 1.0005 KWD -> 1 fils (0.0005 * 1000 = 0.5 -> 1 fils)
+        assertEquals(
+            "one Kuwaiti dinar and one fils",
+            CurrencyStep.applyEnglish("KWD 1.0005")
+        )
+        assertEquals(
+            "one Kuwaiti dinar and one fils",
+            CurrencyStep.applyEnglish("1.0005 KWD")
+        )
+        assertEquals(
+            "دينار كويتي واحد وفلس واحد",
+            CurrencyStep.apply("KWD 1.0005")
+        )
+        assertEquals(
+            "دينار كويتي واحد وفلس واحد",
+            CurrencyStep.apply("1.0005 KWD")
+        )
+        assertEquals(
+            "دينار كويتي واحد وفلس واحد",
+            CurrencyStep.apply("1.0005 د.ك")
+        )
+
+        // 1.0004 KWD -> 0 fils (0.0004 * 1000 = 0.4 -> 0 fils)
+        assertEquals(
+            "one Kuwaiti dinar",
+            CurrencyStep.applyEnglish("KWD 1.0004")
+        )
+        assertEquals(
+            "دينار كويتي واحد",
+            CurrencyStep.apply("KWD 1.0004")
+        )
+
+        // 2.1255 KWD -> 126 fils (0.1255 * 1000 = 125.5 -> 126 fils)
+        assertEquals(
+            "two Kuwaiti dinars and one hundred twenty six fils",
+            CurrencyStep.applyEnglish("KWD 2.1255")
+        )
+        assertEquals(
+            "ديناران كويتيان ومائة وستة وعشرون فلساً",
+            CurrencyStep.apply("KWD 2.1255")
+        )
+        assertEquals(
+            "ديناران كويتيان ومائة وستة وعشرون فلساً",
+            CurrencyStep.apply("2.1255 د.ك")
+        )
+
+        // -1.0005 KWD
+        assertEquals(
+            "minus one Kuwaiti dinar and one fils",
+            CurrencyStep.applyEnglish("KWD -1.0005")
+        )
+        assertEquals(
+            "ناقص دينار كويتي واحد وفلس واحد",
+            CurrencyStep.apply("KWD -1.0005")
+        )
+        assertEquals(
+            "ناقص دينار كويتي واحد وفلس واحد",
+            CurrencyStep.apply("-1.0005 د.ك")
+        )
+
+        // 1.9995 KWD -> carry to whole unit (999.5 -> 1000 fils -> 2 KWD)
+        assertEquals(
+            "two Kuwaiti dinars",
+            CurrencyStep.applyEnglish("KWD 1.9995")
+        )
+        assertEquals(
+            "ديناران كويتيان",
+            CurrencyStep.apply("KWD 1.9995")
+        )
+        assertEquals(
+            "ديناران كويتيان",
+            CurrencyStep.apply("1.9995 د.ك")
+        )
+
+        // OMR 2.6755 -> 676 baisa (0.6755 * 1000 = 675.5 -> 676 baisa)
+        assertEquals(
+            "two Omani riyals and six hundred seventy six baisa",
+            CurrencyStep.applyEnglish("OMR 2.6755")
+        )
+        assertEquals(
+            "ريالان عمانيان وستمائة وستة وسبعون بيسةً",
+            CurrencyStep.apply("OMR 2.6755")
+        )
+        assertEquals(
+            "ريالان عمانيان وستمائة وستة وسبعون بيسةً",
+            CurrencyStep.apply("2.6755 ر.ع")
+        )
+
+        // BHD 1.0005
+        assertEquals(
+            "one Bahraini dinar and one fils",
+            CurrencyStep.applyEnglish("BHD 1.0005")
+        )
+        assertEquals(
+            "دينار بحريني واحد وفلس واحد",
+            CurrencyStep.apply("BHD 1.0005")
+        )
+
+        // TND 1.0005
+        assertEquals(
+            "one Tunisian dinar and one millime",
+            CurrencyStep.applyEnglish("TND 1.0005")
+        )
+        assertEquals(
+            "دينار تونسي واحد ومليم واحد",
+            CurrencyStep.apply("TND 1.0005")
+        )
+    }
+
+    @Test
+    fun currency_fractionRounding_doubleOverloads_order3() {
+        val usdInfo = CurrencyStep.CURRENCY_CODE_INFO["USD"]!!
+        val usdInfoEn = CurrencyStep.CURRENCY_CODE_INFO_EN["USD"]!!
+        val kwdInfo = CurrencyStep.CURRENCY_CODE_INFO["KWD"]!!
+        val kwdInfoEn = CurrencyStep.CURRENCY_CODE_INFO_EN["KWD"]!!
+
+        assertEquals(
+            "one US dollar and one cent",
+            CurrencyStep.englishCurrencyAmountPhrase(1.005, usdInfoEn)
+        )
+        assertEquals(
+            "دولار أمريكي واحد وسنت واحد",
+            CurrencyStep.currencyAmountPhrase(1.005, usdInfo)
+        )
+        assertEquals(
+            "two US dollars and sixty eight cents",
+            CurrencyStep.englishCurrencyAmountPhrase(2.675, usdInfoEn)
+        )
+        assertEquals(
+            "دولاران أمريكيان وثمانية وستون سنتاً",
+            CurrencyStep.currencyAmountPhrase(2.675, usdInfo)
+        )
+        assertEquals(
+            "two US dollars",
+            CurrencyStep.englishCurrencyAmountPhrase(1.999, usdInfoEn)
+        )
+        assertEquals(
+            "دولاران أمريكيان",
+            CurrencyStep.currencyAmountPhrase(1.999, usdInfo)
+        )
+        assertEquals(
+            "minus one US dollar and one cent",
+            CurrencyStep.englishCurrencyAmountPhrase(-1.005, usdInfoEn)
+        )
+        assertEquals(
+            "ناقص دولار أمريكي واحد وسنت واحد",
+            CurrencyStep.currencyAmountPhrase(-1.005, usdInfo)
+        )
+        assertEquals(
+            "one Kuwaiti dinar and one fils",
+            CurrencyStep.englishCurrencyAmountPhrase(1.0005, kwdInfoEn)
+        )
+        assertEquals(
+            "دينار كويتي واحد وفلس واحد",
+            CurrencyStep.currencyAmountPhrase(1.0005, kwdInfo)
+        )
+    }
+
+    @Test
     fun currency_fraction_accusative_11to99() {
         // بند 3.2: 11–99 منصوبة («سنتاً»)، وآحاد العشرين «واحد»:
         assertEquals("تسعة وثلاثون سنتاً", CurrencyStep.apply("$0.39"))

@@ -204,7 +204,7 @@ internal object CurrencyStep : TextProcessingStep {
     )
 
     // أكواد العملات العالمية مع بياناتها النحوية الكاملة
-    private val CURRENCY_CODE_INFO = mapOf<String, CurrencyInfo>(
+    internal val CURRENCY_CODE_INFO = mapOf<String, CurrencyInfo>(
         "USD" to CurrencyInfo(
             "دولار أمريكي",
             "دولارات أمريكية",
@@ -401,7 +401,7 @@ internal object CurrencyStep : TextProcessingStep {
         "ر.م" to CurrencyInfoEn("dirham", "dirhams", "centime", "centimes")
     )
 
-    private val CURRENCY_CODE_INFO_EN = mapOf<String, CurrencyInfoEn>(
+    internal val CURRENCY_CODE_INFO_EN = mapOf<String, CurrencyInfoEn>(
         "USD" to CurrencyInfoEn(
             "US dollar", "US dollars", "cent", "cents"
         ),
