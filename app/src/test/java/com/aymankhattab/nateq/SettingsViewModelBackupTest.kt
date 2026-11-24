@@ -326,4 +326,67 @@ class SettingsViewModelBackupTest {
         )
         assertFalse("نسخة فارغة لا تُعدّل شيئاً", freshVm.applyBackupJson(json))
     }
+
+    @Test
+    fun backupRestore_preservesReadLaterFullTextsVerbatim() {
+        val longText =
+            "نص طويل مخصص لاقرأ لاحقاً في النسخ الاحتياطي ".repeat(1500)
+        settings.saveReadLaterText(longText)
+
+        val json = vm.buildBackupJson()
+        assertTrue(json.contains("readLaterTexts"))
+
+        // تثبيت نظيف ومسح الذاكرة والقرص
+        context.getSharedPreferences("nateq_settings", 0)
+            .edit().clear().commit()
+        val storageDir = java.io.File(context.filesDir, "read_later_texts")
+        storageDir.deleteRecursively()
+
+        val freshSettings = SettingsRepository(context)
+        val freshVm = SettingsViewModel(
+            freshSettings,
+            PronunciationDictionary(context)
+        )
+
+        assertTrue(freshVm.applyBackupJson(json))
+
+        val items = freshSettings.getReadLaterItems(loadFullText = false)
+        assertEquals(1, items.size)
+        val fullRestored = freshSettings.getReadLaterFullText(items[0].id)
+        assertEquals(longText.trim(), fullRestored)
+    }
+
+    @Test
+    fun legacyBackupWithoutReadLaterTexts_restoresSafely() {
+        val legacyJson = """
+            {
+              "version": 1,
+              "exportedAt": 12345678,
+              "settings": {
+                "default_speech_rate": {"type": "float", "value": 1.25}
+              }
+            }
+        """.trimIndent()
+
+        context.getSharedPreferences("nateq_settings", 0)
+            .edit().clear().commit()
+        val freshSettings = SettingsRepository(context)
+        val freshVm = SettingsViewModel(
+            freshSettings,
+            PronunciationDictionary(context)
+        )
+
+        assertTrue(freshVm.applyBackupJson(legacyJson))
+        assertEquals(1.25f, freshSettings.getDefaultSpeechRate(), 0.01f)
+    }
+
+    @Test
+    fun corruptBackup_rejectedWithoutWipingExistingState() {
+        settings.setDefaultSpeechRate(1.4f)
+        val corruptJson = "{ invalid json content }"
+
+        assertFalse(vm.applyBackupJson(corruptJson))
+        // الحالة السليمة تبقى كما هي دون مسح
+        assertEquals(1.4f, settings.getDefaultSpeechRate(), 0.01f)
+    }
 }

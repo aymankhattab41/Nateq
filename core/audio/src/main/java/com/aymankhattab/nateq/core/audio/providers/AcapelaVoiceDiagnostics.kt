@@ -2413,8 +2413,14 @@ object AcapelaVoiceDiagnostics {
         return dumpFileTextAndHex(f)
     }
 
+    /** سقف قراءة الملفات التشخيصية لدرء استنزاف الذاكرة (128 كيلوبايت). */
+    const val MAX_DIAGNOSTIC_DUMP_BYTES = 128 * 1024L
+
     /** طباعة ملف ثنائي نصاً وhex سطراً بسطر (16 بايت لكل سطر). */
     private fun dumpFileTextAndHex(f: File): String {
+        if (f.length() > MAX_DIAGNOSTIC_DUMP_BYTES) {
+            return "(الملف كبير: ${f.length()} بايت، تم حجب التفريغ لدرء OOM)"
+        }
         val bytes = runCatching { f.readBytes() }.getOrNull()
             ?: return "تعذر قراءة الملف: ${f.absolutePath}"
         val text = String(bytes, StandardCharsets.ISO_8859_1)
@@ -2663,12 +2669,17 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * قراءة محتوى الملف كاملاً كنص UTF-8 أو Hex dump إن كان ملفاً ثنائياً.
+     * قراءة محتوى الملف كنص UTF-8 أو Hex dump إن كان ملفاً ثنائياً
+     * مع سقف حماية للذاكرة.
      */
     fun dumpFileContent(file: File?): String {
         if (file == null) return "(الملف غير محدد)"
         if (!file.exists()) return "(غير موجود: ${file.name})"
         if (!file.isFile) return "(ليس ملفاً: ${file.name})"
+        if (file.length() > MAX_DIAGNOSTIC_DUMP_BYTES) {
+            return "(الملف كبير: ${file.length()} بايت، " +
+                "تم حجب التفريغ لدرء OOM)"
+        }
         val bytes = runCatching { file.readBytes() }.getOrElse {
             return "(تعذر القراءة: ${it.message})"
         }
@@ -2702,22 +2713,43 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
-     * حساب بصمة MD5 للملف واستخراج أول [count] بايت بصيغة Hex.
+     * حساب بصمة MD5 للملف تدفقياً واستخراج أول [count] بايت بصيغة Hex
+     * دون استنزاف الذاكرة.
      */
     fun getFileHexHeaderAndMd5(file: File?, count: Int = 64): String {
         if (file == null) return "(الملف غير محدد)"
         if (!file.exists()) return "(غير موجود: ${file.name})"
         val len = file.length()
-        val bytes = runCatching { file.readBytes() }.getOrElse {
-            return "(تعذر القراءة: ${it.message})"
+        val md = runCatching { MessageDigest.getInstance("MD5") }.getOrNull()
+        val headerBuf = ByteArray(count)
+        var headerRead = 0
+        val streamEx: Throwable? = runCatching {
+            file.inputStream().use { input ->
+                val buf = ByteArray(8192)
+                var r: Int
+                while (input.read(buf).also { r = it } != -1) {
+                    if (headerRead < count) {
+                        val toCopy = minOf(r, count - headerRead)
+                        System.arraycopy(
+                            buf, 0, headerBuf, headerRead, toCopy
+                        )
+                        headerRead += toCopy
+                    }
+                    md?.update(buf, 0, r)
+                }
+            }
+        }.exceptionOrNull()
+
+        if (streamEx != null) {
+            return "(تعذر القراءة: ${streamEx.message})"
         }
-        val md5 = runCatching {
-            val md = MessageDigest.getInstance("MD5")
-            md.digest(bytes).joinToString("") { "%02x".format(it) }
-        }.getOrDefault("غير متاح")
-        val hex = bytes.take(count).chunked(16).joinToString("\n") { c ->
-            c.joinToString(" ") { "%02X".format(it) }
-        }
+        val md5 = md?.digest()?.joinToString("") { "%02x".format(it) }
+            ?: "غير متاح"
+        val hex = headerBuf.take(headerRead)
+            .chunked(16)
+            .joinToString("\n") { c ->
+                c.joinToString(" ") { "%02X".format(it) }
+            }
         return "اسم: ${file.name} | حجم: $len بايت | MD5: $md5\n" +
             "أول $count بايت hex:\n$hex"
     }

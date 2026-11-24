@@ -4,28 +4,36 @@ import android.content.ComponentCallbacks2
 import android.content.Context
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.enginehost.AcapelaHostSession
+import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.audio.enginehost.HostWarmStatusRegistry
 import com.aymankhattab.nateq.core.audio.enginehost.MicrosoftHostSession
 import com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceRepository
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftModelCatalog
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftVoiceRepository
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
+import com.aymankhattab.nateq.core.audio.providers.VocalizerVoiceRepository
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
+import com.aymankhattab.nateq.util.LocaleUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * منسّق موحّد لإدارة جاهزية وإحماء الأصوات المدمجة عبر كافة المحركات
@@ -34,12 +42,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * الخصائص:
  * 1. تهيئة الأصوات المختارة فعلياً على [AppDispatchers.io] عند بدء
  *    التطبيق أو الخدمة أو تغير الاختيار أو فتح شاشة الأصوات.
- * 2. دمج الطلبات المتزامنة (coalescing) لمنع تكرار تهيئة نفس الصوت.
- * 3. إعطاء الأولوية للصوت المختار والصوت المطلوب للمعاينة.
- * 4. إلغاء أو خفض أولوية الإحماء الاستباقي فوراً عند وصول طلب نطق حقيقي
- *    من المستخدم لتفريغ موارد المعالج وقنوات الصوت له.
- * 5. إحماء صامت حقيقي (volume=0f مع إهمال PCM دون طلب AudioFocus).
- * 6. تفريغ الجلسات غير النشطة عند نقص الذاكرة (onTrimMemory).
+ * 2. دمج الطلبات المتزامنة (single-flight) بحجز الملكية قبل التنفيذ
+ *    وحذف المهمة بمقارنة الهوية وتنظيف الفاشلة والملغاة.
+ * 3. إعطاء الأولوية للنطق الحقيقي وربط علمه بدورة الطلب ومعرفه الفريد.
+ * 4. التحقق من جاهزية المضيف عبر IPC وسجل الحالة المشترك بين العمليات
+ *    دون الاعتماد على متغيرات companion محلية عبر حدود العمليات.
+ * 5. إحماء صامت حقيقي بدقة لغوية مستخرجة من بيانات الصوت المثبت.
  */
 object VoiceReadinessCoordinator {
 
@@ -49,8 +57,12 @@ object VoiceReadinessCoordinator {
         SupervisorJob() + AppDispatchers.io
     )
 
-    private val inFlightJobs = ConcurrentHashMap<String, Deferred<Boolean>>()
+    private val inFlightDeferreds =
+        ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private val readyVoices = ConcurrentHashMap<String, Boolean>()
+
+    private val speechRequestSeq = AtomicLong(0L)
+    private val activeSpeechRequestId = AtomicLong(0L)
     private val isRealSpeechActive = AtomicBoolean(false)
 
     /**
@@ -110,7 +122,7 @@ object VoiceReadinessCoordinator {
     }
 
     /**
-     * تجهيز صوت محدد بصمت مع دمج الطلبات المتزامنة.
+     * تجهيز صوت محدد بصمت مع دمج الطلبات المتزامنة (Single-Flight آمن).
      */
     suspend fun prepareVoice(
         context: Context,
@@ -118,7 +130,7 @@ object VoiceReadinessCoordinator {
         voiceId: String,
         priority: Boolean = false
     ): Boolean = withContext(AppDispatchers.io) {
-        val cleanEngine = engineId.trim()
+        val cleanEngine = HostProtocol.normalizeEngineId(engineId)
         val cleanVoice = voiceId.trim()
         if (cleanEngine.isBlank() || cleanVoice.isBlank()) {
             return@withContext false
@@ -127,69 +139,116 @@ object VoiceReadinessCoordinator {
         val key = "$cleanEngine:$cleanVoice"
 
         // فحص الجاهزية الفعلية الحالية
-        if (isVoiceReady(cleanEngine, cleanVoice)) {
+        if (isVoiceReady(context, cleanEngine, cleanVoice)) {
             readyVoices[key] = true
             return@withContext true
         }
 
-        // دمج الطلبات المتزامنة (coalescing)
-        val existing = inFlightJobs[key]
+        if (isRealSpeechActive.get() && !priority) {
+            return@withContext false
+        }
+
+        // حجز ملكية المهمة قبل بدء التنفيذ
+        val myDeferred = CompletableDeferred<Boolean>()
+        val existing = inFlightDeferreds.putIfAbsent(key, myDeferred)
         if (existing != null) {
             return@withContext runCatching {
                 existing.await()
             }.getOrDefault(false)
         }
 
-        val deferred = coordinatorScope.async {
-            try {
-                if (isRealSpeechActive.get() && !priority) {
-                    return@async false
-                }
-                executeSilentWarmup(context, cleanEngine, cleanVoice)
-            } catch (ce: CancellationException) {
-                Log.d(TAG, "أُلغي إحماء الصوت $key لصالح طلب نطق حقيقي")
-                false
-            } catch (t: Throwable) {
-                Log.w(TAG, "فشل تجهيز الصوت $key: ${t.message}")
-                false
-            } finally {
-                inFlightJobs.remove(key)
+        val appCtx = context.applicationContext ?: context
+        try {
+            if (isRealSpeechActive.get() && !priority) {
+                myDeferred.complete(false)
+                return@withContext false
             }
-        }
 
-        val prev = inFlightJobs.putIfAbsent(key, deferred)
-        if (prev != null) {
-            deferred.cancel()
-            return@withContext runCatching { prev.await() }.getOrDefault(false)
-        }
+            coordinatorScope.launch {
+                try {
+                    if (isRealSpeechActive.get() && !priority) {
+                        myDeferred.complete(false)
+                        return@launch
+                    }
+                    val ok = executeSilentWarmup(
+                        appCtx,
+                        cleanEngine,
+                        cleanVoice
+                    )
+                    myDeferred.complete(ok)
+                } catch (ce: CancellationException) {
+                    myDeferred.cancel(ce)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "فشل تجهيز الصوت $key: ${t.message}")
+                    myDeferred.complete(false)
+                }
+            }
 
-        val success = runCatching { deferred.await() }.getOrDefault(false)
-        if (success) {
-            readyVoices[key] = true
+            val success = runCatching {
+                myDeferred.await()
+            }.getOrDefault(false)
+
+            if (success) {
+                readyVoices[key] = true
+            }
+            success
+        } catch (ce: CancellationException) {
+            myDeferred.cancel(ce)
+            throw ce
+        } finally {
+            // حذف المهمة بمقارنة الهوية لا المفتاح وحده
+            inFlightDeferreds.remove(key, myDeferred)
         }
-        success
     }
 
-    private fun isEnglishVoice(voiceId: String): Boolean {
-        val lower = voiceId.lowercase(Locale.ROOT)
-        return lower.contains("en-") ||
-            lower.contains("en_") ||
-            lower.contains("-en") ||
-            lower.contains("_en") ||
-            lower.contains("us") ||
-            lower.contains("uk") ||
-            lower.contains("gb") ||
-            lower.contains("jenny") ||
-            lower.contains("guy") ||
-            lower.contains("aria") ||
-            lower.contains("samantha") ||
-            lower.contains("tom") ||
-            lower.contains("will") ||
-            lower.contains("ava") ||
-            lower.contains("andrew") ||
-            lower.contains("brian") ||
-            lower.contains("emma") ||
-            lower.contains("oliver")
+    fun resolveProbeDetails(
+        context: Context,
+        engineId: String,
+        voiceId: String
+    ): Pair<String, Locale> {
+        val cleanEngine = HostProtocol.normalizeEngineId(engineId)
+        val directTag = LocaleUtils.toBcp47Tag(voiceId, fallbackToRaw = false)
+        val directLocale = if (directTag != null) {
+            Locale.forLanguageTag(directTag)
+        } else {
+            null
+        }
+
+        val voiceLocale: Locale? = directLocale ?: when (cleanEngine) {
+            HostProtocol.ENGINE_MICROSOFT -> {
+                MicrosoftModelCatalog.findItemByNameOrModel(
+                    context,
+                    voiceId
+                )?.locale
+            }
+            HostProtocol.ENGINE_ACAPELA -> {
+                AcapelaVoiceRepository.getSnapshot().voices.firstOrNull {
+                    it.id.equals(voiceId, ignoreCase = true)
+                }?.locale
+            }
+            HostProtocol.ENGINE_VOCALIZER -> {
+                VocalizerModelCatalog.findByIdOrHeader(voiceId)?.locale
+                    ?: VocalizerModelCatalog.findItemsForVoiceName(voiceId)
+                        .firstOrNull()?.locale
+            }
+            else -> null
+        }
+
+        val locale = voiceLocale ?: Locale.forLanguageTag("ar")
+
+        val lang = locale.language.lowercase(Locale.ROOT)
+        val probeText = when (lang) {
+            "ar" -> "مرحبا"
+            "en" -> "Hello"
+            "fr" -> "Bonjour"
+            "es" -> "Hola"
+            "de" -> "Hallo"
+            "it" -> "Ciao"
+            "tr" -> "Merhaba"
+            "ru" -> "Привет"
+            else -> if (lang == "ar") "مرحبا" else "Hello"
+        }
+        return probeText to locale
     }
 
     private suspend fun executeSilentWarmup(
@@ -198,9 +257,11 @@ object VoiceReadinessCoordinator {
         voiceId: String
     ): Boolean {
         val appCtx = context.applicationContext ?: context
-        val isEn = isEnglishVoice(voiceId)
-        val probeText = if (isEn) "Hello" else "مرحبا"
-        val probeLocale = if (isEn) Locale.US else Locale.forLanguageTag("ar")
+        val (probeText, probeLocale) = resolveProbeDetails(
+            appCtx,
+            engineId,
+            voiceId
+        )
 
         when (engineId) {
             AcapelaEmbeddedVoiceProvider.PROVIDER_ID -> {
@@ -231,7 +292,7 @@ object VoiceReadinessCoordinator {
                     category = "warmup"
                 )
                 return hasPcmSamples &&
-                    AcapelaHostSession.isWarmVoiceReady(voiceId)
+                    isVoiceReady(appCtx, engineId, voiceId)
             }
             VocalizerEmbeddedVoiceProvider.PROVIDER_ID -> {
                 val provider = EmbeddedProviders.vocalizer(appCtx)
@@ -261,7 +322,7 @@ object VoiceReadinessCoordinator {
                     category = "warmup"
                 )
                 return hasPcmSamples &&
-                    VocalizerHostSession.isWarmVoiceLoaded(voiceId)
+                    isVoiceReady(appCtx, engineId, voiceId)
             }
             MicrosoftEmbeddedVoiceProvider.PROVIDER_ID -> {
                 val provider = EmbeddedProviders.microsoft(appCtx)
@@ -291,7 +352,7 @@ object VoiceReadinessCoordinator {
                     category = "warmup"
                 )
                 return hasPcmSamples &&
-                    MicrosoftHostSession.isWarmReady(voiceId)
+                    isVoiceReady(appCtx, engineId, voiceId)
             }
             else -> return false
         }
@@ -299,47 +360,110 @@ object VoiceReadinessCoordinator {
 
     /**
      * إشعار ببدء طلب نطق حقيقي من المستخدم لإلغاء أي تجهيز استباقي منافس.
+     * يرجع معرفاً فريداً للطلب لربط دورة حياته.
      */
     fun onSpeechRequested(
         engineId: String? = null,
         voiceId: String? = null
-    ) {
+    ): Long {
+        val reqId = speechRequestSeq.incrementAndGet()
+        activeSpeechRequestId.set(reqId)
         isRealSpeechActive.set(true)
         val activeTarget = if (!engineId.isNullOrBlank() &&
             !voiceId.isNullOrBlank()
         ) {
-            "$engineId:$voiceId"
+            val norm = HostProtocol.normalizeEngineId(engineId)
+            "$norm:${voiceId.trim()}"
         } else {
             null
         }
 
         // إلغاء كل الأعمال الاستباقية ما عدا ما يخدم الصوت المطلوب ذاته
-        for ((key, deferred) in inFlightJobs) {
+        for ((key, deferred) in inFlightDeferreds) {
             if (activeTarget == null || key != activeTarget) {
                 deferred.cancel()
             }
         }
+        return reqId
     }
 
     /**
-     * إشعار بانتهاء النطق الحقيقي.
+     * إشعار بانتهاء النطق الحقيقي مع ربطه بمعرف الطلب.
      */
-    fun onSpeechCompleted() {
-        isRealSpeechActive.set(false)
+    fun onSpeechCompleted(requestId: Long? = null) {
+        if (requestId == null) {
+            activeSpeechRequestId.set(0L)
+            isRealSpeechActive.set(false)
+            return
+        }
+        // لا تجعل انتهاء طلب قديم يخفض علم طلب أحدث
+        if (activeSpeechRequestId.compareAndSet(requestId, 0L)) {
+            isRealSpeechActive.set(false)
+        }
     }
 
     /**
      * فحص ما إذا كان الصوت دافئاً وجاهزاً في الذاكرة حالياً.
+     * يفحص مصدر الحقيقة المشترك بين العمليات
+     * (مراجعة البيانات وجيل المضيف وPCM).
+     */
+    fun isVoiceReady(
+        context: Context,
+        engineId: String,
+        voiceId: String
+    ): Boolean {
+        val cleanEngine = HostProtocol.normalizeEngineId(engineId)
+        val cleanVoice = voiceId.trim()
+        val expectedRev = when (cleanEngine) {
+            HostProtocol.ENGINE_ACAPELA ->
+                AcapelaVoiceRepository.getStorageRevision(context)
+            HostProtocol.ENGINE_VOCALIZER ->
+                VocalizerVoiceRepository.getStorageRevision(context)
+            HostProtocol.ENGINE_MICROSOFT ->
+                MicrosoftVoiceRepository.getStorageRevision(context)
+            else -> 0L
+        }
+        val hostGen = EngineHostClient.hostGeneration.get()
+        val isWarm = HostWarmStatusRegistry.isVoiceWarm(
+            context = context,
+            engineId = cleanEngine,
+            voiceId = cleanVoice,
+            expectedRevision = expectedRev,
+            expectedHostGen = hostGen
+        )
+        if (isWarm) {
+            readyVoices["$cleanEngine:$cleanVoice"] = true
+            return true
+        }
+
+        // التحقق من حالة المضيف في البيئة المحلية
+        // (الاختبارات أو داخل نفس العملية)
+        val companionReady = when (cleanEngine) {
+            HostProtocol.ENGINE_ACAPELA ->
+                AcapelaHostSession.isWarmVoiceReady(cleanVoice)
+            HostProtocol.ENGINE_MICROSOFT ->
+                MicrosoftHostSession.isWarmReady(cleanVoice)
+            HostProtocol.ENGINE_VOCALIZER ->
+                VocalizerHostSession.isWarmVoiceLoaded(cleanVoice)
+            else -> readyVoices["$cleanEngine:$cleanVoice"] == true
+        }
+        return companionReady
+    }
+
+    /**
+     * فحص الجاهزية دون تمرير سياق (للاختبارات أو النداءات المحلية).
      */
     fun isVoiceReady(engineId: String, voiceId: String): Boolean {
-        return when (engineId) {
-            AcapelaEmbeddedVoiceProvider.PROVIDER_ID ->
-                AcapelaHostSession.isWarmVoiceReady(voiceId)
-            MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ->
-                MicrosoftHostSession.isWarmReady(voiceId)
-            VocalizerEmbeddedVoiceProvider.PROVIDER_ID ->
-                VocalizerHostSession.isWarmVoiceLoaded(voiceId)
-            else -> readyVoices["$engineId:$voiceId"] == true
+        val cleanEngine = HostProtocol.normalizeEngineId(engineId)
+        val cleanVoice = voiceId.trim()
+        return when (cleanEngine) {
+            HostProtocol.ENGINE_ACAPELA ->
+                AcapelaHostSession.isWarmVoiceReady(cleanVoice)
+            HostProtocol.ENGINE_MICROSOFT ->
+                MicrosoftHostSession.isWarmReady(cleanVoice)
+            HostProtocol.ENGINE_VOCALIZER ->
+                VocalizerHostSession.isWarmVoiceLoaded(cleanVoice)
+            else -> readyVoices["$cleanEngine:$cleanVoice"] == true
         }
     }
 
@@ -350,8 +474,9 @@ object VoiceReadinessCoordinator {
         engineId: String,
         voiceId: String
     ): Boolean {
-        val key = "$engineId:$voiceId"
-        val inFlight = inFlightJobs[key] ?: return false
+        val cleanEngine = HostProtocol.normalizeEngineId(engineId)
+        val key = "$cleanEngine:${voiceId.trim()}"
+        val inFlight = inFlightDeferreds[key] ?: return false
         return runCatching { inFlight.await() }.getOrDefault(false)
     }
 
@@ -362,10 +487,10 @@ object VoiceReadinessCoordinator {
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
             level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
         ) {
-            for ((_, deferred) in inFlightJobs) {
+            for ((_, deferred) in inFlightDeferreds) {
                 deferred.cancel()
             }
-            inFlightJobs.clear()
+            inFlightDeferreds.clear()
             readyVoices.clear()
             MicrosoftHostSession.trimResources()
             VocalizerHostSession.trimResources()
@@ -373,11 +498,14 @@ object VoiceReadinessCoordinator {
     }
 
     fun resetForTest() {
-        for ((_, deferred) in inFlightJobs) {
+        for ((_, deferred) in inFlightDeferreds) {
             deferred.cancel()
         }
-        inFlightJobs.clear()
+        inFlightDeferreds.clear()
         readyVoices.clear()
         isRealSpeechActive.set(false)
+        activeSpeechRequestId.set(0L)
+        speechRequestSeq.set(0L)
+        HostWarmStatusRegistry.resetForTests()
     }
 }

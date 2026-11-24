@@ -734,6 +734,12 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Comprehensive Nateq fixes for voice import safety, engine readiness, Read Later durability, speed metric honesty, and support relay delivery:
+- Voice Import Safety: Pre-verification in staging for Acapela and Vocalizer packages, ini files, and hdrs; atomic copy with instant rollback journal on failure without touching live data.
+- Engine Readiness: Cross-process readiness registry (HostWarmStatusRegistry) tracking warmth over IPC without false caches; resolved single-flight race via CompletableDeferred; service generation and speech flag tracking during settings updates; preserved Microsoft session and models with native SSML cleanup.
+- Read Later &amp; Backup: Atomic full-text persistence in dedicated files without blocking main thread, orphaned file cleanup, 10MB backup/restore expansion, and explicit null representation across IPC in SettingsAuthority and SnapshotPrefs.
+- Speed Metric Honesty: Excluded unmeasured values (-1) from average, median, and p95 in UnifiedSpeechTracker and SalmaSpeechTracker; restricted firstTrackWrite to actual AudioTrack writes; request correlation tracking with finally block error/cancellation capture.
+- Support Relay Worker: Explicit processing states (processing, delivered, failed_permanent), bounded retries (5) for transient errors, multipart partial delivery tracking, and strict media and document delivery verification before confirming success.
 • Unified first-speech latency optimization across all embedded engines (Vocalizer, Acapela, and Microsoft): introduced VoiceReadinessCoordinator preparing active voices on IO with immediate cancellation when speech arrives, reused warm SpeechSynthesizer sessions, licenses, and ONNX models in MicrosoftHostSession (saving >1s per phrase), retained warm Vocalizer voices, eliminated main-thread disk I/O in UI via in-memory repositories (VocalizerVoiceRepository and MicrosoftVoiceRepository), and added comprehensive cross-engine latency tracking and performance counters (UnifiedSpeechTracker and EnginePerformanceCounters).
 • Fix Nateq responsiveness and Salma speech startup latency: removed repeated logcat process executions from the hot speech path in AcapelaHostSession (saving 300–600ms per utterance), eliminated synchronous main-thread disk inventory and stat checks in the UI in favor of memory snapshots with shared background refreshes, accurately tracked end-to-end Salma speech latency via SalmaSpeechTracker measuring TTFB across all utterances without omission (distinguishing raw PCM, track write, and playback head start), and instrumented thread-safe AcapelaPerformanceCounters to guarantee zero scans, config reads, full hashes, and re-inits on the warm path.
 • Acapela main-thread performance optimization and AppIntegrity hook detection overhaul: introduced immutable in-memory snapshot repository (AcapelaVoiceRepository) serving settings UI, status summaries, and voice catalogs on main thread with zero disk I/O, coalesced concurrent requests with IO-only discovery, keyed resolver and verification caches by real installation revision across processes without recursive tree walking, reused warm verification results during speech eliminating heavy full-file SHA-256 reads, replaced over-broad substring matching (hook/sandbox/virtual) in AppIntegrity with parsed /proc/self/maps module basename inspection for confirmed Frida/Xposed modules and classified ambiguous indicators as non-blocking diagnostic suspicion preventing false positives on Android 14, and structured diagnostics with rate-limited, legible properties without double negatives.
@@ -937,7 +943,7 @@
 • Applied engine filtering to default event voices (clock, battery…
 • Added Emergency Voice fallback system and Crash Guard for automatic…
 • Protected number category and Vocalizer / Acapela engines against…
-    </string>
+</string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
     <string name="diagnostics_copy">Copy</string>

@@ -436,12 +436,17 @@ object VoicePackageImporter {
         if (!baseDir.exists()) {
             baseDir.mkdirs()
         }
+        recoverInterruptedTransactions(baseDir)
 
         val stagingDir = File(context.cacheDir, "vocalizer_staging_$sessionId")
         if (stagingDir.exists()) stagingDir.deleteRecursively()
         stagingDir.mkdirs()
 
-        val backups = mutableListOf<Pair<File, File>>()
+        val backupDir = File(baseDir, ".backup_vocalizer_$sessionId")
+        val journalFile = File(baseDir, ".journal_vocalizer_$sessionId.json")
+        val backedUpFiles = mutableListOf<Pair<File, File>>()
+        val createdFiles = mutableListOf<File>()
+
         return try {
             val guard = ZipExtractionGuard(stagingDir)
             val extractedFiles = mutableListOf<String>()
@@ -483,36 +488,83 @@ object VoicePackageImporter {
                 throw CancellationException("تم إلغاء الاستيراد")
             }
 
-            // التحقق من الملفات المستخرجة
-            val hdrs = extractedFiles.filter {
-                it.endsWith(".hdr", ignoreCase = true)
-            }
-            if (hdrs.isEmpty() && extractedFiles.isEmpty()) {
+            // التحقق الصارم من اكتمال حزمة الصوت في staging قبل المساس بالحي
+            val validHdrs = stagingDir.walkTopDown().filter {
+                it.isFile && it.extension.equals("hdr", ignoreCase = true) &&
+                    it.length() > 0L
+            }.toList()
+            if (validHdrs.isEmpty()) {
                 return Result(
                     success = false,
                     errorMessage =
-                        "لم يتم العثور على ملفات أصوات صالحة لـ Vocalizer"
+                        "لم يتم العثور على ملفات ترويسة صالحة " +
+                            "(.hdr) لـ Vocalizer"
                 )
             }
 
-            // التبديل الذري عبر نسخ شجرة staging مع حفظ نسخ احتياطية
+            // معاملة واضحة ومسار نسخ احتياطي لا يتصادم مع حفظ المسار النسبي
+            if (backupDir.exists()) backupDir.deleteRecursively()
+            if (!backupDir.mkdirs()) {
+                throw IOException("تعذر إنشاء مجلد النسخ الاحتياطي للمعاملة")
+            }
+
+            // نسخ الملفات من staging إلى baseDir مع حفظ النسخ السابقة
             stagingDir.walkTopDown().forEach { file ->
                 if (file.isFile) {
                     val rel = file.relativeTo(stagingDir).path
                     val target = File(baseDir, rel)
                     if (target.exists()) {
-                        val backup = File(
-                            baseDir,
-                            "${target.name}_bak_$sessionId"
-                        )
-                        target.renameTo(backup)
-                        backups.add(target to backup)
+                        val backup = File(backupDir, rel)
+                        backup.parentFile?.mkdirs()
+                        if (!target.renameTo(backup)) {
+                            copyFileVerified(target, backup)
+                            if (!target.delete()) {
+                                throw IOException(
+                                    "تعذر إخلاء الملف الأصلي: ${target.name}"
+                                )
+                            }
+                        }
+                        backedUpFiles.add(target to backup)
+                    } else {
+                        createdFiles.add(target)
                     }
+
                     target.parentFile?.mkdirs()
-                    file.copyTo(target, overwrite = true)
+                    val tempTarget = File(
+                        target.parentFile ?: baseDir,
+                        ".tmp_${target.name}_$sessionId"
+                    )
+                    copyFileVerified(file, tempTarget)
+                    if (!tempTarget.renameTo(target)) {
+                        if (target.exists()) target.delete()
+                        copyFileVerified(tempTarget, target)
+                        tempTarget.delete()
+                    }
                 }
             }
 
+            // تدوين سجل المعاملة لتأكيد التعافي عند التوقف المفاجئ
+            writeVocalizerJournal(
+                journalFile = journalFile,
+                sessionId = sessionId,
+                backupDir = backupDir,
+                createdFiles = createdFiles,
+                backedUpFiles = backedUpFiles,
+                baseDir = baseDir
+            )
+
+            // التحقق من اكتمال التثبيت بعد التبديل
+            val installedHdrs = baseDir.walkTopDown().filter {
+                it.isFile && it.extension.equals("hdr", ignoreCase = true) &&
+                    it.length() > 0L
+            }.toList()
+            if (installedHdrs.isEmpty()) {
+                throw IllegalStateException(
+                    "فشل التحقق من التثبيت: لم يتم العثور على ملفات .hdr"
+                )
+            }
+
+            // نجاح المعاملة: تحديث التخزين والكاشات حصراً بعد اكتمال التثبيت
             EmbeddedStorage.bumpVersion()
             EnginePicker.invalidateAfterStorageChange()
 
@@ -525,23 +577,17 @@ object VoicePackageImporter {
                 VisibleEngines.setFilter(true, cur)
             }
 
-            val names = if (hdrs.isNotEmpty()) {
-                hdrs.map { it.substringBeforeLast('.') }
-            } else {
-                listOf(
-                    suggestedName?.removeSuffix(".zip")
-                        ?.removeSuffix(".ZIP") ?: "Vocalizer"
-                )
-            }
+            val names = validHdrs.map {
+                it.nameWithoutExtension
+            }.distinct()
 
             EngineStatusRegistry.noteFilesPresent(
                 VocalizerEmbeddedVoiceProvider.PROVIDER_ID
             )
 
-            // نجاح التبديل: حذف النسخ الاحتياطية
-            for ((_, backup) in backups) {
-                runCatching { backup.deleteRecursively() }
-            }
+            // نجاح التبديل التام: حذف النسخ الاحتياطية وسجل المعاملة
+            runCatching { backupDir.deleteRecursively() }
+            runCatching { journalFile.delete() }
 
             Result(
                 success = true,
@@ -549,11 +595,14 @@ object VoicePackageImporter {
                 importedVoices = names
             )
         } catch (t: Throwable) {
-            // التراجع والرجوع: استعادة الملفات القديمة
-            for ((target, backup) in backups) {
-                if (target.exists()) target.deleteRecursively()
-                backup.renameTo(target)
-            }
+            // التراجع الصارم: حذف الملفات الجديدة واستعادة القديمة بالكامل
+            rollbackVocalizer(
+                baseDir = baseDir,
+                createdFiles = createdFiles,
+                backedUpFiles = backedUpFiles,
+                backupDir = backupDir,
+                journalFile = journalFile
+            )
             val isCancelled = t is CancellationException ||
                 cancellationSignal?.get() == true
             Result(
@@ -588,5 +637,174 @@ object VoicePackageImporter {
             )
         }
         executeImport(context, inspection)
+    }
+
+    /**
+     * نسخ ملف تدفقياً مع التحقق من اكتمال الحجم ومطابقته بدقة.
+     */
+    internal fun copyFileVerified(src: File, dest: File) {
+        dest.parentFile?.mkdirs()
+        src.inputStream().use { input ->
+            FileOutputStream(dest).use { output ->
+                input.copyTo(output, BUFFER_SIZE)
+            }
+        }
+        if (!dest.exists() || dest.length() != src.length()) {
+            throw IOException(
+                "فشل التحقق من نسخ الملف: ${dest.name} " +
+                    "(${dest.length()} != ${src.length()})"
+            )
+        }
+    }
+
+    /**
+     * تدوين سجل المعاملة للاسترجاع بعد التوقف المفاجئ.
+     */
+    private fun writeVocalizerJournal(
+        journalFile: File,
+        sessionId: String,
+        backupDir: File,
+        createdFiles: List<File>,
+        backedUpFiles: List<Pair<File, File>>,
+        baseDir: File
+    ) {
+        runCatching {
+            val json = org.json.JSONObject()
+            json.put("sessionId", sessionId)
+            json.put("backupDir", backupDir.name)
+            val crArr = org.json.JSONArray()
+            for (cf in createdFiles) {
+                crArr.put(cf.relativeTo(baseDir).path)
+            }
+            json.put("created", crArr)
+            val buArr = org.json.JSONArray()
+            for ((tgt, bak) in backedUpFiles) {
+                val item = org.json.JSONObject()
+                item.put("target", tgt.relativeTo(baseDir).path)
+                item.put("backup", bak.relativeTo(backupDir).path)
+                buArr.put(item)
+            }
+            json.put("backedUp", buArr)
+            journalFile.writeText(json.toString(2), Charsets.UTF_8)
+        }
+    }
+
+    /**
+     * التراجع الكامل عند أي فشل أو إلغاء في Vocalizer:
+     * حذف الملفات التي أُنشئت حديثاً، واستعادة الملفات السابقة كما كانت.
+     */
+    internal fun rollbackVocalizer(
+        baseDir: File,
+        createdFiles: List<File>,
+        backedUpFiles: List<Pair<File, File>>,
+        backupDir: File,
+        journalFile: File
+    ) {
+        // 1. حذف كل ملف تم إنشاؤه في المعاملة
+        for (file in createdFiles) {
+            if (file.exists()) {
+                runCatching { file.delete() }
+            }
+        }
+
+        // 2. استرجاع الملفات السابقة من النسخ الاحتياطية
+        for ((target, backup) in backedUpFiles) {
+            if (target.exists()) {
+                runCatching { target.delete() }
+            }
+            if (backup.exists()) {
+                target.parentFile?.mkdirs()
+                if (!backup.renameTo(target)) {
+                    runCatching {
+                        copyFileVerified(backup, target)
+                        backup.delete()
+                    }
+                }
+            }
+        }
+
+        // 3. تنظيف أي مجلدات فرعية فارغة بقيت بعد حذف المنشأ الجديد
+        cleanEmptyDirs(baseDir)
+
+        // 4. حذف النسخ الاحتياطية وسجل المعاملة
+        runCatching { backupDir.deleteRecursively() }
+        runCatching { journalFile.delete() }
+
+        // 5. إزالة أي ملفات مؤقتة متبقية للجلسة
+        baseDir.walkTopDown().maxDepth(5).forEach { f ->
+            if (f.isFile && f.name.startsWith(".tmp_")) {
+                runCatching { f.delete() }
+            }
+        }
+    }
+
+    /**
+     * تنظيف المجلدات الفارغة داخل المجلد المعطى تصاعدياً.
+     */
+    internal fun cleanEmptyDirs(root: File) {
+        if (!root.exists() || !root.isDirectory) return
+        val subDirs = root.walkBottomUp().filter {
+            it.isDirectory && it != root
+        }
+        for (d in subDirs) {
+            val children = d.listFiles()
+            if (children != null && children.isEmpty()) {
+                d.delete()
+            }
+        }
+    }
+
+    /**
+     * التعافي من المعاملات غير المكتملة في Vocalizer
+     * بعد توقف التطبيق أو تعطله.
+     */
+    internal fun recoverInterruptedTransactions(baseDir: File) {
+        if (!baseDir.exists() || !baseDir.isDirectory) return
+        val journals = baseDir.listFiles { f ->
+            f.isFile && f.name.startsWith(".journal_vocalizer_") &&
+                f.name.endsWith(".json")
+        } ?: emptyArray()
+
+        for (jf in journals) {
+            runCatching {
+                val text = jf.readText(Charsets.UTF_8)
+                val json = org.json.JSONObject(text)
+                val backupDirName = json.optString("backupDir")
+                val backupDir = File(baseDir, backupDirName)
+                val createdArr = json.optJSONArray("created")
+                val backedUpArr = json.optJSONArray("backedUp")
+                val createdList = mutableListOf<File>()
+                if (createdArr != null) {
+                    for (i in 0 until createdArr.length()) {
+                        val relPath = createdArr.getString(i)
+                        createdList.add(File(baseDir, relPath))
+                    }
+                }
+                val backedUpList = mutableListOf<Pair<File, File>>()
+                if (backedUpArr != null) {
+                    for (i in 0 until backedUpArr.length()) {
+                        val item = backedUpArr.getJSONObject(i)
+                        val target = File(baseDir, item.getString("target"))
+                        val backup = File(backupDir, item.getString("backup"))
+                        backedUpList.add(target to backup)
+                    }
+                }
+                rollbackVocalizer(
+                    baseDir = baseDir,
+                    createdFiles = createdList,
+                    backedUpFiles = backedUpList,
+                    backupDir = backupDir,
+                    journalFile = jf
+                )
+            }
+            runCatching { jf.delete() }
+        }
+
+        // تنظيف أي ملفات مؤقتة متبقية
+        baseDir.walkTopDown().maxDepth(5).forEach { f ->
+            if (f.isFile && f.name.startsWith(".tmp_")) {
+                runCatching { f.delete() }
+            }
+        }
     }
 }

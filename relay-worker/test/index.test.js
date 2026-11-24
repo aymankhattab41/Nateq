@@ -9,6 +9,8 @@ import {
   buildRelayMessages,
   extractSenderContent,
   forwardMessage,
+  sendWithParseFallback,
+  checkAndMarkUpdateId,
 } from "../src/index.js";
 
 // ── escapeHtml / stripHtml ───────────────────────────────────────────────
@@ -489,6 +491,280 @@ test("forwardMessage: تكرار update_id يعيد duplicate_update دون تك
     const res2 = await forwardMessage(env, update);
     assert.equal(res2, "duplicate_update");
     assert.equal(sendCount, prevSendCount, "لا يجب تكرار الإرسال للـ update_id المكرر");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("forwardMessage: فشل إرسال صورة HTTP500 يعيد photo_send_failed ولا يعلمها delivered", async () => {
+  const kvMap = new Map();
+  const env = {
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    SUPPORT_CHAT_ID: "999",
+    RATE_LIMITS: {
+      get: async (k) => (kvMap.has(k) ? kvMap.get(k) : null),
+      put: async (k, v) => kvMap.set(k, v),
+    },
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url.includes("/sendPhoto")) {
+      return new Response(JSON.stringify({ ok: false, error_code: 500 }), {
+        status: 500,
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const update = {
+      update_id: 2001,
+      message: {
+        photo: [{ file_id: "FAIL_PHOTO_ID" }],
+        from: { id: 401, first_name: "سامي" },
+        chat: { id: 401 },
+        date: 700,
+      },
+    };
+    const res = await forwardMessage(env, update);
+    assert.equal(res, "photo_send_failed");
+    const rawState = kvMap.get("update:2001");
+    assert.ok(rawState);
+    const parsed = JSON.parse(rawState);
+    assert.notEqual(parsed.state, "delivered", "لا يجب وسمها delivered عند فشل الصورة");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("forwardMessage: فشل إرسال صوت HTTP500 يعيد audio_send_failed", async () => {
+  const kvMap = new Map();
+  const env = {
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    SUPPORT_CHAT_ID: "999",
+    RATE_LIMITS: {
+      get: async (k) => (kvMap.has(k) ? kvMap.get(k) : null),
+      put: async (k, v) => kvMap.set(k, v),
+    },
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url.includes("/sendAudio")) {
+      return new Response(JSON.stringify({ ok: false, error_code: 500 }), {
+        status: 500,
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const update = {
+      update_id: 2002,
+      message: {
+        audio: { file_id: "FAIL_AUDIO_ID", title: "مقطع" },
+        from: { id: 402, first_name: "مروان" },
+        chat: { id: 402 },
+        date: 710,
+      },
+    };
+    const res = await forwardMessage(env, update);
+    assert.equal(res, "audio_send_failed");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("forwardMessage: فشل إرسال رسالة صوتية HTTP500 يعيد voice_send_failed", async () => {
+  const kvMap = new Map();
+  const env = {
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    SUPPORT_CHAT_ID: "999",
+    RATE_LIMITS: {
+      get: async (k) => (kvMap.has(k) ? kvMap.get(k) : null),
+      put: async (k, v) => kvMap.set(k, v),
+    },
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url.includes("/sendVoice")) {
+      return new Response(JSON.stringify({ ok: false, error_code: 500 }), {
+        status: 500,
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const update = {
+      update_id: 2003,
+      message: {
+        voice: { file_id: "FAIL_VOICE_ID" },
+        from: { id: 403, first_name: "يوسف" },
+        chat: { id: 403 },
+        date: 720,
+      },
+    };
+    const res = await forwardMessage(env, update);
+    assert.equal(res, "voice_send_failed");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("forwardMessage: تتبع التسليم الجزئي للأجزاء المتعددة عند فشل جزء وإعادة المحاولة", async () => {
+  const kvMap = new Map();
+  const env = {
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    SUPPORT_CHAT_ID: "999",
+    RATE_LIMITS: {
+      get: async (k) => (kvMap.has(k) ? kvMap.get(k) : null),
+      put: async (k, v) => kvMap.set(k, v),
+    },
+  };
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  let failSecond = true;
+  globalThis.fetch = async (url, options) => {
+    const bodyStr = options.body ? options.body.toString() : "";
+    calls.push({ url, body: bodyStr });
+    // فشل في الرسالة الثانية (index 1) في المحاولة الأولى
+    if (failSecond && calls.length === 2) {
+      return new Response(JSON.stringify({ ok: false, error_code: 500 }), {
+        status: 500,
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const update = {
+      update_id: 3001,
+      message: {
+        text: "كلمة ".repeat(800),
+        from: { id: 501, first_name: "طارق" },
+        chat: { id: 501 },
+        date: 800,
+      },
+    };
+    // محاولة أولى: ترسل الجزء الأول وتفشل في الثاني
+    const res1 = await forwardMessage(env, update);
+    assert.ok(res1 === "forward_failed_500" || res1 === "forward_failed");
+    assert.equal(calls.length, 2);
+
+    // محاكاة انتهاء مهلة القفل التزامني لإعادة المحاولة من تليجرام
+    const stateRaw = kvMap.get("update:3001");
+    assert.ok(stateRaw);
+    const stateObj = JSON.parse(stateRaw);
+    stateObj.timestamp = Math.floor(Date.now() / 1000) - 35; // مضى 35 ثانية
+    kvMap.set("update:3001", JSON.stringify(stateObj));
+
+    // محاولة ثانية: لا يعيد إرسال الجزء 0 الذي نجح، ويرسل الجزء المتبقي فقط
+    failSecond = false;
+    calls.length = 0;
+    const res2 = await forwardMessage(env, update);
+    assert.equal(res2, "forwarded");
+    assert.equal(calls.length, 1, "يجب إرسال الجزء المتبقي فقط دون تكرار الأول");
+
+    const finalState = JSON.parse(kvMap.get("update:3001"));
+    assert.equal(finalState.state, "delivered", "يكتمل التسليم بنجاح");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("checkAndMarkUpdateId: طلب متزامن لنفس update_id ضمن نافذة القفل يعيد inProgress", async () => {
+  const kvMap = new Map();
+  const env = {
+    RATE_LIMITS: {
+      get: async (k) => (kvMap.has(k) ? kvMap.get(k) : null),
+      put: async (k, v) => kvMap.set(k, v),
+    },
+  };
+  const res1 = await checkAndMarkUpdateId(env, 4001);
+  assert.equal(res1.isDuplicate, false);
+
+  // طلب متزامن فوري
+  const res2 = await checkAndMarkUpdateId(env, 4001);
+  assert.equal(res2.isDuplicate, true);
+  assert.equal(res2.inProgress, true, "يجب تحديد أنه قيد التنفيذ لمنع التزامن المزدوج");
+});
+
+test("checkAndMarkUpdateId: تجاوز 5 محاولات فاشلة يثبت failed_permanent لمنع الحلقات اللانهائية", async () => {
+  const kvMap = new Map();
+  const env = {
+    RATE_LIMITS: {
+      get: async (k) => (kvMap.has(k) ? kvMap.get(k) : null),
+      put: async (k, v) => kvMap.set(k, v),
+    },
+  };
+  const now = Math.floor(Date.now() / 1000);
+  kvMap.set(
+    "update:5001",
+    JSON.stringify({
+      state: "processing",
+      attempts: 5,
+      timestamp: now - 35,
+    })
+  );
+
+  const res = await checkAndMarkUpdateId(env, 5001);
+  assert.equal(res.isDuplicate, true);
+  const finalState = JSON.parse(kvMap.get("update:5001"));
+  assert.equal(finalState.state, "failed_permanent");
+});
+
+test("sendWithParseFallback: خطأ الشبكة يُرمى ولا يُعامل كخطأ تنسيق HTML", async () => {
+  const env = { TELEGRAM_BOT_TOKEN: "dummy_token" };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new TypeError("fetch failed: connection refused");
+  };
+  try {
+    await assert.rejects(
+      async () => {
+        await sendWithParseFallback(env, "123", "<b>نص</b>");
+      },
+      /fetch failed/,
+      "يجب رمي خطأ الشبكة الصريح دون محاولة فك التنسيق"
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("fetch: الفشل العابر (مثل فشل إرسال الوسائط) يرد 502 ليعيد تليجرام الإرسال", async () => {
+  const mod = await import("../src/index.js");
+  const handler = mod.default.fetch;
+  const env = {
+    WEBHOOK_SECRET: "s3cr3t",
+    SUPPORT_CHAT_ID: "999",
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    RATE_LIMITS: {
+      get: async () => null,
+      put: async () => {},
+    },
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url.includes("/sendPhoto")) {
+      return new Response(JSON.stringify({ ok: false, error_code: 502 }), {
+        status: 502,
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const request = new Request("https://relay.example/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": "s3cr3t" },
+      body: JSON.stringify({
+        update_id: 6001,
+        message: {
+          photo: [{ file_id: "PHOTO_ID" }],
+          from: { id: 601, first_name: "كريم" },
+          chat: { id: 601 },
+          date: 900,
+        },
+      }),
+    });
+    const response = await handler(request, env);
+    assert.equal(response.status, 502, "الرد 502 عند الفشل العابر لتحفيز إعادة المحاولة");
   } finally {
     globalThis.fetch = realFetch;
   }

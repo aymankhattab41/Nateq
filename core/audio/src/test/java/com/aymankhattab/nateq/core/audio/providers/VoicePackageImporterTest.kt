@@ -72,7 +72,7 @@ class VoicePackageImporterTest {
         createZip(
             zipFile,
             mapOf(
-                // تهيئة أصلية متوافقة مطلوبة للاكتشاف/الاكتمال (عقد ini الأصيل).
+                // تهيئة أصلية متوافقة مطلوبة للاكتشاف/الاكتمال.
                 "mehdi.ini" to (
                     "PRO \"NLP/ar.oso\"\n" +
                         "SLV \"mehdi.bvcu\"\n" +
@@ -165,5 +165,232 @@ class VoicePackageImporterTest {
 
         assertFalse(result.success)
         assertTrue(result.errorMessage?.isNotBlank() == true)
+    }
+
+    private fun sha256(file: File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(8192)
+            var r: Int
+            while (input.read(buf).also { r = it } != -1) {
+                md.update(buf, 0, r)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    @Test
+    fun importVocalizer_twoFilesSameNameDifferentSubdirs_noCollision() =
+        runBlocking {
+            val vocBase = EmbeddedStorage.baseDir(
+                context,
+                EmbeddedStorage.Engine.VOCALIZER
+            )
+            val fileAra = File(vocBase, "languages/ara/voice.dat")
+            val fileFra = File(vocBase, "languages/fra/voice.dat")
+            fileAra.parentFile?.mkdirs()
+            fileFra.parentFile?.mkdirs()
+            fileAra.writeText("ArabicOldVoiceData_12345")
+            fileFra.writeText("FrenchOldVoiceData_67890")
+
+            val originalShaAra = sha256(fileAra)
+            val originalShaFra = sha256(fileFra)
+
+            val zipFile = File(tempFolder.root, "update_voices.zip")
+            createZip(
+                zipFile,
+                mapOf(
+                    "languages/ara/mulan.hdr" to "HdrDataAra".toByteArray(),
+                    "languages/ara/voice.dat" to
+                        "ArabicNewData_999".toByteArray(),
+                    "languages/fra/voice.dat" to
+                        "FrenchNewData_888".toByteArray()
+                )
+            )
+
+            val result = VoicePackageImporter.importZip(
+                context,
+                Uri.fromFile(zipFile),
+                "update_voices.zip"
+            )
+
+            assertTrue(result.success)
+            assertEquals("ArabicNewData_999", fileAra.readText())
+            assertEquals("FrenchNewData_888", fileFra.readText())
+
+            // التحقق من عدم وجود مجلدات احتياطية عالقة
+            val leftoverBackups = vocBase.listFiles { f ->
+                f.name.startsWith(".backup_") || f.name.startsWith(".journal_")
+            }?.toList().orEmpty()
+            assertTrue(leftoverBackups.isEmpty())
+        }
+
+    @Test
+    fun rollbackVocalizer_deletesNewFilesAndRestoresExactSha256() {
+        val vocBase = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER
+        )
+        vocBase.mkdirs()
+
+        val oldFile = File(vocBase, "languages/ara/existing.dat")
+        oldFile.parentFile?.mkdirs()
+        oldFile.writeText("OriginalDataBeforeTransaction_ABCDEF")
+        val expectedSha = sha256(oldFile)
+
+        val backupDir = File(vocBase, ".backup_vocalizer_test_session")
+        backupDir.mkdirs()
+        val backupFile = File(backupDir, "languages/ara/existing.dat")
+        backupFile.parentFile?.mkdirs()
+        oldFile.copyTo(backupFile, overwrite = true)
+
+        // محاكاة تعديل الملف القديم وإنشاء ملف جديد
+        oldFile.writeText("CorruptedHalfModifiedData")
+        val newFile = File(vocBase, "languages/ara/brand_new.dat")
+        newFile.writeText("NewlyCreatedFileInTransaction")
+
+        val journalFile = File(vocBase, ".journal_vocalizer_test_session.json")
+        journalFile.writeText("{}")
+
+        VoicePackageImporter.rollbackVocalizer(
+            baseDir = vocBase,
+            createdFiles = listOf(newFile),
+            backedUpFiles = listOf(oldFile to backupFile),
+            backupDir = backupDir,
+            journalFile = journalFile
+        )
+
+        // التحقق من حذف المنشأ الجديد
+        assertFalse(newFile.exists())
+
+        // التحقق من استرجاع القديم كاملاً ببصمة SHA-256 متطابقة
+        assertTrue(oldFile.exists())
+        assertEquals(expectedSha, sha256(oldFile))
+        assertEquals(
+            "OriginalDataBeforeTransaction_ABCDEF",
+            oldFile.readText()
+        )
+
+        // التحقق من حذف مجلد النسخ الاحتياطي وسجل المعاملة
+        assertFalse(backupDir.exists())
+        assertFalse(journalFile.exists())
+    }
+
+    @Test
+    fun importZip_rejectsInvalidPackageWithoutTouchingLiveDirectory() =
+        runBlocking {
+            val vocBase = EmbeddedStorage.baseDir(
+                context,
+                EmbeddedStorage.Engine.VOCALIZER
+            )
+            vocBase.mkdirs()
+            val liveHdr = File(vocBase, "languages/ara/mulan.hdr")
+            val liveDat = File(vocBase, "languages/ara/mulan.dat")
+            liveHdr.parentFile?.mkdirs()
+            liveHdr.writeText("LiveHdrContent_111")
+            liveDat.writeText("LiveDatContent_222")
+
+            val originalHdrSha = sha256(liveHdr)
+            val originalDatSha = sha256(liveDat)
+            val originalHdrLen = liveHdr.length()
+            val originalDatLen = liveDat.length()
+
+            val invalidZip = File(tempFolder.root, "invalid_voice.zip")
+            createZip(
+                invalidZip,
+                mapOf(
+                    "doc/readme.txt" to "Some text file".toByteArray(),
+                    "images/logo.png" to ByteArray(500)
+                )
+            )
+
+            val result = VoicePackageImporter.importZip(
+                context,
+                Uri.fromFile(invalidZip),
+                "invalid_voice.zip"
+            )
+
+            assertFalse(result.success)
+            assertTrue(result.errorMessage?.isNotBlank() == true)
+
+            // التأكد من عدم لمس الملفات الحية نهائياً
+            assertTrue(liveHdr.exists())
+            assertTrue(liveDat.exists())
+            assertEquals(originalHdrLen, liveHdr.length())
+            assertEquals(originalDatLen, liveDat.length())
+            assertEquals(originalHdrSha, sha256(liveHdr))
+            assertEquals(originalDatSha, sha256(liveDat))
+        }
+
+    @Test
+    fun recoverInterruptedTransactions_restoresStateAfterSimulatedCrash() {
+        val vocBase = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER
+        )
+        vocBase.mkdirs()
+
+        val importantFile = File(vocBase, "languages/ara/important.hdr")
+        importantFile.parentFile?.mkdirs()
+        importantFile.writeText("OriginalImportantHeaderData")
+        val expectedSha = sha256(importantFile)
+
+        // محاكاة تعطل مفاجئ أثناء التبديل
+        val backupDir = File(vocBase, ".backup_vocalizer_crashed_sess")
+        val backupFile = File(backupDir, "languages/ara/important.hdr")
+        backupFile.parentFile?.mkdirs()
+        importantFile.copyTo(backupFile)
+
+        // الملف الحي تلوّث والملف الجديد نصف منسوخ
+        importantFile.writeText("CorruptedHalfWrittenHeader")
+        val halfFile = File(vocBase, "languages/ara/half_copied.dat")
+        halfFile.writeText("HalfCopiedGarbageData")
+
+        val journalFile = File(
+            vocBase,
+            ".journal_vocalizer_crashed_sess.json"
+        )
+        val journalJson = org.json.JSONObject().apply {
+            put("sessionId", "crashed_sess")
+            put("backupDir", backupDir.name)
+            val cr = org.json.JSONArray().apply {
+                put("languages/ara/half_copied.dat")
+            }
+            put("created", cr)
+            val bu = org.json.JSONArray().apply {
+                val item = org.json.JSONObject().apply {
+                    put("target", "languages/ara/important.hdr")
+                    put("backup", "languages/ara/important.hdr")
+                }
+                put(item)
+            }
+            put("backedUp", bu)
+        }
+        journalFile.writeText(journalJson.toString(2), Charsets.UTF_8)
+
+        // استدعاء التعافي
+        VoicePackageImporter.recoverInterruptedTransactions(vocBase)
+
+        // التحقق من حذف المنشأ غير المكتمل واسترجاع الملف الأصلي بهويته وهاشه
+        assertFalse(halfFile.exists())
+        assertTrue(importantFile.exists())
+        assertEquals(expectedSha, sha256(importantFile))
+        assertEquals("OriginalImportantHeaderData", importantFile.readText())
+
+        // التحقق من حذف السجل والنسخ الاحتياطية
+        assertFalse(journalFile.exists())
+        assertFalse(backupDir.exists())
+    }
+
+    @Test
+    fun copyFileVerified_checksSizeAndIntegrity() {
+        val src = File(tempFolder.root, "source.dat")
+        val dest = File(tempFolder.root, "dest.dat")
+        src.writeText("HelloVerifiedCopy_123456")
+
+        VoicePackageImporter.copyFileVerified(src, dest)
+        assertTrue(dest.exists())
+        assertEquals(src.length(), dest.length())
+        assertEquals(src.readText(), dest.readText())
     }
 }

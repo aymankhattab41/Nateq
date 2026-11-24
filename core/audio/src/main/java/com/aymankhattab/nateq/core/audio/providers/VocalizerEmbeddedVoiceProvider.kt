@@ -11,6 +11,7 @@ import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
 import com.aymankhattab.nateq.core.audio.engine.UnifiedSpeechTracker
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.audio.enginehost.HostWarmStatusRegistry
 import com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
@@ -507,12 +508,20 @@ class VocalizerEmbeddedVoiceProvider(
             } else {
                 onAudioChunk
             }
+            val isWarm = HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = HostProtocol.ENGINE_VOCALIZER,
+                voiceId = targetVoiceId,
+                expectedRevision =
+                    VocalizerVoiceRepository.getStorageRevision(context)
+            ) || VocalizerHostSession.isWarmVoiceLoaded(targetVoiceId)
+
             val callCategory = when {
                 category == "warmup" ->
                     UnifiedSpeechTracker.Category.WARMUP
                 category == "preview" || category == "diagnostic" ->
                     UnifiedSpeechTracker.Category.DIAGNOSTIC
-                VocalizerHostSession.isWarmVoiceLoaded(targetVoiceId) ->
+                isWarm ->
                     UnifiedSpeechTracker.Category.WARM
                 else -> UnifiedSpeechTracker.Category.COLD
             }
@@ -522,37 +531,39 @@ class VocalizerEmbeddedVoiceProvider(
                 voiceName = targetVoiceId,
                 textLength = text.length
             )
-            tracker.markSpeakCallStart()
-            var firstPcmRecorded = false
-            val trackedChunkConsumer: (ByteArray, Int) -> Unit = { chunk, len ->
-                if (!firstPcmRecorded && len > 0) {
-                    firstPcmRecorded = true
-                    tracker.markFirstPcm()
-                }
-                chunkConsumer(chunk, len)
-            }
+            try {
+                tracker.markSpeakCallStart()
+                var firstPcmRecorded = false
+                val trackedChunkConsumer: (ByteArray, Int) -> Unit =
+                    { chunk, len ->
+                        if (!firstPcmRecorded && len > 0) {
+                            firstPcmRecorded = true
+                            tracker.markFirstPcm()
+                        }
+                        chunkConsumer(chunk, len)
+                    }
 
-            val synthResult = EngineHostClient.synthesize(
-                context = context,
-                engineId = HostProtocol.ENGINE_VOCALIZER,
-                voiceId = targetVoiceId,
-                text = text,
-                rate = speechRate,
-                pitch = pitch,
-                volume = volume,
-                onFormatInfo = onFormatInfo,
-                onAudioChunk = trackedChunkConsumer
-            )
-
-            tracker.markSpeakCallEnd()
-            if (synthResult.ok) {
-                tracker.complete(UnifiedSpeechTracker.Status.SUCCESS)
-            } else {
-                tracker.complete(
-                    UnifiedSpeechTracker.Status.FAILED,
-                    synthResult.message
+                val synthResult = EngineHostClient.synthesize(
+                    context = context,
+                    engineId = HostProtocol.ENGINE_VOCALIZER,
+                    voiceId = targetVoiceId,
+                    text = text,
+                    rate = speechRate,
+                    pitch = pitch,
+                    volume = volume,
+                    onFormatInfo = onFormatInfo,
+                    onAudioChunk = trackedChunkConsumer
                 )
-            }
+
+                tracker.markSpeakCallEnd()
+                if (synthResult.ok) {
+                    tracker.complete(UnifiedSpeechTracker.Status.SUCCESS)
+                } else {
+                    tracker.complete(
+                        UnifiedSpeechTracker.Status.FAILED,
+                        synthResult.message
+                    )
+                }
             if (!synthResult.ok) {
                 val msg = synthResult.message
                     ?: "فشل تخليق صوت Vocalizer"
@@ -593,6 +604,14 @@ class VocalizerEmbeddedVoiceProvider(
                         )
                 }
             }
+        } finally {
+            if (!tracker.isCompletedRequest) {
+                tracker.complete(
+                    UnifiedSpeechTracker.Status.CANCELLED,
+                    "انتهى أو ألغي طلب Vocalizer"
+                )
+            }
+        }
         }
     }
 

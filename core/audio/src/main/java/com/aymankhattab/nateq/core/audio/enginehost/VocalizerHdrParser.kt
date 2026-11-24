@@ -54,11 +54,19 @@ object VocalizerHdrParser {
         )
     }
 
+    /** سقف قراءة ملف الترويسة .hdr (1 ميجابايت). */
+    const val MAX_HDR_BYTES = 1024 * 1024L
+
+    /** سقف قراءة ملف XML (512 كيلوبايت). */
+    const val MAX_XML_BYTES = 512 * 1024L
+
     /**
      * فك ترويسة من ملف.
      */
     fun parse(file: File): VocalizerHdrInfo? {
-        if (!file.exists() || !file.isFile) return null
+        if (!file.exists() || !file.isFile || file.length() > MAX_HDR_BYTES) {
+            return null
+        }
         val text = runCatching {
             file.readText(Charsets.UTF_8)
         }.getOrNull() ?: return null
@@ -70,7 +78,11 @@ object VocalizerHdrParser {
      */
     fun parse(stream: InputStream): VocalizerHdrInfo? {
         val text = runCatching {
-            stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            stream.bufferedReader(Charsets.UTF_8).use { r ->
+                val buf = CharArray(MAX_HDR_BYTES.toInt())
+                val n = r.read(buf)
+                if (n > 0) String(buf, 0, n) else ""
+            }
         }.getOrNull() ?: return null
         return parse(text)
     }
@@ -131,13 +143,26 @@ object VocalizerHdrParser {
         }
         for (xml in xmlFiles) {
             val rel = xml.relativeToOrSelf(dataDir).path
+            val size = xml.length()
+            if (size > MAX_XML_BYTES) {
+                HostLog.i(
+                    engineId,
+                    "--- ملف $rel يتجاوز الحد الأقصى ($size بايت) ---"
+                )
+                continue
+            }
             val content = runCatching {
                 xml.readText(Charsets.UTF_8)
             }.getOrNull().orEmpty()
+            val preview = if (content.length > 250) {
+                content.take(250) + "\n... [تم الاقتطاع لدرء استنزاف السجل]"
+            } else {
+                content
+            }
             HostLog.i(
                 engineId,
-                "--- محتوى ملف $rel كاملًا (${content.length} حرفًا) ---\n" +
-                    content
+                "--- فحص ملف $rel (${content.length} حرفًا) ---\n" +
+                    preview
             )
         }
     }

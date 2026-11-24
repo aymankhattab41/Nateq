@@ -106,16 +106,35 @@ data class VocalizerVoiceManifest(
                 lower.endsWith(".xml")
         }
 
+        /** سقف حجم قراءة ملف .hdr لتفادي استنزاف الذاكرة (1 ميجابايت). */
+        const val MAX_HDR_READ_BYTES = 1024 * 1024L
+
+        /** سقف حجم قراءة ملف البيان (512 كيلوبايت). */
+        const val MAX_MANIFEST_READ_BYTES = 512 * 1024L
+
         /**
          * استخراج مراجع ملفات .dat من محتوى ملف .hdr.
          */
         fun extractDatReferencesFromHdr(hdrFile: File): List<String> {
-            if (!hdrFile.exists() || hdrFile.length() <= 0L) {
+            if (!hdrFile.exists() || hdrFile.length() <= 0L ||
+                hdrFile.length() > MAX_HDR_READ_BYTES
+            ) {
                 return emptyList()
             }
             return try {
-                val text = hdrFile.readBytes()
-                    .toString(Charsets.ISO_8859_1)
+                val text = hdrFile.inputStream().use { input ->
+                    val len = minOf(
+                        hdrFile.length(),
+                        MAX_HDR_READ_BYTES
+                    ).toInt()
+                    val buf = ByteArray(len)
+                    val read = input.read(buf)
+                    if (read > 0) {
+                        String(buf, 0, read, Charsets.ISO_8859_1)
+                    } else {
+                        ""
+                    }
+                }
                 DAT_REF_REGEX.findAll(text)
                     .map { it.value }
                     .distinct()
@@ -231,7 +250,9 @@ data class VocalizerVoiceManifest(
          * قراءة البيان من ملف على القرص.
          */
         fun fromFile(file: File): VocalizerVoiceManifest? {
-            if (!file.exists() || !file.isFile || file.length() <= 0L) {
+            if (!file.exists() || !file.isFile || file.length() <= 0L ||
+                file.length() > MAX_MANIFEST_READ_BYTES
+            ) {
                 return null
             }
             return try {

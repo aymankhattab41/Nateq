@@ -72,8 +72,9 @@ class SettingsViewModel @Inject constructor(
 
     companion object {
         /** حدود دفاعية ضد ملفات النسخ الاحتياطي الخبيثة/الضخمة
-         *  (SAF أو مصادر أخرى). */
-        const val MAX_BACKUP_BYTES = 2 * 1024 * 1024   // 2 MB
+         *  (SAF أو مصادر أخرى). تدعم حتى 10 ميجابايت لتشمل نصوص
+         *  اقرأ لاحقاً الكاملة دون تجاوز ذاكرة التطبيق. */
+        const val MAX_BACKUP_BYTES = 10 * 1024 * 1024   // 10 MB
 
         /** أقصى عدد يُقبل من عناصر النسخة (أسماء متصلين + إعدادات). */
         const val MAX_BACKUP_ENTRIES = 5000
@@ -247,7 +248,33 @@ class SettingsViewModel @Inject constructor(
                 .forEach { (num, name) -> callers.addProperty(num, name) }
             root.add("callerNames", callers)
 
-            NateqJson.toJson(root)
+            // تصدير نصوص اقرأ لاحقاً الكاملة إن وجدت
+            val readLaterTexts = JsonObject()
+            val readLaterItems = runCatching {
+                settings.getReadLaterItems(loadFullText = true)
+            }.getOrDefault(emptyList())
+
+            for (item in readLaterItems) {
+                if (item.hasFullText ||
+                    item.text.length >
+                    SettingsRepository.MAX_READ_LATER_TEXT_CHARS
+                ) {
+                    val full = settings.getReadLaterFullText(item.id)
+                        ?: item.text
+                    readLaterTexts.addProperty(item.id.toString(), full)
+                }
+            }
+            if (readLaterTexts.size() > 0) {
+                root.add("readLaterTexts", readLaterTexts)
+            }
+
+            val json = NateqJson.toJson(root)
+            if (json.toByteArray(Charsets.UTF_8).size > MAX_BACKUP_BYTES) {
+                root.remove("readLaterTexts")
+                NateqJson.toJson(root)
+            } else {
+                json
+            }
         } catch (t: Throwable) {
             ""
         }
@@ -354,6 +381,20 @@ class SettingsViewModel @Inject constructor(
                 if (restored.isNotEmpty()) {
                     settingsApplied = settings.importSettings(restored)
                     applied = settingsApplied || applied
+                }
+            }
+
+            // استعادة النصوص الكاملة لاقرأ لاحقاً إن وُجدت في النسخة
+            val readLaterTexts = root.optObject("readLaterTexts")
+            if (readLaterTexts != null && readLaterTexts.size() > 0) {
+                for ((idStr, textEl) in readLaterTexts.entrySet()) {
+                    val id = idStr.toLongOrNull() ?: continue
+                    if (textEl.isJsonPrimitive) {
+                        settings.saveReadLaterExternalText(
+                            id,
+                            textEl.asString
+                        )
+                    }
                 }
             }
 

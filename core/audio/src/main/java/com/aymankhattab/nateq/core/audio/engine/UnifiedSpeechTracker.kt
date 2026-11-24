@@ -85,6 +85,10 @@ object UnifiedSpeechTracker {
         var firstTrackWriteMs: Long = -1L
         var playbackHeadStartMs: Long = -1L
 
+        private val isCompleted =
+            java.util.concurrent.atomic.AtomicBoolean(false)
+        val isCompletedRequest: Boolean get() = isCompleted.get()
+
         private var queueStart: Long = -1L
         private var resolveStart: Long = -1L
         private var verifyStart: Long = -1L
@@ -198,9 +202,15 @@ object UnifiedSpeechTracker {
         fun complete(
             status: Status = Status.SUCCESS,
             reason: String? = null
-        ): Record {
-            val total = SystemClock.elapsedRealtime() - requestStartRealtimeMs
-            val finalStatus = if (status == Status.SUCCESS && firstPcmMs < 0L) {
+        ): Record? {
+            if (!isCompleted.compareAndSet(false, true)) {
+                return null
+            }
+            val total =
+                SystemClock.elapsedRealtime() - requestStartRealtimeMs
+            val finalStatus = if (status == Status.SUCCESS &&
+                firstPcmMs < 0L
+            ) {
                 Status.UNMEASURED
             } else {
                 status
@@ -281,8 +291,17 @@ object UnifiedSpeechTracker {
         val p95PlaybackHeadMs: Double,
         val avgTotalDurationMs: Double,
         val p50TotalDurationMs: Double,
-        val p95TotalDurationMs: Double
-    )
+        val p95TotalDurationMs: Double,
+        val pcmMeasuredCount: Int = 0,
+        val pcmUnmeasuredCount: Int = 0,
+        val trackWriteMeasuredCount: Int = 0,
+        val trackWriteUnmeasuredCount: Int = 0,
+        val playbackHeadMeasuredCount: Int = 0,
+        val playbackHeadUnmeasuredCount: Int = 0
+    ) {
+        fun formatMetric(valueMs: Double): String =
+            if (valueMs < 0.0) "غير مقاس" else "${"%.1f".format(valueMs)}ms"
+    }
 
     fun getStats(
         engine: Engine? = null,
@@ -298,10 +317,10 @@ object UnifiedSpeechTracker {
         if (total == 0) {
             return EngineStats(
                 0, 0, 0, 0, 0,
-                0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0
+                -1.0, -1.0, -1.0,
+                -1.0, -1.0, -1.0,
+                -1.0, -1.0, -1.0,
+                -1.0, -1.0, -1.0
             )
         }
 
@@ -310,11 +329,58 @@ object UnifiedSpeechTracker {
         val failed = subset.count { it.status == Status.FAILED }
         val unmeasured = subset.count { it.status == Status.UNMEASURED }
 
-        val pcmValues = subset.map { it.firstPcmMs.coerceAtLeast(0L) }
-        val writeValues = subset.map { it.firstTrackWriteMs.coerceAtLeast(0L) }
+        val pcmValues =
+            subset.map { it.firstPcmMs }.filter { it >= 0L }
+        val writeValues =
+            subset.map { it.firstTrackWriteMs }.filter { it >= 0L }
         val headValues =
-            subset.map { it.playbackHeadStartMs.coerceAtLeast(0L) }
-        val durValues = subset.map { it.totalDurationMs.coerceAtLeast(0L) }
+            subset.map { it.playbackHeadStartMs }.filter { it >= 0L }
+        val durValues =
+            subset.map { it.totalDurationMs }.filter { it >= 0L }
+
+        val avgPcm =
+            if (pcmValues.isNotEmpty()) pcmValues.average() else -1.0
+        val p50Pcm =
+            if (pcmValues.isNotEmpty()) {
+                percentile(pcmValues, 0.50)
+            } else -1.0
+        val p95Pcm =
+            if (pcmValues.isNotEmpty()) {
+                percentile(pcmValues, 0.95)
+            } else -1.0
+
+        val avgWrite =
+            if (writeValues.isNotEmpty()) writeValues.average() else -1.0
+        val p50Write =
+            if (writeValues.isNotEmpty()) {
+                percentile(writeValues, 0.50)
+            } else -1.0
+        val p95Write =
+            if (writeValues.isNotEmpty()) {
+                percentile(writeValues, 0.95)
+            } else -1.0
+
+        val avgHead =
+            if (headValues.isNotEmpty()) headValues.average() else -1.0
+        val p50Head =
+            if (headValues.isNotEmpty()) {
+                percentile(headValues, 0.50)
+            } else -1.0
+        val p95Head =
+            if (headValues.isNotEmpty()) {
+                percentile(headValues, 0.95)
+            } else -1.0
+
+        val avgDur =
+            if (durValues.isNotEmpty()) durValues.average() else -1.0
+        val p50Dur =
+            if (durValues.isNotEmpty()) {
+                percentile(durValues, 0.50)
+            } else -1.0
+        val p95Dur =
+            if (durValues.isNotEmpty()) {
+                percentile(durValues, 0.95)
+            } else -1.0
 
         return EngineStats(
             totalCount = total,
@@ -322,26 +388,55 @@ object UnifiedSpeechTracker {
             cancelledCount = cancelled,
             failedCount = failed,
             unmeasuredCount = unmeasured,
-            avgFirstPcmMs = pcmValues.average(),
-            p50FirstPcmMs = percentile(pcmValues, 0.50),
-            p95FirstPcmMs = percentile(pcmValues, 0.95),
-            avgFirstTrackWriteMs = writeValues.average(),
-            p50FirstTrackWriteMs = percentile(writeValues, 0.50),
-            p95FirstTrackWriteMs = percentile(writeValues, 0.95),
-            avgPlaybackHeadMs = headValues.average(),
-            p50PlaybackHeadMs = percentile(headValues, 0.50),
-            p95PlaybackHeadMs = percentile(headValues, 0.95),
-            avgTotalDurationMs = durValues.average(),
-            p50TotalDurationMs = percentile(durValues, 0.50),
-            p95TotalDurationMs = percentile(durValues, 0.95)
+            avgFirstPcmMs = avgPcm,
+            p50FirstPcmMs = p50Pcm,
+            p95FirstPcmMs = p95Pcm,
+            avgFirstTrackWriteMs = avgWrite,
+            p50FirstTrackWriteMs = p50Write,
+            p95FirstTrackWriteMs = p95Write,
+            avgPlaybackHeadMs = avgHead,
+            p50PlaybackHeadMs = p50Head,
+            p95PlaybackHeadMs = p95Head,
+            avgTotalDurationMs = avgDur,
+            p50TotalDurationMs = p50Dur,
+            p95TotalDurationMs = p95Dur,
+            pcmMeasuredCount = pcmValues.size,
+            pcmUnmeasuredCount = total - pcmValues.size,
+            trackWriteMeasuredCount = writeValues.size,
+            trackWriteUnmeasuredCount = total - writeValues.size,
+            playbackHeadMeasuredCount = headValues.size,
+            playbackHeadUnmeasuredCount = total - headValues.size
         )
     }
 
     private fun percentile(values: List<Long>, pct: Double): Double {
-        if (values.isEmpty()) return 0.0
+        if (values.isEmpty()) return -1.0
         val sorted = values.sorted()
+        if (pct == 0.50) {
+            val n = sorted.size
+            return if (n % 2 == 0) {
+                (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+            } else {
+                sorted[n / 2].toDouble()
+            }
+        }
         val index = (pct * (sorted.size - 1)).toInt()
         return sorted[index].toDouble()
+    }
+
+    fun noteFirstTrackWrite(engine: Engine? = null) {
+        synchronized(history) {
+            val candidate = history.lastOrNull { r ->
+                (engine == null || r.engine == engine) &&
+                    r.firstTrackWriteMs < 0L
+            } ?: return
+            val writeMs =
+                SystemClock.elapsedRealtime() - candidate.requestStartTimeMs
+            val idx = history.indexOf(candidate)
+            if (idx >= 0) {
+                history[idx] = candidate.copy(firstTrackWriteMs = writeMs)
+            }
+        }
     }
 
     fun notePlaybackHeadAdvance(engine: Engine? = null) {
@@ -357,6 +452,75 @@ object UnifiedSpeechTracker {
                 history[idx] = candidate.copy(playbackHeadStartMs = advanceMs)
             }
         }
+    }
+
+    fun formatReport(engine: Engine? = null): String {
+        val sb = StringBuilder()
+        val enginesToReport = if (engine != null) {
+            listOf(engine)
+        } else {
+            listOf(Engine.ACAPELA, Engine.VOCALIZER, Engine.MICROSOFT)
+        }
+        for (eng in enginesToReport) {
+            sb.appendLine("--- محرك ${eng.name} ---")
+            val overall = getStats(engine = eng)
+            if (overall.totalCount == 0) {
+                sb.appendLine("• لا توجد طلبات مسجلة")
+                continue
+            }
+            sb.appendLine(
+                "• الإجمالي: ${overall.totalCount} " +
+                    "(نجاح: ${overall.successCount}، " +
+                    "ملغى: ${overall.cancelledCount}، " +
+                    "فشل: ${overall.failedCount}، " +
+                    "غير مقاس: ${overall.unmeasuredCount})"
+            )
+            sb.appendLine(
+                "• أول PCM: " +
+                    "متوسط=${overall.formatMetric(overall.avgFirstPcmMs)} | " +
+                    "p50=${overall.formatMetric(overall.p50FirstPcmMs)} | " +
+                    "p95=${overall.formatMetric(overall.p95FirstPcmMs)} " +
+                    "(مقاس=${overall.pcmMeasuredCount}، " +
+                    "غير مقاس=${overall.pcmUnmeasuredCount})"
+            )
+            sb.appendLine(
+                "• كتابة المشغل: " +
+                    "متوسط=" +
+                    "${overall.formatMetric(overall.avgFirstTrackWriteMs)} | " +
+                    "p50=" +
+                    "${overall.formatMetric(overall.p50FirstTrackWriteMs)} | " +
+                    "p95=" +
+                    "${overall.formatMetric(overall.p95FirstTrackWriteMs)}"
+            )
+            sb.appendLine(
+                "• تقدم الرأس: " +
+                    "متوسط=" +
+                    "${overall.formatMetric(overall.avgPlaybackHeadMs)} | " +
+                    "p50=" +
+                    "${overall.formatMetric(overall.p50PlaybackHeadMs)} | " +
+                    "p95=" +
+                    "${overall.formatMetric(overall.p95PlaybackHeadMs)}"
+            )
+            val warm = getStats(engine = eng, category = Category.WARM)
+            if (warm.totalCount > 0) {
+                sb.appendLine(
+                    "  [دافئ WARM (${warm.totalCount})]: أول PCM " +
+                        "متوسط=" +
+                        "${warm.formatMetric(warm.avgFirstPcmMs)} | " +
+                        "p95=${warm.formatMetric(warm.p95FirstPcmMs)}"
+                )
+            }
+            val cold = getStats(engine = eng, category = Category.COLD)
+            if (cold.totalCount > 0) {
+                sb.appendLine(
+                    "  [بارد COLD (${cold.totalCount})]: أول PCM " +
+                        "متوسط=" +
+                        "${cold.formatMetric(cold.avgFirstPcmMs)} | " +
+                        "p95=${cold.formatMetric(cold.p95FirstPcmMs)}"
+                )
+            }
+        }
+        return sb.toString().trimEnd()
     }
 
     fun getAllRecords(): List<Record> =

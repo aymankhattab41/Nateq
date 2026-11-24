@@ -8,6 +8,7 @@ import com.aymankhattab.nateq.core.audio.announcement.LoudnessStage
 import com.aymankhattab.nateq.core.audio.engine.UnifiedSpeechTracker
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.audio.enginehost.HostWarmStatusRegistry
 import com.aymankhattab.nateq.core.audio.enginehost.MicrosoftHostSession
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -195,12 +196,20 @@ class MicrosoftEmbeddedVoiceProvider(
                 onAudioChunk
             }
 
+            val isWarm = HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = HostProtocol.ENGINE_MICROSOFT,
+                voiceId = targetVoiceName,
+                expectedRevision =
+                    MicrosoftVoiceRepository.getStorageRevision(context)
+            ) || MicrosoftHostSession.isWarmReady(targetVoiceName)
+
             val callCategory = when {
                 category == "warmup" ->
                     UnifiedSpeechTracker.Category.WARMUP
                 category == "preview" || category == "diagnostic" ->
                     UnifiedSpeechTracker.Category.DIAGNOSTIC
-                MicrosoftHostSession.isWarmReady(targetVoiceName) ->
+                isWarm ->
                     UnifiedSpeechTracker.Category.WARM
                 else -> UnifiedSpeechTracker.Category.COLD
             }
@@ -210,49 +219,59 @@ class MicrosoftEmbeddedVoiceProvider(
                 voiceName = targetVoiceName,
                 textLength = text.length
             )
-            tracker.markSpeakCallStart()
-            var firstPcmRecorded = false
-            val trackedChunkConsumer: (ByteArray, Int) -> Unit = { chunk, len ->
-                if (!firstPcmRecorded && len > 0) {
-                    firstPcmRecorded = true
-                    tracker.markFirstPcm()
+            try {
+                tracker.markSpeakCallStart()
+                var firstPcmRecorded = false
+                val trackedChunkConsumer: (ByteArray, Int) -> Unit =
+                    { chunk, len ->
+                        if (!firstPcmRecorded && len > 0) {
+                            firstPcmRecorded = true
+                            tracker.markFirstPcm()
+                        }
+                        chunkConsumer(chunk, len)
+                    }
+
+                val result = EngineHostClient.synthesize(
+                    context = context,
+                    engineId = HostProtocol.ENGINE_MICROSOFT,
+                    voiceId = targetVoiceName,
+                    text = text,
+                    rate = speechRate,
+                    pitch = pitch,
+                    volume = volume,
+                    onFormatInfo = onFormatInfo,
+                    onAudioChunk = trackedChunkConsumer
+                )
+
+                tracker.markSpeakCallEnd()
+                if (result.ok) {
+                    tracker.complete(UnifiedSpeechTracker.Status.SUCCESS)
+                } else {
+                    tracker.complete(
+                        UnifiedSpeechTracker.Status.FAILED,
+                        result.message
+                    )
                 }
-                chunkConsumer(chunk, len)
-            }
 
-            val result = EngineHostClient.synthesize(
-                context = context,
-                engineId = HostProtocol.ENGINE_MICROSOFT,
-                voiceId = targetVoiceName,
-                text = text,
-                rate = speechRate,
-                pitch = pitch,
-                volume = volume,
-                onFormatInfo = onFormatInfo,
-                onAudioChunk = trackedChunkConsumer
-            )
-
-            tracker.markSpeakCallEnd()
-            if (result.ok) {
-                tracker.complete(UnifiedSpeechTracker.Status.SUCCESS)
-            } else {
-                tracker.complete(
-                    UnifiedSpeechTracker.Status.FAILED,
-                    result.message
-                )
-            }
-
-            if (!result.ok) {
-                Log.e(
-                    TAG,
-                    "نطق مايكروسوفت المدمج فشل " +
-                        "[${result.code}]: ${result.message}"
-                )
-                EngineStatusRegistry.noteFailure(
-                    PROVIDER_ID,
-                    result.code,
-                    result.message
-                )
+                if (!result.ok) {
+                    Log.e(
+                        TAG,
+                        "نطق مايكروسوفت المدمج فشل " +
+                            "[${result.code}]: ${result.message}"
+                    )
+                    EngineStatusRegistry.noteFailure(
+                        PROVIDER_ID,
+                        result.code,
+                        result.message
+                    )
+                }
+            } finally {
+                if (!tracker.isCompletedRequest) {
+                    tracker.complete(
+                        UnifiedSpeechTracker.Status.CANCELLED,
+                        "انتهى أو ألغي طلب Microsoft"
+                    )
+                }
             }
         }
     }

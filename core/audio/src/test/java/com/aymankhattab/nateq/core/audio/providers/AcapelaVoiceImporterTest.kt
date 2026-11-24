@@ -136,4 +136,176 @@ class AcapelaVoiceImporterTest {
         assertEquals(1, voices.size)
         assertEquals("Salma", voices.first().voiceName)
     }
+
+    private fun sha256(file: File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(8192)
+            var r: Int
+            while (input.read(buf).also { r = it } != -1) {
+                md.update(buf, 0, r)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    @Test
+    fun rollbackAcapela_restoresPreviousVoiceAndDeletesNewTargets() {
+        val baseDir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        baseDir.mkdirs()
+
+        val oldVoiceDir = File(baseDir, "mehdi")
+        oldVoiceDir.mkdirs()
+        val oldIni = File(oldVoiceDir, "mehdi.ini")
+        val oldInf = File(oldVoiceDir, "mehdi.inf")
+        val oldDat = File(oldVoiceDir, "mehdi.dat")
+        oldIni.writeText(
+            "PRO \"NLP/ar.oso\"\nSLV \"mehdi.bvcu\"\nVOICE \"Mehdi\"\n"
+        )
+        oldInf.writeText("Speaker=Mehdi\nIsoCode=ara")
+        oldDat.writeBytes(ByteArray(15_000) { 1 })
+
+        val iniSha = sha256(oldIni)
+        val infSha = sha256(oldInf)
+        val datSha = sha256(oldDat)
+
+        val backupDir = File(baseDir, ".backup_acapela_test_sess")
+        backupDir.mkdirs()
+        val backupVoiceDir = File(backupDir, "mehdi")
+        backupVoiceDir.mkdirs()
+        oldIni.copyTo(File(backupVoiceDir, "mehdi.ini"))
+        oldInf.copyTo(File(backupVoiceDir, "mehdi.inf"))
+        oldDat.copyTo(File(backupVoiceDir, "mehdi.dat"))
+
+        // محاكاة كتابة بيانات تالفة فوق القديم وإنشاء صوت جديد غير مكتمل
+        oldDat.writeBytes(ByteArray(500) { 9 })
+        val newVoiceDir = File(baseDir, "broken_new_voice")
+        newVoiceDir.mkdirs()
+        File(newVoiceDir, "corrupted.bin").writeText("BadData")
+
+        val journalFile = File(baseDir, ".journal_acapela_test_sess.json")
+        journalFile.writeText("{}")
+
+        // تنفيذ التراجع
+        AcapelaVoiceImporter.rollbackAcapela(
+            baseDir = baseDir,
+            createdTargets = listOf(newVoiceDir),
+            backups = listOf(oldVoiceDir to backupVoiceDir),
+            backupDir = backupDir,
+            journalFile = journalFile
+        )
+
+        // التحقق من حذف الصوت الجديد غير المكتمل
+        assertFalse(newVoiceDir.exists())
+
+        // التحقق من استعادة الصوت القديم كاملاً ببصمة SHA-256 متطابقة
+        assertTrue(oldVoiceDir.exists())
+        assertEquals(iniSha, sha256(oldIni))
+        assertEquals(infSha, sha256(oldInf))
+        assertEquals(datSha, sha256(oldDat))
+
+        // التحقق من تنظيف السجل والنسخ الاحتياطية
+        assertFalse(backupDir.exists())
+        assertFalse(journalFile.exists())
+    }
+
+    @Test
+    fun recoverInterruptedTransactions_cleansCrashedJournalInAcapela() {
+        val baseDir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        baseDir.mkdirs()
+
+        val liveVoice = File(baseDir, "leila")
+        liveVoice.mkdirs()
+        val liveDat = File(liveVoice, "leila.dat")
+        liveDat.writeBytes(ByteArray(10_000) { 7 })
+        val expectedSha = sha256(liveDat)
+
+        val backupDir = File(baseDir, ".backup_acapela_crashed")
+        val backupVoice = File(backupDir, "leila")
+        backupVoice.mkdirs()
+        liveDat.copyTo(File(backupVoice, "leila.dat"))
+
+        // تلويث الحي وإنشاء مسار غير مكتمل
+        liveDat.writeBytes(ByteArray(100) { 0 })
+        val halfVoice = File(baseDir, "half_voice")
+        halfVoice.mkdirs()
+        File(halfVoice, "half.dat").writeText("half")
+
+        val journalFile = File(baseDir, ".journal_acapela_crashed.json")
+        val journalJson = org.json.JSONObject().apply {
+            put("sessionId", "crashed")
+            put("backupDir", backupDir.name)
+            val cr = org.json.JSONArray().apply {
+                put("half_voice")
+            }
+            put("created", cr)
+            val bu = org.json.JSONArray().apply {
+                val item = org.json.JSONObject().apply {
+                    put("target", "leila")
+                    put("backup", "leila")
+                }
+                put(item)
+            }
+            put("backedUp", bu)
+        }
+        journalFile.writeText(journalJson.toString(2), Charsets.UTF_8)
+
+        AcapelaVoiceImporter.recoverInterruptedTransactions(baseDir)
+
+        assertFalse(halfVoice.exists())
+        assertTrue(liveVoice.exists())
+        assertEquals(expectedSha, sha256(liveDat))
+        assertFalse(backupDir.exists())
+        assertFalse(journalFile.exists())
+    }
+
+    @Test
+    fun importFromZip_rejectsInvalidPackageWithoutTouchingLiveDirectory() =
+        runBlocking {
+            val baseDir = EmbeddedStorage.baseDir(
+                context,
+                EmbeddedStorage.Engine.ACAPELA
+            )
+            baseDir.mkdirs()
+
+            val liveVoice = File(baseDir, "salma")
+            liveVoice.mkdirs()
+            val liveIni = File(liveVoice, "salma.ini")
+            liveIni.writeText(
+                "PRO \"NLP/ar.oso\"\nSLV \"salma.bvcu\"\nVOICE \"Salma\"\n"
+            )
+            val originalSha = sha256(liveIni)
+            val originalLen = liveIni.length()
+
+            val invalidZip = File(tempFolder.root, "invalid_acapela.zip")
+            java.util.zip.ZipOutputStream(
+                java.io.FileOutputStream(invalidZip)
+            ).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("docs/readme.txt"))
+                zos.write("Not an acapela package".toByteArray())
+                zos.closeEntry()
+            }
+
+            val uri = android.net.Uri.fromFile(invalidZip)
+            val res = AcapelaVoiceImporter.importFromZip(
+                context,
+                uri,
+                "invalid_acapela.zip"
+            )
+
+            assertFalse(res.success)
+            assertTrue(res.errorMessage?.isNotBlank() == true)
+
+            // التأكد من عدم لمس الدليل الحي
+            assertTrue(liveVoice.exists())
+            assertTrue(liveIni.exists())
+            assertEquals(originalLen, liveIni.length())
+            assertEquals(originalSha, sha256(liveIni))
+        }
 }

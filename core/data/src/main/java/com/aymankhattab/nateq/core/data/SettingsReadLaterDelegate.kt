@@ -1,6 +1,9 @@
 package com.aymankhattab.nateq.core.data
 
 import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStreamWriter
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONArray
@@ -15,15 +18,21 @@ internal class SettingsReadLaterDelegate(
     private val repo: SettingsRepository
 ) {
 
-    private val idCounter = AtomicLong(
-        System.currentTimeMillis() * 1000L
-    )
+    private val idCounter: AtomicLong by lazy {
+        val maxExisting = getReadLaterItems(loadFullText = false)
+            .maxOfOrNull { it.id } ?: 0L
+        val initial = maxOf(
+            System.currentTimeMillis() * 1000L,
+            maxExisting + 1L
+        )
+        AtomicLong(initial)
+    }
 
     private val ioExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "ReadLaterStorageIO").apply { isDaemon = true }
     }
 
-    private val storageDir: File by lazy {
+    internal val storageDir: File by lazy {
         File(repo.appContext.filesDir, "read_later_texts").apply {
             mkdirs()
         }
@@ -49,60 +58,93 @@ internal class SettingsReadLaterDelegate(
         }
     }
 
-    fun getReadLaterItems(): List<SettingsRepository.ReadLaterItem> =
-        synchronized(repo) {
-            val raw = repo.prefs.getString(
-                SettingsRepository.KEY_READ_LATER, null
-            ) ?: return emptyList()
+    /**
+     * استرجاع عناصر اقرأ لاحقاً. افتراضياً لا يقرأ ملفات النصوص
+     * الكاملة من القرص تجنباً لتعطيل خيط الواجهة.
+     */
+    fun getReadLaterItems(
+        loadFullText: Boolean = false
+    ): List<SettingsRepository.ReadLaterItem> = synchronized(repo) {
+        val raw = repo.prefs.getString(
+            SettingsRepository.KEY_READ_LATER, null
+        ) ?: return emptyList()
 
-            runCatching {
-                val arr = JSONArray(raw)
-                val out = ArrayList<SettingsRepository.ReadLaterItem>(
-                    arr.length()
-                )
-                val seenIds = mutableSetOf<Long>()
+        runCatching {
+            val arr = JSONArray(raw)
+            val out = ArrayList<SettingsRepository.ReadLaterItem>(arr.length())
+            val seenIds = mutableSetOf<Long>()
 
-                var migrated = false
-                for (i in 0 until arr.length()) {
-                    val obj = arr.optJSONObject(i) ?: continue
-                    val textFromObj = obj.optString("text", "").trim()
-                    if (textFromObj.isEmpty()) continue
+            var migrated = false
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val textFromObj = obj.optString("text", "").trim()
+                if (textFromObj.isEmpty()) continue
 
-                    var itemId = obj.optLong("id", 0L)
-                    val ts = obj.optLong("ts", 0L)
-
-                    // ترحيل المعرفات المتصادمة أو الصفرية لمنع حذف عناصر
-                    // تشترك في نفس الطابع الزمني
-                    if (itemId <= 0L || itemId in seenIds) {
-                        itemId = generateUniqueId()
-                        migrated = true
+                var itemId = obj.optLong("id", 0L)
+                val ts = obj.optLong("ts", 0L)
+                val isTruncated = obj.optBoolean("trunc", false)
+                val hasFull = obj.optBoolean("hasFull", false)
+                val fullLen = obj.optInt(
+                    "len",
+                    if (isTruncated) {
+                        SettingsRepository.MAX_READ_LATER_TEXT_CHARS
+                    } else {
+                        textFromObj.length
                     }
-                    seenIds.add(itemId)
+                )
 
-                    // استعادة النص الكامل من التخزين المنفصل إن وجد
+                if (itemId <= 0L || itemId in seenIds) {
+                    itemId = generateUniqueId()
+                    migrated = true
+                }
+                seenIds.add(itemId)
+
+                val itemText = if (loadFullText) {
                     val fullTextFile = File(storageDir, "text_$itemId.txt")
-                    val finalText = if (fullTextFile.exists()) {
+                    if (fullTextFile.exists()) {
                         runCatching {
-                            fullTextFile.readText(Charsets.UTF_8)
+                            fullTextFile.readText(StandardCharsets.UTF_8)
                         }.getOrDefault(textFromObj)
                     } else {
                         textFromObj
                     }
+                } else {
+                    textFromObj
+                }
 
-                    out.add(
-                        SettingsRepository.ReadLaterItem(
-                            id = itemId,
-                            text = finalText,
-                            timestampMs = ts
-                        )
+                out.add(
+                    SettingsRepository.ReadLaterItem(
+                        id = itemId,
+                        text = itemText,
+                        timestampMs = ts,
+                        isTruncated = isTruncated,
+                        hasFullText = hasFull || (!isTruncated &&
+                            File(storageDir, "text_$itemId.txt").exists()),
+                        fullTextLength = fullLen
                     )
-                }
-                if (migrated) {
-                    saveReadLaterItems(out)
-                }
-                out
-            }.getOrDefault(emptyList())
+                )
+            }
+            if (migrated) {
+                saveReadLaterItems(out)
+            }
+            out
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * استرجاع النص الكامل لعنصر محدد، من القرص إن وجد أو من المعاينة.
+     */
+    fun getReadLaterFullText(id: Long): String? = synchronized(repo) {
+        val file = File(storageDir, "text_$id.txt")
+        if (file.exists()) {
+            val text = runCatching {
+                file.readText(StandardCharsets.UTF_8)
+            }.getOrNull()
+            if (!text.isNullOrEmpty()) return text
         }
+        val items = getReadLaterItems(loadFullText = false)
+        return items.firstOrNull { it.id == id }?.text
+    }
 
     fun saveReadLaterText(
         text: String
@@ -112,11 +154,30 @@ internal class SettingsReadLaterDelegate(
             return SettingsRepository.ReadLaterSaveResult.EMPTY
         }
 
-        val current = getReadLaterItems().toMutableList()
+        val current = getReadLaterItems(loadFullText = false).toMutableList()
         val canonTarget = canonical
+        val targetLen = canonical.length
+        val targetPreview = if (
+            targetLen > SettingsRepository.MAX_READ_LATER_TEXT_CHARS
+        ) {
+            canonical.take(SettingsRepository.MAX_READ_LATER_TEXT_CHARS)
+        } else {
+            canonical
+        }
 
-        // منع الحفظ المكرر عبر صياغة موحدة (canonicalization)
-        if (current.any { canonicalize(it.text) == canonTarget }) {
+        // فحص التكرار الخفيف: مقارنة الطول والمعاينة أولاً بلا I/O
+        val isDuplicate = current.any { item ->
+            if (item.fullTextLength != targetLen) return@any false
+            if (item.text != targetPreview) return@any false
+            if (targetLen <= SettingsRepository.MAX_READ_LATER_TEXT_CHARS) {
+                true
+            } else {
+                val full = getReadLaterFullText(item.id)
+                full != null && canonicalize(full) == canonTarget
+            }
+        }
+
+        if (isDuplicate) {
             return SettingsRepository.ReadLaterSaveResult.DUPLICATE
         }
 
@@ -128,24 +189,40 @@ internal class SettingsReadLaterDelegate(
 
         val itemText: String
         val resultStatus: SettingsRepository.ReadLaterSaveResult
+        val hasFull: Boolean
+        val isTruncated: Boolean
+        val fullLen: Int
 
         if (isLongText) {
             if (policy == SettingsRepository.READ_LATER_POLICY_TRUNCATE) {
-                // سياسة القطع مع الإعلان الصريح
                 itemText = canonical.take(
                     SettingsRepository.MAX_READ_LATER_TEXT_CHARS
                 )
                 resultStatus =
                     SettingsRepository.ReadLaterSaveResult.SAVED_TRUNCATED
+                hasFull = false
+                isTruncated = true
+                fullLen = SettingsRepository.MAX_READ_LATER_TEXT_CHARS
             } else {
-                // سياسة الحفظ الكامل في تخزين منفصل مناسب
-                itemText = canonical
-                saveExternalTextAsync(uniqueId, canonical)
+                // حفظ ذري للنص الكامل أولاً قبل تحديث الفهرس
+                val fileSaved = saveExternalTextAtomic(uniqueId, canonical)
+                if (!fileSaved) {
+                    return SettingsRepository.ReadLaterSaveResult.FAILED
+                }
+                itemText = canonical.take(
+                    SettingsRepository.MAX_READ_LATER_TEXT_CHARS
+                )
                 resultStatus = SettingsRepository.ReadLaterSaveResult.SAVED
+                hasFull = true
+                isTruncated = false
+                fullLen = canonical.length
             }
         } else {
             itemText = canonical
             resultStatus = SettingsRepository.ReadLaterSaveResult.SAVED
+            hasFull = false
+            isTruncated = false
+            fullLen = canonical.length
         }
 
         current.add(
@@ -153,26 +230,38 @@ internal class SettingsReadLaterDelegate(
             SettingsRepository.ReadLaterItem(
                 id = uniqueId,
                 text = itemText,
-                timestampMs = now
+                timestampMs = now,
+                isTruncated = isTruncated,
+                hasFullText = hasFull,
+                fullTextLength = fullLen
             )
         )
 
-        val capped = if (current.size >
-            SettingsRepository.MAX_READ_LATER_ITEMS
+        val evictedItems = if (
+            current.size > SettingsRepository.MAX_READ_LATER_ITEMS
         ) {
-            val removed = current.drop(SettingsRepository.MAX_READ_LATER_ITEMS)
-            for (rem in removed) {
-                deleteExternalTextAsync(rem.id)
-            }
-            current.take(SettingsRepository.MAX_READ_LATER_ITEMS)
+            current.drop(SettingsRepository.MAX_READ_LATER_ITEMS)
         } else {
-            current
+            emptyList()
         }
 
+        val capped = current.take(SettingsRepository.MAX_READ_LATER_ITEMS)
         val saved = saveReadLaterItems(capped)
+
         return if (saved) {
+            if (evictedItems.isNotEmpty()) {
+                ioExecutor.execute {
+                    for (rem in evictedItems) {
+                        deleteExternalText(rem.id)
+                    }
+                }
+            }
             resultStatus
         } else {
+            // التراجع عند فشل حفظ الفهرس
+            if (hasFull) {
+                deleteExternalText(uniqueId)
+            }
             SettingsRepository.ReadLaterSaveResult.FAILED
         }
     }
@@ -185,38 +274,97 @@ internal class SettingsReadLaterDelegate(
     }
 
     fun removeReadLaterItem(id: Long): Boolean = synchronized(repo) {
-        val current = getReadLaterItems().filterNot { it.id == id }
-        deleteExternalTextAsync(id)
-        saveReadLaterItems(current)
+        val current = getReadLaterItems(loadFullText = false)
+        val filtered = current.filterNot { it.id == id }
+        val saved = saveReadLaterItems(filtered)
+        if (saved) {
+            ioExecutor.execute {
+                deleteExternalText(id)
+            }
+            true
+        } else {
+            false
+        }
     }
 
     fun clearReadLater(): Boolean = synchronized(repo) {
-        ioExecutor.execute {
-            runCatching {
-                storageDir.listFiles()?.forEach { it.delete() }
-            }
-        }
-        repo.prefs.edit()
+        val ok = repo.prefs.edit()
             .remove(SettingsRepository.KEY_READ_LATER)
             .commit()
-    }
-
-    private fun saveExternalTextAsync(id: Long, text: String) {
-        ioExecutor.execute {
-            runCatching {
-                storageDir.mkdirs()
-                File(storageDir, "text_$id.txt").writeText(
-                    text,
-                    Charsets.UTF_8
-                )
+        if (ok) {
+            ioExecutor.execute {
+                runCatching {
+                    storageDir.listFiles()?.forEach { it.delete() }
+                }
             }
+            true
+        } else {
+            false
         }
     }
 
-    private fun deleteExternalTextAsync(id: Long) {
+    /**
+     * حفظ ذري لملف النص عبر ملف مؤقت وتبديل موثوق.
+     */
+    fun saveExternalTextAtomic(id: Long, text: String): Boolean {
+        return try {
+            storageDir.mkdirs()
+            val tmpFile = File(storageDir, "text_$id.tmp")
+            val targetFile = File(storageDir, "text_$id.txt")
+
+            FileOutputStream(tmpFile).use { fos ->
+                val writer = OutputStreamWriter(fos, StandardCharsets.UTF_8)
+                writer.write(text)
+                writer.flush()
+                runCatching { fos.fd.sync() }
+            }
+
+            if (targetFile.exists()) {
+                targetFile.delete()
+            }
+            val renamed = tmpFile.renameTo(targetFile)
+            if (!renamed) {
+                tmpFile.copyTo(targetFile, overwrite = true)
+                tmpFile.delete()
+            }
+            targetFile.exists() && targetFile.length() > 0L
+        } catch (_: Throwable) {
+            runCatching { File(storageDir, "text_$id.tmp").delete() }
+            false
+        }
+    }
+
+    private fun deleteExternalText(id: Long) {
+        runCatching {
+            File(storageDir, "text_$id.txt").delete()
+            File(storageDir, "text_$id.tmp").delete()
+        }
+    }
+
+    /**
+     * تنظيف الملفات اليتيمة المملوكة للتطبيق التي لا توجد في الفهرس.
+     */
+    fun cleanOrphanFiles() {
         ioExecutor.execute {
             runCatching {
-                File(storageDir, "text_$id.txt").delete()
+                val activeIds = getReadLaterItems(loadFullText = false)
+                    .map { it.id }.toSet()
+                val files = storageDir.listFiles() ?: return@runCatching
+                for (file in files) {
+                    val name = file.name
+                    if (name.endsWith(".tmp")) {
+                        file.delete()
+                        continue
+                    }
+                    if (name.startsWith("text_") && name.endsWith(".txt")) {
+                        val idStr = name.substringAfter("text_")
+                            .substringBefore(".txt")
+                        val id = idStr.toLongOrNull()
+                        if (id != null && id !in activeIds) {
+                            file.delete()
+                        }
+                    }
+                }
             }
         }
     }
@@ -228,9 +376,8 @@ internal class SettingsReadLaterDelegate(
         for (item in items) {
             val obj = JSONObject()
             obj.put("id", item.id)
-            // في التفضيلات نخزن ما لا يتجاوز سقف المعاينة لتجنب ثقل الشاشات
-            val preview = if (item.text.length >
-                SettingsRepository.MAX_READ_LATER_TEXT_CHARS
+            val preview = if (
+                item.text.length > SettingsRepository.MAX_READ_LATER_TEXT_CHARS
             ) {
                 item.text.take(SettingsRepository.MAX_READ_LATER_TEXT_CHARS)
             } else {
@@ -238,6 +385,9 @@ internal class SettingsReadLaterDelegate(
             }
             obj.put("text", preview)
             obj.put("ts", item.timestampMs)
+            obj.put("trunc", item.isTruncated)
+            obj.put("hasFull", item.hasFullText)
+            obj.put("len", item.fullTextLength)
             arr.put(obj)
         }
         return repo.prefs.edit().putString(

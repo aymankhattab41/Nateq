@@ -414,7 +414,6 @@ class NateqTtsService : TextToSpeechService() {
             // (onSynthesizeText يستدعي warmupJob?.cancel())، Debounce
             // يجمع سيل الإشعارات، وsingle-flight يمنع التداخل.
             warmupJob?.cancel()
-        VoiceReadinessCoordinator.onSpeechRequested()
             warmupJob = serviceScope.launch(AppDispatchers.io) {
                 try {
                     delay(NUMBER_WARM_DEBOUNCE_MS)
@@ -547,7 +546,7 @@ class NateqTtsService : TextToSpeechService() {
             contentResolver.unregisterContentObserver(settingsChangeObserver)
         }
         warmupJob?.cancel()
-        VoiceReadinessCoordinator.onSpeechRequested()
+        VoiceReadinessCoordinator.onSpeechCompleted()
         serviceScope.cancel()
         synthesisScope.cancel()
         synthesisExecutor.shutdown()
@@ -828,7 +827,7 @@ class NateqTtsService : TextToSpeechService() {
         // اللغات/كاش كلمات التنقل) حتى تتفرغ منافذُها وأعمدتُها لهذا
         // النطق ولا تزاحمه على المحركات/المسبح (بند ب.txt 3.5-1).
         warmupJob?.cancel()
-        VoiceReadinessCoordinator.onSpeechRequested()
+        val speechToken = VoiceReadinessCoordinator.onSpeechRequested()
         // سجلّ مجرّد: طول النص واللغة فقط
         // (النص قد يحوي OTP/حساسيات يقرؤها TalkBack).
         val reqText = request.charSequenceText?.toString()
@@ -1321,7 +1320,7 @@ class NateqTtsService : TextToSpeechService() {
             // علم «نطق جارٍ» — يُنبَّه المراقبون (متحدث الإعلانات) فوراً
             // فينطلق الإعلانُ المؤجَّل خلف القراءة.
             SpeechLock.setSpeaking(applicationContext, false)
-            VoiceReadinessCoordinator.onSpeechCompleted()
+            VoiceReadinessCoordinator.onSpeechCompleted(speechToken)
             // بند ١٠: إغلاق خيط النداءات بعد أن أنهت كل الدفعات عملها.
             callbackDispatcher.close()
         }

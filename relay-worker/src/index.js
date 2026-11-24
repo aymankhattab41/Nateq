@@ -167,12 +167,23 @@ async function sendAudioToTelegram(env, chatId, fileId, caption) {
  * parse_mode — بدل ضياع رسالة الدعم. غير ذلك تُعاد استجابة المحاولة الأولى.
  */
 async function sendWithParseFallback(env, chatId, htmlText) {
-  const first = await sendToTelegram(env, chatId, htmlText, "HTML");
+  let first;
+  try {
+    first = await sendToTelegram(env, chatId, htmlText, "HTML");
+  } catch (err) {
+    // شبكة/مهلة — يُرمى صريحاً ولا يُعامل كخطأ تنسيق HTML
+    throw err;
+  }
   if (first.ok) return first;
+
+  // خطأ 5xx أو غيره لا يُعامل كخطأ تنسيق (Parse Fallback فقط لـ 400 Bad Request)
+  if (first.status !== 400) {
+    return first;
+  }
 
   let parseError = false;
   try {
-    const json = await first.json();
+    const json = await first.clone().json();
     parseError =
       json && json.error_code === 400 && /parse/i.test(json.description || "");
   } catch (err) {
@@ -237,22 +248,129 @@ async function enforceRateLimit(env, senderId) {
 
 /**
  * فحص وتتبع تكرار update_id لمنع المعالجة المكررة عند إعادة المحاولة من تليجرام.
- * تتبع الاتساق النهائي لـ KV.
+ * حالات معالجة صريحة: processing (قيد المعالجة) -> delivered (تم التسليم).
+ * يدعم تتبع التسليم الجزئي للأجزاء المتعددة وحدود إعادة المحاولة ومنع التزامن.
  */
+const UPDATE_STATE_PROCESSING = "processing";
+const UPDATE_STATE_DELIVERED = "delivered";
+const UPDATE_STATE_PERMANENT_FAIL = "failed_permanent";
+const MAX_UPDATE_RETRIES = 5;
+const CONCURRENT_LOCK_SECONDS = 30;
+
 async function checkAndMarkUpdateId(env, updateId) {
-  if (updateId === undefined || updateId === null) return { isDuplicate: false };
-  if (!env || !env.RATE_LIMITS) return { isDuplicate: false };
+  if (updateId === undefined || updateId === null) {
+    return { isDuplicate: false, resumeState: null };
+  }
+  if (!env || !env.RATE_LIMITS) {
+    return { isDuplicate: false, resumeState: null };
+  }
   const key = `update:${updateId}`;
+  const now = Math.floor(Date.now() / 1000);
   try {
-    const existing = await env.RATE_LIMITS.get(key);
-    if (existing !== null) {
-      return { isDuplicate: true };
+    const raw = await env.RATE_LIMITS.get(key);
+    if (raw !== null) {
+      let data = null;
+      try {
+        data = typeof raw === "object" ? raw : JSON.parse(raw);
+      } catch (e) {
+        data = { state: UPDATE_STATE_DELIVERED, attempts: 1 };
+      }
+      if (data.state === UPDATE_STATE_DELIVERED) {
+        return { isDuplicate: true, inProgress: false };
+      }
+      if (data.state === UPDATE_STATE_PERMANENT_FAIL) {
+        return { isDuplicate: true, inProgress: false };
+      }
+      if (data.state === UPDATE_STATE_PROCESSING) {
+        if (data.timestamp && now - data.timestamp < CONCURRENT_LOCK_SECONDS) {
+          return { isDuplicate: true, inProgress: true };
+        }
+        if ((data.attempts || 1) >= MAX_UPDATE_RETRIES) {
+          const perm = { state: UPDATE_STATE_PERMANENT_FAIL, timestamp: now };
+          await env.RATE_LIMITS.put(key, JSON.stringify(perm), {
+            expirationTtl: 86400,
+          });
+          return { isDuplicate: true, inProgress: false };
+        }
+        const updated = {
+          ...data,
+          attempts: (data.attempts || 1) + 1,
+          timestamp: now,
+        };
+        await env.RATE_LIMITS.put(key, JSON.stringify(updated), {
+          expirationTtl: 3600,
+        });
+        return { isDuplicate: false, resumeState: updated };
+      }
     }
-    await env.RATE_LIMITS.put(key, "1", { expirationTtl: 300 });
-    return { isDuplicate: false };
+    const initial = {
+      state: UPDATE_STATE_PROCESSING,
+      attempts: 1,
+      partsDelivered: [],
+      mediaDelivered: false,
+      timestamp: now,
+    };
+    await env.RATE_LIMITS.put(key, JSON.stringify(initial), {
+      expirationTtl: 3600,
+    });
+    return { isDuplicate: false, resumeState: initial };
   } catch (err) {
     console.error("update_id dedup check failed:", err);
-    return { isDuplicate: false };
+    return { isDuplicate: false, resumeState: null };
+  }
+}
+
+async function markUpdatePartDelivered(env, updateId, partIndex, currentState) {
+  if (!updateId || !env || !env.RATE_LIMITS) return;
+  const key = `update:${updateId}`;
+  const parts = currentState?.partsDelivered || [];
+  if (!parts.includes(partIndex)) parts.push(partIndex);
+  const updated = {
+    ...(currentState || {}),
+    state: UPDATE_STATE_PROCESSING,
+    partsDelivered: parts,
+    timestamp: Math.floor(Date.now() / 1000),
+  };
+  try {
+    await env.RATE_LIMITS.put(key, JSON.stringify(updated), {
+      expirationTtl: 3600,
+    });
+  } catch (err) {
+    console.error("markUpdatePartDelivered failed:", err);
+  }
+}
+
+async function markUpdateDelivered(env, updateId, currentState) {
+  if (!updateId || !env || !env.RATE_LIMITS) return;
+  const key = `update:${updateId}`;
+  const updated = {
+    ...(currentState || {}),
+    state: UPDATE_STATE_DELIVERED,
+    mediaDelivered: true,
+    timestamp: Math.floor(Date.now() / 1000),
+  };
+  try {
+    await env.RATE_LIMITS.put(key, JSON.stringify(updated), {
+      expirationTtl: 86400,
+    });
+  } catch (err) {
+    console.error("markUpdateDelivered failed:", err);
+  }
+}
+
+async function markUpdatePermanentFail(env, updateId) {
+  if (!updateId || !env || !env.RATE_LIMITS) return;
+  const key = `update:${updateId}`;
+  const updated = {
+    state: UPDATE_STATE_PERMANENT_FAIL,
+    timestamp: Math.floor(Date.now() / 1000),
+  };
+  try {
+    await env.RATE_LIMITS.put(key, JSON.stringify(updated), {
+      expirationTtl: 86400,
+    });
+  } catch (err) {
+    console.error("markUpdatePermanentFail failed:", err);
   }
 }
 
@@ -321,12 +439,17 @@ async function forwardMessage(env, update) {
   const msg = update.message;
   if (!msg) return "ignored";
 
-  // معالجة تكرار update_id من تليجرام لمنع إرسال مكرر
+  // معالجة تكرار update_id من تليجرام لمنع إرسال مكرر وتتبع الحالات الصريحة
+  let resumeState = null;
   if (update.update_id !== undefined && update.update_id !== null) {
     const dedup = await checkAndMarkUpdateId(env, update.update_id);
     if (dedup.isDuplicate) {
+      if (dedup.inProgress) {
+        return "in_progress";
+      }
       return "duplicate_update";
     }
+    resumeState = dedup.resumeState;
   }
 
   const from = msg.from || {};
@@ -376,62 +499,129 @@ async function forwardMessage(env, update) {
       ? buildRelayMessages(header, bodyLabel, bodyParts)
       : [header.join("\n")];
 
-  for (const message of messages) {
-    const res = await sendWithParseFallback(env, env.SUPPORT_CHAT_ID, message);
+  const deliveredParts = resumeState?.partsDelivered || [];
+  for (let i = 0; i < messages.length; i++) {
+    if (deliveredParts.includes(i)) {
+      continue;
+    }
+    const message = messages[i];
+    let res;
+    try {
+      res = await sendWithParseFallback(env, env.SUPPORT_CHAT_ID, message);
+    } catch (networkErr) {
+      console.error("forward message network error:", networkErr);
+      return "forward_network_error";
+    }
     if (!res.ok) {
       console.error("forward failed:", res.status, await res.text());
-      return "forward_failed";
+      return res.status >= 500 ? "forward_failed_500" : "forward_failed";
+    }
+    if (update.update_id !== undefined && update.update_id !== null) {
+      await markUpdatePartDelivered(env, update.update_id, i, resumeState);
+      deliveredParts.push(i);
     }
   }
 
-  // توجيه الملفات والوسائط الفعلية إلى محادثة الدعم حتى يتمكن المطور من
-  // تنزيل السجل وفحصه مباشرة
+  // توجيه الملفات والوسائط الفعلية إلى محادثة الدعم والتحقق من النتيجة بدقة
   if (msg.document && msg.document.file_id) {
-    const docCaption = msg.caption
-      ? `${msg.caption} (من: ${senderName})`
-      : `📄 ${msg.document.file_name || "ملف سجل"} — من ${senderName}`;
-    const docRes = await sendDocumentToTelegram(
-      env,
-      env.SUPPORT_CHAT_ID,
-      msg.document.file_id,
-      docCaption
-    );
-    if (!docRes.ok) {
-      console.error("sendDocument failed:", docRes.status, await docRes.text());
-      return "document_send_failed";
+    if (!resumeState?.mediaDelivered) {
+      const docCaption = msg.caption
+        ? `${msg.caption} (من: ${senderName})`
+        : `📄 ${msg.document.file_name || "ملف سجل"} — من ${senderName}`;
+      let docRes;
+      try {
+        docRes = await sendDocumentToTelegram(
+          env,
+          env.SUPPORT_CHAT_ID,
+          msg.document.file_id,
+          docCaption
+        );
+      } catch (networkErr) {
+        console.error("sendDocument network error:", networkErr);
+        return "document_send_failed";
+      }
+      if (!docRes.ok) {
+        console.error("sendDocument failed:", docRes.status, await docRes.text());
+        return "document_send_failed";
+      }
+      // إشعار تأكيد للمستخدم عند استلام ملف السجل بنجاح فقط
+      await sendWithParseFallback(
+        env,
+        msg.chat.id,
+        "تم استلام ملف السجل وإرساله للمطور بنجاح ✅ شكراً لتعاونك ومساعدتنا في تحسين التطبيق!"
+      );
     }
-    // إشعار تأكيد للمستخدم عند استلام ملف السجل بنجاح فقط
-    await sendWithParseFallback(
-      env,
-      msg.chat.id,
-      "تم استلام ملف السجل وإرساله للمطور بنجاح ✅ شكراً لتعاونك ومساعدتنا في تحسين التطبيق!"
-    );
   } else if (msg.photo && msg.photo.length) {
-    const photoId = msg.photo[msg.photo.length - 1].file_id;
-    const photoCaption = msg.caption
-      ? `${msg.caption} (من: ${senderName})`
-      : `🖼️ صورة من ${senderName}`;
-    await sendPhotoToTelegram(env, env.SUPPORT_CHAT_ID, photoId, photoCaption);
+    if (!resumeState?.mediaDelivered) {
+      const photoId = msg.photo[msg.photo.length - 1].file_id;
+      const photoCaption = msg.caption
+        ? `${msg.caption} (من: ${senderName})`
+        : `🖼️ صورة من ${senderName}`;
+      let photoRes;
+      try {
+        photoRes = await sendPhotoToTelegram(
+          env,
+          env.SUPPORT_CHAT_ID,
+          photoId,
+          photoCaption
+        );
+      } catch (networkErr) {
+        console.error("sendPhoto network error:", networkErr);
+        return "photo_send_failed";
+      }
+      if (!photoRes.ok) {
+        console.error("sendPhoto failed:", photoRes.status, await photoRes.text());
+        return "photo_send_failed";
+      }
+    }
   } else if (msg.voice && msg.voice.file_id) {
-    const voiceCaption = msg.caption
-      ? `${msg.caption} (من: ${senderName})`
-      : `🎙️ رسالة صوتية من ${senderName}`;
-    await sendVoiceToTelegram(
-      env,
-      env.SUPPORT_CHAT_ID,
-      msg.voice.file_id,
-      voiceCaption
-    );
+    if (!resumeState?.mediaDelivered) {
+      const voiceCaption = msg.caption
+        ? `${msg.caption} (من: ${senderName})`
+        : `🎙️ رسالة صوتية من ${senderName}`;
+      let voiceRes;
+      try {
+        voiceRes = await sendVoiceToTelegram(
+          env,
+          env.SUPPORT_CHAT_ID,
+          msg.voice.file_id,
+          voiceCaption
+        );
+      } catch (networkErr) {
+        console.error("sendVoice network error:", networkErr);
+        return "voice_send_failed";
+      }
+      if (!voiceRes.ok) {
+        console.error("sendVoice failed:", voiceRes.status, await voiceRes.text());
+        return "voice_send_failed";
+      }
+    }
   } else if (msg.audio && msg.audio.file_id) {
-    const audioCaption = msg.caption
-      ? `${msg.caption} (من: ${senderName})`
-      : `🎵 ملف صوتي من ${senderName}`;
-    await sendAudioToTelegram(
-      env,
-      env.SUPPORT_CHAT_ID,
-      msg.audio.file_id,
-      audioCaption
-    );
+    if (!resumeState?.mediaDelivered) {
+      const audioCaption = msg.caption
+        ? `${msg.caption} (من: ${senderName})`
+        : `🎵 ملف صوتي من ${senderName}`;
+      let audioRes;
+      try {
+        audioRes = await sendAudioToTelegram(
+          env,
+          env.SUPPORT_CHAT_ID,
+          msg.audio.file_id,
+          audioCaption
+        );
+      } catch (networkErr) {
+        console.error("sendAudio network error:", networkErr);
+        return "audio_send_failed";
+      }
+      if (!audioRes.ok) {
+        console.error("sendAudio failed:", audioRes.status, await audioRes.text());
+        return "audio_send_failed";
+      }
+    }
+  }
+
+  if (update.update_id !== undefined && update.update_id !== null) {
+    await markUpdateDelivered(env, update.update_id, resumeState);
   }
 
   return "forwarded";
@@ -479,15 +669,35 @@ export default {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
-      // نرد 200 دائماً حتى لا يعيد تليجرام إرسال الرسالة مراراً
+      if (result === "in_progress") {
+        return new Response(
+          JSON.stringify({ ok: true, result: "in_progress" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      // فشل عابر (5xx أو خطأ شبكة أو فشل وسائط): نرد 502 ليعيد تليجرام إرسال التحديث
+      if (
+        result === "forward_failed_500" ||
+        result === "forward_network_error" ||
+        result === "document_send_failed" ||
+        result === "photo_send_failed" ||
+        result === "voice_send_failed" ||
+        result === "audio_send_failed"
+      ) {
+        return new Response(
+          JSON.stringify({ ok: false, error: result }),
+          { status: 502, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      // نرد 200 دائماً في الحالات الناجحة أو الدائمة
       return new Response(JSON.stringify({ ok: true, result }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
     } catch (err) {
       console.error("update failed:", err);
-      // 200 حتى لا يفتح المسارُ خطّاً للدورات المتكررة (إعادة الإرسال)
-      return new Response(JSON.stringify({ ok: false }), { status: 200 });
+      // 500 في حال حدوث استثناء مفاجئ في تحليل الطلب
+      return new Response(JSON.stringify({ ok: false }), { status: 500 });
     }
   },
 };
@@ -495,6 +705,11 @@ export default {
 // دوال نقية مستخرَجة لاختبارات Node (node:test) — بلا أي تأثير على النشر.
 export {
   MAX_DOCUMENT_SIZE,
+  UPDATE_STATE_PROCESSING,
+  UPDATE_STATE_DELIVERED,
+  UPDATE_STATE_PERMANENT_FAIL,
+  MAX_UPDATE_RETRIES,
+  CONCURRENT_LOCK_SECONDS,
   escapeHtml,
   unescapeHtml,
   stripHtml,
@@ -507,6 +722,10 @@ export {
   sendPhotoToTelegram,
   sendVoiceToTelegram,
   sendAudioToTelegram,
+  sendWithParseFallback,
   forwardMessage,
   checkAndMarkUpdateId,
+  markUpdatePartDelivered,
+  markUpdateDelivered,
+  markUpdatePermanentFail,
 };

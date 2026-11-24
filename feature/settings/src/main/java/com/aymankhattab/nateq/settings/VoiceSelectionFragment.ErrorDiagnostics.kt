@@ -904,6 +904,19 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
         sb.appendLine(sfReport)
         sb.appendLine("")
 
+        sb.appendLine("=== تقرير سرعة استجابة المحركات المدمجة ===")
+        sb.appendLine(
+            com.aymankhattab.nateq.core.audio.engine
+                .UnifiedSpeechTracker.formatReport()
+        )
+        val salmaPerfReport =
+            com.aymankhattab.nateq.core.audio.engine
+                .SalmaSpeechTracker.formatReport()
+        if (salmaPerfReport.isNotBlank()) {
+            sb.appendLine(salmaPerfReport)
+        }
+        sb.appendLine("")
+
         // ── المحرك/الصوت المختار لكل فئة (مع السرعة/النبرة/المستوى) ──
         sb.appendLine("--- الاختيارات النشطة لكل فئة ---")
         sb.appendLine(

@@ -59,9 +59,12 @@ object EnginePicker {
      * إبطال كاش المحركات مع ذاكرة اكتشاف الأصوات (ع٢٩-9): يُستدعى
      * عند كل تغيير في محتوى التخزين (تنزيل/حذف/استيراد/نقل/تهيئة).
      */
-    fun invalidateAfterStorageChange() {
+    fun invalidateAfterStorageChange(context: Context? = null) {
         invalidateCache()
         VoiceCatalog.noteStorageChange()
+        AcapelaVoiceRepository.invalidate(context)
+        VocalizerVoiceRepository.invalidate(context)
+        MicrosoftVoiceRepository.invalidate(context)
         // يُبطل أيضاً ذاكرة تهيئة المضيف كي يُعاد نداؤه فيعيد بناء
         // المحرّك إن تغيّرت ترويسات الأصوات (تنزيل/حذف صوت مدمج).
         EngineHostClient.onStorageChanged()

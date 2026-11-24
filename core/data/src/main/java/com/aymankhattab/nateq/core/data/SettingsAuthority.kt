@@ -96,7 +96,17 @@ object SettingsAuthority {
             )
         }
 
-        // مسار بديل محلي عند تعذر IPC أو في الاختبارات
+        val isChild = !com.aymankhattab.nateq.util.ProcessUtils
+            .isMainProcess(appCtx)
+        if (isChild && !forceIpcForTesting) {
+            return TransactionResult(
+                success = false,
+                revision = globalRevision.get(),
+                snapshot = emptyMap()
+            )
+        }
+
+        // مسار بديل محلي في العملية الموثوقة أو في الاختبارات
         return applyDirectly(appCtx, tx)
     }
 
@@ -261,12 +271,13 @@ object SettingsAuthority {
     fun transactionToBundle(tx: SettingsTransaction): Bundle {
         val b = Bundle()
         b.putBoolean(EXTRA_CLEAR, tx.clearFirst)
-        b.putStringArrayList(EXTRA_REMOVALS, ArrayList(tx.removals))
+        val allRemovals = LinkedHashSet(tx.removals)
         val putsBundle = Bundle()
         val stringSetKeys = ArrayList<String>()
 
         for ((key, value) in tx.puts) {
             when (value) {
+                null -> allRemovals.add(key)
                 is String -> putsBundle.putString(key, value)
                 is Int -> putsBundle.putInt(key, value)
                 is Long -> putsBundle.putLong(key, value)
@@ -280,6 +291,7 @@ object SettingsAuthority {
                 }
             }
         }
+        b.putStringArrayList(EXTRA_REMOVALS, ArrayList(allRemovals))
         b.putBundle(EXTRA_PUTS, putsBundle)
         b.putStringArrayList(EXTRA_STRING_SET_KEYS, stringSetKeys)
         return b

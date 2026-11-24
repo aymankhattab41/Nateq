@@ -4,22 +4,30 @@ import android.content.ComponentCallbacks2
 import android.content.Context
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.audio.enginehost.HostWarmStatusRegistry
 import com.aymankhattab.nateq.core.audio.enginehost.MicrosoftHostSession
 import com.aymankhattab.nateq.core.audio.enginehost.PcmSink
 import com.aymankhattab.nateq.core.audio.enginehost.SpeakRequest
 import com.aymankhattab.nateq.core.audio.enginehost.VocalizerHostSession
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceRepository
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftVoiceRepository
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerVoiceRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -31,7 +39,9 @@ import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * اختبارات شاملة لتحسين زمن أول نطق وجاهزية الأصوات عبر كافة المحركات
@@ -60,6 +70,8 @@ class MultiEngineReadinessAndLatencyTest {
         MicrosoftVoiceRepository.resetForTests()
         VocalizerVoiceRepository.resetForTests()
         VoiceReadinessCoordinator.resetForTest()
+        HostWarmStatusRegistry.resetForTests()
+        HostWarmStatusRegistry.clearAll(context)
     }
 
     @After
@@ -71,6 +83,8 @@ class MultiEngineReadinessAndLatencyTest {
         MicrosoftVoiceRepository.resetForTests()
         VocalizerVoiceRepository.resetForTests()
         VoiceReadinessCoordinator.resetForTest()
+        HostWarmStatusRegistry.resetForTests()
+        HostWarmStatusRegistry.clearAll(context)
     }
 
     @Test
@@ -314,6 +328,163 @@ class MultiEngineReadinessAndLatencyTest {
         }
 
     @Test
+    fun testSpeechToken_overlappingRequests_olderDoesNotLowerNewerFlag() =
+        runBlocking {
+            val token1 = VoiceReadinessCoordinator.onSpeechRequested(
+                engineId = "vocalizer_embedded",
+                voiceId = "tarek"
+            )
+            val token2 = VoiceReadinessCoordinator.onSpeechRequested(
+                engineId = "vocalizer_embedded",
+                voiceId = "mariam"
+            )
+
+            // انتهاء الطلب القديم لا يخفض علم الطلب الأحدث
+            VoiceReadinessCoordinator.onSpeechCompleted(token1)
+
+            val attemptDuringToken2 = VoiceReadinessCoordinator.prepareVoice(
+                context = context,
+                engineId = "microsoft_embedded",
+                voiceId = "salma",
+                priority = false
+            )
+            assertFalse(
+                "طلب أحدث ما زال نشطاً؛ يجب رفض الإحماء غير ذي الأولوية",
+                attemptDuringToken2
+            )
+
+            // انتهاء الطلب الأحدث يخفض العلم
+            VoiceReadinessCoordinator.onSpeechCompleted(token2)
+        }
+
+    @Test
+    fun testHostWarmStatusRegistry_validationLifecycle_and_invalidation() {
+        val engine = "vocalizer_embedded"
+        val voice = "tariq"
+        val rev1 = 500L
+        val gen1 = 1L
+
+        // تسجيل صوت دافئ مع نجاح PCM
+        HostWarmStatusRegistry.recordWarmVoice(
+            context = context,
+            engineId = engine,
+            actualVoiceId = voice,
+            dataRevision = rev1,
+            hostGeneration = gen1,
+            pcmSuccess = true
+        )
+
+        // التحقق من صحة الحالة
+        assertTrue(
+            HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = engine,
+                voiceId = voice,
+                expectedRevision = rev1,
+                expectedHostGen = gen1
+            )
+        )
+
+        // عدم تطابق جيل المضيف (موت/إعادة تشغيل المضيف)
+        assertFalse(
+            HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = engine,
+                voiceId = voice,
+                expectedRevision = rev1,
+                expectedHostGen = 2L
+            )
+        )
+
+        // عدم تطابق مراجعة التخزين (تغيير/استبدال ملفات)
+        assertFalse(
+            HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = engine,
+                voiceId = voice,
+                expectedRevision = 501L,
+                expectedHostGen = gen1
+            )
+        )
+
+        // عدم تطابق الصوت
+        assertFalse(
+            HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = engine,
+                voiceId = "other_voice",
+                expectedRevision = rev1,
+                expectedHostGen = gen1
+            )
+        )
+
+        // مسح الحالة
+        HostWarmStatusRegistry.clearWarmStatus(context, engine)
+        assertFalse(
+            HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = engine,
+                voiceId = voice,
+                expectedRevision = rev1,
+                expectedHostGen = gen1
+            )
+        )
+    }
+
+    @Test
+    fun testProbeDetails_resolvesLanguageCorrectlyWithoutSubstringGuessing() {
+        // فحص لغة عربية
+        val (arText, arLocale) =
+            VoiceReadinessCoordinator.resolveProbeDetails(
+                context,
+                "acapela_embedded",
+                "salma22k"
+            )
+        assertEquals("مرحبا", arText)
+        assertEquals("ar", arLocale.language)
+
+        // فحص لغة إنجليزية
+        val (enText, enLocale) =
+            VoiceReadinessCoordinator.resolveProbeDetails(
+                context,
+                "microsoft_embedded",
+                "en-US-JennyNeural"
+            )
+        assertEquals("Hello", enText)
+        assertEquals("en", enLocale.language)
+    }
+
+    @Test
+    fun testVocalizerAndMicrosoftRepositories_crossProcessRevisionMarker() {
+        val vocBase = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER
+        )
+        val msBase = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.MICROSOFT
+        )
+        vocBase.mkdirs()
+        msBase.mkdirs()
+
+        val vocRev1 = VocalizerVoiceRepository.getStorageRevision(context)
+        VocalizerVoiceRepository.invalidate(context)
+        val vocRev2 = VocalizerVoiceRepository.getStorageRevision(context)
+        assertTrue(
+            "تحديث علامة مراجعة Vocalizer يجب أن يرفع القيمة",
+            vocRev2 > vocRev1
+        )
+
+        val msRev1 = MicrosoftVoiceRepository.getStorageRevision(context)
+        MicrosoftVoiceRepository.invalidate(context)
+        val msRev2 = MicrosoftVoiceRepository.getStorageRevision(context)
+        assertTrue(
+            "تحديث علامة مراجعة Microsoft يجب أن يرفع القيمة",
+            msRev2 > msRev1
+        )
+    }
+
+    @Test
     fun testHostSessions_switchingVoices_updatesWarmState() {
         MicrosoftHostSession.noteWarmVoiceLoaded("ar-EG-SalmaNeural")
         assertTrue(
@@ -374,5 +545,143 @@ class MultiEngineReadinessAndLatencyTest {
             assertTrue(stats.avgFirstPcmMs >= 0.0)
             assertTrue(stats.p50FirstPcmMs <= stats.p95FirstPcmMs)
         }
+    }
+
+    @Test
+    fun testUnifiedSpeechTracker_unmeasuredMinusOne_doesNotSkewAverages() {
+        UnifiedSpeechTracker.clearForTest()
+
+        // عبارتان فقط بقياس حقيقي (500ms و 700ms)
+        val r1 = UnifiedSpeechTracker.startRequest(
+            engine = UnifiedSpeechTracker.Engine.ACAPELA,
+            category = UnifiedSpeechTracker.Category.WARM,
+            voiceName = "salma",
+            textLength = 20
+        )
+        r1.firstPcmMs = 500L
+        r1.complete(UnifiedSpeechTracker.Status.SUCCESS)
+
+        val r2 = UnifiedSpeechTracker.startRequest(
+            engine = UnifiedSpeechTracker.Engine.ACAPELA,
+            category = UnifiedSpeechTracker.Category.WARM,
+            voiceName = "salma",
+            textLength = 20
+        )
+        r2.firstPcmMs = 700L
+        r2.complete(UnifiedSpeechTracker.Status.SUCCESS)
+
+        // 27 عبارة بلا قياس أول بايت (-1L)
+        for (i in 1..27) {
+            val unmeasuredReq = UnifiedSpeechTracker.startRequest(
+                engine = UnifiedSpeechTracker.Engine.ACAPELA,
+                category = UnifiedSpeechTracker.Category.WARM,
+                voiceName = "salma",
+                textLength = 15
+            )
+            unmeasuredReq.complete(
+                UnifiedSpeechTracker.Status.FAILED,
+                "No PCM"
+            )
+        }
+
+        val stats = UnifiedSpeechTracker.getStats(
+            engine = UnifiedSpeechTracker.Engine.ACAPELA,
+            category = UnifiedSpeechTracker.Category.WARM
+        )
+        assertEquals(29, stats.totalCount)
+        assertEquals(2, stats.pcmMeasuredCount)
+        assertEquals(27, stats.pcmUnmeasuredCount)
+
+        // يجب أن يكون المتوسط 600ms (500+700)/2 وليس 41ms (1200/29)
+        assertEquals(600.0, stats.avgFirstPcmMs, 0.01)
+        assertEquals(600.0, stats.p50FirstPcmMs, 0.01)
+
+        // المرحلة غير المقيسة إطلاقاً تعيد -1.0 وتظهر "غير مقاس"
+        assertEquals(-1.0, stats.avgFirstTrackWriteMs, 0.01)
+        assertEquals("غير مقاس", stats.formatMetric(stats.avgFirstTrackWriteMs))
+    }
+
+    @Test
+    fun testUnifiedSpeechTracker_completeIsIdempotentInFinally() {
+        UnifiedSpeechTracker.clearForTest()
+        val req = UnifiedSpeechTracker.startRequest(
+            engine = UnifiedSpeechTracker.Engine.VOCALIZER,
+            category = UnifiedSpeechTracker.Category.WARM,
+            voiceName = "tarek",
+            textLength = 10
+        )
+        req.firstPcmMs = 250L
+
+        // استدعاء أول في try
+        val rec1 = req.complete(UnifiedSpeechTracker.Status.SUCCESS)
+        assertNotNull(rec1)
+
+        // استدعاء ثانٍ في finally
+        val rec2 = req.complete(
+            UnifiedSpeechTracker.Status.CANCELLED,
+            "redundant call"
+        )
+        assertNull("الاستدعاء الثاني يجب ألا يكرر التسجيل", rec2)
+
+        val all = UnifiedSpeechTracker.getAllRecords()
+        assertEquals("طلب واحد فقط يجب أن يسجل في السجل", 1, all.size)
+        assertEquals(UnifiedSpeechTracker.Status.SUCCESS, all[0].status)
+    }
+
+    @Test
+    fun testHostWarmStatusRegistry_identifiesWarmAndColdProperly() {
+        val filesDir = context.filesDir
+        val engine = "acapela"
+        val voice = "salma"
+        val rev = 100L
+
+        // مبدئياً غير دافئ
+        assertFalse(
+            HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = engine,
+                voiceId = voice,
+                expectedRevision = rev
+            )
+        )
+
+        // تسجيل دافئ
+        HostWarmStatusRegistry.recordWarmVoice(
+            context = context,
+            engineId = engine,
+            actualVoiceId = voice,
+            dataRevision = rev,
+            hostGeneration = 1L,
+            pcmSuccess = true
+        )
+
+        assertTrue(
+            HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = engine,
+                voiceId = voice,
+                expectedRevision = rev
+            )
+        )
+
+        // مراجعة بيانات مختلفة -> يعود بارداً
+        assertFalse(
+            HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = engine,
+                voiceId = voice,
+                expectedRevision = rev + 1L
+            )
+        )
+
+        // صوت مختلف -> يعود بارداً
+        assertFalse(
+            HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = engine,
+                voiceId = "leila",
+                expectedRevision = rev
+            )
+        )
     }
 }

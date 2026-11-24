@@ -7,6 +7,7 @@ import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.core.audio.engine.EnginePerformanceCounters
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftModelCatalog
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftVoiceManifest
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftVoiceRepository
 import com.microsoft.cognitiveservices.speech.EmbeddedSpeechConfig
 import com.microsoft.cognitiveservices.speech.PropertyId
 import com.microsoft.cognitiveservices.speech.ResultReason
@@ -20,6 +21,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * جلسة محرك مايكروسوفت المدمج (Microsoft Neural Embedded) داخل :engine_host.
@@ -91,6 +93,11 @@ internal class MicrosoftHostSession(
     private var baseDataDir: File? = null
     @Volatile private var activeSynthesizer: SpeechSynthesizer? = null
     @Volatile private var warmSession: WarmSession? = null
+    @Volatile private var boundRevision: Long = -1L
+    private val activeSynthInUse =
+        AtomicReference<SpeechSynthesizer?>(null)
+    private val pendingDeferredCloseSynthesizer =
+        AtomicReference<SpeechSynthesizer?>(null)
     private val sessionLock = Any()
 
     private val voiceDirCache = ConcurrentHashMap<String, File>()
@@ -101,6 +108,16 @@ internal class MicrosoftHostSession(
         activeSession = this
         val dir = File(dataDir)
         baseDataDir = dir
+        val currentRev = MicrosoftVoiceRepository.getStorageRevision(context)
+        synchronized(sessionLock) {
+            if (boundRevision != -1L && boundRevision != currentRev) {
+                closeWarmSessionLocked()
+                voiceDirCache.clear()
+                licenseKeyCache.clear()
+                modelNameCache.clear()
+            }
+            boundRevision = currentRev
+        }
         HostLog.i(
             HostProtocol.ENGINE_MICROSOFT,
             "تهيئة مايكروسوفت في: $dataDir"
@@ -183,15 +200,29 @@ internal class MicrosoftHostSession(
         var config: EmbeddedSpeechConfig? = null
         var isWarmHit = false
 
+        val currentRev = MicrosoftVoiceRepository.getStorageRevision(context)
         synchronized(sessionLock) {
             val warm = warmSession
-            if (warm != null && warm.key == warmKey) {
+            if (warm != null &&
+                (boundRevision != currentRev ||
+                    (warm.lastUsedRealtimeMs > 0 &&
+                        voiceDir.lastModified() > warm.lastUsedRealtimeMs))
+            ) {
+                closeWarmSessionLocked()
+                voiceDirCache.clear()
+                licenseKeyCache.clear()
+                modelNameCache.clear()
+            }
+            boundRevision = currentRev
+
+            val freshWarm = warmSession
+            if (freshWarm != null && freshWarm.key == warmKey) {
                 EnginePerformanceCounters.microsoft.synthWarmHits
                     .incrementAndGet()
-                synthesizer = warm.synthesizer
-                config = warm.config
+                synthesizer = freshWarm.synthesizer
+                config = freshWarm.config
                 isWarmHit = true
-                warmSession = warm.copy(
+                warmSession = freshWarm.copy(
                     lastUsedRealtimeMs = SystemClock.elapsedRealtime()
                 )
             } else {
@@ -243,6 +274,7 @@ internal class MicrosoftHostSession(
             "محرك مايكروسوفت غير متاح"
         )
         activeSynthesizer = activeSynth
+        activeSynthInUse.set(activeSynth)
 
         var synthResult: SpeechSynthesisResult? = null
 
@@ -267,6 +299,7 @@ internal class MicrosoftHostSession(
                         "SpeakSsml canceled: [${cancelDetails.errorCode}] " +
                             "${cancelDetails.errorDetails}; trying SpeakText"
                     )
+                    runCatching { res.close() }
                     activeSynth.SpeakText(req.text)
                 } else {
                     res
@@ -288,6 +321,14 @@ internal class MicrosoftHostSession(
                             sink.writePcm(chunk, len)
                             offset += len
                         }
+                        HostWarmStatusRegistry.recordWarmVoice(
+                            context = context,
+                            engineId = HostProtocol.ENGINE_MICROSOFT,
+                            actualVoiceId = modelName,
+                            dataRevision = boundRevision,
+                            hostGeneration = 1L,
+                            pcmSuccess = true
+                        )
                         HostResult(ok = true)
                     } else {
                         HostResult.failure(
@@ -319,7 +360,11 @@ internal class MicrosoftHostSession(
             HostResult.failure("SYNTH_EXCEPTION", t.message ?: "Unknown error")
         } finally {
             activeSynthesizer = null
+            activeSynthInUse.set(null)
             runCatching { synthResult?.close() }
+            pendingDeferredCloseSynthesizer.getAndSet(null)?.let {
+                runCatching { it.close() }
+            }
             if (!isWarmHit && warmSession?.synthesizer != activeSynth) {
                 runCatching { activeSynth.close() }
                 runCatching { config?.close() }
@@ -337,11 +382,20 @@ internal class MicrosoftHostSession(
         val warm = warmSession
         warmSession = null
         noteWarmVoiceClosed()
+        HostWarmStatusRegistry.clearWarmStatus(
+            context,
+            HostProtocol.ENGINE_MICROSOFT
+        )
         if (warm != null) {
             EnginePerformanceCounters.microsoft.serviceCloseCount
                 .incrementAndGet()
-            runCatching { warm.synthesizer.close() }
-            runCatching { warm.config.close() }
+            if (activeSynthInUse.get() === warm.synthesizer) {
+                pendingDeferredCloseSynthesizer.set(warm.synthesizer)
+                runCatching { warm.config.close() }
+            } else {
+                runCatching { warm.synthesizer.close() }
+                runCatching { warm.config.close() }
+            }
         }
     }
 
@@ -358,6 +412,10 @@ internal class MicrosoftHostSession(
             licenseKeyCache.clear()
             modelNameCache.clear()
         }
+        HostWarmStatusRegistry.clearWarmStatus(
+            context,
+            HostProtocol.ENGINE_MICROSOFT
+        )
     }
 
     @VisibleForTesting

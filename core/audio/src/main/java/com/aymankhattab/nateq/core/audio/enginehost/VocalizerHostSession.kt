@@ -9,6 +9,7 @@ import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.VoiceIdContract
 import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
+import com.aymankhattab.nateq.core.audio.providers.VocalizerVoiceRepository
 import com.nuance.android.vocalizer.VocalizerAudioOutputListener
 import com.nuance.android.vocalizer.VocalizerAudioSettings
 import com.nuance.android.vocalizer.VocalizerEngine
@@ -112,6 +113,12 @@ internal class VocalizerHostSession(
 
         internal fun noteWarmVoiceClosed() {
             warmVoiceVariant = null
+            activeSession?.let { s ->
+                HostWarmStatusRegistry.clearWarmStatus(
+                    s.context,
+                    HostProtocol.ENGINE_VOCALIZER
+                )
+            }
         }
 
         fun trimResources() {
@@ -1061,7 +1068,18 @@ internal class VocalizerHostSession(
                 "STOPPED",
                 "أُوقف التوليد"
             )
-            else -> HostProtocol.success()
+            else -> {
+                val rev = VocalizerVoiceRepository.getStorageRevision(context)
+                HostWarmStatusRegistry.recordWarmVoice(
+                    context = context,
+                    engineId = HostProtocol.ENGINE_VOCALIZER,
+                    actualVoiceId = loadedVoiceKey ?: req.voiceId,
+                    dataRevision = rev,
+                    hostGeneration = 1L,
+                    pcmSuccess = true
+                )
+                HostProtocol.success()
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
+import android.os.Looper
 import com.aymankhattab.nateq.core.audio.engine.EnginePerformanceCounters
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -118,14 +119,46 @@ object VocalizerVoiceRepository {
         }
     }
 
-    fun getStorageRevision(): Long {
+    fun getStorageRevision(context: Context? = null): Long {
         val bumpTime = EmbeddedStorage.lastBumpTime
         val localRev = localRevisionCounter.get()
-        return maxOf(bumpTime, localRev)
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return maxOf(bumpTime, localRev)
+        }
+        val markerMod = getRevisionMarkerTime(context)
+        return maxOf(bumpTime, maxOf(markerMod, localRev))
     }
 
-    fun invalidate(reason: String = "") {
+    private fun getRevisionMarkerFile(context: Context?): File? {
+        val ctx = context ?: return null
+        val base = runCatching {
+            EmbeddedStorage.baseDir(ctx, EmbeddedStorage.Engine.VOCALIZER)
+        }.getOrNull() ?: return null
+        return File(base, ".vocalizer_revision")
+    }
+
+    private fun getRevisionMarkerTime(context: Context?): Long {
+        val marker = getRevisionMarkerFile(context) ?: return 0L
+        return if (marker.exists()) marker.lastModified() else 0L
+    }
+
+    private fun updateRevisionMarker(context: Context?) {
+        val marker = getRevisionMarkerFile(context) ?: return
+        runCatching {
+            val parent = marker.parentFile
+            if (parent != null && parent.exists()) {
+                if (!marker.exists()) {
+                    marker.createNewFile()
+                } else {
+                    marker.setLastModified(System.currentTimeMillis())
+                }
+            }
+        }
+    }
+
+    fun invalidate(context: Context? = null, reason: String = "") {
         localRevisionCounter.incrementAndGet()
+        updateRevisionMarker(context)
         currentSnapshot = EMPTY_SNAPSHOT
     }
 

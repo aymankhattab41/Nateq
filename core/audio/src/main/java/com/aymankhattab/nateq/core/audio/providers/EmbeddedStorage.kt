@@ -100,10 +100,12 @@ object EmbeddedStorage {
     /**
      * رفع رقم الإصدار — يُستدعى بعد كل تنزيل/حذف/استيراد/نقل.
      */
-    fun bumpVersion() {
+    fun bumpVersion(context: Context? = null) {
         versionCounter.incrementAndGet()
         lastBumpTimestamp = System.currentTimeMillis()
-        AcapelaVoiceRepository.invalidate()
+        AcapelaVoiceRepository.invalidate(context)
+        VocalizerVoiceRepository.invalidate(context)
+        MicrosoftVoiceRepository.invalidate(context)
     }
 
     /** تصفير زمن الـ bump للاختبارات فقط. */

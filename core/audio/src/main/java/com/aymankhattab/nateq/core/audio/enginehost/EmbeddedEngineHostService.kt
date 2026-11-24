@@ -341,6 +341,10 @@ class EmbeddedEngineHostService : Service() {
             sessions.remove(id)?.let { session ->
                 runCatching { session.shutdown() }
             }
+            HostWarmStatusRegistry.clearWarmStatus(
+                this@EmbeddedEngineHostService,
+                id
+            )
             Log.i(TAG, "أُغلق محرك $id")
             HostLog.i(id, "أُغلق محرك $id")
             return HostProtocol.ok()
@@ -355,6 +359,23 @@ class EmbeddedEngineHostService : Service() {
                 maxLines
             }
             return HostLog.getLog(id, lines)
+        }
+
+        override fun getWarmStatus(engineId: String?): String {
+            val rawId = engineId ?: return HostProtocol.error(
+                "BAD_ENGINE",
+                "معرف فارغ"
+            )
+            val id = HostProtocol.normalizeEngineId(rawId)
+            val status = HostWarmStatusRegistry.readWarmStatus(
+                this@EmbeddedEngineHostService,
+                id
+            )
+            return if (status != null && status.pcmSuccess) {
+                HostProtocol.ok(HostWarmStatusRegistry.toJson(status))
+            } else {
+                HostProtocol.error("NOT_WARM", "المحرك غير دافئ")
+            }
         }
     }
 
@@ -402,6 +423,7 @@ class EmbeddedEngineHostService : Service() {
             (sessions[HostProtocol.ENGINE_VOCALIZER] as? VocalizerHostSession)
                 ?.trimResources()
             VoiceReadinessCoordinator.onTrimMemory(level)
+            HostWarmStatusRegistry.clearAll(this)
         }
     }
 
@@ -410,6 +432,7 @@ class EmbeddedEngineHostService : Service() {
             runCatching { session.shutdown() }
         }
         sessions.clear()
+        HostWarmStatusRegistry.clearAll(this)
         runCatching { executor.shutdownNow() }
         runCatching { watchdog.shutdownNow() }
         super.onDestroy()

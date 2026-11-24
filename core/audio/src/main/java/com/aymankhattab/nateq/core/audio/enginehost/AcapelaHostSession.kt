@@ -18,6 +18,7 @@ import com.aymankhattab.nateq.core.audio.providers.AcapelaPackageResolver
 import com.aymankhattab.nateq.core.audio.providers.AcapelaParameters
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceDiagnostics
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceRepository
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -116,6 +117,9 @@ internal class AcapelaHostSession(
         private const val DEFAULT_SAMPLE_RATE = 22050
 
         @Volatile
+        private var activeSession: AcapelaHostSession? = null
+
+        @Volatile
         private var warmVoiceSpeaker: String? = null
 
         fun isWarmVoiceReady(speaker: String): Boolean {
@@ -132,6 +136,12 @@ internal class AcapelaHostSession(
 
         internal fun noteWarmVoiceClosed() {
             warmVoiceSpeaker = null
+            activeSession?.let { s ->
+                HostWarmStatusRegistry.clearWarmStatus(
+                    s.context,
+                    HostProtocol.ENGINE_ACAPELA
+                )
+            }
         }
 
         /** الحد الأقصى لمرات الفشل المتتالية قبل تثبيت قفل الجلسة. */
@@ -521,6 +531,7 @@ internal class AcapelaHostSession(
     }
 
     private fun doInit(dataDir: String): HostResult {
+        activeSession = this
         val dir = File(dataDir)
         dataDirectory = dir
         if (!dir.exists()) {
@@ -4328,6 +4339,15 @@ internal class AcapelaHostSession(
             val regClean = regToUse.orEmpty()
             extendedKey = "$voiceKey|$regClean"
             noteWarmVoiceLoaded(expectedSpeaker)
+            val rev = AcapelaVoiceRepository.getStorageRevision(context)
+            HostWarmStatusRegistry.recordWarmVoice(
+                context = context,
+                engineId = HostProtocol.ENGINE_ACAPELA,
+                actualVoiceId = expectedSpeaker,
+                dataRevision = rev,
+                hostGeneration = 1L,
+                pcmSuccess = true
+            )
             lastTrialSucceeded.set(true)
             failedTrialKey = null
             consecutiveTrialFailures.remove("$voiceKey|$regClean")
@@ -4512,6 +4532,10 @@ internal class AcapelaHostSession(
         isSpeaking = false
         activeSink = null
         activeCancelled = null
+        noteWarmVoiceClosed()
+        if (activeSession === this) {
+            activeSession = null
+        }
         releaseEngine()
         warmupState.set(WarmupState.IDLE)
         lastWarmupFailure = null

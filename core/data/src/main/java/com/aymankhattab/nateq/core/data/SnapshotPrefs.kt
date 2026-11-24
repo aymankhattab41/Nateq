@@ -187,16 +187,39 @@ internal class SnapshotPrefs(
         private val puts = LinkedHashMap<String, Any?>()
 
         override fun clear(): SharedPreferences.Editor =
-            apply { clearFirst = true }
+            apply {
+                clearFirst = true
+                removals.clear()
+                puts.clear()
+            }
 
         override fun remove(key: String): SharedPreferences.Editor =
-            apply { removals.add(key) }
+            apply {
+                removals.add(key)
+                puts.remove(key)
+            }
 
         override fun putString(key: String, value: String?) =
-            apply { puts[key] = value }
+            apply {
+                if (value == null) {
+                    removals.add(key)
+                    puts.remove(key)
+                } else {
+                    removals.remove(key)
+                    puts[key] = value
+                }
+            }
 
         override fun putStringSet(key: String, values: Set<String>?) =
-            apply { puts[key] = values }
+            apply {
+                if (values == null) {
+                    removals.add(key)
+                    puts.remove(key)
+                } else {
+                    removals.remove(key)
+                    puts[key] = values
+                }
+            }
 
         override fun putInt(key: String, value: Int) =
             apply { puts[key] = value }
@@ -223,9 +246,13 @@ internal class SnapshotPrefs(
             if (ctx != null && isChildProcess) {
                 val result = SettingsAuthority.commitTransaction(ctx, tx)
                 if (result.success) {
-                    revision = result.revision
-                    snapshot = result.snapshot
-                    pendingLocalWrites.clear()
+                    synchronized(this@SnapshotPrefs) {
+                        if (result.revision >= revision) {
+                            revision = result.revision
+                            snapshot = result.snapshot
+                            pendingLocalWrites.clear()
+                        }
+                    }
                     onChanged()
                     return true
                 }
@@ -233,8 +260,10 @@ internal class SnapshotPrefs(
             } else {
                 val ok = delegate.edit().also { applyOps(it) }.commit()
                 if (ok) {
-                    pendingLocalWrites.clear()
-                    snapshot = delegate.all
+                    synchronized(this@SnapshotPrefs) {
+                        pendingLocalWrites.clear()
+                        snapshot = delegate.all
+                    }
                     onChanged()
                 }
                 return ok
@@ -267,9 +296,13 @@ internal class SnapshotPrefs(
                 writeExecutor.execute {
                     val result = SettingsAuthority.commitTransaction(ctx, tx)
                     if (result.success) {
-                        revision = result.revision
-                        snapshot = result.snapshot
-                        pendingLocalWrites.clear()
+                        synchronized(this@SnapshotPrefs) {
+                            if (result.revision >= revision) {
+                                revision = result.revision
+                                snapshot = result.snapshot
+                                pendingLocalWrites.clear()
+                            }
+                        }
                         onChanged()
                     }
                 }

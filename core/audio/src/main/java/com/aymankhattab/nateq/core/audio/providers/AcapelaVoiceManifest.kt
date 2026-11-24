@@ -28,6 +28,8 @@ object AcapelaVoiceManifest {
     private const val MIN_SAMPLE_RATE = 8000
     private const val MAX_SAMPLE_RATE = 96000
     private const val MIN_DATA_FILE_BYTES = 5_000L
+    /** سقف قراءة ملفات المفاتيح والتهيئة (512 كيلوبايت). */
+    const val MAX_KEY_FILE_BYTES = 512 * 1024L
 
     internal val CONFIG_EXTENSIONS = setOf("inf", "ini")
     internal val DATA_EXTENSIONS = setOf(
@@ -2012,6 +2014,13 @@ object AcapelaVoiceManifest {
             )
             return null
         }
+        if (hexFile.length() > MAX_KEY_FILE_BYTES) {
+            diagLog(
+                "[فحص المفتاح] رُفض: تجاوز حجم المفتاح الحد " +
+                    "(${hexFile.length()} بايت)"
+            )
+            return null
+        }
 
         var readEx: Throwable? = null
         val rawBytes = runCatching {
@@ -2107,7 +2116,7 @@ object AcapelaVoiceManifest {
                         "موجود=${if (exists) "نعم" else "لا"} | " +
                         "حجم=${if (exists) f.length() else 0} بايت"
                 )
-                if (!exists) continue
+                if (!exists || f.length() > MAX_KEY_FILE_BYTES) continue
                 var readEx: Throwable? = null
                 val content = runCatching {
                     f.readText(StandardCharsets.UTF_8)

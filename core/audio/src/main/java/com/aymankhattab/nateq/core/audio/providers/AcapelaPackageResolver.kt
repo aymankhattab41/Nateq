@@ -600,6 +600,7 @@ object AcapelaPackageResolver {
         val allInfs = (directInfs + subInfs).distinct()
         val infFile = allInfs.firstOrNull()
         val parsedSpeakerFromInf = infFile?.let { f ->
+            if (f.length() > 512 * 1024L) return@let null
             runCatching {
                 val text = f.readText(StandardCharsets.ISO_8859_1)
                 val pattern =
@@ -652,6 +653,9 @@ object AcapelaPackageResolver {
             authenticCandidates.size > 1 -> {
                 // كشف التكرار: إذا كانت التهيئات متطابقة تماماً في المحتوى
                 val byFingerprint = authenticCandidates.groupBy { c ->
+                    if (c.file.length() > 512 * 1024L) {
+                        return@groupBy c.file.name
+                    }
                     runCatching {
                         c.file.readText(StandardCharsets.ISO_8859_1)
                             .replace("\r\n", "\n").trim()

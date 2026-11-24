@@ -1588,9 +1588,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 .setItems(options) { _, which ->
                     when (which) {
                         0 -> {
+                            val playText = settings.getReadLaterFullText(
+                                item.id
+                            ) ?: item.text
                             A11ySpeechCoordinator.speakAnnouncement(
                                 context = requireContext(),
-                                text = item.text,
+                                text = playText,
                                 isInterruptAllowed = true,
                                 source = com.aymankhattab.nateq.core.audio
                                     .engine.SpeechEntryPoints.Source

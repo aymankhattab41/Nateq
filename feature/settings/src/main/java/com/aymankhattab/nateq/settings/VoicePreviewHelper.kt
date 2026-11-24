@@ -20,6 +20,7 @@ import com.aymankhattab.nateq.core.audio.announcement.ResolvedAudioRoute
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
 import com.aymankhattab.nateq.core.audio.engine.SalmaSpeechTracker
 import com.aymankhattab.nateq.core.audio.engine.SpeechRole
+import com.aymankhattab.nateq.core.audio.engine.UnifiedSpeechTracker
 import com.aymankhattab.nateq.core.audio.engine.VoiceResolutionPolicy
 import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
@@ -521,8 +522,13 @@ internal class VoicePreviewHelper(private val context: Context) {
                             val current = track
                             if (current != null &&
                                 current.playState ==
-                                AudioTrack.PLAYSTATE_PLAYING
+                                AudioTrack.PLAYSTATE_PLAYING &&
+                                validLength > 0
                             ) {
+                                if (totalFramesWritten == 0L) {
+                                    SalmaSpeechTracker.noteFirstTrackWrite()
+                                    UnifiedSpeechTracker.noteFirstTrackWrite()
+                                }
                                 current.write(
                                     chunk,
                                     0,
@@ -555,6 +561,7 @@ internal class VoicePreviewHelper(private val context: Context) {
                             if (!headNoted && t.playbackHeadPosition > 0) {
                                 headNoted = true
                                 SalmaSpeechTracker.notePlaybackHeadAdvance()
+                                UnifiedSpeechTracker.notePlaybackHeadAdvance()
                             }
                             Thread.sleep(25)
                         }

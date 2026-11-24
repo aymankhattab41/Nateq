@@ -67,7 +67,11 @@ class NateqApplication : Application(), AnnouncementAppContext {
             .installUncaughtExceptionHandler(this)
 
         // تجهيز استباقي للأصوات المحددة على IO عند بدء التطبيق
-        VoiceReadinessCoordinator.prepareActiveVoices(this)
+        // يقتصر على العمليات غير المعزولة (لا يبدأ من :engine_host)
+        val procName = ProcessUtils.currentProcessName(this)
+        if (!procName.endsWith(":engine_host")) {
+            VoiceReadinessCoordinator.prepareActiveVoices(this)
+        }
 
         // ===== التحقق من سلامة التطبيق
         // (Anti-tamper / Anti-debug / Play Integrity) =====

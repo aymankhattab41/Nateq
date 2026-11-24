@@ -247,20 +247,25 @@ object AcapelaVoiceImporter {
         sessionId: String,
         cancellationSignal: java.util.concurrent.atomic.AtomicBoolean? = null
     ): ImportResult = withContext(Dispatchers.IO) {
+        val baseDir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        if (!baseDir.exists()) {
+            baseDir.mkdirs()
+        }
+        recoverInterruptedTransactions(baseDir)
+
         val tempUnpack = File(context.cacheDir, "acapela_staging_$sessionId")
         if (tempUnpack.exists()) tempUnpack.deleteRecursively()
         tempUnpack.mkdirs()
 
+        val backupDir = File(baseDir, ".backup_acapela_$sessionId")
+        val journalFile = File(baseDir, ".journal_acapela_$sessionId.json")
         val backups = mutableListOf<Pair<File, File>>()
-        try {
-            val baseDir = EmbeddedStorage.baseDir(
-                context,
-                EmbeddedStorage.Engine.ACAPELA
-            )
-            if (!baseDir.exists()) {
-                baseDir.mkdirs()
-            }
+        val createdTargets = mutableListOf<File>()
 
+        try {
             val guard = ZipExtractionGuard(tempUnpack)
             ZipInputStream(archiveFile.inputStream()).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
@@ -308,35 +313,71 @@ object AcapelaVoiceImporter {
                 )
             }
 
-            // مسار MultiTTS الحرفي
+            // مسار MultiTTS الحرفي: فحص اكتمال الملفات قبل لمس الحي
             val verbatimRoot = findVerbatimVoiceRoot(tempUnpack)
-            if (verbatimRoot != null) {
-                val oldVoiceDir = File(baseDir, "voice")
-                val backupVoiceDir = File(baseDir, "voice_bak_$sessionId")
-                if (oldVoiceDir.exists()) {
-                    oldVoiceDir.renameTo(backupVoiceDir)
-                    backups.add(oldVoiceDir to backupVoiceDir)
+            val isVerbatimValid = verbatimRoot != null &&
+                verbatimRoot.walkTopDown().any { f ->
+                    f.isFile && (
+                        f.extension.lowercase(Locale.ROOT) in
+                            AcapelaVoiceManifest.DATA_EXTENSIONS ||
+                        f.extension.lowercase(Locale.ROOT) in
+                            AcapelaVoiceManifest.CONFIG_EXTENSIONS ||
+                        f.name.equals("voicelist", ignoreCase = true)
+                    )
+                }
+
+            if (isVerbatimValid && verbatimRoot != null) {
+                if (backupDir.exists()) backupDir.deleteRecursively()
+                backupDir.mkdirs()
+                val targetVoiceDir = File(baseDir, "voice")
+                if (targetVoiceDir.exists()) {
+                    val backupVoiceDir = File(backupDir, "voice")
+                    if (!targetVoiceDir.renameTo(backupVoiceDir)) {
+                        copyVoiceTreeVerbatim(targetVoiceDir, backupVoiceDir)
+                        targetVoiceDir.deleteRecursively()
+                    }
+                    backups.add(targetVoiceDir to backupVoiceDir)
+                } else {
+                    createdTargets.add(targetVoiceDir)
                 }
                 val copied = copyVoiceTreeVerbatim(
                     verbatimRoot,
-                    File(baseDir, "voice")
+                    targetVoiceDir
                 )
                 if (copied > 0) {
                     Log.i(
                         TAG,
                         "نسخ MultiTTS حرفي: $copied ملفاً تحت " +
-                            "${File(baseDir, "voice").absolutePath}"
+                            targetVoiceDir.absolutePath
                     )
-                    notifyStorageChanged(context)
-                    for ((_, backup) in backups) {
-                        runCatching { backup.deleteRecursively() }
-                    }
-                    return@withContext finishImport(
+                    writeAcapelaJournal(
+                        journalFile = journalFile,
+                        sessionId = sessionId,
+                        backupDir = backupDir,
+                        createdTargets = createdTargets,
+                        backups = backups,
+                        baseDir = baseDir
+                    )
+                    val finishResult = finishImport(
                         context = context,
                         baseDir = baseDir,
                         emptyMessage =
                             "لم يُعثر على أصوات Acapela بعد النسخ الحرفي"
                     )
+                    if (!finishResult.success) {
+                        rollbackAcapela(
+                            baseDir = baseDir,
+                            createdTargets = createdTargets,
+                            backups = backups,
+                            backupDir = backupDir,
+                            journalFile = journalFile
+                        )
+                        return@withContext finishResult
+                    }
+                    notifyStorageChanged(context)
+                    runCatching { backupDir.deleteRecursively() }
+                    runCatching { journalFile.delete() }
+                    return@withContext finishResult
                 }
             }
 
@@ -383,6 +424,9 @@ object AcapelaVoiceImporter {
                 )
             }
 
+            if (backupDir.exists()) backupDir.deleteRecursively()
+            backupDir.mkdirs()
+
             val sharedUserdicos = tempUnpack.walkTopDown().maxDepth(6)
                 .firstOrNull {
                     it.isDirectory && it.name.equals(
@@ -418,9 +462,17 @@ object AcapelaVoiceImporter {
 
                 val targetDir = existingDir ?: File(baseDir, voiceName)
                 if (targetDir.exists()) {
-                    val backupDir = File(baseDir, "${voiceName}_bak_$sessionId")
-                    targetDir.renameTo(backupDir)
-                    backups.add(targetDir to backupDir)
+                    val backupVoiceDir = File(backupDir, targetDir.name)
+                    if (!targetDir.renameTo(backupVoiceDir)) {
+                        targetDir.copyRecursively(
+                            backupVoiceDir,
+                            overwrite = true
+                        )
+                        targetDir.deleteRecursively()
+                    }
+                    backups.add(targetDir to backupVoiceDir)
+                } else {
+                    createdTargets.add(targetDir)
                 }
                 targetDir.mkdirs()
 
@@ -482,33 +534,69 @@ object AcapelaVoiceImporter {
             }
 
             if (hexFile != null) {
+                val targetHex = File(baseDir, hexFile.name)
+                if (targetHex.exists()) {
+                    val backupHex = File(backupDir, hexFile.name)
+                    if (!targetHex.renameTo(backupHex)) {
+                        targetHex.copyTo(backupHex, overwrite = true)
+                        targetHex.delete()
+                    }
+                    backups.add(targetHex to backupHex)
+                } else {
+                    createdTargets.add(targetHex)
+                }
                 runCatching {
                     hexFile.copyTo(
-                        File(baseDir, hexFile.name),
+                        targetHex,
                         overwrite = true
                     )
                 }
             }
 
-            notifyStorageChanged(context)
+            writeAcapelaJournal(
+                journalFile = journalFile,
+                sessionId = sessionId,
+                backupDir = backupDir,
+                createdTargets = createdTargets,
+                backups = backups,
+                baseDir = baseDir
+            )
 
-            // نجاح التثبيت: حذف النسخ الاحتياطية
-            for ((_, backup) in backups) {
-                runCatching { backup.deleteRecursively() }
-            }
-
-            finishImport(
+            // إنهاء وفحص النطق: النسخ الاحتياطية باقية حتى نجاح التحقق
+            val finishResult = finishImport(
                 context = context,
                 baseDir = baseDir,
                 emptyMessage =
                     "لم يتم العثور على أصوات Acapela صالحة بعد فك الضغط"
             )
+
+            if (!finishResult.success) {
+                rollbackAcapela(
+                    baseDir = baseDir,
+                    createdTargets = createdTargets,
+                    backups = backups,
+                    backupDir = backupDir,
+                    journalFile = journalFile
+                )
+                return@withContext finishResult
+            }
+
+            notifyStorageChanged(context)
+
+            // نجاح التثبيت والتحقق: حذف النسخ الاحتياطية وسجل المعاملة
+            runCatching { backupDir.deleteRecursively() }
+            runCatching { journalFile.delete() }
+
+            finishResult
         } catch (t: Throwable) {
             // استعادة النسخ الاحتياطية عند أي فشل أو إلغاء
-            for ((target, backup) in backups) {
-                if (target.exists()) target.deleteRecursively()
-                backup.renameTo(target)
-            }
+            rollbackAcapela(
+                baseDir = baseDir,
+                createdTargets = createdTargets,
+                backups = backups,
+                backupDir = backupDir,
+                journalFile = journalFile
+            )
             val isCancelled = t is kotlinx.coroutines.CancellationException ||
                 cancellationSignal?.get() == true
             ImportResult(
@@ -768,9 +856,9 @@ object AcapelaVoiceImporter {
             )
 
             is NativeVerification.Failed -> ImportResult(
-                success = true,
-                importedVoices = imported,
-                warning = check.message
+                success = false,
+                errorMessage =
+                    "فشل التحقق من نطق أصوات Acapela: ${check.message}"
             )
         }
     }
@@ -1016,6 +1104,126 @@ object AcapelaVoiceImporter {
                 success = false,
                 errorMessage = t.message ?: "حدث خطأ غير متوقع"
             )
+        }
+    }
+
+    /**
+     * تدوين سجل المعاملة للاسترجاع بعد توقف العملية المفاجئ.
+     */
+    private fun writeAcapelaJournal(
+        journalFile: File,
+        sessionId: String,
+        backupDir: File,
+        createdTargets: List<File>,
+        backups: List<Pair<File, File>>,
+        baseDir: File
+    ) {
+        runCatching {
+            val json = org.json.JSONObject()
+            json.put("sessionId", sessionId)
+            json.put("backupDir", backupDir.name)
+            val crArr = org.json.JSONArray()
+            for (ct in createdTargets) {
+                crArr.put(ct.relativeTo(baseDir).path)
+            }
+            json.put("created", crArr)
+            val buArr = org.json.JSONArray()
+            for ((tgt, bak) in backups) {
+                val item = org.json.JSONObject()
+                item.put("target", tgt.relativeTo(baseDir).path)
+                item.put("backup", bak.relativeTo(backupDir).path)
+                buArr.put(item)
+            }
+            json.put("backedUp", buArr)
+            journalFile.writeText(json.toString(2), Charsets.UTF_8)
+        }
+    }
+
+    /**
+     * التراجع الكامل عند فشل التحقق أو حدوث استثناء في Acapela:
+     * حذف الملفات التي أُنشئت حديثاً، واستعادة النسخ السابقة بالكامل.
+     */
+    internal fun rollbackAcapela(
+        baseDir: File,
+        createdTargets: List<File>,
+        backups: List<Pair<File, File>>,
+        backupDir: File,
+        journalFile: File
+    ) {
+        // 1. حذف كل مجلد أو ملف تم إنشاؤه حديثاً
+        for (target in createdTargets) {
+            if (target.exists()) {
+                runCatching { target.deleteRecursively() }
+            }
+        }
+
+        // 2. استرجاع النسخ الاحتياطية السابقة
+        for ((target, backup) in backups) {
+            if (target.exists()) {
+                runCatching { target.deleteRecursively() }
+            }
+            if (backup.exists()) {
+                target.parentFile?.mkdirs()
+                if (!backup.renameTo(target)) {
+                    runCatching {
+                        backup.copyRecursively(target, overwrite = true)
+                        backup.deleteRecursively()
+                    }
+                }
+            }
+        }
+
+        // 3. تنظيف أي مجلدات فرعية فارغة
+        VoicePackageImporter.cleanEmptyDirs(baseDir)
+
+        // 4. حذف مجلد النسخ الاحتياطي وسجل المعاملة
+        runCatching { backupDir.deleteRecursively() }
+        runCatching { journalFile.delete() }
+    }
+
+    /**
+     * التعافي من المعاملات غير المكتملة في Acapela بعد توقف العملية.
+     */
+    internal fun recoverInterruptedTransactions(baseDir: File) {
+        if (!baseDir.exists() || !baseDir.isDirectory) return
+        val journals = baseDir.listFiles { f ->
+            f.isFile && f.name.startsWith(".journal_acapela_") &&
+                f.name.endsWith(".json")
+        } ?: emptyArray()
+
+        for (jf in journals) {
+            runCatching {
+                val text = jf.readText(Charsets.UTF_8)
+                val json = org.json.JSONObject(text)
+                val backupDirName = json.optString("backupDir")
+                val backupDir = File(baseDir, backupDirName)
+                val createdArr = json.optJSONArray("created")
+                val backedUpArr = json.optJSONArray("backedUp")
+                val createdList = mutableListOf<File>()
+                if (createdArr != null) {
+                    for (i in 0 until createdArr.length()) {
+                        val relPath = createdArr.getString(i)
+                        createdList.add(File(baseDir, relPath))
+                    }
+                }
+                val backedUpList = mutableListOf<Pair<File, File>>()
+                if (backedUpArr != null) {
+                    for (i in 0 until backedUpArr.length()) {
+                        val item = backedUpArr.getJSONObject(i)
+                        val target = File(baseDir, item.getString("target"))
+                        val backup = File(backupDir, item.getString("backup"))
+                        backedUpList.add(target to backup)
+                    }
+                }
+                rollbackAcapela(
+                    baseDir = baseDir,
+                    createdTargets = createdList,
+                    backups = backedUpList,
+                    backupDir = backupDir,
+                    journalFile = jf
+                )
+            }
+            runCatching { jf.delete() }
         }
     }
 }

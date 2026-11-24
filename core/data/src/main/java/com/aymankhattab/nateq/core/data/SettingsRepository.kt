@@ -303,8 +303,8 @@ class SettingsRepository(context: Context) :
             "read_later_long_text_policy"
         const val READ_LATER_POLICY_SAVE_FULL = "save_full"
         const val READ_LATER_POLICY_TRUNCATE = "truncate"
-        internal const val MAX_READ_LATER_ITEMS = 50
-        internal const val MAX_READ_LATER_TEXT_CHARS = 20_000
+        const val MAX_READ_LATER_ITEMS = 50
+        const val MAX_READ_LATER_TEXT_CHARS = 20_000
         const val BOOT_MIRROR_PREFS = "nateq_boot_mirror"
 
         private val BOOT_MIRROR_EXCLUDED_KEYS = setOf(
@@ -4334,7 +4334,10 @@ class SettingsRepository(context: Context) :
     data class ReadLaterItem(
         val id: Long,
         val text: String,
-        val timestampMs: Long
+        val timestampMs: Long,
+        val isTruncated: Boolean = false,
+        val hasFullText: Boolean = false,
+        val fullTextLength: Int = text.length
     )
 
     fun getReadLaterLongTextPolicy(): String =
@@ -4347,8 +4350,20 @@ class SettingsRepository(context: Context) :
         prefs.edit().putString(KEY_READ_LATER_LONG_TEXT_POLICY, policy).apply()
     }
 
-    fun getReadLaterItems(): List<ReadLaterItem> =
-        readLaterDelegate.getReadLaterItems()
+    fun getReadLaterItems(
+        loadFullText: Boolean = false
+    ): List<ReadLaterItem> =
+        readLaterDelegate.getReadLaterItems(loadFullText)
+
+    fun getReadLaterFullText(id: Long): String? =
+        readLaterDelegate.getReadLaterFullText(id)
+
+    fun saveReadLaterExternalText(id: Long, text: String): Boolean =
+        readLaterDelegate.saveExternalTextAtomic(id, text)
+
+    fun cleanReadLaterOrphans() {
+        readLaterDelegate.cleanOrphanFiles()
+    }
 
     fun addReadLaterText(text: String): Boolean =
         readLaterDelegate.addReadLaterText(text)

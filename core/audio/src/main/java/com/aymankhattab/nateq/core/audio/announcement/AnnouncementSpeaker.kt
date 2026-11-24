@@ -26,9 +26,11 @@ import com.aymankhattab.nateq.core.audio.EmergencyVoice
 import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
 import com.aymankhattab.nateq.core.audio.engine.LastSpokenTextsTracker
+import com.aymankhattab.nateq.core.audio.engine.SalmaSpeechTracker
 import com.aymankhattab.nateq.core.audio.engine.SpeechEntryPoints
 import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
+import com.aymankhattab.nateq.core.audio.engine.UnifiedSpeechTracker
 import com.aymankhattab.nateq.core.audio.engine.EmojiLanguageResolver
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.announcement.CueSynth
@@ -2457,6 +2459,10 @@ speechCycle.incrementAndGet()
                                 AudioTrack.PLAYSTATE_PLAYING &&
                                 validLength > 0
                             ) {
+                                if (totalFramesWritten == 0L) {
+                                    SalmaSpeechTracker.noteFirstTrackWrite()
+                                    UnifiedSpeechTracker.noteFirstTrackWrite()
+                                }
                                 currentTrack.write(chunk, 0, validLength)
                                 totalFramesWritten +=
                                     (validLength / bytesPerFrame)

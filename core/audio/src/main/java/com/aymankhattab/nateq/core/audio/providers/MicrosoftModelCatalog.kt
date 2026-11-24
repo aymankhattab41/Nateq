@@ -8,6 +8,7 @@ import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import com.aymankhattab.nateq.util.LocaleUtils
 
 /**
  * كتالوج أصوات مايكروسوفت العصبية المدمجة (Microsoft Neural Embedded Voices).
@@ -198,17 +199,41 @@ object MicrosoftModelCatalog {
         val q = query.trim()
         if (q.isEmpty()) return null
         val items = getItems(context)
-        return items.firstOrNull {
-            it.voiceName.equals(q, ignoreCase = true) ||
-                it.displayNameAr.equals(q, ignoreCase = true) ||
-                it.displayNameEn.equals(q, ignoreCase = true) ||
-                it.id.equals(q, ignoreCase = true) ||
+        val exact = items.firstOrNull {
+            it.id.equals(q, ignoreCase = true) ||
                 it.modelName.equals(q, ignoreCase = true) ||
                 it.topDirName.equals(q, ignoreCase = true) ||
-                q.contains(it.voiceName, ignoreCase = true) ||
-                q.contains(it.displayNameAr, ignoreCase = true) ||
-                q.contains(it.displayNameEn, ignoreCase = true) ||
+                it.voiceName.equals(q, ignoreCase = true) ||
+                it.displayNameAr.equals(q, ignoreCase = true) ||
+                it.displayNameEn.equals(q, ignoreCase = true)
+        }
+        if (exact != null) return exact
+
+        val queryTag = LocaleUtils.toBcp47Tag(q, fallbackToRaw = false)
+        if (queryTag != null) {
+            val matchingTag = items.firstOrNull { item ->
+                val itemTag = item.locale.toLanguageTag()
+                val langOnly = queryTag.substringBefore('-')
+                val tagMatches =
+                    itemTag.equals(queryTag, ignoreCase = true) ||
+                    item.locale.language.equals(langOnly, ignoreCase = true)
+                val nameMatches =
+                    q.contains(item.voiceName, ignoreCase = true) ||
+                    item.modelName.contains(item.voiceName, ignoreCase = true)
+                tagMatches && nameMatches
+            }
+            if (matchingTag != null) return matchingTag
+        }
+
+        val modelMatch = items.firstOrNull {
+            it.modelName.contains(q, ignoreCase = true) ||
                 q.contains(it.topDirName, ignoreCase = true)
+        }
+        if (modelMatch != null) return modelMatch
+
+        return items.firstOrNull {
+            it.voiceName.length >= 3 &&
+                q.contains(it.voiceName, ignoreCase = true)
         }
     }
 }

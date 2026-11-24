@@ -76,9 +76,18 @@ class ReadLaterDelegateTest {
 
         val items = repo.getReadLaterItems()
         assertEquals(1, items.size)
-        // يجب استعادة النص كاملاً دون أي بتر صامت
-        assertEquals(25_000, items[0].text.length)
-        assertEquals(veryLongText, items[0].text)
+        // القائمة الخفيفة تحتوي على سقف المعاينة بلا ثقل على القرص
+        assertEquals(
+            SettingsRepository.MAX_READ_LATER_TEXT_CHARS,
+            items[0].text.length
+        )
+        // يجب استعادة النص كاملاً عبر getReadLaterFullText دون أي بتر
+        val fullText = repo.getReadLaterFullText(items[0].id)
+        assertEquals(25_000, fullText?.length)
+        assertEquals(veryLongText, fullText)
+        // واسترجاع القائمة مع loadFullText يستعيد النص كاملاً
+        val fullItems = repo.getReadLaterItems(loadFullText = true)
+        assertEquals(veryLongText, fullItems[0].text)
     }
 
     @Test

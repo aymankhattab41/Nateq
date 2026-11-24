@@ -231,6 +231,24 @@ object EngineHostClient {
     }
 
     /**
+     * استعلام عن حالة الجاهزية الدافئة للمحرك عبر IPC من المضيف.
+     */
+    suspend fun getWarmStatus(
+        context: Context,
+        engineId: String
+    ): HostWarmStatusRegistry.HostWarmStatus? {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        val call = callHost(context, id) { svc ->
+            svc.getWarmStatus(id)
+        }
+        val res = call.toHostResult()
+        if (res.ok && !res.payload.isNullOrBlank()) {
+            return HostWarmStatusRegistry.fromJson(res.payload)
+        }
+        return HostWarmStatusRegistry.readWarmStatus(context, id)
+    }
+
+    /**
      * نطق نصّ كامل إلى [onFormatInfo]/[onAudioChunk] عبر أنبوب
      * المضيف. تعود بفشلٍ برمز معنون إن مات المضيف أو انتهت المهلة
      * أو أُلغي الطلب (إلغاء كوروتين المُستدعي يصل المضيف في الحال —
@@ -430,6 +448,9 @@ object EngineHostClient {
     internal fun notifyHostDied(engineId: String, generation: Long) {
         val id = HostProtocol.normalizeEngineId(engineId)
         initializedEngines.remove(id)
+        appContext?.let { ctx ->
+            HostWarmStatusRegistry.clearWarmStatus(ctx, id)
+        }
 
         // دمج البلاغات وتجاهل الجيل القديم
         val currentGen = hostGeneration.get()
@@ -537,6 +558,9 @@ object EngineHostClient {
      */
     fun onStorageChanged() {
         initializedEngines.clear()
+        appContext?.let { ctx ->
+            HostWarmStatusRegistry.clearAll(ctx)
+        }
     }
 
     // ----------------------------------------------------------------

@@ -8,6 +8,7 @@ import com.aymankhattab.nateq.core.audio.engine.SalmaSpeechTracker
 import com.aymankhattab.nateq.core.audio.enginehost.AcapelaHostSession
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.audio.enginehost.HostWarmStatusRegistry
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -253,12 +254,20 @@ class AcapelaEmbeddedVoiceProvider(
                 .substringBefore('(')
                 .trim()
 
+            val isWarm = HostWarmStatusRegistry.isVoiceWarm(
+                context = context,
+                engineId = HostProtocol.ENGINE_ACAPELA,
+                voiceId = targetVoiceName,
+                expectedRevision =
+                    AcapelaVoiceRepository.getStorageRevision(context)
+            ) || AcapelaHostSession.isWarmVoiceReady(targetVoiceName)
+
             val callCategory = when {
                 category == "warmup" ->
                     SalmaSpeechTracker.Category.WARMUP
                 category == "preview" || category == "diagnostic" ->
                     SalmaSpeechTracker.Category.DIAGNOSTIC
-                AcapelaHostSession.isWarmVoiceReady(targetVoiceName) ->
+                isWarm ->
                     SalmaSpeechTracker.Category.WARM
                 else -> SalmaSpeechTracker.Category.COLD
             }
@@ -268,112 +277,118 @@ class AcapelaEmbeddedVoiceProvider(
                 textLength = text.length
             )
 
-            tracker?.markQueueWaitStart()
-            val initOk = withTimeoutOrNull(5000L) {
-                ensureInitialized()
-            } ?: false
-            tracker?.markQueueWaitEnd()
+            try {
+                tracker.markQueueWaitStart()
+                val initOk = withTimeoutOrNull(5000L) {
+                    ensureInitialized()
+                } ?: false
+                tracker.markQueueWaitEnd()
 
-            if (!initOk) {
-                tracker?.complete(
-                    SalmaSpeechTracker.Status.FAILED,
-                    "تأخرت تهيئة مضيف Acapela"
-                )
-                Log.w(
-                    TAG,
-                    "تأخرت تهيئة مضيف Acapela؛ تحويل آمن دون خطأ حرج"
-                )
-                com.aymankhattab.nateq.core.audio.engine
-                    .SpeechFallbackTracker.noteAcapelaFailure(
-                        reason = "تأخرت تهيئة مضيف Acapela",
-                        substituteVoice = null,
-                        substituteEngine = null
+                if (!initOk) {
+                    tracker.complete(
+                        SalmaSpeechTracker.Status.FAILED,
+                        "تأخرت تهيئة مضيف Acapela"
                     )
-                return@withContext
-            }
+                    Log.w(
+                        TAG,
+                        "تأخرت تهيئة مضيف Acapela؛ تحويل آمن دون خطأ حرج"
+                    )
+                    com.aymankhattab.nateq.core.audio.engine
+                        .SpeechFallbackTracker.noteAcapelaFailure(
+                            reason = "تأخرت تهيئة مضيف Acapela",
+                            substituteVoice = null,
+                            substituteEngine = null
+                        )
+                    return@withContext
+                }
 
-            val isEvent = LoudnessStage.isEventCategory(category)
-            val chunkConsumer: (ByteArray, Int) -> Unit = if (isEvent) {
-                val gainDb = runCatching {
-                    SettingsRepository.create(context).getEventPcmGainDb()
-                }.getOrDefault(LoudnessStage.DEFAULT_GAIN_DB)
-                if (gainDb > 0f) {
-                    { chunk, validLength ->
-                        if (validLength > 0) {
-                            tracker?.markFirstPcm()
-                            tracker?.markFirstTrackWrite()
-                            LoudnessStage.processPcm16(
-                                chunk, 0, validLength, gainDb
-                            )
+                val isEvent = LoudnessStage.isEventCategory(category)
+                val chunkConsumer: (ByteArray, Int) -> Unit = if (isEvent) {
+                    val gainDb = runCatching {
+                        SettingsRepository.create(context).getEventPcmGainDb()
+                    }.getOrDefault(LoudnessStage.DEFAULT_GAIN_DB)
+                    if (gainDb > 0f) {
+                        { chunk, validLength ->
+                            if (validLength > 0) {
+                                tracker.markFirstPcm()
+                                LoudnessStage.processPcm16(
+                                    chunk, 0, validLength, gainDb
+                                )
+                            }
+                            onAudioChunk(chunk, validLength)
                         }
-                        onAudioChunk(chunk, validLength)
+                    } else {
+                        { chunk, validLength ->
+                            if (validLength > 0) {
+                                tracker.markFirstPcm()
+                            }
+                            onAudioChunk(chunk, validLength)
+                        }
                     }
                 } else {
                     { chunk, validLength ->
                         if (validLength > 0) {
-                            tracker?.markFirstPcm()
-                            tracker?.markFirstTrackWrite()
+                            tracker.markFirstPcm()
                         }
                         onAudioChunk(chunk, validLength)
                     }
                 }
-            } else {
-                { chunk, validLength ->
-                    if (validLength > 0) {
-                        tracker?.markFirstPcm()
-                        tracker?.markFirstTrackWrite()
-                    }
-                    onAudioChunk(chunk, validLength)
-                }
-            }
 
-            tracker?.markSpeakCallStart()
-            val result = EngineHostClient.synthesize(
-                context = context,
-                engineId = HostProtocol.ENGINE_ACAPELA,
-                voiceId = targetVoiceName,
-                text = text,
-                rate = speechRate,
-                pitch = pitch,
-                volume = volume,
-                onFormatInfo = onFormatInfo,
-                onAudioChunk = chunkConsumer
-            )
-            tracker?.markSpeakCallEnd()
-
-            if (!result.ok) {
-                tracker?.complete(
-                    SalmaSpeechTracker.Status.FAILED,
-                    result.message
+                tracker.markSpeakCallStart()
+                val result = EngineHostClient.synthesize(
+                    context = context,
+                    engineId = HostProtocol.ENGINE_ACAPELA,
+                    voiceId = targetVoiceName,
+                    text = text,
+                    rate = speechRate,
+                    pitch = pitch,
+                    volume = volume,
+                    onFormatInfo = onFormatInfo,
+                    onAudioChunk = chunkConsumer
                 )
-                Log.e(
-                    TAG,
-                    "نطق Acapela المدمج فشل [${result.code}]: " +
+                tracker.markSpeakCallEnd()
+
+                if (!result.ok) {
+                    tracker.complete(
+                        SalmaSpeechTracker.Status.FAILED,
                         result.message
-                )
-                com.aymankhattab.nateq.core.audio.engine
-                    .SpeechFallbackTracker.noteAcapelaFailure(
-                        reason = "فشل نطق Acapela [${result.code}]: " +
-                            (result.message ?: ""),
-                        substituteVoice = null,
-                        substituteEngine = null
                     )
-                EngineStatusRegistry.noteFailure(
-                    PROVIDER_ID,
-                    result.code,
-                    result.message
-                )
-                EngineStatusRegistry.noteSpeakFailure(
-                    PROVIDER_ID,
-                    result.code,
-                    result.message
-                )
-            } else {
-                tracker?.complete(SalmaSpeechTracker.Status.SUCCESS)
-                com.aymankhattab.nateq.core.audio.engine
-                    .SpeechFallbackTracker.clearAcapelaFallbackState()
-                EngineStatusRegistry.noteReady(PROVIDER_ID)
-                EngineStatusRegistry.noteSpeakSuccess(PROVIDER_ID)
+                    Log.e(
+                        TAG,
+                        "نطق Acapela المدمج فشل [${result.code}]: " +
+                            result.message
+                    )
+                    com.aymankhattab.nateq.core.audio.engine
+                        .SpeechFallbackTracker.noteAcapelaFailure(
+                            reason = "فشل نطق Acapela [${result.code}]: " +
+                                (result.message ?: ""),
+                            substituteVoice = null,
+                            substituteEngine = null
+                        )
+                    EngineStatusRegistry.noteFailure(
+                        PROVIDER_ID,
+                        result.code,
+                        result.message
+                    )
+                    EngineStatusRegistry.noteSpeakFailure(
+                        PROVIDER_ID,
+                        result.code,
+                        result.message
+                    )
+                } else {
+                    tracker.complete(SalmaSpeechTracker.Status.SUCCESS)
+                    com.aymankhattab.nateq.core.audio.engine
+                        .SpeechFallbackTracker.clearAcapelaFallbackState()
+                    EngineStatusRegistry.noteReady(PROVIDER_ID)
+                    EngineStatusRegistry.noteSpeakSuccess(PROVIDER_ID)
+                }
+            } finally {
+                if (!tracker.isCompletedRequest) {
+                    tracker.complete(
+                        SalmaSpeechTracker.Status.CANCELLED,
+                        "انتهى أو ألغي طلب Acapela"
+                    )
+                }
             }
         }
     }
