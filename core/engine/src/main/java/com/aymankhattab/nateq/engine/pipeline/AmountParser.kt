@@ -15,40 +15,58 @@ internal object AmountParser {
      * (3.141) تبقى عشرية فلا تُفسد الأعداد العشرية كأعداد صحيحة.
      */
     fun sanitizeNumerals(raw: String): String {
+        val trimmed = raw.trimStart()
+        val hasMinus = trimmed.startsWith('-') || trimmed.startsWith('\u2212')
+        val hasPlus = trimmed.startsWith('+')
+        val sign = when {
+            hasMinus -> "-"
+            hasPlus -> "+"
+            else -> ""
+        }
+        val unsignedRaw = if (sign.isNotEmpty()) {
+            trimmed.substring(1).trimStart()
+        } else {
+            raw
+        }
+
         val seps = mutableListOf<Int>()
-        for (i in raw.indices) {
-            val ch = raw[i]
-            val digitAround = i > 0 && raw[i - 1].isDigit() &&
-                i + 1 < raw.length && raw[i + 1].isDigit()
+        for (i in unsignedRaw.indices) {
+            val ch = unsignedRaw[i]
+            val digitAround = i > 0 && unsignedRaw[i - 1].isDigit() &&
+                i + 1 < unsignedRaw.length && unsignedRaw[i + 1].isDigit()
             if ((ch == ',' || ch == '.') && digitAround) seps.add(i)
         }
-        if (seps.isEmpty()) return raw
+        if (seps.isEmpty()) {
+            return if (sign.isNotEmpty()) sign + unsignedRaw else raw
+        }
 
         val lastIdx = seps.last()
-        val lastCh = raw[lastIdx]
-        val tailLen = raw.length - lastIdx - 1
+        val lastCh = unsignedRaw[lastIdx]
+        val tailLen = unsignedRaw.length - lastIdx - 1
         // فاصلة واحدة + طرف ثلاثي + جزء صحيح صفري خالص («0,125»): فاصلة كسور
         // بالتأكيد (وزن/كسر في تدوين غربي) — أمَّا «1,234» ففاصلُ آلاف كما هو.
         // بلا هذا الاستثناء كانت «0,125 كجم» تُقرأ «مائة وخمسة وعشرون» خطأً.
+        // فصل الإشارة أولاً يحمي المبالغ السالبة («-0,125») من التحول لآلاف.
         val leadingZeroFraction = seps.size == 1 &&
             lastCh == ',' && tailLen == 3 &&
-            raw.substring(0, lastIdx).all { it == '0' }
+            unsignedRaw.substring(0, lastIdx).all { it == '0' }
 
         val lastIsDecimal = when {
             leadingZeroFraction -> true
             tailLen != 3 -> true
             seps.size == 1 -> lastCh == '.'
                 // فاصلة وحيدة + طرف ثلاثي: (,) آلاف أمريكية، (.) عشرية
-            else -> seps.any { raw[it] != lastCh }
+            else -> seps.any { unsignedRaw[it] != lastCh }
                 // تنوّع الرموز: الأخيرة كسور (1,234.567)، وإلا فكلها آلاف
         }
 
-        val sb = StringBuilder(raw.length)
-        for (i in raw.indices) {
+        val sb = StringBuilder(unsignedRaw.length + sign.length)
+        if (sign.isNotEmpty()) sb.append(sign)
+        for (i in unsignedRaw.indices) {
             when {
                 i == lastIdx && lastIsDecimal -> sb.append('.')
                 i in seps -> Unit
-                else -> sb.append(raw[i])
+                else -> sb.append(unsignedRaw[i])
             }
         }
         return sb.toString()

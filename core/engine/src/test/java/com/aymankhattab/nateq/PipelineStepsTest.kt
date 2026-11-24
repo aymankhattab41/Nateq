@@ -864,6 +864,181 @@ class PipelineStepsTest {
         assertEquals(-1234.0, AmountParser.parseAmount("-1,234"), 0.001)
     }
 
+    @Test
+    fun amountParser_negativeLeadingZeroFraction() {
+        assertEquals("-0.125", AmountParser.sanitizeNumerals("-0,125"))
+        assertEquals("-0.125", AmountParser.sanitizeNumerals("-0.125"))
+        assertEquals("0.125", AmountParser.sanitizeNumerals("0,125"))
+        assertEquals(-0.125, AmountParser.parseAmount("-0,125"), 0.0001)
+        assertEquals(0.125, AmountParser.parseAmount("0,125"), 0.0001)
+        assertEquals(-0.125, AmountParser.parseAmount("-0.125"), 0.0001)
+        assertEquals("-0.000", AmountParser.sanitizeNumerals("-0,000"))
+        val negZero1 = AmountParser.parseAmount("-0,000")
+        val negZero2 = AmountParser.parseAmount("-0.0")
+        val negZero3 = AmountParser.parseAmount("-0")
+        assertTrue(java.lang.Double.compare(negZero1, 0.0) < 0)
+        assertTrue(java.lang.Double.compare(negZero2, 0.0) < 0)
+        assertTrue(java.lang.Double.compare(negZero3, 0.0) < 0)
+        assertEquals(-1234.0, AmountParser.parseAmount("-1,234"), 0.001)
+        assertEquals(-1234.56, AmountParser.parseAmount("-1,234.56"), 0.001)
+        assertEquals(-1234.56, AmountParser.parseAmount("-1.234,56"), 0.001)
+        assertEquals(-3.141, AmountParser.parseAmount("-3.141"), 0.001)
+    }
+
+    @Test
+    fun currency_negative_kwd_fils_vs_dinars() {
+        assertEquals(
+            "minus one hundred twenty five fils",
+            CurrencyStep.applyEnglish("-0,125 KWD")
+        )
+        assertEquals(
+            "one hundred twenty five fils",
+            CurrencyStep.applyEnglish("0,125 KWD")
+        )
+        assertEquals(
+            "minus one hundred twenty five fils",
+            CurrencyStep.applyEnglish("-0.125 KWD")
+        )
+        assertEquals(
+            "سالب مائة وخمسة وعشرون فلساً",
+            CurrencyStep.apply("-0,125 KWD")
+        )
+        assertEquals(
+            "مائة وخمسة وعشرون فلساً",
+            CurrencyStep.apply("0,125 KWD")
+        )
+        assertEquals(
+            "سالب مائة وخمسة وعشرون فلساً",
+            CurrencyStep.apply("-0.125 KWD")
+        )
+    }
+
+    @Test
+    fun currency_negative_zero_all_forms() {
+        assertEquals(
+            "minus zero Kuwaiti dinars",
+            CurrencyStep.applyEnglish("-0 KWD")
+        )
+        assertEquals(
+            "minus zero Kuwaiti dinars",
+            CurrencyStep.applyEnglish("-0.0 KWD")
+        )
+        assertEquals(
+            "minus zero Kuwaiti dinars",
+            CurrencyStep.applyEnglish("-0,000 KWD")
+        )
+        assertEquals("minus zero dollars", CurrencyStep.applyEnglish("-0$"))
+        assertEquals("minus zero dollars", CurrencyStep.applyEnglish("$-0"))
+        assertEquals("minus zero dollars", CurrencyStep.applyEnglish("-0.0$"))
+        assertEquals(
+            "minus zero dollars",
+            CurrencyStep.applyEnglish("-0,000$")
+        )
+        assertEquals("zero Kuwaiti dinars", CurrencyStep.applyEnglish("0 KWD"))
+        assertEquals("zero dollars", CurrencyStep.applyEnglish("0$"))
+
+        assertEquals("ناقص صِفْرْ دينار كويتي", CurrencyStep.apply("-0 KWD"))
+        assertEquals("ناقص صِفْرْ دينار كويتي", CurrencyStep.apply("-0.0 KWD"))
+        assertEquals(
+            "ناقص صِفْرْ دينار كويتي",
+            CurrencyStep.apply("-0,000 KWD")
+        )
+        assertEquals("ناقص صِفْرْ دولار", CurrencyStep.apply("-0$"))
+        assertEquals("ناقص صِفْرْ دولار", CurrencyStep.apply("$-0"))
+        assertEquals("ناقص صِفْرْ دولار", CurrencyStep.apply("-0.0$"))
+        assertEquals("ناقص صِفْرْ دولار", CurrencyStep.apply("-0,000$"))
+        assertEquals("صِفْرْ دينار كويتي", CurrencyStep.apply("0 KWD"))
+        assertEquals("صِفْرْ دولار", CurrencyStep.apply("0$"))
+    }
+
+    @Test
+    fun currency_negative_subunits_100_and_1000() {
+        // 1000 وحدة فرعية: BHD (fils), OMR (baisa), TND (millime)
+        assertEquals(
+            "minus two hundred fifty fils",
+            CurrencyStep.applyEnglish("-0,250 BHD")
+        )
+        assertEquals(
+            "سالب مائتان وخمسون فلساً",
+            CurrencyStep.apply("-0,250 BHD")
+        )
+        assertEquals(
+            "minus five hundred baisa",
+            CurrencyStep.applyEnglish("-0,500 OMR")
+        )
+        assertEquals(
+            "سالب خمسمائة بيسة",
+            CurrencyStep.apply("-0,500 OMR")
+        )
+        assertEquals(
+            "minus one hundred millimes",
+            CurrencyStep.applyEnglish("-0,100 TND")
+        )
+        assertEquals(
+            "سالب مائة مليم",
+            CurrencyStep.apply("-0,100 TND")
+        )
+
+        // 100 وحدة فرعية: USD (cent), EUR (cent), SAR (halala)
+        assertEquals(
+            "minus fifty cents",
+            CurrencyStep.applyEnglish("-0,50 USD")
+        )
+        assertEquals("fifty cents", CurrencyStep.applyEnglish("0,50 USD"))
+        assertEquals(
+            "minus fifty cents",
+            CurrencyStep.applyEnglish("-0.50 USD")
+        )
+        assertEquals("سالب خمسون سنتاً", CurrencyStep.apply("-0,50 USD"))
+        assertEquals("خمسون سنتاً", CurrencyStep.apply("0,50 USD"))
+        assertEquals(
+            "minus twenty five cents",
+            CurrencyStep.applyEnglish("-0,25 EUR")
+        )
+        assertEquals(
+            "سالب خمسة وعشرون سنتاً",
+            CurrencyStep.apply("-0,25 EUR")
+        )
+        assertEquals(
+            "minus seventy five halalas",
+            CurrencyStep.applyEnglish("-0,75 SAR")
+        )
+        assertEquals(
+            "سالب خمسة وسبعون هللةً",
+            CurrencyStep.apply("-0,75 SAR")
+        )
+    }
+
+    @Test
+    fun currency_negative_integers_and_thousands_separator() {
+        assertEquals(
+            "minus one thousand two hundred thirty four Kuwaiti dinars",
+            CurrencyStep.applyEnglish("-1,234 KWD")
+        )
+        assertEquals(
+            "ناقص ألف ومائتان وأربعة وثلاثون ديناراً كويتياً",
+            CurrencyStep.apply("-1,234 KWD")
+        )
+        assertEquals(
+            "minus one thousand two hundred thirty four US dollars " +
+                "and fifty six cents",
+            CurrencyStep.applyEnglish("-1,234.56 USD")
+        )
+        assertEquals(
+            "ناقص ألف ومائتان وأربعة وثلاثون دولاراً أمريكياً " +
+                "وستة وخمسون سنتاً",
+            CurrencyStep.apply("-1,234.56 USD")
+        )
+        assertEquals(
+            "minus fifty US dollars",
+            CurrencyStep.applyEnglish("-50 USD")
+        )
+        assertEquals(
+            "ناقص خمسون دولاراً أمريكياً",
+            CurrencyStep.apply("-50 USD")
+        )
+    }
+
     // ═════════==== بند 3.1: المبالغ السالبة ═════════
 
     @Test

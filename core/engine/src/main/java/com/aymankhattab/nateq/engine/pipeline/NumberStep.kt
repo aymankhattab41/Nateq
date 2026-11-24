@@ -237,13 +237,16 @@ internal class NumberStep(
         cleaned: String,
         markNumbers: Boolean = false
     ): String {
-        val dot = cleaned.indexOf('.')
-        val intPart = cleaned.substring(0, dot)
-        val fracPart = cleaned.substring(dot + 1)
+        val isNeg = cleaned.startsWith('-') || cleaned.startsWith('\u2212')
+        val unsigned = if (isNeg) cleaned.substring(1) else cleaned
+        val dot = unsigned.indexOf('.')
+        val intPart = unsigned.substring(0, dot)
+        val fracPart = unsigned.substring(dot + 1)
         val intWords = intPart.toLongOrNull()
             ?.let { NumberSpeech.toEnglishWords(it, markNumbers = false) }
             ?: englishSpokenDigits(intPart)
-        val result = "$intWords point ${englishSpokenDigits(fracPart)}"
+        val prefix = if (isNeg) "minus " else ""
+        val result = "$prefix$intWords point ${englishSpokenDigits(fracPart)}"
         return NumberSpeech.wrapNumber(result, markNumbers)
     }
 

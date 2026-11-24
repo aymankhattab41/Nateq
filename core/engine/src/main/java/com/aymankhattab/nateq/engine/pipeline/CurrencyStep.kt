@@ -445,7 +445,7 @@ internal object CurrencyStep : TextProcessingStep {
     // نمط المبلغ مع إشارة سالبة اختيارية (بند 3.1): «-2$» / «$-2» تُنطق
     // «ناقص دولاران» — كانت السالبة خارج النمط فتسقط الإشارة وتُتلف
     // الترتيب النحوي.
-    private val AMOUNT_REGEX = "-?\\d+(?:[.,]\\d{3})*(?:[.,]\\d+)?"
+    private val AMOUNT_REGEX = "[-−]?\\d+(?:[.,]\\d{3})*(?:[.,]\\d+)?"
     // نمط كود العملة مسبوقاً بالمبلغ: «USD 100».
     private val PATTERN_CURRENCY_CODE = Pattern.compile(
         """\b(USD|EUR|GBP|SAR|AED|KWD|QAR|OMR|BHD|EGP|TND|""" +
@@ -455,7 +455,7 @@ internal object CurrencyStep : TextProcessingStep {
     // نمط الكود المسبوق بمبلغه: «1500 USD» — يمنع انفصال «USD» مقطعاً
     // إنجليزياً في النص المختلط (تُطبَّق خطوة العملة قبل تقسيم اللغة).
     private val PATTERN_AMOUNT_CODE = Pattern.compile(
-        """(?<![-\d])(""" + AMOUNT_REGEX + """)\s+(USD|EUR|GBP|SAR|AED|""" +
+        """(?<![-−\d])(""" + AMOUNT_REGEX + """)\s+(USD|EUR|GBP|SAR|AED|""" +
             """KWD|QAR|OMR|BHD|EGP|TND|DZD|MAD|JPY|CNY|INR|KRW|RUB)\b"""
     )
 
@@ -503,7 +503,7 @@ internal object CurrencyStep : TextProcessingStep {
                 ""
             }
             val spacePattern = if (symbol == "ج") "" else "\\s*"
-            val source = "(?<![-\\d])(" + AMOUNT_REGEX + ")" + spacePattern +
+            val source = "(?<![-−\\d])(" + AMOUNT_REGEX + ")" + spacePattern +
                 Pattern.quote(symbol) + tailGuard
             Pattern.compile(source) to info
         }
@@ -550,9 +550,12 @@ internal object CurrencyStep : TextProcessingStep {
             englishCurrencyAmountPhrase(amount, info, markNumbers)
         },
         fallback = { amount ->
-            NumberSpeech.toEnglishWords(
-                amount.toLong(), markNumbers = markNumbers
+            val isNeg = java.lang.Double.compare(amount, 0.0) < 0
+            val whole = kotlin.math.abs(amount.toLong())
+            val words = NumberSpeech.toEnglishWords(
+                whole, markNumbers = markNumbers
             )
+            if (isNeg) "minus $words" else words
         }
     )
 
@@ -647,7 +650,7 @@ internal object CurrencyStep : TextProcessingStep {
         markNumbers: Boolean = false
     ): String {
         val whole = amount.toLong()
-        val isNeg = whole < 0L || (whole == 0L && amount < 0.0)
+        val isNeg = java.lang.Double.compare(amount, 0.0) < 0
         // العملات ثلاثية الخانات (د.ك/د.ب/ر.ع/د.ت) وحدتها الفرعية 1000
         // (فلس/بيسة/مليم) والبقية 100. كان الضرب الثابت في 100.0 ينطق
         // «1.500 د.ك» خطأً «وخمسون فلس» بدل «وخمسمائة فلس»، ويُفقد كسوراً
@@ -775,7 +778,7 @@ internal object CurrencyStep : TextProcessingStep {
         markNumbers: Boolean = false
     ): String {
         val whole = amount.toLong()
-        val isNeg = whole < 0L || (whole == 0L && amount < 0.0)
+        val isNeg = java.lang.Double.compare(amount, 0.0) < 0
         // ترحيل الكسور المتراكمة (1.999 → دولاران) كما في المسار العربي.
         val fracSubunitsRaw = Math.round(
             Math.abs(amount - whole) * info.subunitsPerUnit

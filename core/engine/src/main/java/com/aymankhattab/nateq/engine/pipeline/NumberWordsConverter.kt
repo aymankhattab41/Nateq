@@ -49,7 +49,7 @@ internal object NumberWordsConverter {
             if (d.isInfinite()) {
                 return if (d > 0) "ما لا نهاية" else "ناقص ما لا نهاية"
             }
-            val negative = d < 0
+            val negative = java.lang.Double.compare(d, 0.0) < 0
             val abs = Math.abs(d)
             // تمثيل عشري نظيف بدون أصفار ختامية (مثل 3.05 → "3.05").
             val plain = BigDecimal.valueOf(abs)
@@ -102,17 +102,17 @@ internal object NumberWordsConverter {
     }
 
     private fun computeDecimalStringToWords(plain: String): String {
-        val dot = plain.indexOf('.')
-        if (dot < 0) {
-            val integerText = plain.toLongOrNull()
-                ?.let { computeNumberToWords(it) }
-                ?: spokenDigits(plain)
-            return integerText
-        }
-        val negative = plain.startsWith("-")
+        val negative = plain.startsWith("-") || plain.startsWith('\u2212')
         val clean = if (negative) plain.substring(1) else plain
-        val cleanDot = clean.indexOf('.')
+        val dot = clean.indexOf('.')
         val base = if (negative) "ناقص " else ""
+        if (dot < 0) {
+            val integerText = clean.toLongOrNull()
+                ?.let { computeNumberToWords(it) }
+                ?: spokenDigits(clean)
+            return "$base$integerText"
+        }
+        val cleanDot = dot
 
         val integerPartStr = clean.substring(0, cleanDot)
         val integerPart = integerPartStr.toLongOrNull()
