@@ -7,8 +7,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import android.content.Context
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
+import androidx.test.core.app.ApplicationProvider
 
 /**
  * يغطي قرار حجب رمز التحقق (OTP) في المسار العام لإشعارات التطبيقات
@@ -321,5 +323,152 @@ class NateqNotificationListenerTest {
             effectiveMode = SmsReadingReceiver.MODE_FULL
         )
         assertEquals("رسالة من أحمد", textLocked)
+    }
+
+    @Test
+    fun resolveOtpSpeechText_arabicIndicDigits_enabledAndDisabled() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val textEnabled = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "١٢٣٤٥٦",
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4 5 6", textEnabled)
+
+        val textDisabled = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "١٢٣٤٥٦",
+            otpReadingEnabled = false
+        )
+        assertTrue(textDisabled.contains("Lord TTS"))
+        assertFalse(textDisabled.contains("1 2 3 4 5 6"))
+    }
+
+    @Test
+    fun resolveOtpSpeechText_persianDigits_enabledAndDisabled() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val textEnabled = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "کد تأیید",
+            text = "۱۲۳۴۵۶",
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4 5 6", textEnabled)
+
+        val textDisabled = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "کد تأیید",
+            text = "۱۲۳۴۵۶",
+            otpReadingEnabled = false
+        )
+        assertTrue(textDisabled.contains("Lord TTS"))
+        assertFalse(textDisabled.contains("1 2 3 4 5 6"))
+    }
+
+    @Test
+    fun resolveOtpSpeechText_latinDigits_enabledAndDisabled() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val textEnabled = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "Verification",
+            text = "Your code is 123456",
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4 5 6", textEnabled)
+
+        val textDisabled = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "Verification",
+            text = "Your code is 123456",
+            otpReadingEnabled = false
+        )
+        assertTrue(textDisabled.contains("Lord TTS"))
+        assertFalse(textDisabled.contains("1 2 3 4 5 6"))
+    }
+
+    @Test
+    fun resolveOtpSpeechText_preservesLeadingZero() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val textArabicIndic = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "٠١٢٣٤٥",
+            otpReadingEnabled = true
+        )
+        assertEquals("0 1 2 3 4 5", textArabicIndic)
+
+        val textPersian = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "کد تایید",
+            text = "۰۱۲۳۴۵",
+            otpReadingEnabled = true
+        )
+        assertEquals("0 1 2 3 4 5", textPersian)
+    }
+
+    @Test
+    fun resolveSpeechText_lockScreenPrivacyStrictlyPrecedesOtp() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        // الشاشة مقفولة + OTP: يجب نطق اسم التطبيق فقط وعدم كشف OTP
+        val lockedText = NateqNotificationListener.resolveSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "١٢٣٤٥٦",
+            privacyLocked = true,
+            isOtp = true,
+            otpReadingEnabled = true
+        )
+        assertEquals("إشعار جديد من Lord TTS", lockedText)
+        assertFalse(lockedText.contains("1 2 3 4 5 6"))
+
+        // الشاشة غير مقفولة + OTP + ميزة مفعلة: ينطق OTP خانة خانة
+        val unlockedOtpEnabled = NateqNotificationListener.resolveSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "١٢٣٤٥٦",
+            privacyLocked = false,
+            isOtp = true,
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4 5 6", unlockedOtpEnabled)
+
+        // الشاشة غير مقفولة + OTP + ميزة معطلة: ينطق العبارة الآمنة
+        val unlockedOtpDisabled = NateqNotificationListener.resolveSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "رمز التحقق",
+            text = "١٢٣٤٥٦",
+            privacyLocked = false,
+            isOtp = true,
+            otpReadingEnabled = false
+        )
+        assertTrue(unlockedOtpDisabled.contains("Lord TTS"))
+        assertFalse(unlockedOtpDisabled.contains("1 2 3 4 5 6"))
+    }
+
+    @Test
+    fun shouldMaskOtp_persianKeywords() {
+        assertTrue(
+            NateqNotificationListener.shouldMaskOtp(
+                true, "کد تأیید", "۱۲۳۴۵۶"
+            )
+        )
+        assertTrue(
+            NateqNotificationListener.shouldMaskOtp(
+                true, "رمز تایید", "٠١٢٣٤٥"
+            )
+        )
     }
 }

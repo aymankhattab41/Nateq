@@ -212,7 +212,9 @@ object LocaleUtils {
             "رقم التحقق|رقم التفعيل|otp|one[ -]?time password|" +
             "verification code|activation code|" +
             "confirmation code|security code|" +
-            "passcode|تأكيد الدخول|كود الدخول",
+            "passcode|تأكيد الدخول|كود الدخول|" +
+            "کد تأیید|کد تایید|رمز تأیید|رمز تایید|" +
+            "کد ورود|رمز ورود",
         RegexOption.IGNORE_CASE
     )
 

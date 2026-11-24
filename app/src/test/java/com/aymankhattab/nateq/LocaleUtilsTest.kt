@@ -278,4 +278,14 @@ class LocaleUtilsTest {
         // الكلمة دون رقم متجاور حقيقي ليست OTP
         assertFalse(LocaleUtils.containsOtp("رمز التأكيد"))
     }
+
+    @Test
+    fun containsOtp_persianKeywordsAndIndicDigits() {
+        assertTrue(LocaleUtils.containsOtp("کد تأیید شما ۱۲۳۴۵۶ است"))
+        assertTrue(LocaleUtils.containsOtp("کد تایید: ۰۱۲۳۴۵"))
+        assertTrue(LocaleUtils.containsOtp("رمز تأیید 482913"))
+        assertTrue(LocaleUtils.containsOtp("رمز تایید 762341"))
+        assertTrue(LocaleUtils.containsOtp("کد ورود 54321"))
+        assertTrue(LocaleUtils.containsOtp("رمز ورود 65432"))
+    }
 }

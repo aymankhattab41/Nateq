@@ -212,6 +212,118 @@ class NateqNotificationListener : NotificationListenerService() {
             "${title.orEmpty()} ${text.orEmpty()}".trim()
         )
 
+        /**
+         * صياغة نص نطق إشعار رمز التحقق (OTP): عند تفعيل ميزة قراءة OTP
+         * يُستخرج الرمز ويُنطق خانةً خانة، وإلا يُستعاض عنه بالصيغة الآمنة
+         * التي تذكر اسم التطبيق فقط لحماية الخصوصية.
+         */
+        fun resolveOtpSpeechText(
+            context: Context,
+            appName: String,
+            title: String?,
+            text: String?,
+            otpReadingEnabled: Boolean
+        ): String {
+            val appLang = if (LocaleUtils.containsArabic(appName)) {
+                LanguageCode.AR.tag
+            } else {
+                LanguageCode.EN.tag
+            }
+            if (otpReadingEnabled) {
+                val combinedText =
+                    "${title.orEmpty()} ${text.orEmpty()}".trim()
+                val extracted = OtpReader.extractOtp(combinedText)
+                if (extracted != null) {
+                    return OtpReader.formatOtpForSpeech(extracted)
+                }
+            }
+            return LocaleUtils.stringForSpeech(
+                context, appLang,
+                R.string.notif_otp_safe, R.string.notif_otp_safe
+            ).replace("{app}", appName)
+        }
+
+        /**
+         * بناء نص النطق العادي للإشعار (اسم التطبيق والعنوان والنص)
+         * أو اسم التطبيق فقط عند قفل الشاشة.
+         */
+        fun buildSpeechText(
+            context: Context,
+            appName: String,
+            title: String?,
+            text: String?,
+            privacyLocked: Boolean
+        ): String {
+            val dynamicText = "$appName ${title.orEmpty()} ${text.orEmpty()}"
+            val isArabic = !dynamicText.any { it.isLetter() } ||
+                LocaleUtils.containsArabic(dynamicText)
+            val lang = if (isArabic) {
+                LanguageCode.AR.tag
+            } else {
+                LanguageCode.EN.tag
+            }
+            if (privacyLocked) {
+                return LocaleUtils.stringForSpeech(
+                    context, lang, R.string.notif_new, R.string.notif_new
+                ).replace("{app}", appName)
+            }
+            return when {
+                !title.isNullOrBlank() && !text.isNullOrBlank() ->
+                    LocaleUtils.stringForSpeech(
+                        context, lang,
+                        R.string.notif_from_title_text,
+                        R.string.notif_from_title_text
+                    ).replace("{app}", appName)
+                    .replace("{title}", title)
+                    .replace("{text}", text)
+                !title.isNullOrBlank() -> LocaleUtils.stringForSpeech(
+                    context, lang,
+                    R.string.notif_from_title,
+                    R.string.notif_from_title
+                ).replace("{app}", appName).replace("{title}", title)
+                !text.isNullOrBlank() -> LocaleUtils.stringForSpeech(
+                    context, lang,
+                    R.string.notif_from_text,
+                    R.string.notif_from_text
+                ).replace("{app}", appName).replace("{text}", text)
+                else -> LocaleUtils.stringForSpeech(
+                    context, lang, R.string.notif_new, R.string.notif_new
+                ).replace("{app}", appName)
+            }
+        }
+
+        /**
+         * تحديد نص النطق النهائي للإشعار مع مراعاة أسبقية قفل الشاشة والخصوصية:
+         * 1. قفل الشاشة (privacyLocked) يسبق كل شيء: نطق اسم التطبيق فقط
+         *    دون عنوان أو نص أو رمز تحقق.
+         * 2. إشعار رمز التحقق (isOtp): نطق رمز OTP خانة خانة إن كانت ميزة
+         *    قراءة OTP مفعلة، أو نطق العبارة الآمنة البديلة لحماية الخصوصية.
+         * 3. الإشعار العادي: نطق اسم التطبيق والعنوان والنص وفق القالب المعتمد.
+         */
+        fun resolveSpeechText(
+            context: Context,
+            appName: String,
+            title: String?,
+            text: String?,
+            privacyLocked: Boolean,
+            isOtp: Boolean,
+            otpReadingEnabled: Boolean
+        ): String {
+            return if (privacyLocked) {
+                buildSpeechText(
+                    context, appName, title, text, privacyLocked = true
+                )
+            } else if (isOtp) {
+                resolveOtpSpeechText(
+                    context, appName, title, text, otpReadingEnabled
+                )
+            } else {
+                buildSpeechText(
+                    context, appName, title, text, privacyLocked = false
+                )
+            }
+        }
+
         /** بند ١٧: استخراج أنصّ وأكمل نص متاح من الإشعار بدل تفضيل
          *  EXTRA_TEXT القصير على BIG_TEXT وTEXT_LINES الأطول. */
         fun notificationBodyText(extras: android.os.Bundle): String? {
@@ -662,54 +774,24 @@ class NateqNotificationListener : NotificationListenerService() {
             val isOtp = shouldMaskOtp(
                 privacyEnabled, title, text
             )
+            // ع٢٩-15: استخراج وقراءة OTP حرفاً حرفاً عند تفعيل الميزة
+            val otpEnabled = isOtp && FeatureFlags.isActive(
+                FeatureFlags.FEATURE_OTP_READING,
+                context = applicationContext,
+                settings = settingsRepository
+            )
             // ثابت الأمان: قفل الشاشة يسبق فرع OTP بلا استثناء. قبل هذا
             // الترتيب كان رمز التحقق يُستخرج ويُنطق حرفاً حرفاً والشاشة
             // مقفولة لأن فرع OTP كان يُفحَص أولاً — وهو خرق لخصوصية القفل.
-            val speechText = if (privacyLocked) {
-                buildSpeechText(appName, title, text, privacyLocked = true)
-            } else if (isOtp) {
-                val appLang = if (LocaleUtils.containsArabic(appName)) {
-                    LanguageCode.AR.tag
-                } else {
-                    LanguageCode.EN.tag
-                }
-                // ع٢٩-15: استخراج وقراءة OTP حرفاً حرفاً عند تفعيل الميزة
-                val repo = settingsRepository
-                val otpEnabled = FeatureFlags.isActive(
-                    FeatureFlags.FEATURE_OTP_READING,
-                    context = applicationContext,
-                    settings = settingsRepository
-                )
-                val otpText = if (otpEnabled) {
-                    val combinedText = "${title.orEmpty()} ${text.orEmpty()}"
-                    OtpReader.extractOtp(combinedText)?.let {
-                        OtpReader.formatOtpForSpeech(it)
-                    } ?: run {
-                        val appLang = if (LocaleUtils.containsArabic(appName)) {
-                            LanguageCode.AR.tag
-                        } else {
-                            LanguageCode.EN.tag
-                        }
-                        LocaleUtils.stringForSpeech(
-                            applicationContext, appLang,
-                            R.string.notif_otp_safe, R.string.notif_otp_safe
-                        ).replace("{app}", appName)
-                    }
-                } else {
-                    val appLang = if (LocaleUtils.containsArabic(appName)) {
-                        LanguageCode.AR.tag
-                    } else {
-                        LanguageCode.EN.tag
-                    }
-                    LocaleUtils.stringForSpeech(
-                        applicationContext, appLang,
-                        R.string.notif_otp_safe, R.string.notif_otp_safe
-                    ).replace("{app}", appName)
-                }
-                otpText
-            } else {
-                buildSpeechText(appName, title, text, privacyLocked)
-            }
+            val speechText = resolveSpeechText(
+                context = applicationContext,
+                appName = appName,
+                title = title,
+                text = text,
+                privacyLocked = privacyLocked,
+                isOtp = isOtp,
+                otpReadingEnabled = otpEnabled
+            )
             val isArabic = LocaleUtils.containsArabic(speechText)
             val locale = if (isArabic) {
                 Locale.forLanguageTag(LanguageCode.AR.tag)
@@ -1425,43 +1507,9 @@ class NateqNotificationListener : NotificationListenerService() {
         title: String?,
         text: String?,
         privacyLocked: Boolean
-    ): String {
-        // لغة النطق من محتوى الإشعار (اسم التطبيق/العنوان/النص)
-        // لا من لغة الواجهة
-        val dynamicText = "$appName ${title.orEmpty()} ${text.orEmpty()}"
-        val isArabic = !dynamicText.any { it.isLetter() } ||
-            LocaleUtils.containsArabic(dynamicText)
-        val lang = if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag
-        // عند قفل الشاشة نكتفي باسم التطبيق دون أي مضمون.
-        if (privacyLocked) {
-            return LocaleUtils.stringForSpeech(
-                applicationContext, lang, R.string.notif_new, R.string.notif_new
-            ).replace("{app}", appName)
-        }
-        return when {
-            !title.isNullOrBlank() && !text.isNullOrBlank() ->
-                LocaleUtils.stringForSpeech(
-                    applicationContext, lang,
-                    R.string.notif_from_title_text,
-                    R.string.notif_from_title_text
-                ).replace("{app}", appName)
-                .replace("{title}", title)
-                .replace("{text}", text)
-            !title.isNullOrBlank() -> LocaleUtils.stringForSpeech(
-                applicationContext, lang,
-                R.string.notif_from_title,
-                R.string.notif_from_title
-            ).replace("{app}", appName).replace("{title}", title)
-            !text.isNullOrBlank() -> LocaleUtils.stringForSpeech(
-                applicationContext, lang,
-                R.string.notif_from_text,
-                R.string.notif_from_text
-            ).replace("{app}", appName).replace("{text}", text)
-            else -> LocaleUtils.stringForSpeech(
-                applicationContext, lang, R.string.notif_new, R.string.notif_new
-            ).replace("{app}", appName)
-        }
-    }
+    ): String = Companion.buildSpeechText(
+        applicationContext, appName, title, text, privacyLocked
+    )
 
     private fun getAppName(packageName: String): String {
         return when (packageName) {
