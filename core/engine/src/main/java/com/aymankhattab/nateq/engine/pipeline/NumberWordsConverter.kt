@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.engine.pipeline
 
 import com.aymankhattab.nateq.engine.NumberSpeech
 import java.math.BigDecimal
+import java.math.BigInteger
 
 /**
  * محرك «رقم → كلمات عربية» المستقل عن معالجة النصوص، يدعم حتى التريليونات
@@ -35,7 +36,69 @@ internal object NumberWordsConverter {
         return NumberSpeech.wrapNumber(result, markNumbers)
     }
 
+    /** تحويل عدد BigInteger لكلمات عربية دون فقدان دقة الأعداد الضخمة. */
+    fun numberToWords(
+        number: BigInteger,
+        markNumbers: Boolean = false
+    ): String {
+        val result = computeNumberToWords(number)
+        return NumberSpeech.wrapNumber(result, markNumbers)
+    }
+
+    /** تحويل تمثيل نصي مباشر لكلمات عربية مع حفظ كامل الخانات. */
+    fun numberToWords(s: String, markNumbers: Boolean = false): String {
+        val cleaned = AmountParser.sanitizeNumerals(s)
+        val isNeg = cleaned.startsWith('-') || cleaned.startsWith('\u2212')
+        val clean = if (isNeg) cleaned.substring(1) else cleaned
+        val dot = clean.indexOf('.')
+        val base = if (isNeg) "ناقص " else ""
+        if (dot < 0) {
+            val trimmed = clean.trimStart('0').ifEmpty { "0" }
+            if (trimmed == "0") {
+                return NumberSpeech.wrapNumber("صِفْرْ", markNumbers)
+            }
+            val words = if (trimmed.length <= 21) {
+                positiveWordsFromDecimal(trimmed)
+            } else {
+                spokenDigits(trimmed)
+            }
+            return NumberSpeech.wrapNumber("$base$words", markNumbers)
+        }
+        val decimalString = if (isNeg) "-$clean" else clean
+        return decimalStringToWords(decimalString, markNumbers)
+    }
+
     private fun computeNumberToWords(number: Number): String {
+        if (number is BigInteger) {
+            val isNeg = number < BigInteger.ZERO
+            val absVal = number.abs()
+            val s = absVal.toString()
+            val base = if (isNeg) "ناقص " else ""
+            if (s == "0") return "صِفْرْ"
+            val words = if (s.length <= 21) {
+                positiveWordsFromDecimal(s)
+            } else {
+                spokenDigits(s)
+            }
+            return "$base$words"
+        }
+        if (number is BigDecimal) {
+            val isNeg = number < BigDecimal.ZERO
+            val absVal = number.abs().stripTrailingZeros()
+            val plain = absVal.toPlainString()
+            val dot = plain.indexOf('.')
+            val base = if (isNeg) "ناقص " else ""
+            if (dot < 0) {
+                val words = if (plain.length <= 21) {
+                    positiveWordsFromDecimal(plain)
+                } else {
+                    spokenDigits(plain)
+                }
+                return "$base$words"
+            }
+            val decimalString = if (isNeg) "-$plain" else plain
+            return computeDecimalStringToWords(decimalString)
+        }
         // معالجة الكسور العشرية: فصل الجزء الصحيح والعشري ونطق "فاصلة" ثم
         // الأرقام — نعتمد التمثيل العشري المباشر (BigDecimal.valueOf) بدل
         // طرح الجزء الصحيح من الديبل — الطرح كان يُدخل أخطاء الفاصلة

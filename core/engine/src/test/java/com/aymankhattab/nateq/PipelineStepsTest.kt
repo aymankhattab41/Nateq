@@ -1039,6 +1039,167 @@ class PipelineStepsTest {
         )
     }
 
+    @Test
+    fun currency_large_integers_preserve_exact_precision() {
+        // 9007199254740993 (2^53 + 1): كان Double يشوه الخانة الأخيرة (3 → 2)
+        assertEquals(
+            "nine quadrillion seven trillion one hundred ninety nine " +
+                "billion two hundred fifty four million seven hundred forty " +
+                "thousand nine hundred ninety three US dollars",
+            CurrencyStep.applyEnglish("USD 9007199254740993")
+        )
+        assertEquals(
+            "nine quadrillion seven trillion one hundred ninety nine " +
+                "billion two hundred fifty four million seven hundred forty " +
+                "thousand nine hundred ninety three US dollars",
+            CurrencyStep.applyEnglish("9007199254740993 USD")
+        )
+        assertEquals(
+            "تسعة كوادريليونات وسبعة تريليونات ومائة وتسعة وتسعون " +
+                "ملياراً ومائتان وأربعة وخمسون مليوناً وسبعمائة وأربعون " +
+                "ألفاً وتسعمائة وثلاثة وتسعون دولاراً أمريكياً",
+            CurrencyStep.apply("USD 9007199254740993")
+        )
+        assertEquals(
+            "تسعة كوادريليونات وسبعة تريليونات ومائة وتسعة وتسعون " +
+                "ملياراً ومائتان وأربعة وخمسون مليوناً وسبعمائة وأربعون " +
+                "ألفاً وتسعمائة وثلاثة وتسعون دولاراً أمريكياً",
+            CurrencyStep.apply("9007199254740993 USD")
+        )
+
+        // 9223372036854775808 (2^63 > Long.MAX_VALUE): كان يشبع عند 807
+        assertEquals(
+            "nine quintillion two hundred twenty three quadrillion " +
+                "three hundred seventy two trillion thirty six billion " +
+                "eight hundred fifty four million seven hundred seventy " +
+                "five thousand eight hundred eight US dollars",
+            CurrencyStep.applyEnglish("USD 9223372036854775808")
+        )
+        assertEquals(
+            "nine quintillion two hundred twenty three quadrillion " +
+                "three hundred seventy two trillion thirty six billion " +
+                "eight hundred fifty four million seven hundred seventy " +
+                "five thousand eight hundred eight US dollars",
+            CurrencyStep.applyEnglish("9223372036854775808 USD")
+        )
+        assertEquals(
+            "تسعة كوينتيليونات ومائتان وثلاثة وعشرون كوادريليوناً " +
+                "وثلاثمائة واثنان وسبعون تريليوناً وستة وثلاثون ملياراً " +
+                "وثمانمائة وأربعة وخمسون مليوناً وسبعمائة وخمسة وسبعون " +
+                "ألفاً وثمانمائة وثمانية دولارات أمريكية",
+            CurrencyStep.apply("USD 9223372036854775808")
+        )
+        assertEquals(
+            "تسعة كوينتيليونات ومائتان وثلاثة وعشرون كوادريليوناً " +
+                "وثلاثمائة واثنان وسبعون تريليوناً وستة وثلاثون ملياراً " +
+                "وثمانمائة وأربعة وخمسون مليوناً وسبعمائة وخمسة وسبعون " +
+                "ألفاً وثمانمائة وثمانية دولارات أمريكية",
+            CurrencyStep.apply("9223372036854775808 USD")
+        )
+
+        // العملات السالبة للأعداد الكبيرة
+        assertEquals(
+            "minus nine quadrillion seven trillion one hundred ninety " +
+                "nine billion two hundred fifty four million seven hundred " +
+                "forty thousand nine hundred ninety three US dollars",
+            CurrencyStep.applyEnglish("USD -9007199254740993")
+        )
+        assertEquals(
+            "minus nine quadrillion seven trillion one hundred ninety " +
+                "nine billion two hundred fifty four million seven hundred " +
+                "forty thousand nine hundred ninety three US dollars",
+            CurrencyStep.applyEnglish("-9007199254740993 USD")
+        )
+        assertEquals(
+            "ناقص تسعة كوادريليونات وسبعة تريليونات ومائة وتسعة " +
+                "وتسعون ملياراً ومائتان وأربعة وخمسون مليوناً وسبعمائة " +
+                "وأربعون ألفاً وتسعمائة وثلاثة وتسعون دولاراً أمريكياً",
+            CurrencyStep.apply("USD -9007199254740993")
+        )
+        assertEquals(
+            "ناقص تسعة كوادريليونات وسبعة تريليونات ومائة وتسعة " +
+                "وتسعون ملياراً ومائتان وأربعة وخمسون مليوناً وسبعمائة " +
+                "وأربعون ألفاً وتسعمائة وثلاثة وتسعون دولاراً أمريكياً",
+            CurrencyStep.apply("-9007199254740993 USD")
+        )
+
+        assertEquals(
+            "minus nine quintillion two hundred twenty three " +
+                "quadrillion three hundred seventy two trillion thirty six " +
+                "billion eight hundred fifty four million seven hundred " +
+                "seventy five thousand eight hundred eight US dollars",
+            CurrencyStep.applyEnglish("USD -9223372036854775808")
+        )
+        assertEquals(
+            "minus nine quintillion two hundred twenty three " +
+                "quadrillion three hundred seventy two trillion thirty six " +
+                "billion eight hundred fifty four million seven hundred " +
+                "seventy five thousand eight hundred eight US dollars",
+            CurrencyStep.applyEnglish("-9223372036854775808 USD")
+        )
+        assertEquals(
+            "ناقص تسعة كوينتيليونات ومائتان وثلاثة وعشرون " +
+                "كوادريليوناً وثلاثمائة واثنان وسبعون تريليوناً وستة " +
+                "وثلاثون ملياراً وثمانمائة وأربعة وخمسون مليوناً " +
+                "وسبعمائة وخمسة وسبعون ألفاً وثمانمائة وثمانية " +
+                "دولارات أمريكية",
+            CurrencyStep.apply("USD -9223372036854775808")
+        )
+        assertEquals(
+            "ناقص تسعة كوينتيليونات ومائتان وثلاثة وعشرون " +
+                "كوادريليوناً وثلاثمائة واثنان وسبعون تريليوناً وستة " +
+                "وثلاثون ملياراً وثمانمائة وأربعة وخمسون مليوناً " +
+                "وسبعمائة وخمسة وسبعون ألفاً وثمانمائة وثمانية " +
+                "دولارات أمريكية",
+            CurrencyStep.apply("-9223372036854775808 USD")
+        )
+
+        // رمز العملة قبل وبعد
+        assertEquals(
+            "nine quintillion two hundred twenty three quadrillion " +
+                "three hundred seventy two trillion thirty six billion " +
+                "eight hundred fifty four million seven hundred seventy " +
+                "five thousand eight hundred eight dollars",
+            CurrencyStep.applyEnglish("$9223372036854775808")
+        )
+        assertEquals(
+            "تسعة كوينتيليونات ومائتان وثلاثة وعشرون كوادريليوناً " +
+                "وثلاثمائة واثنان وسبعون تريليوناً وستة وثلاثون ملياراً " +
+                "وثمانمائة وأربعة وخمسون مليوناً وسبعمائة وخمسة وسبعون " +
+                "ألفاً وثمانمائة وثمانية دولارات",
+            CurrencyStep.apply("$9223372036854775808")
+        )
+
+        // الأعداد 25 خانة: نطق الكلمات التجميعية حتى السبتيليون
+        // في الإنجليزية
+        assertEquals(
+            "one septillion two hundred thirty four sextillion five hundred " +
+                "sixty seven quintillion eight hundred ninety quadrillion " +
+                "one hundred twenty three trillion four hundred fifty six " +
+                "billion seven hundred eighty nine million twelve thousand " +
+                "three hundred forty five US dollars",
+            CurrencyStep.applyEnglish("USD 1234567890123456789012345")
+        )
+        // في العربية مقياس الكلمات ينتهي عند الكوينتيليون (21 خانة)،
+        // فما تجاوزه (25 خانة) يُنطق رقماً رقماً لحفظ كافة الخانات
+        assertEquals(
+            "واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية تسعة صِفْرْ " +
+                "واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية تسعة صِفْرْ " +
+                "واحد اثنان ثلاثة أربعة خمسة دولاراً أمريكياً",
+            CurrencyStep.apply("USD 1234567890123456789012345")
+        )
+        // وخارج مدى السلم الإنجليزي بالكامل (35 خانة): نطق خانة بخانة
+        assertEquals(
+            "one two three four five six seven eight nine zero one " +
+                "two three four five six seven eight nine zero one two " +
+                "three four five six seven eight nine zero one two " +
+                "three four five US dollars",
+            CurrencyStep.applyEnglish(
+                "USD 12345678901234567890123456789012345"
+            )
+        )
+    }
+
     // ═════════==== بند 3.1: المبالغ السالبة ═════════
 
     @Test

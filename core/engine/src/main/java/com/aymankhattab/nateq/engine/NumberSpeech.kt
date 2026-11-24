@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.engine
 
 import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
+import java.math.BigInteger
 
 /**
  * منطق نطق الأرقام بنمط التجميع المُختار (1=مفردة، 2=زوجي، 3..8=ثلاثي..ثماني)
@@ -74,6 +75,62 @@ object NumberSpeech {
         }
         return wrapNumber(result, markNumbers)
     }
+
+    /** نسخة BigInteger للأعداد الضخمة غير المحدودة بحجم Long. */
+    fun toEnglishWords(
+        number: BigInteger,
+        isFeminine: Boolean = false,
+        markNumbers: Boolean = false
+    ): String {
+        val isNeg = number < BigInteger.ZERO
+        val absVal = number.abs()
+        val digits = absVal.toString()
+        val prefix = if (isNeg) "minus " else ""
+        if (digits == "0") return wrapNumber("zero", markNumbers)
+        val numChunks = (digits.length + 2) / 3
+        val words = if (numChunks <= 11) {
+            englishFromDigits(digits)
+        } else {
+            englishSpokenDigits(digits)
+        }
+        return wrapNumber("$prefix$words", markNumbers)
+    }
+
+    /** نسخة نصية للأعداد الرقمية الضخمة دون تحويلات تفقد الدقة. */
+    fun toEnglishWords(
+        digitsStr: String,
+        markNumbers: Boolean = false
+    ): String {
+        val isNeg = digitsStr.startsWith('-') ||
+            digitsStr.startsWith('\u2212')
+        val clean = if (isNeg) digitsStr.substring(1) else digitsStr
+        val prefix = if (isNeg) "minus " else ""
+        val dot = clean.indexOf('.')
+        if (dot >= 0) {
+            val intPart = clean.substring(0, dot)
+            val fracPart = clean.substring(dot + 1)
+            val intWords = toEnglishWords(intPart, markNumbers = false)
+            val fracWords = englishSpokenDigits(fracPart)
+            return wrapNumber(
+                "$prefix$intWords point $fracWords", markNumbers
+            )
+        }
+        val trimmed = clean.trimStart('0').ifEmpty { "0" }
+        if (trimmed == "0") return wrapNumber("zero", markNumbers)
+        val numChunks = (trimmed.length + 2) / 3
+        val words = if (numChunks <= 11) {
+            englishFromDigits(trimmed)
+        } else {
+            englishSpokenDigits(trimmed)
+        }
+        return wrapNumber("$prefix$words", markNumbers)
+    }
+
+    /** نطق خانات رقمية إنجليزية متتالية للقيم خارج المدى المدعوم. */
+    internal fun englishSpokenDigits(digits: String): String = digits
+        .filter { it.isDigit() }
+        .map { toEnglishWordsPositive(it.digitToInt()) }
+        .joinToString(" ")
 
     /**
      * تحويل رقم إلى كلمات (عربية أو إنجليزية) مع وسم اختياري بالأعلام.

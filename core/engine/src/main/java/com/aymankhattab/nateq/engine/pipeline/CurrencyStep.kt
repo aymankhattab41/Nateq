@@ -1,6 +1,9 @@
 package com.aymankhattab.nateq.engine.pipeline
 
 import com.aymankhattab.nateq.engine.NumberSpeech
+import java.math.BigDecimal
+import java.math.BigInteger
+import java.math.RoundingMode
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 import kotlin.math.abs
@@ -522,6 +525,44 @@ internal object CurrencyStep : TextProcessingStep {
     private val arabicPatterns = compilePatterns(CURRENCY_SYMBOLS)
     private val englishPatterns = compilePatterns(CURRENCY_SYMBOLS_EN)
 
+    private class ParsedAmount(
+        val isNeg: Boolean,
+        val whole: BigInteger,
+        val fracSubunits: Int
+    )
+
+    private fun parseAmount(raw: String, subunitsPerUnit: Int): ParsedAmount {
+        val cleaned = AmountParser.sanitizeNumerals(raw)
+        val isNeg = cleaned.startsWith('-') || cleaned.startsWith('\u2212')
+        val unsigned = if (isNeg) cleaned.substring(1) else cleaned
+        val dotIdx = unsigned.indexOf('.')
+        val (intDigits, fracDigits) = if (dotIdx < 0) {
+            unsigned.trimStart('0').ifEmpty { "0" } to ""
+        } else {
+            unsigned.substring(0, dotIdx).trimStart('0').ifEmpty { "0" } to
+                unsigned.substring(dotIdx + 1)
+        }
+
+        val (fracSubunits, carry) = if (fracDigits.isEmpty()) {
+            0 to 0L
+        } else {
+            val fracDecimal = BigDecimal("0.$fracDigits")
+            val rawSubunits = fracDecimal
+                .multiply(BigDecimal(subunitsPerUnit))
+                .setScale(0, RoundingMode.HALF_UP)
+                .toInt()
+            (rawSubunits % subunitsPerUnit) to
+                (rawSubunits / subunitsPerUnit).toLong()
+        }
+
+        val wholeBig = try {
+            BigInteger(intDigits) + BigInteger.valueOf(carry)
+        } catch (_: NumberFormatException) {
+            BigInteger.ZERO
+        }
+        return ParsedAmount(isNeg, wholeBig, fracSubunits)
+    }
+
     override fun apply(input: String): String =
         apply(input, markNumbers = false)
 
@@ -529,11 +570,12 @@ internal object CurrencyStep : TextProcessingStep {
         input,
         arabicPatterns,
         CURRENCY_CODE_INFO,
-        phrase = { amount, info ->
-            currencyAmountPhrase(amount, info, markNumbers)
+        phrase = { raw, info ->
+            currencyAmountPhrase(raw, info, markNumbers)
         },
-        fallback = { amount ->
-            NumberWordsConverter.numberToWords(amount, markNumbers)
+        fallback = { raw ->
+            val cleaned = AmountParser.sanitizeNumerals(raw)
+            NumberWordsConverter.numberToWords(cleaned, markNumbers)
         }
     )
 
@@ -546,16 +588,12 @@ internal object CurrencyStep : TextProcessingStep {
         input,
         englishPatterns,
         CURRENCY_CODE_INFO_EN,
-        phrase = { amount, info ->
-            englishCurrencyAmountPhrase(amount, info, markNumbers)
+        phrase = { raw, info ->
+            englishCurrencyAmountPhrase(raw, info, markNumbers)
         },
-        fallback = { amount ->
-            val isNeg = java.lang.Double.compare(amount, 0.0) < 0
-            val whole = kotlin.math.abs(amount.toLong())
-            val words = NumberSpeech.toEnglishWords(
-                whole, markNumbers = markNumbers
-            )
-            if (isNeg) "minus $words" else words
+        fallback = { raw ->
+            val cleaned = AmountParser.sanitizeNumerals(raw)
+            NumberSpeech.toEnglishWords(cleaned, markNumbers = markNumbers)
         }
     )
 
@@ -564,8 +602,8 @@ internal object CurrencyStep : TextProcessingStep {
         input: String,
         patterns: Patterns<T>,
         codeInfo: Map<String, T>,
-        phrase: (Double, T) -> String,
-        fallback: (Double) -> String
+        phrase: (String, T) -> String,
+        fallback: (String) -> String
     ): String {
         if (!patterns.any.matcher(input).find()) return input
         var result = input
@@ -592,15 +630,15 @@ internal object CurrencyStep : TextProcessingStep {
         input: String,
         pattern: Pattern,
         info: T,
-        phrase: (Double, T) -> String
+        phrase: (String, T) -> String
     ): String {
         val matcher = pattern.matcher(input)
         val buffer = StringBuffer()
         while (matcher.find()) {
-            val amount = AmountParser.parseAmount(matcher.group(1)!!)
+            val raw = matcher.group(1)!!
             matcher.appendReplacement(
                 buffer,
-                Matcher.quoteReplacement(phrase(amount, info))
+                Matcher.quoteReplacement(phrase(raw, info))
             )
         }
         matcher.appendTail(buffer)
@@ -616,19 +654,19 @@ internal object CurrencyStep : TextProcessingStep {
         codeGroup: Int,
         amountGroup: Int,
         codeInfo: Map<String, T>,
-        phrase: (Double, T) -> String,
-        fallback: (Double) -> String
+        phrase: (String, T) -> String,
+        fallback: (String) -> String
     ): String {
         val matcher = pattern.matcher(input)
         val buffer = StringBuffer()
         while (matcher.find()) {
             val code = matcher.group(codeGroup)!!
-            val amount = AmountParser.parseAmount(matcher.group(amountGroup)!!)
+            val raw = matcher.group(amountGroup)!!
             val info = codeInfo[code]
             val replacement = if (info == null) {
-                "${fallback(amount)} $code"
+                "${fallback(raw)} $code"
             } else {
-                phrase(amount, info)
+                phrase(raw, info)
             }
             matcher.appendReplacement(
                 buffer, Matcher.quoteReplacement(replacement)
@@ -645,54 +683,35 @@ internal object CurrencyStep : TextProcessingStep {
      *  **بند 3.2:** ترحيل الكسور المتراكمة (1.999 → دولاران)،
      *  تمييز النصب لـ 11–99، والجنس المؤنث عبر [NumberSpeech]. */
     internal fun currencyAmountPhrase(
-        amount: Double,
+        rawAmount: String,
         info: CurrencyInfo,
         markNumbers: Boolean = false
     ): String {
-        val whole = amount.toLong()
-        val isNeg = java.lang.Double.compare(amount, 0.0) < 0
-        // العملات ثلاثية الخانات (د.ك/د.ب/ر.ع/د.ت) وحدتها الفرعية 1000
-        // (فلس/بيسة/مليم) والبقية 100. كان الضرب الثابت في 100.0 ينطق
-        // «1.500 د.ك» خطأً «وخمسون فلس» بدل «وخمسمائة فلس»، ويُفقد كسوراً
-        // صغيرة («2.005 د.ت» كانت تُنطق «ديناران تونسيان» بلا جزء كسري).
-        val fracSubunitsRaw = Math.round(
-            Math.abs(amount - whole) * info.subunitsPerUnit
-        ).toInt()
-        // **بند 3.2 (ترحيل):** كسر >= الوحدة يؤدي ترحيله للوحدة الأكبر
-        // (1.999$ → «دولاران»، -1.999$ → «ناقص دولاران») — كانت الكسور
-        // تتجاوز الوحدة دون ترحيل فينطق «واحد دولار وتسعمائة وتسعة وتسعون
-        // سنت» بدل «دولاران».
-        val carry = fracSubunitsRaw / info.subunitsPerUnit
-        val absWhole = abs(whole) + carry
-        val fracSubunits = fracSubunitsRaw % info.subunitsPerUnit
+        val parsed = parseAmount(rawAmount, info.subunitsPerUnit)
+        val isNeg = parsed.isNeg
+        val wholeBig = parsed.whole
         val fracPhrase = currencyFractionPhrase(
-            fracSubunits, info, markNumbers
+            parsed.fracSubunits, info, markNumbers
         )
-        // مبلغ كسري صرف (0.50$) → «خمسون سنت» بلا «و» افتتاحية.
-        if (absWhole == 0L && fracPhrase.isNotEmpty()) {
-            // بند 3.6: المبلغ الكسري السلبي يحافظ على إشارته
-            // («سالب خمسون سنتاً») — كانت تُسقَط دون هذه البقعة.
+        if (wholeBig == BigInteger.ZERO && fracPhrase.isNotEmpty()) {
             return if (isNeg) "سالب $fracPhrase" else fracPhrase
         }
 
-        // **السالب الصحيح (بند 3.1):** العدد الذهني يُحسم على القيمة المطلقة
-        // («-2$» ← «دولاران»)، وإلا عاجت السالبةُ عن فروع when إلى صيغة
-        // المفرد الخاطئة («ناقص اثنان دولار»). وكما يسبق المحوّلُ الرقمي
-        // الأعدادَ السالبة بكلمة «ناقص » يُسبق المبلغُ بها أيضاً.
         val wholePhrase = when {
-            absWhole == 0L -> {
+            wholeBig == BigInteger.ZERO -> {
                 val z = NumberSpeech.wrapNumber("صِفْرْ", markNumbers)
                 "$z ${info.name}"
             }
-            absWhole == 1L -> {
+            wholeBig == BigInteger.ONE -> {
                 val unit = if (info.isFeminine) "واحدة" else "واحد"
                 val u = NumberSpeech.wrapNumber(unit, markNumbers)
                 "${info.name} $u"
             }
-            absWhole == 2L -> info.dual
-            absWhole in 3..10 -> {
+            wholeBig == BigInteger.valueOf(2) -> info.dual
+            wholeBig >= BigInteger.valueOf(3) &&
+                wholeBig <= BigInteger.valueOf(10) -> {
                 val units = NumberWordsConverter.unitNumberWord(
-                    absWhole.toInt(),
+                    wholeBig.toInt(),
                     info.isFeminine,
                     markNumbers = markNumbers
                 )
@@ -700,12 +719,9 @@ internal object CurrencyStep : TextProcessingStep {
             }
             else -> {
                 val words = numberToWordsForGender(
-                    absWhole, info.isFeminine, markNumbers
+                    wholeBig, info.isFeminine, markNumbers
                 )
-                val rem100 = (absWhole % 100).toInt()
-                // **بند 3.2 (تنوين نصب):** العدد المركّب 11–99 يلزم
-                // المعدود بالتنوين المنصوب («دولاراً» لا «دولار»).
-                // وال McMaster 3–10 بالجمع («ثلاثة دولارات»).
+                val rem100 = (wholeBig % BigInteger.valueOf(100)).toInt()
                 when {
                     rem100 in 3..10 -> "$words ${info.plural}"
                     rem100 in 11..99 ->
@@ -720,6 +736,21 @@ internal object CurrencyStep : TextProcessingStep {
         } else {
             "$base و$fracPhrase"
         }
+    }
+
+    internal fun currencyAmountPhrase(
+        amount: Double,
+        info: CurrencyInfo,
+        markNumbers: Boolean = false
+    ): String {
+        val raw = if (java.lang.Double.compare(amount, 0.0) < 0 &&
+            amount == 0.0
+        ) {
+            "-0.0"
+        } else {
+            BigDecimal.valueOf(amount).stripTrailingZeros().toPlainString()
+        }
+        return currencyAmountPhrase(raw, info, markNumbers)
     }
 
     /** نطق كسور المبلغ (أجزاء الوحدة الفرعية) باسم الوحدة الفرعية:
@@ -773,36 +804,30 @@ internal object CurrencyStep : TextProcessingStep {
      *  1.50 ← «one dollar and fifty cents»، 0.50 ← «fifty cents»،
      *  والسالب ← «minus …». لا جنس ولا مثنى في الإنجليزية. */
     internal fun englishCurrencyAmountPhrase(
-        amount: Double,
+        rawAmount: String,
         info: CurrencyInfoEn,
         markNumbers: Boolean = false
     ): String {
-        val whole = amount.toLong()
-        val isNeg = java.lang.Double.compare(amount, 0.0) < 0
-        // ترحيل الكسور المتراكمة (1.999 → دولاران) كما في المسار العربي.
-        val fracSubunitsRaw = Math.round(
-            Math.abs(amount - whole) * info.subunitsPerUnit
-        ).toInt()
-        val carry = fracSubunitsRaw / info.subunitsPerUnit
-        val absWhole = abs(whole) + carry
-        val fracSubunits = fracSubunitsRaw % info.subunitsPerUnit
+        val parsed = parseAmount(rawAmount, info.subunitsPerUnit)
+        val isNeg = parsed.isNeg
+        val wholeBig = parsed.whole
         val fracPhrase = englishFractionPhrase(
-            fracSubunits, info, markNumbers
+            parsed.fracSubunits, info, markNumbers
         )
-        if (absWhole == 0L && fracPhrase.isNotEmpty()) {
+        if (wholeBig == BigInteger.ZERO && fracPhrase.isNotEmpty()) {
             return if (isNeg) "minus $fracPhrase" else fracPhrase
         }
-        val wholePhrase = when (absWhole) {
-            0L -> {
+        val wholePhrase = when (wholeBig) {
+            BigInteger.ZERO -> {
                 val z = NumberSpeech.wrapNumber("zero", markNumbers)
                 "$z ${info.plural}"
             }
-            1L -> {
+            BigInteger.ONE -> {
                 val o = NumberSpeech.wrapNumber("one", markNumbers)
                 "$o ${info.name}"
             }
             else -> "${
-                NumberSpeech.toEnglishWords(absWhole, markNumbers = markNumbers)
+                NumberSpeech.toEnglishWords(wholeBig, markNumbers = markNumbers)
             } ${info.plural}"
         }
         val base = if (isNeg) "minus $wholePhrase" else wholePhrase
@@ -811,6 +836,21 @@ internal object CurrencyStep : TextProcessingStep {
         } else {
             "$base and $fracPhrase"
         }
+    }
+
+    internal fun englishCurrencyAmountPhrase(
+        amount: Double,
+        info: CurrencyInfoEn,
+        markNumbers: Boolean = false
+    ): String {
+        val raw = if (java.lang.Double.compare(amount, 0.0) < 0 &&
+            amount == 0.0
+        ) {
+            "-0.0"
+        } else {
+            BigDecimal.valueOf(amount).stripTrailingZeros().toPlainString()
+        }
+        return englishCurrencyAmountPhrase(raw, info, markNumbers)
     }
 
     /** نطق كسور المبلغ بالإنجليزية باسم الوحدة الفرعية: 1 ← «one cent»،
@@ -842,15 +882,23 @@ internal object CurrencyStep : TextProcessingStep {
      *  (يدعم حتى 99,999,999 مع صيغة المذكر/المؤنث)، والمذكر والأعداد
      *  الكبيرة تذهب إلى [NumberWordsConverter]. */
     private fun numberToWordsForGender(
-        n: Long,
+        n: BigInteger,
         isFeminine: Boolean,
         markNumbers: Boolean = false
     ): String {
-        if (isFeminine && n <= Int.MAX_VALUE) {
+        if (isFeminine && n <= BigInteger.valueOf(Int.MAX_VALUE.toLong())) {
             return NumberSpeech.toArabicWords(
                 n.toInt(), isFeminine, markNumbers = markNumbers
             )
         }
         return NumberWordsConverter.numberToWords(n, markNumbers = markNumbers)
     }
+
+    private fun numberToWordsForGender(
+        n: Long,
+        isFeminine: Boolean,
+        markNumbers: Boolean = false
+    ): String = numberToWordsForGender(
+        BigInteger.valueOf(n), isFeminine, markNumbers
+    )
 }
