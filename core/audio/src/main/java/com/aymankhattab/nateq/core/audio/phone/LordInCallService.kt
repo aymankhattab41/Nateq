@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.phone
 
+import android.Manifest
 import android.app.KeyguardManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,27 +9,36 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.InCallService
 import android.telecom.VideoProfile
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.content.ContextCompat
+import com.aymankhattab.nateq.core.audio.accessibility.A11ySmartPauseController
 import com.aymankhattab.nateq.core.audio.accessibility.AccessibilityBridge
 import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
 import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppTimelineTracker
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * خدمة إدارة المكالمات الهاتفية الجارية لنظام Telecom.
@@ -85,6 +95,23 @@ class LordInCallService : InCallService(), SensorEventListener {
     private var proximityWakeLock: PowerManager.WakeLock? = null
     private var routeBeforeRecording: Int? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val trackedCalls = CopyOnWriteArrayList<Call>()
+    private val previousCallStates = ConcurrentHashMap<Call, Int>()
+    private var userMuteIntent: Boolean = false
+    private val dtmfHandler = Handler(Looper.getMainLooper())
+    private var pendingDtmfStop: Runnable? = null
+
+    val allCalls: List<Call> get() = trackedCalls.toList()
+
+    /**
+     * نتيجة التحقق من تسجيل الرقم بجهات الاتصال.
+     */
+    sealed class ContactLookupResult {
+        data class Known(val name: String) : ContactLookupResult()
+        object Unsaved : ContactLookupResult()
+        object Unverifiable : ContactLookupResult()
+    }
 
     private val callActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -165,12 +192,47 @@ class LordInCallService : InCallService(), SensorEventListener {
         } catch (_: Exception) {}
     }
 
+    fun selectPrimaryCall(): Call? {
+        val ringing = trackedCalls.firstOrNull {
+            it.state == Call.STATE_RINGING
+        }
+        if (ringing != null) return ringing
+
+        val active = trackedCalls.firstOrNull {
+            it.state == Call.STATE_ACTIVE
+        }
+        if (active != null) return active
+
+        val dialing = trackedCalls.firstOrNull {
+            it.state == Call.STATE_DIALING || it.state == Call.STATE_CONNECTING
+        }
+        if (dialing != null) return dialing
+
+        val holding = trackedCalls.firstOrNull {
+            it.state == Call.STATE_HOLDING
+        }
+        if (holding != null) return holding
+
+        return trackedCalls.firstOrNull {
+            it.state != Call.STATE_DISCONNECTED
+        }
+    }
+
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
-        currentCall = call
+        A11ySmartPauseController.getInstance(this).setReasonActive(
+            A11ySmartPauseController.REASON_IN_CALL,
+            true
+        )
+        if (!trackedCalls.contains(call)) {
+            trackedCalls.add(call)
+        }
         call.registerCallback(callCallback, mainHandler)
-        if (call.state == Call.STATE_RINGING) {
-            handleIncomingCallUi(call)
+        val primary = selectPrimaryCall()
+        currentCall = primary
+
+        if (primary != null && primary.state == Call.STATE_RINGING) {
+            handleIncomingCallUi(primary)
         } else {
             launchInCallActivity()
         }
@@ -179,13 +241,52 @@ class LordInCallService : InCallService(), SensorEventListener {
 
     override fun onCallRemoved(call: Call) {
         super.onCallRemoved(call)
-        if (currentCall == call) {
+        trackedCalls.remove(call)
+        previousCallStates.remove(call)
+        call.unregisterCallback(callCallback)
+
+        val activeRemaining = trackedCalls.filter {
+            it.state != Call.STATE_DISCONNECTED
+        }
+
+        if (CallRecordManager.getCurrentCall() == call ||
+            activeRemaining.none { it.state == Call.STATE_ACTIVE }
+        ) {
+            CallRecordManager.stopRecording(this)
+            restoreSpeakerAfterRecording()
+        }
+
+        val remainingPrimary = selectPrimaryCall()
+        currentCall = remainingPrimary
+
+        if (remainingPrimary != null) {
+            if (remainingPrimary.state == Call.STATE_RINGING) {
+                handleIncomingCallUi(remainingPrimary)
+            } else {
+                showOngoingCallNotification(remainingPrimary)
+            }
+            val intent = Intent(ACTION_CALL_STATE_CHANGED).apply {
+                setPackage(packageName)
+            }
+            sendBroadcast(intent)
+            mainHandler.post {
+                for (listener in listeners) {
+                    listener.onCallStateChanged(
+                        remainingPrimary,
+                        remainingPrimary.state
+                    )
+                }
+            }
+        } else {
+            A11ySmartPauseController.getInstance(this).setReasonActive(
+                A11ySmartPauseController.REASON_IN_CALL,
+                false
+            )
             dismissCallNotification()
             stopProximityMonitoring()
             releaseProximityWakeLock()
-            restoreSpeakerAfterRecording()
-            CallRecordManager.stopRecording(this)
             currentCall = null
+            userMuteIntent = false
             val intent = Intent(ACTION_FINISH_INCALL_UI).apply {
                 setPackage(packageName)
             }
@@ -196,10 +297,12 @@ class LordInCallService : InCallService(), SensorEventListener {
                 }
             }
         }
-        call.unregisterCallback(callCallback)
     }
 
-    private fun handleCallStateChange(call: Call, state: Int) {
+    internal fun handleCallStateChange(call: Call, state: Int) {
+        val prevState = previousCallStates[call]
+        previousCallStates[call] = state
+
         val intent = Intent(ACTION_CALL_STATE_CHANGED).apply {
             setPackage(packageName)
         }
@@ -213,28 +316,69 @@ class LordInCallService : InCallService(), SensorEventListener {
 
         when (state) {
             Call.STATE_ACTIVE -> {
-                showOngoingCallNotification(call)
-                // التأكد من عدم كتم الميكروفون عند بدء المكالمة
-                try {
-                    setMuted(false)
-                } catch (_: Exception) {}
+                val primary = selectPrimaryCall()
+                currentCall = primary
+                if (primary != null) {
+                    showOngoingCallNotification(primary)
+                }
+
+                // احترام نية الكتم: عدم فتح الميكروفون عند الاستئناف من HOLDING
+                // أو إذا كان المستخدم قد اختار كتم الصوت
+                if (!userMuteIntent && prevState != Call.STATE_HOLDING) {
+                    try {
+                        setMuted(false)
+                    } catch (_: Exception) {}
+                }
 
                 acquireProximityWakeLock()
 
-                // التحقق من تفعيل التسجيل التلقائي
+                // التحقق من التسجيل التلقائي عبر PhoneLookup خارج main
                 val handle = call.details?.handle?.schemeSpecificPart ?: ""
-                val name = call.details?.callerDisplayName ?: ""
-                val isKnown = name.isNotEmpty()
-                if (CallRecordManager.shouldAutoRecord(
-                        this, handle, isKnown
-                    )
+                val networkName = call.details?.callerDisplayName ?: ""
+                val mode = settingsRepo.getPhoneRecordMode()
+                val isRecordEnabled = settingsRepo.isPhoneRecordEnabled()
+
+                if (isRecordEnabled &&
+                    mode != SettingsRepository.PHONE_RECORD_MODE_MANUAL
                 ) {
-                    if (CallRecordManager.startRecording(this, handle, name)) {
-                        enableSpeakerForRecording()
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val lookup = checkContactStatus(
+                            applicationContext,
+                            handle
+                        )
+                        val shouldRecord = when (mode) {
+                            SettingsRepository.PHONE_RECORD_MODE_AUTO_ALL ->
+                                true
+                            SettingsRepository.PHONE_RECORD_MODE_AUTO_UNSAVED ->
+                                lookup is ContactLookupResult.Unsaved
+                            else -> false
+                        }
+                        if (shouldRecord) {
+                            withContext(Dispatchers.Main) {
+                                if (call.state == Call.STATE_ACTIVE &&
+                                    trackedCalls.contains(call)
+                                ) {
+                                    val name = when (lookup) {
+                                        is ContactLookupResult.Known ->
+                                            lookup.name
+                                        else -> networkName
+                                    }
+                                    val started =
+                                        CallRecordManager.startRecording(
+                                            this@LordInCallService,
+                                            handle,
+                                            name,
+                                            call
+                                        )
+                                    if (started) {
+                                        enableSpeakerForRecording()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
-                // تفعيل مستشعر التقارب لمكبر الصوت
                 if (settingsRepo.isPhoneAutoSpeakerProximityEnabled()) {
                     startProximityMonitoring()
                 }
@@ -243,25 +387,44 @@ class LordInCallService : InCallService(), SensorEventListener {
                 acquireProximityWakeLock()
             }
             Call.STATE_DISCONNECTED -> {
-                dismissCallNotification()
-                stopProximityMonitoring()
-                releaseProximityWakeLock()
-                restoreSpeakerAfterRecording()
-                CallRecordManager.stopRecording(this)
-                val finishIntent = Intent(ACTION_FINISH_INCALL_UI).apply {
-                    setPackage(packageName)
+                if (CallRecordManager.getCurrentCall() == call) {
+                    CallRecordManager.stopRecording(this)
+                    restoreSpeakerAfterRecording()
                 }
-                sendBroadcast(finishIntent)
-                mainHandler.post {
-                    for (listener in listeners) {
-                        listener.onCallFinished()
+
+                val remainingCalls = trackedCalls.filter {
+                    it != call && it.state != Call.STATE_DISCONNECTED
+                }
+
+                if (remainingCalls.isNotEmpty()) {
+                    val nextPrimary = selectPrimaryCall()
+                    currentCall = nextPrimary
+                    if (nextPrimary != null) {
+                        if (nextPrimary.state == Call.STATE_RINGING) {
+                            handleIncomingCallUi(nextPrimary)
+                        } else {
+                            showOngoingCallNotification(nextPrimary)
+                        }
                     }
-                    kotlinx.coroutines.CoroutineScope(
-                        kotlinx.coroutines.Dispatchers.Main
-                    ).launch {
-                        com.aymankhattab.nateq.core.audio.accessibility
-                            .TtsSettingsAutomation
-                            .checkAndRunPendingSwitch(applicationContext)
+                } else {
+                    dismissCallNotification()
+                    stopProximityMonitoring()
+                    releaseProximityWakeLock()
+                    currentCall = null
+                    userMuteIntent = false
+                    val finishIntent = Intent(ACTION_FINISH_INCALL_UI).apply {
+                        setPackage(packageName)
+                    }
+                    sendBroadcast(finishIntent)
+                    mainHandler.post {
+                        for (listener in listeners) {
+                            listener.onCallFinished()
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            com.aymankhattab.nateq.core.audio.accessibility
+                                .TtsSettingsAutomation
+                                .checkAndRunPendingSwitch(applicationContext)
+                        }
                     }
                 }
             }
@@ -285,26 +448,54 @@ class LordInCallService : InCallService(), SensorEventListener {
         } catch (_: Exception) {}
     }
 
-    fun answerCall() {
-        currentCall?.answer(VideoProfile.STATE_AUDIO_ONLY)
+    fun answerCall(targetCall: Call? = null) {
+        val call = targetCall ?: trackedCalls.firstOrNull {
+            it.state == Call.STATE_RINGING
+        } ?: currentCall
+        try {
+            call?.answer(VideoProfile.STATE_AUDIO_ONLY)
+        } catch (_: Exception) {}
     }
 
-    fun rejectCall() {
-        val call = currentCall ?: return
-        if (call.state == Call.STATE_RINGING) {
-            call.reject(false, null)
-        } else {
+    fun rejectCall(targetCall: Call? = null) {
+        val call = targetCall ?: trackedCalls.firstOrNull {
+            it.state == Call.STATE_RINGING
+        } ?: currentCall ?: return
+        try {
+            if (call.state == Call.STATE_RINGING) {
+                call.reject(false, null)
+            } else {
+                call.disconnect()
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun disconnectCall(targetCall: Call? = null) {
+        val call = targetCall ?: currentCall ?: return
+        try {
             call.disconnect()
+        } catch (_: Exception) {}
+    }
+
+    fun sendDtmf(digit: Char, targetCall: Call? = null) {
+        val call = targetCall ?: currentCall ?: return
+        try {
+            pendingDtmfStop?.let { dtmfHandler.removeCallbacks(it) }
+            call.stopDtmfTone()
+            call.playDtmfTone(digit)
+            val stopRunnable = Runnable {
+                try {
+                    call.stopDtmfTone()
+                } catch (_: Exception) {}
+            }
+            pendingDtmfStop = stopRunnable
+            dtmfHandler.postDelayed(stopRunnable, 160L)
+        } catch (e: Exception) {
+            Log.w(
+                "LordInCallService",
+                "Error sending DTMF $digit: ${e.message}"
+            )
         }
-    }
-
-    fun disconnectCall() {
-        currentCall?.disconnect()
-    }
-
-    fun sendDtmf(digit: Char) {
-        currentCall?.playDtmfTone(digit)
-        currentCall?.stopDtmfTone()
     }
 
     fun toggleSpeaker(): Boolean {
@@ -338,6 +529,7 @@ class LordInCallService : InCallService(), SensorEventListener {
     fun toggleMute(): Boolean {
         val state = callAudioState ?: return false
         val newMute = !state.isMuted
+        userMuteIntent = newMute
         setMuted(newMute)
         return newMute
     }
@@ -406,11 +598,74 @@ class LordInCallService : InCallService(), SensorEventListener {
 
     override fun onDestroy() {
         super.onDestroy()
+        pendingDtmfStop?.let { dtmfHandler.removeCallbacks(it) }
+        trackedCalls.clear()
+        previousCallStates.clear()
         stopProximityMonitoring()
         releaseProximityWakeLock()
         runCatching { unregisterReceiver(callActionReceiver) }
         dismissCallNotification()
         instance = null
+    }
+
+    /**
+     * التحقق الموثوق من تسجيل الرقم بجهات الاتصال بالبحث في PhoneLookup.
+     * يفصل بوضوح بين المعروف، وغير المسجل، وتعذر التحقق (الرقم المخفي أو
+     * غياب الإذن) لمنع التسجيل التلقائي الكاذب عند غياب الصلاحية.
+     */
+    fun checkContactStatus(
+        context: Context,
+        phoneNumber: String
+    ): ContactLookupResult {
+        val clean = phoneNumber.trim()
+        if (clean.isEmpty() ||
+            clean.equals("unknown", ignoreCase = true) ||
+            clean.equals("private", ignoreCase = true) ||
+            clean.equals("withheld", ignoreCase = true) ||
+            clean.contains("محجوب")
+        ) {
+            return ContactLookupResult.Unverifiable
+        }
+
+        val hasPerm = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_CONTACTS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasPerm) {
+            return ContactLookupResult.Unverifiable
+        }
+
+        return try {
+            val uri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(clean)
+            )
+            val projection = arrayOf(
+                ContactsContract.PhoneLookup._ID,
+                ContactsContract.PhoneLookup.DISPLAY_NAME
+            )
+            context.contentResolver.query(
+                uri,
+                projection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(
+                        ContactsContract.PhoneLookup.DISPLAY_NAME
+                    )
+                    val name = if (idx >= 0) {
+                        cursor.getString(idx).orEmpty()
+                    } else ""
+                    ContactLookupResult.Known(name)
+                } else {
+                    ContactLookupResult.Unsaved
+                }
+            } ?: ContactLookupResult.Unverifiable
+        } catch (_: Exception) {
+            ContactLookupResult.Unverifiable
+        }
     }
 
     internal fun handleIncomingCallUi(call: Call?) {

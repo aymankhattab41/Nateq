@@ -133,10 +133,14 @@ class SettingsChangeProvider : ContentProvider() {
         private const val SPEAKING_PATH = "speaking"
         private const val SPEAKING_COLUMN = "speaking"
         private const val SPEAKING_TTL_MS = 6000L
+        private const val UNLABELED_PATH = "unlabeled_elements"
 
         fun uri(): Uri = Uri.parse("content://$AUTHORITY")
 
         /** المسار الفرعي لقفل النطق العابر — يُحدَّث عبر [SpeechLock]. */
         fun speakingUri(): Uri = Uri.withAppendedPath(uri(), SPEAKING_PATH)
+
+        /** المسار الفرعي لتزامن تسميات العناصر ولقطة التركيز (البند 21). */
+        fun unlabeledUri(): Uri = Uri.withAppendedPath(uri(), UNLABELED_PATH)
     }
 }

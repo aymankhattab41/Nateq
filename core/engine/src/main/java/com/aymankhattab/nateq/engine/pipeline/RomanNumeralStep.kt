@@ -25,10 +25,14 @@ internal object RomanNumeralStep : TextProcessingStep {
     )
 
     // كلمات إنجليزية شائعة مكوّنة من حروف رومانية ظاهرياً (I، DID، MIX، MID،
-    // CD…) تُستبعد دائماً من تحويل الأرقام الرومانية — بالحرف الكبير مهما
-    // وردت صيغته («mix» تُنطق كلمة لا «تسعمائة وتسعة») (بند 3.5).
+    // CD…) تُستبعد عند غياب المؤشر الصريح.
     private val ENGLISH_ROMAN_WORDS =
         setOf("I", "ID", "DID", "MIX", "MID", "CD")
+
+    // نمط التحقق من صحة الرقم الروماني القياسي (قواعد الترتيب والطرح والتكرار)
+    private val PATTERN_CANONICAL_ROMAN = Pattern.compile(
+        """^M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$"""
+    )
 
     override fun apply(input: String): String {
         val matcher = PATTERN_ROMAN.matcher(input)
@@ -38,39 +42,42 @@ internal object RomanNumeralStep : TextProcessingStep {
         while (matcher.find()) {
             val rom = matcher.group(0)!!
             val value = romanToInt(rom) ?: run {
-                // غير صالح/غير معترف → لا نلمسه (ربما تاريخ أو اختصار)
+                // غير صالح/غير معترف → لا نلمسه (مثل IL أو IC أو اختصار)
                 matcher.appendReplacement(
                     buffer, java.util.regex.Matcher.quoteReplacement(rom)
                 )
                 continue
             }
-            // كلمات إنجليزية شائعة من حروف رومانية (DID/MIX/MID/CD/I) تُستبعد
-            // دائماً مهما كان السياق — بالمقارنة على الصيغة الكبيرة.
-            if (rom.uppercase() in ENGLISH_ROMAN_WORDS) {
-                matcher.appendReplacement(
-                    buffer, java.util.regex.Matcher.quoteReplacement(rom)
-                )
-                continue
-            }
-            // دون مؤشر صريح لا نُحوّل إلا متواليات 1–12 غير المفردة
-            // (ساعات/قوائم)؛ ما عداها تُرك — لا نجعل «الفصل MCMXCV» تفقّد
-            // سياقها ولا نجعل كلمة إنجليزية عابرة رقمَ ساعة. **بند 3.9:** الحرف
-            // اللاتيني المنفرد
-            // (X في «منصة X» و«iPhone X»، أو V/C/D/M في الاختصارات) لا يُحوَّل
-            // إلى رقمٍ إطلاقاً دون مؤشرٍ صريح — كانت «X» تتحول «عشرة» فتدمِّر
-            // أسماء المنتجات والمنصات الشائعة؛ ويبقى مؤشر «الفصل/الجزء/
-            // chapter/part…» كافياً لتحويله ترتيباً (الجزء X = الجزء عشرة).
             val hasIndicator = hasRomanIndicatorBefore(input, matcher.start())
-            val singleLetter = rom.length == 1
-            val ambiguousTwoLetter = rom.length == 2 &&
-                rom.uppercase() in setOf("XI", "VI", "IV", "DI", "MI")
-            if (!hasIndicator &&
-                (singleLetter || ambiguousTwoLetter || value !in 1..12)
-            ) {
-                matcher.appendReplacement(
-                    buffer, java.util.regex.Matcher.quoteReplacement(rom)
-                )
-                continue
+            val upper = rom.uppercase()
+
+            if (!hasIndicator) {
+                // دون مؤشر صريح: كلمات إنجليزية شائعة تُستبعد
+                if (upper in ENGLISH_ROMAN_WORDS) {
+                    matcher.appendReplacement(
+                        buffer, java.util.regex.Matcher.quoteReplacement(rom)
+                    )
+                    continue
+                }
+                // ولا نُحوّل إلا متواليات 1–12 غير المفردة (ساعات/قوائم)
+                val singleLetter = rom.length == 1
+                val ambiguousTwoLetter = rom.length == 2 &&
+                    upper in setOf("XI", "VI", "IV", "DI", "MI")
+                if (singleLetter || ambiguousTwoLetter || value !in 1..12) {
+                    matcher.appendReplacement(
+                        buffer, java.util.regex.Matcher.quoteReplacement(rom)
+                    )
+                    continue
+                }
+            } else {
+                // مع مؤشر صريح (الفصل/chapter): I يُعامل كرقم روماني 1،
+                // لكن نستبعد الكلمات التي لا تكون أرقاماً إطلاقاً
+                if (upper in setOf("ID", "DID", "MID")) {
+                    matcher.appendReplacement(
+                        buffer, java.util.regex.Matcher.quoteReplacement(rom)
+                    )
+                    continue
+                }
             }
             val spoken = NumberWordsConverter.numberToWords(value.toLong())
             matcher.appendReplacement(
@@ -97,10 +104,12 @@ internal object RomanNumeralStep : TextProcessingStep {
         }
     }
 
-    /** تحويل رقم روماني إلى Int، أو null عند تركيبة غير صالحة.
-     *  يقبل الحروف الصغيرة ويثبتها على الصيغة الكبيرة للتحويل. */
+    /** تحويل رقم روماني إلى Int، مع التحقق الصارم من قواعد الترتيب والطرح. */
     private fun romanToInt(s: String): Int? {
+        if (s.isEmpty()) return null
         val upper = s.uppercase()
+        if (!PATTERN_CANONICAL_ROMAN.matcher(upper).matches()) return null
+
         val map = mapOf(
             'I' to 1, 'V' to 5, 'X' to 10, 'L' to 50,
             'C' to 100, 'D' to 500, 'M' to 1000
@@ -112,14 +121,7 @@ internal object RomanNumeralStep : TextProcessingStep {
             if (v < prev) total -= v else total += v
             prev = v
         }
-        // تحقق من الصحة: لا تكرار لأكثر من 3 لـ I/X/C، ولا 4 لـ V/L/D.
-        val repeats = listOf('I', 'X', 'C', 'M').any { ch ->
-            upper.filter { it == ch }.length > 3
-        } || listOf('V', 'L', 'D').any { ch ->
-            upper.filter { it == ch }.length > 1
-        }
-        // قيمة معقولة كرقم ترتيبي (تجنب تحويل CC/DD/MM التواريخ إلى أرقام)
-        if (repeats || total > 3999) return null
+        if (total <= 0 || total > 3999) return null
         return total
     }
 }

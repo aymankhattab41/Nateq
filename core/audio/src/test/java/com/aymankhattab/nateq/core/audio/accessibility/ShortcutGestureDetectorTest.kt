@@ -129,4 +129,94 @@ class ShortcutGestureDetectorTest {
         val second = d.onKeyDown(VolumeKey.UP, 1200L, false, 0)
         assertNull(second.gesture)
     }
+
+    @Test
+    fun bothBound_defersDouble_thenTimeoutFiresDouble() {
+        val d = ShortcutGestureDetector(
+            isGestureBound = {
+                it == ShortcutGesture.VOL_UP_DOUBLE ||
+                    it == ShortcutGesture.VOL_UP_TRIPLE
+            },
+            doublePressWindowMs = 300L
+        )
+        d.onKeyDown(VolumeKey.UP, 1000L, false, 0)
+        val second = d.onKeyDown(VolumeKey.UP, 1150L, false, 0)
+        assertNull(second.gesture)
+        assertTrue(second.consume)
+        assertTrue(d.hasPending())
+
+        val beforeTimeout = d.onTimeout(1400L, VolumeKey.UP)
+        assertNull(beforeTimeout.gesture)
+
+        val onTimeout = d.onTimeout(1450L, VolumeKey.UP)
+        assertEquals(ShortcutGesture.VOL_UP_DOUBLE, onTimeout.gesture)
+        assertTrue(onTimeout.consume)
+        assertFalse(d.hasPending())
+    }
+
+    @Test
+    fun bothBound_thirdPressWithinWindow_cancelsDoubleAndFiresTriple() {
+        val d = ShortcutGestureDetector(
+            isGestureBound = {
+                it == ShortcutGesture.VOL_UP_DOUBLE ||
+                    it == ShortcutGesture.VOL_UP_TRIPLE
+            },
+            doublePressWindowMs = 300L
+        )
+        d.onKeyDown(VolumeKey.UP, 1000L, false, 0)
+        val second = d.onKeyDown(VolumeKey.UP, 1150L, false, 0)
+        assertNull(second.gesture)
+        assertTrue(d.hasPending())
+
+        val third = d.onKeyDown(VolumeKey.UP, 1300L, false, 0)
+        assertEquals(ShortcutGesture.VOL_UP_TRIPLE, third.gesture)
+        assertTrue(third.consume)
+        assertFalse(d.hasPending())
+
+        val timeoutLater = d.onTimeout(1600L, VolumeKey.UP)
+        assertNull(timeoutLater.gesture)
+    }
+
+    @Test
+    fun longPress_multipleRepeats_firesOnlyOnce() {
+        val d = detector()
+        d.onKeyDown(VolumeKey.UP, 1000L, false, 0)
+        val firstRepeat = d.onKeyDown(VolumeKey.UP, 1500L, false, 1)
+        assertEquals(ShortcutGesture.VOL_UP_LONG, firstRepeat.gesture)
+        assertTrue(firstRepeat.consume)
+
+        val secondRepeat = d.onKeyDown(VolumeKey.UP, 1550L, false, 2)
+        assertNull(secondRepeat.gesture)
+        assertTrue(secondRepeat.consume)
+
+        val thirdRepeat = d.onKeyDown(VolumeKey.UP, 1600L, false, 3)
+        assertNull(thirdRepeat.gesture)
+        assertTrue(thirdRepeat.consume)
+
+        val up = d.onKeyUp(VolumeKey.UP, 1700L)
+        assertNull(up.gesture)
+        assertTrue(up.consume)
+
+        d.onKeyDown(VolumeKey.UP, 2000L, false, 0)
+        val nextLong = d.onKeyDown(VolumeKey.UP, 2600L, false, 1)
+        assertEquals(ShortcutGesture.VOL_UP_LONG, nextLong.gesture)
+    }
+
+    @Test
+    fun keyCancel_cleansStateAndPending() {
+        val d = ShortcutGestureDetector(
+            isGestureBound = {
+                it == ShortcutGesture.VOL_UP_DOUBLE ||
+                    it == ShortcutGesture.VOL_UP_TRIPLE
+            },
+            doublePressWindowMs = 300L
+        )
+        d.onKeyDown(VolumeKey.UP, 1000L, false, 0)
+        d.onKeyDown(VolumeKey.UP, 1150L, false, 0)
+        assertTrue(d.hasPending())
+
+        d.onKeyCancel(VolumeKey.UP)
+        assertFalse(d.hasPending())
+        assertNull(d.onTimeout(1500L, VolumeKey.UP).gesture)
+    }
 }

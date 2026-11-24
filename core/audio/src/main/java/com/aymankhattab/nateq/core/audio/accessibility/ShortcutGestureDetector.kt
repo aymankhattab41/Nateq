@@ -5,20 +5,15 @@ enum class VolumeKey { UP, DOWN }
 
 /**
  * كاشف إيماءات مفاتيح الصوت (ع٤١-ب1).
- * منطقٌ نقيٌّ بلا اعتمادٍ على أندرويد (قابل لاختبار JVM). القرار الحاكم:
- * **يُستهلك المفتاح فقط عند تحقّق إيماءةٍ مربوطةٍ بفعل** (نمط «الاستهلاك
- * عند اكتمال الإيماءة») — فالنقرات الأولى تمرّ للنظام كما هي.
- * استمرارُ المفتاحين معاً (BOTH_HOLD) لا يُنتجه الكاشف لأنّ مؤقّت الطوارئ
- * في الخدمة يتولّاه.
- * الضغطُ المطوّل: مرشّحُ مفاتيح a11y يدمج تكرارات مفتاح الصوت فلا تصل
- * أحداثُ `repeatCount`/`isLongPress` (مُثبَتٌ ميدانياً)؛ لذلك يُقاس
- * الضغطُ المطوّل بزمن الاستمرار بين الضغط والرفع. ويبقى مسارُ التكرار
- * مدعوماً لو سلّمته بعض الأجهزة.
+ * منطقٌ نقيٌّ بلا اعتمادٍ على أندرويد (قابل لاختبار JVM).
+ * - يحسم الإيماءة حسب الروابط الفعلية والمهلة (البند 10).
+ * - يمنع تكرار إطلاق الطويل لنفس الضغطة (البند 11).
+ * - يعالج الإلغاء وينظف الحالة والمهام المؤجلة (البند 12).
  */
 class ShortcutGestureDetector(
     private val isGestureBound: (ShortcutGesture) -> Boolean,
-    private val doublePressWindowMs: Long = DEFAULT_DOUBLE_PRESS_WINDOW_MS,
-    private val longPressMs: Long = DEFAULT_LONG_PRESS_MS
+    val doublePressWindowMs: Long = DEFAULT_DOUBLE_PRESS_WINDOW_MS,
+    val longPressMs: Long = DEFAULT_LONG_PRESS_MS
 ) {
 
     /** نتيجةُ حدثِ ضغط: الإيماءة المتحققة وهل تُستهلك. */
@@ -33,6 +28,7 @@ class ShortcutGestureDetector(
         var pressCount = 0
         var captureUp = false
         var multiHold = false
+        var longPressFired = false
 
         fun reset() {
             isDown = false
@@ -40,11 +36,19 @@ class ShortcutGestureDetector(
             pressCount = 0
             captureUp = false
             multiHold = false
+            longPressFired = false
         }
     }
 
     private val upState = KeyState()
     private val downState = KeyState()
+
+    private var pendingGesture: ShortcutGesture? = null
+    private var pendingKey: VolumeKey? = null
+    private var pendingGestureTime = 0L
+
+    /** هل توجد إيماءة مزدوجة مؤجلة بانتظار احتمال الثلاثية؟ */
+    fun hasPending(): Boolean = pendingGesture != null
 
     fun onKeyDown(
         key: VolumeKey,
@@ -58,15 +62,30 @@ class ShortcutGestureDetector(
         if (peer.isDown) {
             self.multiHold = true
             peer.multiHold = true
+            cancelPending()
         }
 
         if (isLongPress || repeatCount >= 1) {
+            cancelPending()
             self.pressCount = 0
             self.lastDownTime = 0L
             if (peer.isDown) {
                 return Detection(null, false)
             }
-            return fire(longGesture(key), self)
+            val gesture = longGesture(key)
+            if (!isGestureBound(gesture)) {
+                return Detection(null, false)
+            }
+            if (self.longPressFired) {
+                // منع تكرار إطلاق الطويل لنفس الضغطة (البند 11)
+                return Detection(null, true)
+            }
+            self.longPressFired = true
+            return fire(gesture, self)
+        }
+
+        if (pendingKey == key) {
+            cancelPending()
         }
 
         val withinWindow = self.pressCount > 0 &&
@@ -74,24 +93,50 @@ class ShortcutGestureDetector(
         self.pressCount = if (withinWindow) self.pressCount + 1 else 1
         self.lastDownTime = eventTimeMs
 
-        val gesture = when (self.pressCount) {
-            2 -> doubleGesture(key)
-            3 -> tripleGesture(key)
-            else -> null
+        return when (self.pressCount) {
+            2 -> {
+                val doubleGest = doubleGesture(key)
+                val tripleGest = tripleGesture(key)
+                val isDoubleBound = isGestureBound(doubleGest)
+                val isTripleBound = isGestureBound(tripleGest)
+
+                if (isTripleBound && isDoubleBound) {
+                    // كلا الربطين معاً (البند 10): تأجيل المزدوج
+                    pendingGesture = doubleGest
+                    pendingKey = key
+                    pendingGestureTime = eventTimeMs + doublePressWindowMs
+                    self.captureUp = true
+                    Detection(null, consume = true)
+                } else if (isDoubleBound) {
+                    // ثنائية فقط: إطلاق فوري بلا تأجيل
+                    self.pressCount = 0
+                    self.lastDownTime = 0L
+                    fire(doubleGest, self)
+                } else if (isTripleBound) {
+                    // ثلاثية فقط بدون ثنائية: استهلاك والانتظار للثالثة
+                    self.captureUp = true
+                    Detection(null, consume = true)
+                } else {
+                    Detection(null, false)
+                }
+            }
+            3 -> {
+                val tripleGest = tripleGesture(key)
+                cancelPending()
+                self.pressCount = 0
+                self.lastDownTime = 0L
+                if (isGestureBound(tripleGest)) {
+                    fire(tripleGest, self)
+                } else {
+                    Detection(null, false)
+                }
+            }
+            else -> Detection(null, false)
         }
-        if (gesture == null) return Detection(null, false)
-        val detection = fire(gesture, self)
-        if (detection.consume) {
-            self.pressCount = 0
-            self.lastDownTime = 0L
-        }
-        return detection
     }
 
     /**
-     * رفعُ المفتاح: يحسم الضغطَ المطوّل بزمن الاستمرار (لأنّ التكرارات
-     * لا تصل من مرشّح a11y). @return الإيماءةٌ المتحققة (أو null) وهل
-     * يُستهلك حدث الرفع.
+     * رفعُ المفتاح: يحسم الضغطَ المطوّل بزمن الاستمرار.
      */
     fun onKeyUp(key: VolumeKey, eventTimeMs: Long): Detection {
         val self = stateOf(key)
@@ -100,23 +145,68 @@ class ShortcutGestureDetector(
         self.multiHold = false
         val consumedUp = self.captureUp
         self.captureUp = false
+        val wasLongFired = self.longPressFired
+        self.longPressFired = false
 
-        if (!consumedUp && !multi && self.lastDownTime > 0L) {
+        if (!consumedUp && !multi && !wasLongFired &&
+            self.lastDownTime > 0L
+        ) {
             val heldMs = eventTimeMs - self.lastDownTime
             if (heldMs >= longPressMs) {
                 self.pressCount = 0
                 self.lastDownTime = 0L
+                cancelPending()
                 if (isGestureBound(longGesture(key))) {
                     return Detection(longGesture(key), true)
                 }
             }
         }
-        return Detection(null, consumedUp)
+        return Detection(null, consumedUp || wasLongFired)
+    }
+
+    /**
+     * يحسم الإيماءة المؤجلة (الضغط المزدوج) عند انتهاء مهلة انتظار الثلاثي.
+     */
+    fun onTimeout(currentTimeMs: Long, key: VolumeKey? = null): Detection {
+        val target = pendingGesture ?: return Detection(null, false)
+        if (key != null && pendingKey != key) {
+            return Detection(null, false)
+        }
+        if (currentTimeMs >= pendingGestureTime) {
+            val gesture = target
+            val pKey = pendingKey
+            cancelPending()
+            if (pKey != null) {
+                val s = stateOf(pKey)
+                s.pressCount = 0
+                s.lastDownTime = 0L
+            }
+            return Detection(gesture, true)
+        }
+        return Detection(null, false)
+    }
+
+    /**
+     * معالجة حدث ملغى (البند 12): تنظيف حالة المفتاح والمهام المؤجلة.
+     */
+    fun onKeyCancel(key: VolumeKey) {
+        val self = stateOf(key)
+        self.reset()
+        if (pendingKey == key) {
+            cancelPending()
+        }
     }
 
     fun reset() {
         upState.reset()
         downState.reset()
+        cancelPending()
+    }
+
+    private fun cancelPending() {
+        pendingGesture = null
+        pendingKey = null
+        pendingGestureTime = 0L
     }
 
     private fun fire(
@@ -156,10 +246,7 @@ class ShortcutGestureDetector(
         }
 
     companion object {
-        /** نافذةُ تجميع النقرات المتتابعة (جزء من ع٤١-ب1). */
         const val DEFAULT_DOUBLE_PRESS_WINDOW_MS = 300L
-
-        /** عتبةُ الضغط المطوّل بالزمن (بديلُ التكرارات المدمَجة). */
         const val DEFAULT_LONG_PRESS_MS = 600L
     }
 }

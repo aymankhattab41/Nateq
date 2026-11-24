@@ -2830,6 +2830,7 @@ class NateqTtsService : TextToSpeechService() {
             )
             if (params == null) {
                 skippedSegments++
+                crossfader.onSegmentSkipped()
                 if (isCriticalNumericSegment(segment)) {
                     hadCriticalDrop = true
                 }
@@ -2850,7 +2851,7 @@ class NateqTtsService : TextToSpeechService() {
             )
             var nativeRate = 0
             var nativeChannels = 1
-            val phase = LongArray(2)
+            val phase = LongArray(4)
             for (piece in splitOnFailureBoundary(params.text)) {
                 var producedHere = false
                 try {
@@ -2883,6 +2884,7 @@ class NateqTtsService : TextToSpeechService() {
                         params.category ?: effectCategory
                     )
                 } catch (e: CancellationException) {
+                    crossfader.reset()
                     throw e
                 } catch (t: Throwable) {
                     Log.w(
@@ -2898,6 +2900,7 @@ class NateqTtsService : TextToSpeechService() {
                     }
                     CategoryFailureTracker.recordFailure(cat)
                     skippedSegments++
+                    crossfader.onSegmentSkipped()
                     if (isCriticalNumericSegment(segment)) {
                         hadCriticalDrop = true
                     }
@@ -2906,6 +2909,7 @@ class NateqTtsService : TextToSpeechService() {
                         "default"
                     }
                     CategoryFailureTracker.recordSuccess(cat)
+                    crossfader.onSegmentComplete()
                 }
             }
             val segEnd = SystemClock.uptimeMillis()
@@ -2932,6 +2936,7 @@ class NateqTtsService : TextToSpeechService() {
             )
         }
         if (hadCriticalDrop) {
+            crossfader.reset()
             callback.error()
             return
         }
@@ -2944,6 +2949,7 @@ class NateqTtsService : TextToSpeechService() {
             callback
         )
         if (!started) {
+            crossfader.reset()
             callback.error()
             return
         }
@@ -3018,9 +3024,15 @@ class NateqTtsService : TextToSpeechService() {
                     "default"
                 }
             }
-            val audio = deferred.await()
+            val audio = try {
+                deferred.await()
+            } catch (e: CancellationException) {
+                crossfader.reset()
+                throw e
+            }
             if (audio == null) {
                 CategoryFailureTracker.recordFailure(cat)
+                crossfader.onSegmentSkipped()
                 if (isCriticalNumericSegment(segment)) {
                     hadCriticalDrop = true
                     Log.w(
@@ -3036,7 +3048,7 @@ class NateqTtsService : TextToSpeechService() {
                 continue
             }
             CategoryFailureTracker.recordSuccess(cat)
-            val phase = LongArray(2)
+            val phase = LongArray(4)
             for (chunk in audio.chunks) {
                 emitMixedChunk(
                     chunk, chunk.size,
@@ -3050,12 +3062,14 @@ class NateqTtsService : TextToSpeechService() {
                     callback
                 )
             }
+            crossfader.onSegmentComplete()
             // استُهلك المقطع فأُطلق سراح بايتاته ومنافذه للنافذة التالية.
             producedBytes.remove(index)
             consumedCount++
             fillWindow()
         }
         if (hadCriticalDrop) {
+            crossfader.reset()
             callback.error()
             return@coroutineScope
         }
@@ -3068,6 +3082,7 @@ class NateqTtsService : TextToSpeechService() {
             callback
         )
         if (!started) {
+            crossfader.reset()
             callback.error()
             return@coroutineScope
         }

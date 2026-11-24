@@ -27,7 +27,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.aymankhattab.nateq.core.audio.accessibility.UnlabeledElementStore
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.data.SpeedDialManager
 
 /**
  * طبقة الحالة الرئيسية لمشهد الإعدادات.
@@ -170,7 +172,7 @@ class SettingsViewModel @Inject constructor(
     fun exportDict(uri: Uri, resolver: ContentResolver) {
         viewModelScope.launch(ioDispatcher) {
             val ok = runCatching {
-                val json = pronunciationDict.exportToJson()
+                val json = pronunciationDict.exportFullToJson()
                 resolver.openOutputStream(uri)?.use { out ->
                     out.write(json.toByteArray(Charsets.UTF_8))
                 } != null
@@ -242,11 +244,49 @@ class SettingsViewModel @Inject constructor(
             }
             root.add("dictionary", dictArr)
 
+            val hasDictData = pronunciationDict.getAllEntries().isNotEmpty() ||
+                pronunciationDict.langEntries.isNotEmpty()
+            if (hasDictData) {
+                val fullDictJson = pronunciationDict.exportFullToJson()
+                val fullDictObj = NateqJson.parseObject(fullDictJson)
+                if (fullDictObj != null) {
+                    root.add("dictionary_full", fullDictObj)
+                }
+            }
+
             val callers = JsonObject()
             runCatching { settings.getCustomCallerNames() }
                 .getOrDefault(emptyMap())
                 .forEach { (num, name) -> callers.addProperty(num, name) }
             root.add("callerNames", callers)
+
+            val speedDialArr = JsonArray()
+            runCatching {
+                SpeedDialManager.getAllAssignedSlots(settings.appContext)
+            }.getOrDefault(emptyList()).forEach { entry ->
+                val obj = JsonObject()
+                obj.addProperty("slot", entry.slot)
+                obj.addProperty("name", entry.name)
+                obj.addProperty("phoneNumber", entry.phoneNumber)
+                entry.contactId?.let { obj.addProperty("contactId", it) }
+                entry.lookupKey?.let { obj.addProperty("lookupKey", it) }
+                entry.phoneRowId?.let { obj.addProperty("phoneRowId", it) }
+                speedDialArr.add(obj)
+            }
+            if (speedDialArr.size() > 0) {
+                root.add("speedDial", speedDialArr)
+            }
+
+            val unlabeledObj = JsonObject()
+            runCatching {
+                UnlabeledElementStore.getInstance(settings.appContext)
+                    .getAllCustomLabels()
+            }.getOrDefault(emptyMap()).forEach { (key, label) ->
+                unlabeledObj.addProperty(key, label)
+            }
+            if (unlabeledObj.size() > 0) {
+                root.add("unlabeledElements", unlabeledObj)
+            }
 
             // تصدير نصوص اقرأ لاحقاً الكاملة إن وجدت
             val readLaterTexts = JsonObject()
@@ -295,9 +335,15 @@ class SettingsViewModel @Inject constructor(
             if (text.length > MAX_BACKUP_BYTES) return false
             val callers = root.optObject("callerNames")
             val settingsObj = root.optObject("settings")
+            val speedDialArr = root.optArray("speedDial")
+            val unlabeledObj = root.optObject("unlabeledElements")
             val callerCount = callers?.size() ?: 0
             val settingsCount = settingsObj?.size() ?: 0
-            if (callerCount + settingsCount > MAX_BACKUP_ENTRIES) return false
+            val speedDialCount = speedDialArr?.size() ?: 0
+            val unlabeledCount = unlabeledObj?.size() ?: 0
+            if (callerCount + settingsCount + speedDialCount +
+                unlabeledCount > MAX_BACKUP_ENTRIES
+            ) return false
 
             var applied = false
             // نتتبّع مصدر كل جزء على حدة لنعرف إن كانت النسخة حملت إعدادات/
@@ -305,26 +351,39 @@ class SettingsViewModel @Inject constructor(
             var dictApplied = false
             var settingsApplied = false
 
-            val dictArr = root.optArray("dictionary")
-            if (dictArr != null) {
-                val map = JsonObject()
-                for (i in 0 until dictArr.size()) {
-                    // المزاوجات تُخزَّن مصفوفتين [كلمة، نطق] — نُجرّدها بأمان
-                    // والقيود/التنظيف واردة في
-                    // PronunciationDictionary.importFromJson.
-                    val pairArr = dictArr.get(i).optArray() ?: continue
-                    if (pairArr.size() < 2) continue
-                    val first = pairArr.get(0)
-                    val second = pairArr.get(1)
-                    if (!first.isJsonPrimitive ||
-                        !second.isJsonPrimitive
-                    ) continue
-                    map.addProperty(first.asString, second.asString)
+            val fullDict = root.optObject("dictionary_full")
+            if (fullDict != null) {
+                val gCount = fullDict.optObject("entries")?.size() ?: 0
+                val sCount = fullDict.optObject("scoped_entries")?.size() ?: 0
+                if (gCount > 0 || sCount > 0) {
+                    dictApplied = pronunciationDict.importFromJson(
+                        NateqJson.toJson(fullDict),
+                        merge = false
+                    )
+                    applied = dictApplied || applied
                 }
-                dictApplied = pronunciationDict.importFromJson(
-                    NateqJson.toJson(map)
-                )
-                applied = dictApplied || applied
+            } else {
+                val dictArr = root.optArray("dictionary")
+                if (dictArr != null) {
+                    val map = JsonObject()
+                    for (i in 0 until dictArr.size()) {
+                        val pairArr = dictArr.get(i).optArray() ?: continue
+                        if (pairArr.size() < 2) continue
+                        val first = pairArr.get(0)
+                        val second = pairArr.get(1)
+                        if (!first.isJsonPrimitive ||
+                            !second.isJsonPrimitive
+                        ) continue
+                        map.addProperty(first.asString, second.asString)
+                    }
+                    if (map.size() > 0) {
+                        dictApplied = pronunciationDict.importFromJson(
+                            NateqJson.toJson(map),
+                            merge = false
+                        )
+                        applied = dictApplied || applied
+                    }
+                }
             }
 
             if (callers != null && callers.size() > 0) {
@@ -334,6 +393,65 @@ class SettingsViewModel @Inject constructor(
                 }
                 settings.setCustomCallerNames(map)
                 applied = true
+            }
+
+            if (speedDialArr != null && speedDialArr.size() > 0) {
+                runCatching {
+                    var anySlotRestored = false
+                    SpeedDialManager.clearAll(settings.appContext)
+                    for (i in 0 until speedDialArr.size()) {
+                        val obj = speedDialArr.get(i).optObject() ?: continue
+                        val slot = obj.optInt("slot", -1)
+                        val name = obj.optString("name")
+                        val phone = obj.optString("phoneNumber")
+                        if (!SpeedDialManager.isValidSlot(slot) ||
+                            name.isBlank() ||
+                            phone.isBlank()
+                        ) {
+                            continue
+                        }
+                        val contactId = if (obj.has("contactId")) {
+                            obj.optLong("contactId")
+                        } else null
+                        val lookupKey = if (obj.has("lookupKey")) {
+                            obj.optString("lookupKey")
+                        } else null
+                        val phoneRowId = if (obj.has("phoneRowId")) {
+                            obj.optLong("phoneRowId")
+                        } else null
+                        val saved = SpeedDialManager.saveSlot(
+                            context = settings.appContext,
+                            slot = slot,
+                            name = name,
+                            phoneNumber = phone,
+                            contactId = contactId,
+                            lookupKey = lookupKey,
+                            phoneRowId = phoneRowId
+                        )
+                        if (saved) anySlotRestored = true
+                    }
+                    if (anySlotRestored) applied = true
+                }
+            }
+
+            if (unlabeledObj != null && unlabeledObj.size() > 0) {
+                runCatching {
+                    val map = HashMap<String, String>()
+                    for ((key, value) in unlabeledObj.entrySet()) {
+                        if (value.isJsonPrimitive &&
+                            key.isNotBlank() &&
+                            value.asString.isNotBlank()
+                        ) {
+                            map[key] = value.asString
+                        }
+                    }
+                    if (map.isNotEmpty()) {
+                        UnlabeledElementStore.getInstance(
+                            settings.appContext
+                        ).replaceAllCustomLabels(map)
+                        applied = true
+                    }
+                }
             }
 
             if (settingsObj != null && settingsObj.size() > 0) {

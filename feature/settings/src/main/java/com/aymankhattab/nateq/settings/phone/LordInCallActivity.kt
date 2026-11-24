@@ -53,6 +53,7 @@ class LordInCallActivity : AppCompatActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var callStartTime = 0L
+    private var lastMuteState: Boolean? = null
     private val durationRunnable = object : Runnable {
         override fun run() {
             if (callStartTime > 0L) {
@@ -76,6 +77,15 @@ class LordInCallActivity : AppCompatActivity() {
                 (audioState.route == CallAudioState.ROUTE_SPEAKER)
             updateSpeakerUi(isSpeaker)
             updateMuteUi(audioState.isMuted)
+            if (lastMuteState != null && lastMuteState != audioState.isMuted) {
+                val msg = if (audioState.isMuted) {
+                    getString(R.string.phone_mute_on)
+                } else {
+                    getString(R.string.phone_mute_off)
+                }
+                speak(msg)
+            }
+            lastMuteState = audioState.isMuted
         }
 
         override fun onCallFinished() {
@@ -186,12 +196,10 @@ class LordInCallActivity : AppCompatActivity() {
         btnReject?.setOnClickListener {
             llIncomingActions?.visibility = View.GONE
             LordInCallService.instance?.rejectCall()
-            finish()
         }
 
         btnEndCall?.setOnClickListener {
             LordInCallService.instance?.disconnectCall()
-            finish()
         }
 
         btnSpeaker?.setOnClickListener {
@@ -207,15 +215,7 @@ class LordInCallActivity : AppCompatActivity() {
         }
 
         btnMute?.setOnClickListener {
-            val isNowMuted =
-                LordInCallService.instance?.toggleMute() ?: false
-            val msg = if (isNowMuted) {
-                getString(R.string.phone_mute_on)
-            } else {
-                getString(R.string.phone_mute_off)
-            }
-            speak(msg)
-            updateMuteUi(isNowMuted)
+            LordInCallService.instance?.toggleMute()
         }
 
         btnKeypad.setOnClickListener {
@@ -276,7 +276,10 @@ class LordInCallActivity : AppCompatActivity() {
 
     private fun updateCallUi() {
         val call = LordInCallService.currentCall
-        if (call == null || call.state == Call.STATE_DISCONNECTED) {
+        val all = LordInCallService.instance?.allCalls ?: emptyList()
+        val hasRemaining = all.any { it.state != Call.STATE_DISCONNECTED }
+
+        if (call == null || !hasRemaining) {
             finish()
             return
         }
@@ -295,8 +298,7 @@ class LordInCallActivity : AppCompatActivity() {
             mainHandler.removeCallbacks(durationRunnable)
 
             val displayName = if (!name.isNullOrEmpty()) name else number
-            val calls = LordInCallService.instance?.calls ?: emptyList()
-            val hasMultipleCalls = calls.size > 1
+            val hasMultipleCalls = all.size > 1
 
             if (hasMultipleCalls && displayName.isNotEmpty()) {
                 btnAnswer?.text = "رد: $displayName"

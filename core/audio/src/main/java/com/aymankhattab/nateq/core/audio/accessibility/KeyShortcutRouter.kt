@@ -3,8 +3,12 @@ package com.aymankhattab.nateq.core.audio.accessibility
 import android.accessibilityservice.AccessibilityService
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.core.audio.engine.SpeechEntryPoints
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.concurrent.atomic.AtomicReference
@@ -48,10 +52,33 @@ class KeyShortcutRouter(
         settings.setA11yShortcutBindings(table.encode())
     }
 
+    private val timeoutHandler = Handler(Looper.getMainLooper())
+    private var pendingTimeoutRunnable: Runnable? = null
+
+    private fun cancelPendingTimeout() {
+        pendingTimeoutRunnable?.let { timeoutHandler.removeCallbacks(it) }
+        pendingTimeoutRunnable = null
+    }
+
+    /** إعادة ضبط كاشف الإيماءات وإلغاء أي مهام مؤجلة (البند 10 و12). */
+    fun reset() {
+        cancelPendingTimeout()
+        detector.reset()
+    }
+
     /** @return هل تم استهلاك الحدث؟ */
     fun onKeyEvent(event: KeyEvent?): Boolean {
         if (event == null) return false
         val key = volumeKeyOf(event.keyCode) ?: return false
+
+        val isCanceled = event.isCanceled ||
+            (event.flags and KeyEvent.FLAG_CANCELED != 0) ||
+            (event.flags and KeyEvent.FLAG_CANCELED_LONG_PRESS != 0)
+        if (isCanceled) {
+            cancelPendingTimeout()
+            detector.onKeyCancel(key)
+            return true
+        }
 
         val active = FeatureFlags.isActive(
             FeatureFlags.FEATURE_KEY_SHORTCUTS,
@@ -60,7 +87,7 @@ class KeyShortcutRouter(
             stateStore = stateStore
         )
         if (!active) {
-            detector.reset()
+            reset()
             return false
         }
 
@@ -72,12 +99,32 @@ class KeyShortcutRouter(
                     isLongPress = event.isLongPress,
                     repeatCount = event.repeatCount
                 )
-                detection.gesture?.let { executeGesture(it) }
+                if (detection.gesture != null) {
+                    cancelPendingTimeout()
+                    executeGesture(detection.gesture)
+                } else if (detector.hasPending()) {
+                    cancelPendingTimeout()
+                    val run = Runnable {
+                        val timeoutDetection = detector.onTimeout(
+                            currentTimeMs = SystemClock.uptimeMillis(),
+                            key = key
+                        )
+                        timeoutDetection.gesture?.let { executeGesture(it) }
+                    }
+                    pendingTimeoutRunnable = run
+                    timeoutHandler.postDelayed(
+                        run,
+                        detector.doublePressWindowMs
+                    )
+                }
                 detection.consume
             }
             KeyEvent.ACTION_UP -> {
                 val detection = detector.onKeyUp(key, event.eventTime)
-                detection.gesture?.let { executeGesture(it) }
+                if (detection.gesture != null) {
+                    cancelPendingTimeout()
+                    executeGesture(detection.gesture)
+                }
                 detection.consume
             }
             else -> false
@@ -222,6 +269,11 @@ class KeyShortcutRouter(
                     text
                 )
             }
+
+            override fun isSpeaking(): Boolean =
+                AnnouncementSpeaker.getInstance(
+                    service.applicationContext
+                ).isSpeaking()
         }
 
     private fun readScreenNow(context: Context) {

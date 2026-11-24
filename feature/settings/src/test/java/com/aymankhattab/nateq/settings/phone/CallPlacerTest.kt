@@ -92,4 +92,28 @@ class CallPlacerTest {
             assertEquals(handleSlot0, resolved)
         }
     }
+
+    @Test
+    fun resolvePhoneAccountHandle_twoSimsWithIdenticalLabel_doesNotGuess() {
+        val component = ComponentName(context, "MockConnectionService")
+        val handleSlot0 = PhoneAccountHandle(component, "handle_sim_0")
+        val handleSlot1 = PhoneAccountHandle(component, "handle_sim_1")
+
+        // شريحتان بنفس اسم المشغل تماماً
+        val account0 = PhoneAccount.builder(handleSlot0, "Vodafone").build()
+        val account1 = PhoneAccount.builder(handleSlot1, "Vodafone").build()
+
+        telecomManager.registerPhoneAccount(account0)
+        telecomManager.registerPhoneAccount(account1)
+
+        val accounts = listOf(handleSlot0, handleSlot1)
+
+        // تعذر الربط باشتراك مؤكد يعيد null ليطلب النظام اختياراً صريحاً
+        val resolved = CallPlacer.resolvePhoneAccountHandle(
+            context,
+            simSlot = 1,
+            accounts = accounts
+        )
+        assertNull(resolved)
+    }
 }

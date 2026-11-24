@@ -60,13 +60,38 @@ object ContactLookupNormalizer {
         return norm.split(Regex("\\s+")).firstOrNull()?.trim().orEmpty()
     }
 
+    /** فحص إن كان النص مرشحاً كرقم هاتف (لا يحوي حروفاً وبه 3 أرقام فأكثر) */
+    fun isPhoneCandidate(s: String): Boolean {
+        val trimmed = s.trim()
+        if (trimmed.isEmpty()) return false
+        if (trimmed.any { it.isLetter() }) return false
+        val digits = trimmed.filter { it.isDigit() }
+        return digits.length >= 3
+    }
+
+    /** فحص تطابق رقمين بأي من أشكالهما المطبّعة */
+    fun areSamePhone(a: String, b: String): Boolean {
+        val aDigits = a.filter { it.isDigit() }
+        val bDigits = b.filter { it.isDigit() }
+        if (aDigits.isNotEmpty() && aDigits == bDigits) return true
+        val aSig = aDigits.trimStart('0')
+        val bSig = bDigits.trimStart('0')
+        if (aSig.isNotEmpty() && aSig == bSig) return true
+        val aForms = phoneLookupForms(a)
+        val bForms = phoneLookupForms(b)
+        return aForms.any { bForms.contains(it) }
+    }
+
     /**
      * توليد صيغ البحث لرقم الهاتف (خام، أرقام فقط، E164، وصيغ محلية).
      */
     fun phoneLookupForms(number: String, region: String? = null): List<String> {
         val raw = number.trim()
         if (raw.isEmpty()) return emptyList()
+        // لا تجعل أي أرقام داخل الاسم ترخيصاً لمطابقة هاتف (البند 17)
+        if (raw.any { it.isLetter() }) return emptyList()
         val digits = raw.filter { it.isDigit() }
+        if (digits.length < 3) return emptyList()
         val forms = LinkedHashSet<String>()
         forms += raw
         if (digits.isNotEmpty() && digits != raw) forms += digits

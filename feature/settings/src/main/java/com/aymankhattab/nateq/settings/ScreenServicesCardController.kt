@@ -575,8 +575,7 @@ class ScreenServicesCardController(
                 }
             }
             .setNeutralButton(R.string.a11y_voice_remove) { _, _ ->
-                val keys = entries.map { it.first }
-                showRemoveContactVoiceDialog(store, keys, onUpdated)
+                showRemoveContactVoiceDialog(store, entries, onUpdated)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -692,14 +691,23 @@ class ScreenServicesCardController(
 
     private fun showRemoveContactVoiceDialog(
         store: ContactVoiceStore,
-        keys: List<String>,
+        entries: List<Pair<String,
+            com.aymankhattab.nateq.core.data.VoiceProfile>>,
         onUpdated: () -> Unit
     ) {
-        if (keys.isEmpty()) return
+        if (entries.isEmpty()) return
+        val items = entries.map { (key, profile) ->
+            val disp = profile.displayName
+            if (!disp.isNullOrBlank() && disp != key) {
+                "$disp ($key)"
+            } else {
+                key
+            }
+        }.toTypedArray()
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.a11y_voice_remove)
-            .setItems(keys.toTypedArray()) { _, which ->
-                store.remove(keys[which])
+            .setItems(items) { _, which ->
+                store.remove(entries[which].first)
                 onUpdated()
             }
             .setNegativeButton(android.R.string.cancel, null)
@@ -1320,7 +1328,9 @@ class ScreenServicesCardController(
                     1 -> MaterialAlertDialogBuilder(context)
                         .setTitle(R.string.unlabeled_labels_delete)
                         .setMessage(R.string.unlabeled_labels_delete_confirm)
-                        .setPositiveButton(R.string.unlabeled_labels_delete) { _, _ ->
+                        .setPositiveButton(
+                            R.string.unlabeled_labels_delete
+                        ) { _, _ ->
                             UnlabeledElementStore.getInstance(context)
                                 .setCustomLabel(pkg, viewId, null)
                             Toast.makeText(

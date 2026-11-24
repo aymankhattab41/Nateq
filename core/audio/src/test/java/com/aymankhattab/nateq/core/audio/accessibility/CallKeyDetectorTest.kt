@@ -70,6 +70,48 @@ class CallKeyDetectorTest {
     }
 
     @Test
+    fun repeatDown_keepsFirstDownTimestamp_firesLongPress() {
+        // البند 13: الضغطة تبدأ عند 1000 وتتكرر عند 1400 و1600 وتُرفع عند 1800
+        detector.onDown(VolumeKey.UP, ringing = true, 1_000L)
+        detector.onDown(VolumeKey.UP, ringing = true, 1_400L)
+        detector.onDown(VolumeKey.UP, ringing = true, 1_600L)
+        val action = detector.onUp(VolumeKey.UP, true, 1_800L)
+        assertEquals(CallAction.ANSWER, action)
+    }
+
+    @Test
+    fun callSessionChanged_doesNotApplyToNewCall() {
+        // البند 13: الضغط أثناء مكالمة أ والرفع أثناء مكالمة ب
+        detector.onDown(
+            VolumeKey.UP,
+            ringing = true,
+            1_000L,
+            callSessionId = "session_A"
+        )
+        val action = detector.onUp(
+            VolumeKey.UP,
+            ringing = true,
+            1_800L,
+            callSessionId = "session_B"
+        )
+        assertNull(action)
+    }
+
+    @Test
+    fun eventCancel_clearsPendingPress() {
+        // البند 12: إلغاء الحدث ينظف الحالة دون تنفيذ إجراء
+        detector.onDown(VolumeKey.UP, ringing = true, 1_000L)
+        detector.onCancel(VolumeKey.UP)
+        assertNull(detector.onUp(VolumeKey.UP, true, 1_800L))
+    }
+
+    @Test
+    fun ringingEnd_clearsPendingPress() {
+        detector.onDown(VolumeKey.UP, ringing = true, 1_000L)
+        assertNull(detector.onUp(VolumeKey.UP, ringing = false, 1_800L))
+    }
+
+    @Test
     fun invoker_callsGateway() {
         val gateway = RecordingGateway()
         assertTrue(CallActionInvoker.invoke(CallAction.ANSWER, gateway))

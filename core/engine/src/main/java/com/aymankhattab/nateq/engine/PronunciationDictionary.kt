@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine
 
 import android.content.Context
+import android.os.Build
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
@@ -11,9 +12,12 @@ import com.aymankhattab.nateq.util.NateqJson
 import com.aymankhattab.nateq.util.optObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.lang.reflect.Type
+import java.nio.channels.FileLock
 import java.text.BreakIterator
 import java.text.Normalizer
+import java.util.UUID
 
 /**
  * مخرج مطابقة واحد في آلة Aho-Corasick الموحدة للقاموس.
@@ -178,7 +182,8 @@ open class PronunciationDictionary(private val context: Context) {
         }
 
         /**
-         * تطبيع مفتاح للمطابقة/الهوية: مسار موحّد (حساس للتشكيل، NFC، بلا تطويل).
+         * تطبيع مفتاح للمطابقة/الهوية: مسار موحّد
+         * (حساس للتشكيل، NFC، بلا تطويل).
          */
         fun normalizeKey(
             key: String,
@@ -219,9 +224,18 @@ open class PronunciationDictionary(private val context: Context) {
     val storageMode: String = "JSON_V2"
 
     private val dictFile = File(context.filesDir, DICT_FILE_NAME)
-    private val tmpFile = File(context.filesDir, DICT_TMP_FILE_NAME)
+    private val backupFile = File(context.filesDir, "dictionary_v2.json.bak")
+    private val lockFile = File(context.filesDir, "dictionary.lock")
+    private val storageLock = Any()
     private val legacyBackupFile =
         File(context.filesDir, LEGACY_BACKUP_FILE_NAME)
+
+    private data class CandidateState(
+        val entries: Map<String, String>,
+        val scopes: Map<String, Map<String, String>>,
+        val modes: Map<String, String>,
+        val vLangs: Map<String, String>
+    )
 
     @Volatile
     private var lastFileModified = 0L
@@ -342,28 +356,12 @@ open class PronunciationDictionary(private val context: Context) {
             }
 
             val loaded = loadFromPrefs(prefs)
-            val ver = prefs.getLong(KEY_MODIFIED, 0L).let {
-                if (it == 0L) 1L else it
-            }
-            version = ver
-            swapEntries(loaded.global)
-            langEntries = loaded.scopes
-            matchModes = loaded.modes
-            valueLangs = loaded.vLangs
-
-            val jsonStr = serializeToJson(
-                ver, loaded.global, loaded.scopes,
-                loaded.modes, loaded.vLangs
+            commitTransaction(
+                loaded.global,
+                loaded.scopes,
+                loaded.modes,
+                loaded.vLangs
             )
-            FileOutputStream(tmpFile).use { fos ->
-                fos.write(jsonStr.toByteArray(Charsets.UTF_8))
-                fos.flush()
-                fos.fd.sync()
-            }
-            if (tmpFile.renameTo(dictFile)) {
-                lastFileModified = dictFile.lastModified()
-                lastFileLength = dictFile.length()
-            }
         } catch (e: Exception) {
             android.util.Log.e(LOG_TAG, "فشل ترحيل قاموس النطق", e)
         }
@@ -527,65 +525,65 @@ open class PronunciationDictionary(private val context: Context) {
         }
         val lang = normalizeLangTag(languageTag)
 
-        synchronized(this) {
-            // منع الالتباس: مفتاح مكافئ قانونياً في نفس النطاق = نفس الهوية
+        val candidate = synchronized(this) {
+            val nextEntries = LinkedHashMap(entries)
+            val nextScopes = LinkedHashMap(langEntries)
+            val nextModes = LinkedHashMap(matchModes)
+            val nextVLangs = LinkedHashMap(valueLangs)
+
             val equivalent = findCanonicallyEquivalentStoredKey(lang, normKey)
 
             if (lang == null) {
-                val updated = LinkedHashMap(entries)
                 if (equivalent != null && equivalent != key) {
-                    updated.remove(equivalent)
-                    migrateMetaKey(
-                        modeKeyOf(null, equivalent), modeKeyOf(null, key)
-                    )
+                    nextEntries.remove(equivalent)
+                    val oldM = nextModes.remove(modeKeyOf(null, equivalent))
+                    if (oldM != null) {
+                        nextModes[modeKeyOf(null, key)] = oldM
+                    }
+                    val oldV = nextVLangs.remove(modeKeyOf(null, equivalent))
+                    if (oldV != null) {
+                        nextVLangs[modeKeyOf(null, key)] = oldV
+                    }
                 }
-                updated[key] = value
-                swapEntries(updated)
+                nextEntries[key] = value
             } else {
-                val overlay = LinkedHashMap(langEntries[lang] ?: emptyMap())
+                val overlay = LinkedHashMap(nextScopes[lang] ?: emptyMap())
                 if (equivalent != null && equivalent != key) {
                     overlay.remove(equivalent)
-                    migrateMetaKey(
-                        modeKeyOf(lang, equivalent), modeKeyOf(lang, key)
-                    )
+                    val oldM = nextModes.remove(modeKeyOf(lang, equivalent))
+                    if (oldM != null) {
+                        nextModes[modeKeyOf(lang, key)] = oldM
+                    }
+                    val oldV = nextVLangs.remove(modeKeyOf(lang, equivalent))
+                    if (oldV != null) {
+                        nextVLangs[modeKeyOf(lang, key)] = oldV
+                    }
                 }
                 overlay[key] = value
-                swapLangEntries(lang, overlay)
+                nextScopes[lang] = overlay
             }
 
             val finalModeKey = modeKeyOf(lang, key)
-            val modes = LinkedHashMap(matchModes)
             if (!matchMode.isNullOrBlank() && matchMode != "AUTO") {
-                modes[finalModeKey] = matchMode.uppercase()
+                nextModes[finalModeKey] = matchMode.uppercase()
             } else {
-                modes.remove(finalModeKey)
+                nextModes.remove(finalModeKey)
             }
-            matchModes = modes
 
-            val vLangs = LinkedHashMap(valueLangs)
             if (!valueLang.isNullOrBlank()) {
-                vLangs[finalModeKey] = valueLang.trim()
+                nextVLangs[finalModeKey] = valueLang.trim()
             } else {
-                vLangs.remove(finalModeKey)
+                nextVLangs.remove(finalModeKey)
             }
-            valueLangs = vLangs
 
-            cache = null
-            version++
+            CandidateState(nextEntries, nextScopes, nextModes, nextVLangs)
         }
-        return save()
-    }
-
-    private fun migrateMetaKey(oldKey: String, newKey: String) {
-        if (oldKey == newKey) return
-        val modes = LinkedHashMap(matchModes)
-        val m = modes.remove(oldKey)
-        if (m != null) modes[newKey] = m
-        matchModes = modes
-        val vLangs = LinkedHashMap(valueLangs)
-        val v = vLangs.remove(oldKey)
-        if (v != null) vLangs[newKey] = v
-        valueLangs = vLangs
+        return commitTransaction(
+            candidate.entries,
+            candidate.scopes,
+            candidate.modes,
+            candidate.vLangs
+        )
     }
 
     fun removeEntry(
@@ -594,24 +592,34 @@ open class PronunciationDictionary(private val context: Context) {
     ): Boolean {
         val lang = normalizeLangTag(languageTag)
         val trimmed = abbreviation.trim()
-        var changed = false
-        synchronized(this) {
+        val candidate = synchronized(this) {
+            val nextEntries = LinkedHashMap(entries)
+            val nextScopes = LinkedHashMap(langEntries)
+            val nextModes = LinkedHashMap(matchModes)
+            val nextVLangs = LinkedHashMap(valueLangs)
+            val changed: Boolean
+
             if (lang == null) {
-                val updated = LinkedHashMap(entries)
-                changed = removeByIdentity(updated, trimmed)
-                if (changed) swapEntries(updated)
+                changed = removeByIdentity(nextEntries, trimmed)
             } else {
-                val overlay = LinkedHashMap(langEntries[lang] ?: emptyMap())
+                val overlay = LinkedHashMap(nextScopes[lang] ?: emptyMap())
                 changed = removeByIdentity(overlay, trimmed)
-                if (changed) swapLangEntries(lang, overlay)
+                if (changed) {
+                    if (overlay.isEmpty()) nextScopes.remove(lang)
+                    else nextScopes[lang] = overlay
+                }
             }
-            if (changed) {
-                cleanupMetaForRemoved(lang, trimmed)
-                cache = null
-                version++
-            }
+            if (!changed) return false
+
+            cleanupMetaInMaps(nextModes, nextVLangs, lang, trimmed)
+            CandidateState(nextEntries, nextScopes, nextModes, nextVLangs)
         }
-        return if (changed) save() else false
+        return commitTransaction(
+            candidate.entries,
+            candidate.scopes,
+            candidate.modes,
+            candidate.vLangs
+        )
     }
 
     private fun removeByIdentity(
@@ -631,10 +639,13 @@ open class PronunciationDictionary(private val context: Context) {
         return false
     }
 
-    private fun cleanupMetaForRemoved(lang: String?, removedKey: String) {
+    private fun cleanupMetaInMaps(
+        modes: MutableMap<String, String>,
+        vLangs: MutableMap<String, String>,
+        lang: String?,
+        removedKey: String
+    ) {
         val norm = runCatching { normalizeKey(removedKey, true) }.getOrNull()
-        val modes = LinkedHashMap(matchModes)
-        val vLangs = LinkedHashMap(valueLangs)
         val prefix = "${lang.orEmpty()}|"
         fun shouldDrop(metaKey: String): Boolean {
             if (!metaKey.startsWith(prefix)) return false
@@ -644,8 +655,6 @@ open class PronunciationDictionary(private val context: Context) {
         }
         modes.keys.toList().forEach { if (shouldDrop(it)) modes.remove(it) }
         vLangs.keys.toList().forEach { if (shouldDrop(it)) vLangs.remove(it) }
-        matchModes = modes
-        valueLangs = vLangs
     }
 
     fun getMatchMode(
@@ -673,15 +682,7 @@ open class PronunciationDictionary(private val context: Context) {
     }
 
     fun clear() {
-        synchronized(this) {
-            swapEntries(emptyMap())
-            langEntries = emptyMap()
-            matchModes = emptyMap()
-            valueLangs = emptyMap()
-            cache = null
-            version++
-        }
-        save()
+        commitTransaction(emptyMap(), emptyMap(), emptyMap(), emptyMap())
     }
 
     fun clearAll() = clear()
@@ -724,87 +725,334 @@ open class PronunciationDictionary(private val context: Context) {
         languageTag: String? = null
     ): Boolean {
         if (json.length > MAX_IMPORT_BYTES) return false
-        val obj = NateqJson.parseObject(json) ?: return false
-        if (obj.size() == 0) return false
+        val root = NateqJson.parseObject(json) ?: return false
+        if (root.size() == 0) return false
 
-        val lang = normalizeLangTag(languageTag)
-        val valid = LinkedHashMap<String, String>()
+        val format = root.get("format")?.asString
+        val isScope = format == "nateq_dictionary_scope" ||
+            (format == null && root.has("scope") && root.has("entries"))
+
+        val isFull = format == "nateq_dictionary" ||
+            (format == null && !isScope && root.has("entries") &&
+                (root.has("scopes") || root.has("modes") ||
+                    root.has("value_langs")))
+
+        val candidate = synchronized(this) {
+            val baseEntries = if (merge) LinkedHashMap(entries)
+                else LinkedHashMap<String, String>()
+            val baseScopes = if (merge) LinkedHashMap(langEntries)
+                else LinkedHashMap<String, Map<String, String>>()
+            val baseModes = if (merge) LinkedHashMap(matchModes)
+                else LinkedHashMap<String, String>()
+            val baseVLangs = if (merge) LinkedHashMap(valueLangs)
+                else LinkedHashMap<String, String>()
+
+            if (isFull) {
+                val gObj = root.optObject("entries") ?: return@synchronized null
+                val parsedGlobal = parseAndValidateEntries(gObj)
+                    ?: return@synchronized null
+                val parsedScopes = LinkedHashMap<String, Map<String, String>>()
+                val sObj = root.optObject("scopes")
+                if (sObj != null) {
+                    for ((rawTag, el) in sObj.entrySet()) {
+                        val tag = normalizeLangTag(rawTag) ?: continue
+                        val subObj = el.optObject() ?: continue
+                        val subParsed = parseAndValidateEntries(subObj)
+                            ?: return@synchronized null
+                        if (subParsed.isNotEmpty()) {
+                            parsedScopes[tag] = subParsed
+                        }
+                    }
+                }
+                val parsedModes = parseAndValidateModes(root.optObject("modes"))
+                    ?: return@synchronized null
+                val parsedVLangs = parseAndValidateVLangs(
+                    root.optObject("value_langs")
+                ) ?: return@synchronized null
+
+                val totalCount = parsedGlobal.size +
+                    parsedScopes.values.sumOf { it.size }
+                val currentTotal = if (merge) {
+                    baseEntries.size + baseScopes.values.sumOf { it.size }
+                } else 0
+                if (currentTotal + totalCount > MAX_IMPORT_ENTRIES) {
+                    return@synchronized null
+                }
+
+                if (merge) {
+                    mergeEntriesInto(
+                        baseEntries, parsedGlobal, null, baseModes, baseVLangs
+                    )
+                    for ((tag, sMap) in parsedScopes) {
+                        val target = LinkedHashMap(
+                            baseScopes[tag] ?: emptyMap()
+                        )
+                        mergeEntriesInto(
+                            target, sMap, tag, baseModes, baseVLangs
+                        )
+                        baseScopes[tag] = target
+                    }
+                    baseModes.putAll(parsedModes)
+                    baseVLangs.putAll(parsedVLangs)
+                } else {
+                    baseEntries.putAll(parsedGlobal)
+                    baseScopes.putAll(parsedScopes)
+                    baseModes.putAll(parsedModes)
+                    baseVLangs.putAll(parsedVLangs)
+                }
+                CandidateState(baseEntries, baseScopes, baseModes, baseVLangs)
+            } else if (isScope) {
+                val targetLang = root.get("scope")?.asString?.let {
+                    normalizeLangTag(it)
+                } ?: normalizeLangTag(languageTag) ?: return@synchronized null
+                val eObj = root.optObject("entries") ?: return@synchronized null
+                val parsed = parseAndValidateEntries(eObj)
+                    ?: return@synchronized null
+                val currentScopeTotal = if (merge) {
+                    baseEntries.size + baseScopes.values.sumOf { it.size }
+                } else 0
+                if (currentScopeTotal + parsed.size > MAX_IMPORT_ENTRIES) {
+                    return@synchronized null
+                }
+
+                val scopeModes = parseAndValidateModes(root.optObject("modes"))
+                    ?: return@synchronized null
+                val scopeVLangs = parseAndValidateVLangs(
+                    root.optObject("value_langs")
+                ) ?: return@synchronized null
+
+                val targetScope = if (merge) {
+                    LinkedHashMap(langEntries[targetLang] ?: emptyMap())
+                } else {
+                    LinkedHashMap<String, String>()
+                }
+                val prefix = "$targetLang|"
+                if (!merge) {
+                    baseEntries.putAll(entries)
+                    baseScopes.putAll(langEntries)
+                    baseModes.putAll(matchModes)
+                    baseVLangs.putAll(valueLangs)
+                    baseModes.keys.filter { it.startsWith(prefix) }
+                        .forEach { baseModes.remove(it) }
+                    baseVLangs.keys.filter { it.startsWith(prefix) }
+                        .forEach { baseVLangs.remove(it) }
+                }
+
+                mergeEntriesInto(
+                    targetScope,
+                    parsed,
+                    targetLang,
+                    baseModes,
+                    baseVLangs
+                )
+                baseScopes[targetLang] = targetScope
+                for ((k, v) in scopeModes) {
+                    val finalK = if (k.startsWith(prefix)) k else "$prefix$k"
+                    baseModes[finalK] = v
+                }
+                for ((k, v) in scopeVLangs) {
+                    val finalK = if (k.startsWith(prefix)) k else "$prefix$k"
+                    baseVLangs[finalK] = v
+                }
+                CandidateState(baseEntries, baseScopes, baseModes, baseVLangs)
+            } else {
+                val parsed = parseAndValidateEntries(root)
+                    ?: return@synchronized null
+                val currentScopeTotal = if (merge) {
+                    baseEntries.size + baseScopes.values.sumOf { it.size }
+                } else 0
+                if (currentScopeTotal + parsed.size > MAX_IMPORT_ENTRIES) {
+                    return@synchronized null
+                }
+                val lang = normalizeLangTag(languageTag)
+
+                if (!merge) {
+                    baseEntries.putAll(entries)
+                    baseScopes.putAll(langEntries)
+                    baseModes.putAll(matchModes)
+                    baseVLangs.putAll(valueLangs)
+                    val prefix = "${lang.orEmpty()}|"
+                    baseModes.keys.filter { it.startsWith(prefix) }
+                        .forEach { baseModes.remove(it) }
+                    baseVLangs.keys.filter { it.startsWith(prefix) }
+                        .forEach { baseVLangs.remove(it) }
+                }
+
+                if (lang == null) {
+                    val target = if (merge) baseEntries
+                        else LinkedHashMap<String, String>()
+                    mergeEntriesInto(
+                        target, parsed, null, baseModes, baseVLangs
+                    )
+                    if (!merge) {
+                        baseEntries.clear()
+                        baseEntries.putAll(target)
+                    }
+                } else {
+                    val target = if (merge) {
+                        LinkedHashMap(baseScopes[lang] ?: emptyMap())
+                    } else {
+                        LinkedHashMap<String, String>()
+                    }
+                    mergeEntriesInto(
+                        target, parsed, lang, baseModes, baseVLangs
+                    )
+                    baseScopes[lang] = target
+                }
+                CandidateState(baseEntries, baseScopes, baseModes, baseVLangs)
+            }
+        } ?: return false
+
+        return commitTransaction(
+            candidate.entries,
+            candidate.scopes,
+            candidate.modes,
+            candidate.vLangs
+        )
+    }
+
+    private fun mergeEntriesInto(
+        target: MutableMap<String, String>,
+        incoming: Map<String, String>,
+        lang: String?,
+        modes: MutableMap<String, String>,
+        vLangs: MutableMap<String, String>
+    ) {
+        val incomingNorms = incoming.keys.map {
+            normalizeKey(it, true)
+        }.toSet()
+        val toRemove = target.keys.filter {
+            incomingNorms.contains(normalizeKey(it, true))
+        }
+        for (rk in toRemove) {
+            target.remove(rk)
+            val oldModeKey = modeKeyOf(lang, rk)
+            modes.remove(oldModeKey)
+            vLangs.remove(oldModeKey)
+        }
+        target.putAll(incoming)
+    }
+
+    private fun parseAndValidateEntries(
+        obj: com.google.gson.JsonObject
+    ): Map<String, String>? {
+        val out = LinkedHashMap<String, String>()
         val seenNorms = HashSet<String>()
-        for ((rawKey, element) in obj.entrySet()) {
-            if (!element.isJsonPrimitive ||
-                !element.asJsonPrimitive.isString
-            ) {
-                return false
-            }
+        for ((rawKey, el) in obj.entrySet()) {
+            if (!el.isJsonPrimitive || !el.asJsonPrimitive.isString) return null
             val key = rawKey.trim()
-            val value = element.asString.trim()
-            if (key.isEmpty() || key.length > MAX_KEY_LENGTH) return false
-            if (value.isEmpty() || value.length > MAX_VALUE_LENGTH) {
-                return false
-            }
-            // رفض المفتاح المكوّن من حركات/تطويل فقط (سياسة واضحة)
-            if (!hasBaseContent(key)) return false
+            val value = el.asString.trim()
+            if (key.isEmpty() || key.length > MAX_KEY_LENGTH) return null
+            if (value.isEmpty() || value.length > MAX_VALUE_LENGTH) return null
+            if (!hasBaseContent(key)) return null
             val norm = normalizeKey(key, true)
-            if (norm.isEmpty()) return false
-            // منع الالتباس: تكرار مكافئ قانونياً داخل الدفعة نفسها
-            if (!seenNorms.add(norm)) return false
-            valid[key] = value
+            if (norm.isEmpty() || !seenNorms.add(norm)) return null
+            out[key] = value
         }
-        if (valid.isEmpty()) return false
+        return out
+    }
 
-        val imported = synchronized(this) {
-            val base = if (lang == null) entries
-            else (langEntries[lang] ?: emptyMap())
-            val updated = if (merge) LinkedHashMap(base)
-            else LinkedHashMap<String, String>()
-
-            // عند الدمج: إزالة أي مفاتيح قائمة مكافئة قانونياً لما سيُستورد
-            // (تحديث هوية مكافئة، بلا حذف بيانات قديمة أخرى بصمت)
-            if (merge) {
-                val toRemove = ArrayList<String>()
-                for (existing in updated.keys) {
-                    val eNorm = normalizeKey(existing, true)
-                    if (seenNorms.contains(eNorm)) toRemove.add(existing)
-                }
-                for (rk in toRemove) {
-                    val oldModeKey = modeKeyOf(lang, rk)
-                    // أزل المفتاح القديم؛ ستُضاف الإعدادات مع المفتاح الجديد أدناه
-                    updated.remove(rk)
-                    // إزالة وصف قديم إذا تغيّر المفتاح النصي
-                    val modes = LinkedHashMap(matchModes)
-                    val vLangs = LinkedHashMap(valueLangs)
-                    modes.remove(oldModeKey)
-                    vLangs.remove(oldModeKey)
-                    matchModes = modes
-                    valueLangs = vLangs
-                }
+    private fun parseAndValidateModes(
+        obj: com.google.gson.JsonObject?
+    ): Map<String, String>? {
+        if (obj == null) return emptyMap()
+        val out = LinkedHashMap<String, String>()
+        for ((k, el) in obj.entrySet()) {
+            if (!el.isJsonPrimitive || !el.asJsonPrimitive.isString) return null
+            val mode = el.asString.trim().uppercase()
+            if (mode == "WHOLE" || mode == "ANYWHERE" || mode == "AUTO") {
+                out[k.trim()] = mode
             }
-
-            if (updated.size + valid.size > MAX_IMPORT_ENTRIES) {
-                return@synchronized -1
-            }
-            var count = 0
-            for ((key, value) in valid) {
-                updated[key] = value
-                count++
-            }
-            if (count > 0) {
-                if (lang == null) swapEntries(updated)
-                else swapLangEntries(lang, updated)
-                cache = null
-                version++
-            }
-            count
         }
-        if (imported <= 0) return false
-        return save()
+        return out
+    }
+
+    private fun parseAndValidateVLangs(
+        obj: com.google.gson.JsonObject?
+    ): Map<String, String>? {
+        if (obj == null) return emptyMap()
+        val out = LinkedHashMap<String, String>()
+        for ((k, el) in obj.entrySet()) {
+            if (!el.isJsonPrimitive || !el.asJsonPrimitive.isString) return null
+            val vLang = el.asString.trim()
+            if (vLang.length <= 20) {
+                out[k.trim()] = vLang
+            }
+        }
+        return out
+    }
+
+    fun exportFullToJson(): String {
+        return synchronized(this) {
+            val root = com.google.gson.JsonObject()
+            root.addProperty("format", "nateq_dictionary")
+            root.addProperty("version", 2)
+
+            val gObj = com.google.gson.JsonObject()
+            for ((k, v) in entries) gObj.addProperty(k, v)
+            root.add("entries", gObj)
+
+            val sObj = com.google.gson.JsonObject()
+            for ((tag, map) in langEntries) {
+                val sub = com.google.gson.JsonObject()
+                for ((k, v) in map) sub.addProperty(k, v)
+                sObj.add(tag, sub)
+            }
+            root.add("scopes", sObj)
+
+            val mObj = com.google.gson.JsonObject()
+            for ((k, v) in matchModes) mObj.addProperty(k, v)
+            root.add("modes", mObj)
+
+            val vObj = com.google.gson.JsonObject()
+            for ((k, v) in valueLangs) vObj.addProperty(k, v)
+            root.add("value_langs", vObj)
+
+            root.toString()
+        }
+    }
+
+    fun exportScopeToJson(languageTag: String): String {
+        val lang = normalizeLangTag(languageTag) ?: return "{}"
+        return synchronized(this) {
+            val root = com.google.gson.JsonObject()
+            root.addProperty("format", "nateq_dictionary_scope")
+            root.addProperty("version", 2)
+            root.addProperty("scope", lang)
+
+            val scopeEntries = langEntries[lang] ?: emptyMap()
+            val eObj = com.google.gson.JsonObject()
+            for ((k, v) in scopeEntries) eObj.addProperty(k, v)
+            root.add("entries", eObj)
+
+            val prefix = "$lang|"
+            val mObj = com.google.gson.JsonObject()
+            for ((k, v) in matchModes) {
+                if (k.startsWith(prefix)) {
+                    mObj.addProperty(k.removePrefix(prefix), v)
+                }
+            }
+            root.add("modes", mObj)
+
+            val vObj = com.google.gson.JsonObject()
+            for ((k, v) in valueLangs) {
+                if (k.startsWith(prefix)) {
+                    vObj.addProperty(k.removePrefix(prefix), v)
+                }
+            }
+            root.add("value_langs", vObj)
+
+            root.toString()
+        }
     }
 
     fun exportToJson(languageTag: String? = null): String {
         val lang = normalizeLangTag(languageTag)
-        val source = if (lang == null) entries
-        else (langEntries[lang] ?: emptyMap())
-        return NateqJson.toJson(source)
+        return if (lang == null) {
+            exportFullToJson()
+        } else {
+            exportScopeToJson(lang)
+        }
     }
 
     fun exportModesToJson(): String = NateqJson.toJson(matchModes)
@@ -812,14 +1060,17 @@ open class PronunciationDictionary(private val context: Context) {
     fun importModesFromJson(json: String): Boolean {
         if (json.length > MAX_IMPORT_BYTES) return false
         val parsed = parseEntries(json)
-        synchronized(this) {
-            val updated = LinkedHashMap(matchModes)
-            updated.putAll(parsed)
-            matchModes = updated
-            cache = null
-            version++
+        val candidate = synchronized(this) {
+            val nextModes = LinkedHashMap(matchModes)
+            nextModes.putAll(parsed)
+            CandidateState(entries, langEntries, nextModes, valueLangs)
         }
-        return save()
+        return commitTransaction(
+            candidate.entries,
+            candidate.scopes,
+            candidate.modes,
+            candidate.vLangs
+        )
     }
 
     private data class LoadedData(
@@ -830,9 +1081,13 @@ open class PronunciationDictionary(private val context: Context) {
     )
 
     private fun loadFromFile(): Boolean {
-        if (!dictFile.exists()) return false
+        val target = when {
+            dictFile.exists() && dictFile.length() > 0 -> dictFile
+            backupFile.exists() && backupFile.length() > 0 -> backupFile
+            else -> return false
+        }
         return try {
-            val text = dictFile.readText(Charsets.UTF_8)
+            val text = target.readText(Charsets.UTF_8)
             val root = NateqJson.parseObject(text) ?: return false
             val fileVer = root.get("version")?.asLong ?: (version + 1)
             val globalObj = root.get("entries")?.optObject()
@@ -859,8 +1114,8 @@ open class PronunciationDictionary(private val context: Context) {
                 valueLangs = vMap
                 cache = null
             }
-            lastFileModified = dictFile.lastModified()
-            lastFileLength = dictFile.length()
+            lastFileModified = target.lastModified()
+            lastFileLength = target.length()
             true
         } catch (t: Throwable) {
             android.util.Log.e(LOG_TAG, "فشل قراءة قاموس JSON", t)
@@ -974,32 +1229,122 @@ open class PronunciationDictionary(private val context: Context) {
         return root.toString()
     }
 
-    private fun save(): Boolean {
-        return try {
-            val jsonStr = serializeToJson(
-                version, entries, langEntries, matchModes, valueLangs
-            )
-            val parent = tmpFile.parentFile
-            if (parent != null && !parent.exists()) parent.mkdirs()
-            FileOutputStream(tmpFile).use { fos ->
-                fos.write(jsonStr.toByteArray(Charsets.UTF_8))
-                fos.flush()
-                fos.fd.sync()
-            }
-            if (dictFile.exists()) {
-                dictFile.delete()
-            }
-            val ok = tmpFile.renameTo(dictFile)
-            if (ok) {
-                lastFileModified = dictFile.lastModified()
-                lastFileLength = dictFile.length()
+    fun save(): Boolean {
+        return commitTransaction(entries, langEntries, matchModes, valueLangs)
+    }
+
+    private fun commitTransaction(
+        nextEntries: Map<String, String>,
+        nextScopes: Map<String, Map<String, String>>,
+        nextModes: Map<String, String>,
+        nextVLangs: Map<String, String>
+    ): Boolean {
+        synchronized(storageLock) {
+            val parent = context.filesDir
+            if (!parent.exists()) parent.mkdirs()
+
+            var fileLock: FileLock? = null
+            var raf: RandomAccessFile? = null
+            try {
+                raf = RandomAccessFile(lockFile, "rw")
+                fileLock = raf.channel.lock()
+
+                val nextVer = synchronized(this) { version + 1 }
+                val jsonStr = serializeToJson(
+                    nextVer, nextEntries, nextScopes, nextModes, nextVLangs
+                )
+                val uniqueTmp = File(
+                    parent,
+                    "dict_${System.currentTimeMillis()}_" +
+                        "${UUID.randomUUID().toString().take(8)}.tmp"
+                )
+
+                FileOutputStream(uniqueTmp).use { fos ->
+                    fos.write(jsonStr.toByteArray(Charsets.UTF_8))
+                    fos.flush()
+                    fos.fd.sync()
+                }
+
+                if (!uniqueTmp.exists() || uniqueTmp.length() == 0L) {
+                    uniqueTmp.delete()
+                    return false
+                }
+
+                if (dictFile.exists() && dictFile.length() > 0) {
+                    runCatching {
+                        dictFile.copyTo(backupFile, overwrite = true)
+                    }
+                }
+
+                val moved = atomicMoveOrReplace(uniqueTmp, dictFile)
+                if (!moved) {
+                    uniqueTmp.delete()
+                    return false
+                }
+
+                if (!dictFile.exists() || dictFile.length() == 0L) {
+                    if (backupFile.exists() && backupFile.length() > 0) {
+                        backupFile.copyTo(dictFile, overwrite = true)
+                    }
+                    return false
+                }
+
+                synchronized(this) {
+                    swapEntries(nextEntries)
+                    langEntries = nextScopes
+                    matchModes = nextModes
+                    valueLangs = nextVLangs
+                    version = nextVer
+                    lastFileModified = dictFile.lastModified()
+                    lastFileLength = dictFile.length()
+                    cache = null
+                }
                 notifyChanged()
+                return true
+            } catch (e: Exception) {
+                android.util.Log.e(LOG_TAG, "فشل حفظ قاموس النطق ذرياً", e)
+                return false
+            } finally {
+                runCatching { fileLock?.release() }
+                runCatching { raf?.close() }
             }
-            ok
-        } catch (e: Exception) {
-            android.util.Log.e(LOG_TAG, "فشل حفظ قاموس النطق", e)
-            false
         }
+    }
+
+    private fun atomicMoveOrReplace(source: File, target: File): Boolean {
+        if (Build.VERSION.SDK_INT >= 26) {
+            try {
+                java.nio.file.Files.move(
+                    source.toPath(),
+                    target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                )
+                return true
+            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                try {
+                    java.nio.file.Files.move(
+                        source.toPath(),
+                        target.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                    )
+                    return true
+                } catch (_: Throwable) {}
+            } catch (_: Throwable) {}
+        }
+        if (target.exists()) {
+            val bak = File(target.parentFile, "${target.name}.swap.bak")
+            if (target.renameTo(bak)) {
+                if (source.renameTo(target)) {
+                    bak.delete()
+                    return true
+                } else {
+                    bak.renameTo(target)
+                    return false
+                }
+            }
+        }
+        return source.renameTo(target)
     }
 
     private fun notifyChanged() {
@@ -1016,7 +1361,9 @@ open class PronunciationDictionary(private val context: Context) {
 internal data class NormalizedText(
     val text: String,
     val normToOrig: IntArray,
-    /** حدود العناقيد: boundaries[i]==true تعني أن i بداية عنقود أو نهاية النص. */
+    /**
+     * حدود العناقيد: boundaries[i]==true تعني أن i بداية عنقود أو نهاية النص.
+     */
     val boundaries: BooleanArray
 ) {
     fun isBoundary(index: Int): Boolean =
@@ -1155,7 +1502,8 @@ private class UnifiedAhoCorasick(
                 finalTrace.add(
                     entry.copy(
                         accepted = false,
-                        reason = "مرفوض: أزاحه تطابقٌ آخر (أطول/أسبق) حُسم نهائياً"
+                        reason = "مرفوض: أزاحه تطابقٌ آخر " +
+                            "(أطول/أسبق) حُسم نهائياً"
                     )
                 )
             }
@@ -1187,14 +1535,17 @@ private class UnifiedAhoCorasick(
                 val pos = baseText.indexOf(baseKey, searchFrom)
                 if (pos < 0) break
                 val end = pos + baseKey.length
-                // مواضع base تقابل مواضع norm 1:1 لأننا أزلنا العلامات من نفس السلسلة
+                // مواضع base تقابل مواضع norm 1:1 لأننا أزلنا العلامات
+                // من نفس السلسلة
                 // نحتاج مواضع norm الحقيقية: ابحث عن نافذة norm تُعطي نفس base
                 val normRange = findNormRangeForBase(norm, baseKey, pos)
                 searchFrom = pos + 1
                 if (normRange == null) continue
                 val (ns, ne) = normRange
                 if (!norm.isBoundary(ns) || !norm.isBoundary(ne)) continue
-                if (ns < 0 || ne > norm.normToOrig.size && ne != norm.text.length) {
+                if (ns < 0 ||
+                    (ne > norm.normToOrig.size && ne != norm.text.length)
+                ) {
                     continue
                 }
                 val origStart = if (ns < norm.normToOrig.size)
@@ -1217,9 +1568,9 @@ private class UnifiedAhoCorasick(
                         value = entry.value,
                         matchMode = entry.matchMode,
                         accepted = false,
-                        reason = "مرفوض: الحروف الأساس متطابقة («$matchedText») " +
-                            "لكن التشكيل مختلف عن مفتاح القاموس — " +
-                            "المطابقة حساسة للتشكيل",
+                        reason = "مرفوض: الحروف الأساس متطابقة " +
+                            "(«$matchedText») لكن التشكيل مختلف عن " +
+                            "مفتاح القاموس — المطابقة حساسة للتشكيل",
                         origStart = origStart,
                         origEnd = origEnd
                     )
@@ -1311,7 +1662,9 @@ private class UnifiedAhoCorasick(
         standaloneMaxLength: Int,
         sink: ArrayList<Pair<DictTraceEntry, MatchCandidate?>>
     ) {
-        collectInternal(text, norm, segments, standaloneMaxLength) { entry, cand ->
+        collectInternal(
+            text, norm, segments, standaloneMaxLength
+        ) { entry, cand ->
             sink.add(entry to cand)
         }
     }
@@ -1486,7 +1839,8 @@ private class UnifiedAhoCorasick(
     ): Pair<Boolean, String> {
         val mode = out.matchMode.uppercase()
         if (mode == "ANYWHERE") {
-            return true to "مقبول: وضع أي موضع (ANYWHERE) — المطابقة حساسة للتشكيل"
+            return true to "مقبول: وضع أي موضع (ANYWHERE) — " +
+                "المطابقة حساسة للتشكيل"
         }
 
         if (out.normalizedKey.length <= 2 &&
@@ -1595,5 +1949,6 @@ private class UnifiedAhoCorasick(
     }
 
     private fun isConnectorChar(cp: Int): Boolean =
-        cp == '\''.code || cp == '\u2019'.code || cp == '-'.code || cp == '_'.code
+        cp == '\''.code || cp == '\u2019'.code ||
+            cp == '-'.code || cp == '_'.code
 }

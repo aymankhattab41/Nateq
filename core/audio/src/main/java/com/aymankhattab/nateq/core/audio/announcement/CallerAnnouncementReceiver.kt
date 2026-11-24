@@ -18,6 +18,7 @@ import android.telephony.PhoneNumberUtils
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.aymankhattab.nateq.core.audio.accessibility.A11ySmartPauseController
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
 import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
@@ -1275,6 +1276,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         lastPhoneState = state
         if (state == TelephonyManager.EXTRA_STATE_OFFHOOK) {
             callActive = true
+            A11ySmartPauseController.getInstance(context).setReasonActive(
+                A11ySmartPauseController.REASON_IN_CALL,
+                true
+            )
             // مكالمة صادرة = انتقال من IDLE (أو لا شيء) إلى OFFHOOK
             // مباشرة بدون RINGING سابق. نحفظ هذا لنمنع إعلانات
             // «واردة» من إشعار CATEGORY_CALL الخاص بالمكالمة نفسها.
@@ -1284,6 +1289,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         } else if (state == TelephonyManager.EXTRA_STATE_IDLE) {
             callActive = false
             outgoingCallActive = false
+            A11ySmartPauseController.getInstance(context).setReasonActive(
+                A11ySmartPauseController.REASON_IN_CALL,
+                false
+            )
             // وقتُ الانتهاء يُسجَّل هنا لبدء نافذة كتم إشعار
             // «انتهت المكالمة» ([AFTER_HANGUP_GRACE_MS]): التطبيق
             // ينشره بعد `IDLE` بثلث ثانية تقريباً.
@@ -1311,6 +1320,11 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         finish()
         return
     }
+
+    A11ySmartPauseController.getInstance(context).setReasonActive(
+        A11ySmartPauseController.REASON_IN_CALL,
+        true
+    )
 
     // **تتبّع تشخيصي مؤقّت:** يُظهر تسلسلَ البثوث كاملاً (الحالة
     // السابقة والحالية) فميّز بثّاً مكرراً لمكالمةٍ واحدة

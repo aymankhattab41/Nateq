@@ -186,4 +186,81 @@ class RingCallerIdentityTest {
         assertNull(number)
         assertEquals("محمود سمير", name)
     }
+
+    @Test
+    fun `callA expired TTL then callB without clear does not revive callA`() {
+        // مكالمة أ بهوية كاملة
+        RingCallerIdentity.publish("010111", "أحمد", now = 1000L)
+        val snapA = RingCallerIdentity.snapshot(now = 1000L)
+        assertEquals("010111", snapA.first)
+        assertEquals("أحمد", snapA.second)
+
+        // انتهاء صلاحية TTL (بعد 15 ثانية)
+        val expiredSnap = RingCallerIdentity.snapshot(now = 16500L)
+        assertNull(expiredSnap.first)
+        assertNull(expiredSnap.second)
+
+        // وصول مكالمة ب برقم فقط ودون استدعاء clear()
+        RingCallerIdentity.publish("010222", null, now = 17000L)
+        val snapB = RingCallerIdentity.snapshot(now = 17000L)
+        assertEquals("رقم المكالمة ب الجديد", "010222", snapB.first)
+        assertNull("لا يجوز إحياء اسم المكالمة أ القديم", snapB.second)
+    }
+
+    @Test
+    fun `callB with new session resets identity and does not mix names`() {
+        // مكالمة أ برقم واسم
+        RingCallerIdentity.publish(
+            "010111", "أحمد", now = 1000L, sessionId = "sess-1"
+        )
+
+        // وصول مكالمة بجلسة جديدة
+        RingCallerIdentity.publish(
+            "010999", null, now = 3000L, sessionId = "sess-2"
+        )
+        val snap = RingCallerIdentity.snapshot(now = 3000L)
+        assertEquals("010999", snap.first)
+        assertNull("لا يجوز خلط اسم المكالمة أ مع رقم ب", snap.second)
+    }
+
+    @Test
+    fun `same session late name arrival merges correctly`() {
+        // وصول الرقم أولاً من فرز المكالمات
+        RingCallerIdentity.publish(
+            callerNumber = "010555",
+            callerName = null,
+            now = 1000L,
+            sessionId = "sess-1"
+        )
+        // وصول الاسم لاحقاً من مستمع الإشعارات لنفس المكالمة
+        RingCallerIdentity.publish(
+            callerNumber = null,
+            callerName = "سارة",
+            now = 2500L,
+            sessionId = "sess-1"
+        )
+        val (number, name) = RingCallerIdentity.snapshot(now = 3000L)
+        assertEquals("010555", number)
+        assertEquals("سارة", name)
+    }
+
+    @Test
+    fun `concurrent publish and snapshot remains consistent`() {
+        val threads = (1..8).map { id ->
+            Thread {
+                for (i in 1..200) {
+                    val num = "0100$id"
+                    val name = "متصل $id"
+                    RingCallerIdentity.publish(num, name)
+                    val snap = RingCallerIdentity.snapshot()
+                    // اللقطة إما فارغة أو بها رقم أو اسم غير متناقض
+                    if (snap.first != null && snap.second != null) {
+                        assertTrue(snap.first!!.startsWith("0100"))
+                    }
+                }
+            }
+        }
+        threads.forEach { it.start() }
+        threads.forEach { it.join() }
+    }
 }

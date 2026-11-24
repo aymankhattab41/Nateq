@@ -4,8 +4,9 @@ import android.content.Context
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * مراقب أشرطة التقدم والتحميل (ع٢٧-42).
- * يعلن عن نسب الإنجاز بشكل دوري عند المعالم المهمة (10%، 25%، 50%، 75%، 100%).
+ * مراقب أشرطة التقدم والتحميل (ع٢٧-42، البند 26).
+ * يعلن عن نسب الإنجاز بشكل دوري عند المعالم المهمة (25%، 50%، 75%، 100%).
+ * يزيل الحالة عند الانتهاء ويدعم تراجع أو إعادة بدء العملية.
  */
 object ProgressMonitor {
 
@@ -13,7 +14,7 @@ object ProgressMonitor {
         ConcurrentHashMap<String, Int>()
 
     /**
-     * معالجة تقدم جديد والإعلان عنه عند بلوغ عتبة رئيسية
+     * معالجة تقدم جديد والإعلان عنه عند بلوغ عتبة رئيسية.
      */
     fun onProgressChanged(
         context: Context,
@@ -21,25 +22,31 @@ object ProgressMonitor {
         current: Int,
         max: Int
     ) {
-        if (max <= 0) return
-        val percent = (current * 100) / max
-        val last = lastAnnouncedPercent.getOrDefault(trackerKey, -1)
+        if (max <= 0 || max > 1_000_000) return
+        val clampedCurrent = current.coerceIn(0, max)
+        val percent = ((clampedCurrent.toLong() * 100) / max).toInt()
+        val milestone = (percent / 25) * 25
+        val lastMilestone = lastAnnouncedPercent.getOrDefault(trackerKey, -1)
 
-        // إعلان كل 25% أو عند الاكتمال
-        val shouldAnnounce = when {
-            percent == 100 && last != 100 -> true
-            percent >= 75 && last < 75 -> true
-            percent >= 50 && last < 50 -> true
-            percent >= 25 && last < 25 -> true
-            else -> false
+        // تراجع أو إعادة بدء العملية: إعادة ضبط الحالة لتمكين الإعلان مجدداً
+        if (lastMilestone > 0 && percent < lastMilestone - 5) {
+            lastAnnouncedPercent.remove(trackerKey)
+            return
         }
 
+        val shouldAnnounce = milestone > 0 && milestone > lastMilestone
+
         if (shouldAnnounce) {
-            lastAnnouncedPercent[trackerKey] = percent
-            val text = if (percent == 100) {
+            if (milestone >= 100) {
+                lastAnnouncedPercent.remove(trackerKey)
+            } else {
+                lastAnnouncedPercent[trackerKey] = milestone
+            }
+
+            val text = if (milestone >= 100) {
                 "اكتمل التحميل"
             } else {
-                "التقدم $percent بالمئة"
+                "التقدم $milestone بالمئة"
             }
             A11ySpeechCoordinator.speakAnnouncement(
                 context = context,
@@ -52,4 +59,12 @@ object ProgressMonitor {
     fun clearTracker(trackerKey: String) {
         lastAnnouncedPercent.remove(trackerKey)
     }
+
+    fun clearAll() {
+        lastAnnouncedPercent.clear()
+    }
+
+    @androidx.annotation.VisibleForTesting
+    fun getLastAnnounced(trackerKey: String): Int? =
+        lastAnnouncedPercent[trackerKey]
 }

@@ -61,6 +61,9 @@ internal object RingCallerIdentity {
     @Volatile
     private var name: String? = null
 
+    @Volatile
+    private var callSessionId: String? = null
+
     /** زمنُ آخر نشرٍ **بالمللي ثانية**، وصفرٌ يعني «لا هويةَ منشورة». */
     @Volatile
     private var publishedAtMs: Long = 0L
@@ -70,72 +73,91 @@ internal object RingCallerIdentity {
      * مفضّل على الرقم (أدق للمستخدم)، والاسم الفارغ لا يحذف اسماً وصل
      * قبلياً.
      *
-     * **ويُجدد الطابعَ الزمنيَّ (بند 3)** في كلِّ نشرٍ **غير فارغ** —
-     * فالاسمُ أو الرقمُ الذي وصل متأخّراً يُبقي الهويةَ حيّةً ولو كان
-     * أولُ نشرٍ قديماً. والنشرُ الفارغ `(null, null)` يُبطل عملَ الدالّة
-     * فلا يُنشئ هويةً ولا يُجدد طابعاً: تجديدُه بكتابةٍ فارغة كان
-     * سيمدّ عمرَ اسمٍ منتهيٍ ويبقيه يُنطق بعد مكالمةٍ انتهت.
+     * إذا انتهت صلاحية الهوية السابقة، تُصفّر الهوية المنتهية قبل
+     * دمج مكالمة جديدة لمنع إحياء هوية قديمة. وإذا اختلف رقم الهاتف
+     * الجديد أو معرّف الجلسة عن المكالمة الحالية، يُبدأ سياق جديد
+     * فوراً دون خلط رقم مكالمة جديدة باسم مكالمة سابقة.
      *
-     * @param now زمنُ النشر بالمللي ثانية، **معاملٌ صريحٌ لأجل
-     *   الاختبار** (الساعةُ تُمرَّر ولا تُقرأ من داخل الدالّة فيبقى
-     *   العقدُ قابلاً للاختبار بمرور وقتٍ محاكى).
+     * @param now زمنُ النشر بالمللي ثانية.
+     * @param sessionId معرّف جلسة المكالمة الاختياري لربط النشر بها.
      */
     fun publish(
         callerNumber: String?,
         callerName: String?,
-        now: Long = System.currentTimeMillis()
+        now: Long = System.currentTimeMillis(),
+        sessionId: String? = null
     ) {
         val n = callerNumber?.trim()?.takeIf { it.isNotEmpty() }
         val m = callerName?.trim()?.takeIf { it.isNotEmpty() }
         if (n == null && m == null) return
         synchronized(lock) {
+            val expired = publishedAtMs > 0L && !isIdentityFresh(now)
+            val sessionChanged = sessionId != null &&
+                callSessionId != null &&
+                sessionId != callSessionId
+
+            if (expired || sessionChanged) {
+                number = null
+                name = null
+                callSessionId = null
+                publishedAtMs = 0L
+            }
+
             if (number == null && n != null) number = n
             if (name == null && m != null) name = m
+            if (callSessionId == null && sessionId != null) {
+                callSessionId = sessionId
+            }
             publishedAtMs = now
         }
     }
 
     /**
-     * لقطةٌ للحالة: زوج (الرقم، الاسم) **إن كانت ضمن صلاحيتها**،
-     * وإلا زوجٌ فارغ.
-     *
-     * **والانتهاءُ هو السلوكُ المطلوب (بند 3):** هويةٌ تجاوزت
-     * [IDENTITY_TTL_MS] من آخر نشرٍ تُقرأ كأنها غيرُ موجودة، فلا
-     * تتسرّب هويةُ مكالمةٍ سابقةٍ إلى رنينٍ لاحق.
+     * فحص تطابق رقمين بعد تجريد رموز التنسيق الشائعة.
+     */
+    internal fun numbersMatch(num1: String, num2: String): Boolean {
+        val clean1 = num1.filter { it.isDigit() || it == '+' }
+        val clean2 = num2.filter { it.isDigit() || it == '+' }
+        if (clean1.isEmpty() || clean2.isEmpty()) return num1 == num2
+        return clean1 == clean2 ||
+            clean1.endsWith(clean2) ||
+            clean2.endsWith(clean1)
+    }
+
+    /**
+     * لقطةٌ متسقة للحالة: زوج (الرقم، الاسم) **إن كانت ضمن صلاحيتها**،
+     * وإلا زوجٌ فارغ. تُقرأ داخل قفل التزامن لضمان الاتساق.
      */
     fun snapshot(
         now: Long = System.currentTimeMillis()
-    ): Pair<String?, String?> =
+    ): Pair<String?, String?> = synchronized(lock) {
         if (isIdentityFresh(now)) {
             Pair(number, name)
         } else {
             Pair(null, null)
         }
+    }
 
     /**
      * هل توفرت هويةٌ صالحةٌ للنطق (اسمٌ أو رقم) **ضمن عمرها**؟
-     *
-     * فالهويةُ المنتهيةُ كالغائبةِ تماماً — وهي التي كان مسحُ التكرار
-     * يجدُها في لقطةٍ فلا ينطق اسماً لمكالمةٍ قديمة.
      */
     fun hasIdentity(now: Long = System.currentTimeMillis()): Boolean =
-        isIdentityFresh(now) &&
-            (!name.isNullOrEmpty() || !number.isNullOrEmpty())
+        synchronized(lock) {
+            isIdentityFresh(now) &&
+                (!name.isNullOrEmpty() || !number.isNullOrEmpty())
+        }
 
     /**
      * هل الطابعُ الزمنيُّ ضمن [IDENTITY_TTL_MS]؟
-     *
-     * **خالصةٌ بلا حالةٍ داخلية** فتحسب عقدَ العمر وحدَه. والسالبُ
-     * (`now` قبل الطابع — تقديماً يدوياً للساعة أو قياسٌ في عمليةٍ
-     * أخرى) **لا يُحسب انتهاءً**: النتيجةُ «نُشر حديثاً» وهي آمنة،
-     * لأن الأسوأَ تأخيرُ الانتهاء لا نطقَ هويةٍ منتهية.
-     *
-     * والصفرُ لا هويةَ معه: قبل أوّل نشرٍ لا طابع، فلا تُقرأ هوية.
      */
     private fun isIdentityFresh(now: Long): Boolean {
         val published = publishedAtMs
         if (published == 0L) return false
         val age = now - published
+        if (age < 0L) {
+            // الساعة رجعت للوراء، نعدها صالحة بحد أقصى TTL
+            return true
+        }
         return age < IDENTITY_TTL_MS
     }
 
@@ -144,8 +166,14 @@ internal object RingCallerIdentity {
         synchronized(lock) {
             number = null
             name = null
+            callSessionId = null
             publishedAtMs = 0L
         }
+    }
+
+    /** معرّف جلسة المكالمة الرنّانة الحالية (البند 13). */
+    fun currentSessionId(): String? = synchronized(lock) {
+        callSessionId ?: number ?: name
     }
 
     /**

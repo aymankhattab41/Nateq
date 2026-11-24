@@ -166,4 +166,132 @@ class DownloadHttpResumeTest {
         assertArrayEquals(newData, partFile.readBytes())
         assertFalse(metaFile.exists())
     }
+
+    @Test
+    fun downloadToFileWithResume_206EtagMismatch_restartsFull() = runBlocking {
+        val fullData = "ABCDEFGHIJ".toByteArray(Charsets.UTF_8)
+        val initialPartial = "ABCDE".toByteArray(Charsets.UTF_8)
+        val tailData = "FGHIJ".toByteArray(Charsets.UTF_8)
+        val oldEtag = "\"etag-old\""
+        val newEtag = "\"etag-new\""
+
+        server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server!!.createContext("/file.bin", object : HttpHandler {
+            override fun handle(exchange: HttpExchange) {
+                val range = exchange.requestHeaders.getFirst("Range")
+                if (range == "bytes=5-") {
+                    exchange.responseHeaders.set("ETag", newEtag)
+                    exchange.responseHeaders.set(
+                        "Content-Range",
+                        "bytes 5-9/10"
+                    )
+                    exchange.sendResponseHeaders(206, tailData.size.toLong())
+                    exchange.responseBody.use { it.write(tailData) }
+                } else {
+                    exchange.responseHeaders.set("ETag", newEtag)
+                    exchange.sendResponseHeaders(200, fullData.size.toLong())
+                    exchange.responseBody.use { it.write(fullData) }
+                }
+            }
+        })
+        server!!.start()
+        serverPort = server!!.address.port
+
+        val partFile = File(tmp.root, "file.bin.part")
+        val metaFile = File(tmp.root, "file.bin.part.meta")
+
+        partFile.writeBytes(initialPartial)
+        metaFile.writeText("$oldEtag\n\n10", Charsets.UTF_8)
+
+        val result = DownloadHttpHelper.downloadToFileWithResume(
+            urlString = "http://127.0.0.1:$serverPort/file.bin",
+            partFile = partFile,
+            onProgress = { _, _, _ -> }
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(10L, partFile.length())
+        assertArrayEquals(fullData, partFile.readBytes())
+    }
+
+    @Test
+    fun downloadToFileWithResume_206InvalidRange_restartsFull() = runBlocking {
+        val fullData = "0123456789".toByteArray(Charsets.UTF_8)
+        val etag = "\"etag-test\""
+
+        server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server!!.createContext("/invalid_range.bin", object : HttpHandler {
+            override fun handle(exchange: HttpExchange) {
+                val range = exchange.requestHeaders.getFirst("Range")
+                if (range != null) {
+                    exchange.responseHeaders.set("ETag", etag)
+                    exchange.responseHeaders.set(
+                        "Content-Range",
+                        "bytes 8-9/10"
+                    )
+                    exchange.sendResponseHeaders(206, 2L)
+                    exchange.responseBody.use { it.write(byteArrayOf(8, 9)) }
+                } else {
+                    exchange.responseHeaders.set("ETag", etag)
+                    exchange.sendResponseHeaders(200, fullData.size.toLong())
+                    exchange.responseBody.use { it.write(fullData) }
+                }
+            }
+        })
+        server!!.start()
+        serverPort = server!!.address.port
+
+        val partFile = File(tmp.root, "invalid_range.bin.part")
+        val metaFile = File(tmp.root, "invalid_range.bin.part.meta")
+
+        partFile.writeBytes(ByteArray(4) { it.toByte() })
+        metaFile.writeText("$etag\n\n10", Charsets.UTF_8)
+
+        val result = DownloadHttpHelper.downloadToFileWithResume(
+            urlString = "http://127.0.0.1:$serverPort/invalid_range.bin",
+            partFile = partFile,
+            onProgress = { _, _, _ -> }
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(10L, partFile.length())
+        assertArrayEquals(fullData, partFile.readBytes())
+    }
+
+    @Test
+    fun downloadToFileWithResume_416RangeNotSatisfiable() = runBlocking {
+        val fullData = "CompleteFileContent".toByteArray(Charsets.UTF_8)
+
+        server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server!!.createContext("/code416.bin", object : HttpHandler {
+            override fun handle(exchange: HttpExchange) {
+                val range = exchange.requestHeaders.getFirst("Range")
+                if (range != null) {
+                    exchange.sendResponseHeaders(416, -1)
+                    exchange.responseBody.close()
+                } else {
+                    exchange.sendResponseHeaders(200, fullData.size.toLong())
+                    exchange.responseBody.use { it.write(fullData) }
+                }
+            }
+        })
+        server!!.start()
+        serverPort = server!!.address.port
+
+        val partFile = File(tmp.root, "code416.bin.part")
+        val metaFile = File(tmp.root, "code416.bin.part.meta")
+
+        partFile.writeBytes(ByteArray(50) { 0 })
+        metaFile.writeText("\"some-etag\"\n\n10", Charsets.UTF_8)
+
+        val result = DownloadHttpHelper.downloadToFileWithResume(
+            urlString = "http://127.0.0.1:$serverPort/code416.bin",
+            partFile = partFile,
+            onProgress = { _, _, _ -> }
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(fullData.size.toLong(), partFile.length())
+        assertArrayEquals(fullData, partFile.readBytes())
+    }
 }

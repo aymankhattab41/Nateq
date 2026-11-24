@@ -27,6 +27,7 @@ import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
@@ -52,7 +53,31 @@ class LordKeyboardService : InputMethodService(),
     private var keyboardView: LordKeyboardView? = null
     private var currentLayer: KeyboardLayer = KeyboardLayer.ARABIC
     private var isEnglishCaps: Boolean = false
-    private var isPasswordField: Boolean = false
+    internal var isPasswordField: Boolean = false
+
+    // تتبع دورة حياة جلسات الإدخال والإملاء الصوتي
+    internal data class InputSessionToken(
+        val generation: Long,
+        val packageName: String,
+        val fieldId: Int,
+        val inputType: Int
+    )
+
+    internal var sessionGeneration: Long = 0L
+    internal var activeSessionToken: InputSessionToken? = null
+
+    private var voiceRequestCounter: Long = 0L
+    internal var activeVoiceRequestId: Long = 0L
+    internal var activeVoiceSessionGeneration: Long = -1L
+
+    internal var inputConnectionOverride: InputConnection? = null
+    internal var isRecognitionAvailableOverride: Boolean? = null
+    internal var speechRecognizerFactory: ((Context) -> SpeechRecognizer?)? =
+        null
+    internal var recognitionListener: RecognitionListener? = null
+
+    internal var lastSpokenText: String? = null
+    internal var lastAnnouncedAccessibilityText: String? = null
 
     // أشرطة الأدوات
     private var tashkeelBar: LinearLayout? = null
@@ -136,20 +161,78 @@ class LordKeyboardService : InputMethodService(),
         return rootLayout
     }
 
+    override fun getCurrentInputConnection(): InputConnection? {
+        return inputConnectionOverride ?: super.getCurrentInputConnection()
+    }
+
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        updateSession(attribute, restarting)
+    }
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        isPasswordField = checkIsPasswordField(info)
+        updateSession(info, restarting)
         applySettingsToKeyboard()
         updateKeyboardLayout()
     }
 
-    private fun checkIsPasswordField(info: EditorInfo?): Boolean {
+    override fun onFinishInputView(finishingInput: Boolean) {
+        super.onFinishInputView(finishingInput)
+        cancelVoiceTyping(announce = false)
+    }
+
+    override fun onFinishInput() {
+        super.onFinishInput()
+        cancelVoiceTyping(announce = false)
+        activeSessionToken = null
+    }
+
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+        cancelVoiceTyping(announce = false)
+    }
+
+    private fun updateSession(info: EditorInfo?, restarting: Boolean) {
+        isPasswordField = checkIsPasswordField(info)
+        val pkg = info?.packageName ?: ""
+        val fieldId = info?.fieldId ?: 0
+        val inputType = info?.inputType ?: 0
+
+        val current = activeSessionToken
+        val isCosmeticRestart = restarting &&
+            current != null &&
+            current.packageName == pkg &&
+            current.fieldId == fieldId &&
+            current.inputType == inputType
+
+        if (!isCosmeticRestart) {
+            sessionGeneration++
+            activeSessionToken = InputSessionToken(
+                generation = sessionGeneration,
+                packageName = pkg,
+                fieldId = fieldId,
+                inputType = inputType
+            )
+            cancelVoiceTyping(announce = false)
+        }
+    }
+
+    internal fun checkIsPasswordField(info: EditorInfo?): Boolean {
         if (info == null) return false
+        val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
         val variation = info.inputType and InputType.TYPE_MASK_VARIATION
-        return variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-            variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
-            variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-            variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        return when (inputClass) {
+            InputType.TYPE_CLASS_TEXT -> {
+                variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                    variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
+                    variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            }
+            InputType.TYPE_CLASS_NUMBER -> {
+                variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            }
+            else -> false
+        }
     }
 
     private fun applySettingsToKeyboard() {
@@ -239,6 +322,7 @@ class LordKeyboardService : InputMethodService(),
         }
         val btnClose =
             createToolbarButton("⬇ إغلاق", "إغلاق لوحة المفاتيح") {
+                cancelVoiceTyping(announce = false)
                 requestHideSelf(0)
                 speakText("إغلاق لوحة المفاتيح")
             }
@@ -379,10 +463,6 @@ class LordKeyboardService : InputMethodService(),
         if (AccessibilityUtils.isTouchExplorationEnabled(this)) {
             return
         }
-        if (isPasswordField) {
-            speakText("رمز محمي")
-            return
-        }
 
         val isPhonetic = settingsRepo.isKeyboardPhoneticEnabled()
         val textToSpeak = if (isPhonetic && !key.phonetic.isNullOrEmpty()) {
@@ -441,14 +521,23 @@ class LordKeyboardService : InputMethodService(),
                 return
             }
             KeyType.ACTION_HIDE -> {
+                cancelVoiceTyping(announce = false)
                 requestHideSelf(0)
                 return
             }
         }
 
         if (settingsRepo.isKeyboardAnnounceAfterLift()) {
-            val confirm = if (isPasswordField) "تم إدخال رمز"
-            else "تم إدخال ${key.spokenText}"
+            val confirm = when (key.type) {
+                KeyType.CHARACTER -> {
+                    if (isPasswordField) "تم إدخال رمز"
+                    else "تم إدخال ${key.spokenText}"
+                }
+                KeyType.ACTION_BACKSPACE -> "حذف"
+                KeyType.ACTION_SPACE -> "مسافة"
+                KeyType.ACTION_ENTER -> "إدخال"
+                else -> key.spokenText
+            }
             speakText(confirm)
         }
     }
@@ -464,6 +553,7 @@ class LordKeyboardService : InputMethodService(),
     }
 
     override fun onSwipeDown() {
+        cancelVoiceTyping(announce = false)
         requestHideSelf(0)
         speakText("إخفاء لوحة المفاتيح")
     }
@@ -472,33 +562,53 @@ class LordKeyboardService : InputMethodService(),
         toggleLanguage()
     }
 
-    private fun handlePaste() {
+    private fun announceInputContent(
+        content: String,
+        prefix: String,
+        genericAnnouncement: String
+    ) {
+        if (isPasswordField) {
+            speakText(genericAnnouncement)
+        } else {
+            speakText("$prefix: $content")
+        }
+    }
+
+    internal fun handlePaste() {
         val cm =
             getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         val clip = cm?.primaryClip
         if (clip != null && clip.itemCount > 0) {
             val text = clip.getItemAt(0).coerceToText(this).toString()
             currentInputConnection?.commitText(text, 1)
-            speakText("تم اللصق: $text")
+            announceInputContent(
+                content = text,
+                prefix = "تم اللصق",
+                genericAnnouncement = "تم اللصق"
+            )
         } else {
             speakText("الحافظة فارغة")
         }
     }
 
-    private fun handleCopy() {
+    internal fun handleCopy() {
         val ic = currentInputConnection ?: return
         val selected = ic.getSelectedText(0)?.toString()
         if (!selected.isNullOrEmpty()) {
             val cm =
                 getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
             cm?.setPrimaryClip(ClipData.newPlainText("LordTTS", selected))
-            speakText("تم نسخ: $selected")
+            announceInputContent(
+                content = selected,
+                prefix = "تم نسخ",
+                genericAnnouncement = "تم النسخ"
+            )
         } else {
             speakText("لا يوجد نص محدد للنسخ")
         }
     }
 
-    private fun handleCut() {
+    internal fun handleCut() {
         val ic = currentInputConnection ?: return
         val selected = ic.getSelectedText(0)?.toString()
         if (!selected.isNullOrEmpty()) {
@@ -506,7 +616,11 @@ class LordKeyboardService : InputMethodService(),
                 getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
             cm?.setPrimaryClip(ClipData.newPlainText("LordTTS", selected))
             ic.commitText("", 1)
-            speakText("تم قص: $selected")
+            announceInputContent(
+                content = selected,
+                prefix = "تم قص",
+                genericAnnouncement = "تم القص"
+            )
         } else {
             speakText("لا يوجد نص محدد للقص")
         }
@@ -519,7 +633,7 @@ class LordKeyboardService : InputMethodService(),
         speakText("تم تحديد الكل")
     }
 
-    private fun startVoiceTyping() {
+    internal fun startVoiceTyping() {
         val hasMicPermission = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.RECORD_AUDIO
@@ -551,21 +665,32 @@ class LordKeyboardService : InputMethodService(),
         }
 
         if (isListeningVoice) {
-            speechRecognizer?.stopListening()
-            isListeningVoice = false
-            vibrateFeedback(40L)
-            speakText("تم إيقاف الاستماع")
+            cancelVoiceTyping(announce = true)
             return
         }
 
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+        val isAvailable = isRecognitionAvailableOverride
+            ?: SpeechRecognizer.isRecognitionAvailable(this)
+        if (!isAvailable) {
             speakText("خدمة التعرف على الصوت غير متاحة على جهازك")
             return
         }
 
         try {
             speechRecognizer?.destroy()
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+            speechRecognizer = speechRecognizerFactory?.invoke(this)
+                ?: SpeechRecognizer.createSpeechRecognizer(this)
+            if (speechRecognizer == null) {
+                isListeningVoice = false
+                speakText("تعذر بدء التعرف على الصوت")
+                return
+            }
+
+            val reqGen = sessionGeneration
+            val reqId = ++voiceRequestCounter
+            activeVoiceRequestId = reqId
+            activeVoiceSessionGeneration = reqGen
+
             val langTag = if (currentLayer == KeyboardLayer.ENGLISH) "en-US"
             else "ar-SA"
             val intent =
@@ -587,23 +712,45 @@ class LordKeyboardService : InputMethodService(),
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
                 }
 
-            speechRecognizer?.setRecognitionListener(object :
-                RecognitionListener {
+            val listener = object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {
+                    if (reqId != activeVoiceRequestId ||
+                        reqGen != sessionGeneration
+                    ) {
+                        return
+                    }
                     isListeningVoice = true
                     vibrateFeedback(60L)
                 }
 
-                override fun onBeginningOfSpeech() {}
+                override fun onBeginningOfSpeech() {
+                    if (reqId != activeVoiceRequestId ||
+                        reqGen != sessionGeneration
+                    ) {
+                        return
+                    }
+                }
+
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
 
                 override fun onEndOfSpeech() {
+                    if (reqId != activeVoiceRequestId ||
+                        reqGen != sessionGeneration
+                    ) {
+                        return
+                    }
                     isListeningVoice = false
                     vibrateFeedback(40L)
                 }
 
                 override fun onError(error: Int) {
+                    if (reqId != activeVoiceRequestId ||
+                        reqGen != sessionGeneration
+                    ) {
+                        return
+                    }
+                    activeVoiceRequestId = 0L
                     isListeningVoice = false
                     vibrateFeedback(40L)
                     val errorMsg = when (error) {
@@ -628,6 +775,12 @@ class LordKeyboardService : InputMethodService(),
                 }
 
                 override fun onResults(results: Bundle?) {
+                    if (reqId != activeVoiceRequestId ||
+                        reqGen != sessionGeneration
+                    ) {
+                        return
+                    }
+                    activeVoiceRequestId = 0L
                     isListeningVoice = false
                     vibrateFeedback(50L)
                     val matches = results?.getStringArrayList(
@@ -636,20 +789,52 @@ class LordKeyboardService : InputMethodService(),
                     val text = matches?.firstOrNull()
                     if (!text.isNullOrEmpty()) {
                         currentInputConnection?.commitText(text, 1)
-                        speakText("تم إدخال: $text")
+                        announceInputContent(
+                            content = text,
+                            prefix = "تم إدخال",
+                            genericAnnouncement = "تم الإدخال"
+                        )
                     } else {
                         speakText("لم يتم التعرف على أي نص")
                     }
                 }
 
-                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onPartialResults(partialResults: Bundle?) {
+                    if (reqId != activeVoiceRequestId ||
+                        reqGen != sessionGeneration
+                    ) {
+                        return
+                    }
+                }
+
                 override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
+            }
+            this.recognitionListener = listener
+            speechRecognizer?.setRecognitionListener(listener)
 
             speechRecognizer?.startListening(intent)
         } catch (_: Exception) {
             isListeningVoice = false
+            activeVoiceRequestId = 0L
+            recognitionListener = null
             speakText("تعذر بدء التعرف على الصوت")
+        }
+    }
+
+    internal fun cancelVoiceTyping(announce: Boolean = false) {
+        if (activeVoiceRequestId != 0L || isListeningVoice) {
+            activeVoiceRequestId = 0L
+            activeVoiceSessionGeneration = -1L
+            isListeningVoice = false
+            recognitionListener = null
+            try {
+                speechRecognizer?.cancel()
+            } catch (_: Exception) {
+            }
+            if (announce) {
+                vibrateFeedback(40L)
+                speakText("تم إيقاف الاستماع")
+            }
         }
     }
 
@@ -675,8 +860,10 @@ class LordKeyboardService : InputMethodService(),
         }
     }
 
-    private fun speakText(text: String) {
+    internal fun speakText(text: String) {
         if (text.isEmpty()) return
+        lastSpokenText = text
+        lastAnnouncedAccessibilityText = text
         keyboardView?.announceForAccessibility(text)
         if (isTtsReady) {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "kbd_tts")
@@ -685,8 +872,11 @@ class LordKeyboardService : InputMethodService(),
 
     override fun onDestroy() {
         super.onDestroy()
+        cancelVoiceTyping(announce = false)
+        activeSessionToken = null
         speechRecognizer?.destroy()
         speechRecognizer = null
+        recognitionListener = null
         tts?.stop()
         tts?.shutdown()
         tts = null

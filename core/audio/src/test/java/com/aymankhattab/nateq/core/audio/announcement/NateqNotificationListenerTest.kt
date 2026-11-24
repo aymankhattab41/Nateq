@@ -1,11 +1,14 @@
 package com.aymankhattab.nateq.core.audio.announcement
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
 
 /**
  * يغطي قرار حجب رمز التحقق (OTP) في المسار العام لإشعارات التطبيقات
@@ -180,5 +183,143 @@ class NateqNotificationListenerTest {
             "تكرار نفس الرسالة خلال 3 ثوانٍ يُسقط",
             listener.isNotificationRateLimited(key, 2_000L, times)
         )
+    }
+
+    @Test
+    fun messagingStyle_updateFromAToAB_speaksOnlyB() {
+        val context = org.robolectric.RuntimeEnvironment.application
+        val person = Person.Builder().setName("أحمد").build()
+        val convKey = "com.pkg#1#tag#conv1"
+
+        NateqNotificationListener.MessagingStyleTracker.clear()
+
+        val style1 = NotificationCompat.MessagingStyle(person)
+            .addMessage("رسالة أ", 1_000L, person)
+        val notif1 = NotificationCompat.Builder(context, "c")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setStyle(style1)
+            .build()
+        val text1 = NateqNotificationListener.notificationBodyText(
+            notif1, convKey
+        )
+        assertEquals("رسالة أ", text1)
+
+        val style2 = NotificationCompat.MessagingStyle(person)
+            .addMessage("رسالة أ", 1_000L, person)
+            .addMessage("رسالة ب", 2_000L, person)
+        val notif2 = NotificationCompat.Builder(context, "c")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setStyle(style2)
+            .build()
+        val text2 = NateqNotificationListener.notificationBodyText(
+            notif2, convKey
+        )
+        assertEquals("رسالة ب", text2)
+    }
+
+    @Test
+    fun messagingStyle_twoConversationsInSameApp_independentTracking() {
+        val context = org.robolectric.RuntimeEnvironment.application
+        val personA = Person.Builder().setName("أحمد").build()
+        val personS = Person.Builder().setName("سارة").build()
+
+        NateqNotificationListener.MessagingStyleTracker.clear()
+
+        val styleA = NotificationCompat.MessagingStyle(personA)
+            .addMessage("رسالة أحمد", 1_000L, personA)
+        val notifA = NotificationCompat.Builder(context, "c")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setStyle(styleA)
+            .build()
+
+        val styleS = NotificationCompat.MessagingStyle(personS)
+            .addMessage("رسالة سارة", 1_500L, personS)
+        val notifS = NotificationCompat.Builder(context, "c")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setStyle(styleS)
+            .build()
+
+        val textA = NateqNotificationListener.notificationBodyText(
+            notifA, "app#1#null#ahmed"
+        )
+        val textS = NateqNotificationListener.notificationBodyText(
+            notifS, "app#2#null#sarah"
+        )
+
+        assertEquals("رسالة أحمد", textA)
+        assertEquals("رسالة سارة", textS)
+    }
+
+    @Test
+    fun smsNlsDeduplicator_dropsDuplicateRepost_allowsNewContent() {
+        NateqNotificationListener.SmsNlsDeduplicator.clear()
+
+        val drop1 = NateqNotificationListener.SmsNlsDeduplicator.shouldDrop(
+            notificationKey = "sms_key_1",
+            notificationId = 101,
+            sender = "+201000000000",
+            content = "مرحباً",
+            nowMs = 1_000L
+        )
+        assertFalse(drop1)
+
+        val dropDuplicate = NateqNotificationListener.SmsNlsDeduplicator
+            .shouldDrop(
+                notificationKey = "sms_key_1",
+                notificationId = 101,
+                sender = "+201000000000",
+                content = "مرحباً",
+                nowMs = 2_000L
+            )
+        assertTrue(dropDuplicate)
+
+        val dropNewContent = NateqNotificationListener.SmsNlsDeduplicator
+            .shouldDrop(
+                notificationKey = "sms_key_1",
+                notificationId = 101,
+                sender = "+201000000000",
+                content = "أين أنت؟",
+                nowMs = 3_000L
+            )
+        assertFalse(dropNewContent)
+    }
+
+    @Test
+    fun smsReading_unifiedPrecedence_sourceOnlyIgnoresTemplateWithContent() {
+        val text = SmsReadingReceiver.resolveSpeechText(
+            privacyLocked = false,
+            isOtp = false,
+            smsFrom = "رسالة من أحمد",
+            otpSafeText = "رمز تحقق آمن",
+            template = "{name}: {message}",
+            content = "نص سري للغاية",
+            displayAddress = "أحمد",
+            effectiveMode = SmsReadingReceiver.MODE_SOURCE
+        )
+        assertEquals("رسالة من أحمد", text)
+
+        val textFull = SmsReadingReceiver.resolveSpeechText(
+            privacyLocked = false,
+            isOtp = false,
+            smsFrom = "رسالة من أحمد",
+            otpSafeText = "رمز تحقق آمن",
+            template = "{name}: {message}",
+            content = "نص علني",
+            displayAddress = "أحمد",
+            effectiveMode = SmsReadingReceiver.MODE_FULL
+        )
+        assertEquals("أحمد: نص علني", textFull)
+
+        val textLocked = SmsReadingReceiver.resolveSpeechText(
+            privacyLocked = true,
+            isOtp = false,
+            smsFrom = "رسالة من أحمد",
+            otpSafeText = "رمز تحقق آمن",
+            template = "{name}: {message}",
+            content = "نص سري",
+            displayAddress = "أحمد",
+            effectiveMode = SmsReadingReceiver.MODE_FULL
+        )
+        assertEquals("رسالة من أحمد", textLocked)
     }
 }

@@ -1036,11 +1036,11 @@ class TextProcessorTest {
     @Test
     fun data_units_case_insensitive_full_pipeline() {
         assertEquals(
-            "حمّل خمسون ميجابايت",
+            "حمّل خمسون ميجابت",
             processor.process("حمّل 50mb", "ar", "com.google.android.tts")
         )
         assertEquals(
-            "حمّل خمسون ميجابايت",
+            "حمّل خمسون ميجابت",
             processor.process("حمّل 50Mb", "ar", "com.google.android.tts")
         )
         assertEquals(

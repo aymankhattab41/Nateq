@@ -13,8 +13,8 @@ import java.util.Locale
 
 /**
  * البحث عن صوتٍ محفوظ لجهة اتصال برقمها الموحّد أو اسمها (ع٤١-ب10.3، ع٤٥).
- * يطابق الرقم الموحّد أولاً، ثم الاسم مع تجاهل المسافات والتشكيل والتطويل
- * والبادئات الشائعة، ثم مطابقة الاسم الأول إن كان وحيداً في المخزن.
+ * يطابق مفتاح المحادثة أولاً، ثم أرقام الهواتف وصيغها واللواحق الآمنة،
+ * ثم الاسم الكامل مع منع الحسم العشوائي للأسماء الملتبسة، ثم الاسم الأول.
  */
 object ContactVoiceLookup {
 
@@ -27,10 +27,12 @@ object ContactVoiceLookup {
     fun normalizeContactName(name: String): String =
         ContactLookupNormalizer.normalizeName(name)
 
+    fun isPhoneCandidate(s: String): Boolean =
+        ContactLookupNormalizer.isPhoneCandidate(s)
+
     /**
-     * البحث الشامل: بمفتاح المحادثة إن وُجد، ثم المطابقة المباشرة،
-     * ثم الرقم الموحّد، ثم الاسم المطبّع في المخزن، ثم الاسم الأول الوحيد،
-     * ثم مزود جهات الاتصال بالنظام (الأمر 3).
+     * البحث الشامل: بمفتاح المحادثة إن وُجد، ثم أرقام الهواتف،
+     * ثم الاسم المطبّع في المخزن، ثم الاسم الأول الوحيد، ثم جهات اتصال النظام.
      */
     fun find(
         context: Context,
@@ -42,54 +44,77 @@ object ContactVoiceLookup {
         // 1. مفتاح المحادثة إن وُجد
         if (!conversationKey.isNullOrBlank()) {
             store.get(conversationKey)?.let {
-                Log.d(TAG, "Matched by conversationKey: $conversationKey")
+                Log.d(TAG, "Matched by conversationKey")
                 return it
             }
         }
 
         if (keyOrName.isBlank()) return null
 
-        // 2. مطابقة مباشرة في المخزن
-        store.get(keyOrName)?.let {
-            Log.d(TAG, "Matched by direct key: $keyOrName")
-            return it
-        }
-
-        // 3. إن كان النص رقماً موحداً (يحوي أرقاماً): فحص الصيغ
-        val country = Locale.getDefault().country
-        val forms = ContactLookupNormalizer.phoneLookupForms(
-            keyOrName, country
-        )
-        if (forms.isNotEmpty()) {
-            store.find(forms)?.let {
-                Log.d(TAG, "Matched by phone forms for: $keyOrName")
-                return it
+        // 2. مطابقة أرقام الهواتف إن كان الاستعلام مرشحاً كرقم هاتف (البند 17)
+        if (isPhoneCandidate(keyOrName)) {
+            val country = Locale.getDefault().country
+            val forms = ContactLookupNormalizer.phoneLookupForms(
+                keyOrName, country
+            )
+            if (forms.isNotEmpty()) {
+                store.find(forms)?.let {
+                    Log.d(TAG, "Matched by phone forms")
+                    return it
+                }
             }
-        }
 
-        val queryDigits = keyOrName.filter { it.isDigit() }
-        val significantDigits = queryDigits.trimStart('0')
-        if (significantDigits.length >= 7) {
-            for ((storedKey, profile) in store.all) {
-                val storedDigits = storedKey.filter { it.isDigit() }
-                val storedSig = storedDigits.trimStart('0')
-                if (storedSig.isNotEmpty() &&
-                    (storedDigits.endsWith(significantDigits) ||
-                        queryDigits.endsWith(storedSig))
-                ) {
-                    Log.d(
-                        TAG,
-                        "Matched by significant digits: $keyOrName ~ $storedKey"
-                    )
-                    return profile
+            val queryDigits = keyOrName.filter { it.isDigit() }
+            val significantDigits = queryDigits.trimStart('0')
+            if (significantDigits.length >= 7) {
+                data class SuffixMatch(
+                    val profile: VoiceProfile,
+                    val matchLen: Int
+                )
+                val candidates = mutableListOf<SuffixMatch>()
+
+                for ((storedKey, profile) in store.all) {
+                    if (!isPhoneCandidate(storedKey)) continue
+                    val storedDigits = storedKey.filter { it.isDigit() }
+                    val storedSig = storedDigits.trimStart('0')
+                    if (storedSig.length >= 7) {
+                        val matches =
+                            storedDigits.endsWith(significantDigits) ||
+                            queryDigits.endsWith(storedSig)
+                        if (matches) {
+                            val matchLen = minOf(
+                                significantDigits.length,
+                                storedSig.length
+                            )
+                            candidates.add(SuffixMatch(profile, matchLen))
+                        }
+                    }
+                }
+
+                if (candidates.isNotEmpty()) {
+                    val maxLen = candidates.maxOf { it.matchLen }
+                    val best = candidates.filter { it.matchLen == maxLen }
+                    val distinctProfiles = best.map { it.profile }.distinct()
+                    if (distinctProfiles.size == 1) {
+                        Log.d(TAG, "Matched by significant digits")
+                        return distinctProfiles.first()
+                    } else {
+                        Log.d(
+                            TAG,
+                            "Ambiguous phone suffix match: " +
+                                "${best.size} candidates"
+                        )
+                        return null
+                    }
                 }
             }
         }
 
-        // 4. مطابقة الاسم المطبّع في المخزن
+        // 3. مطابقة الاسم الكامل المطبّع في المخزن (البند 20)
         val normQuery = normalizeContactName(keyOrName)
         val compactQuery = normQuery.replace(" ", "")
         if (compactQuery.isNotEmpty()) {
+            val matchingProfiles = mutableListOf<VoiceProfile>()
             for ((storedKey, profile) in store.all) {
                 val normStored = normalizeContactName(storedKey)
                 val normDisp = profile.displayName?.let {
@@ -100,13 +125,25 @@ object ContactVoiceLookup {
                     normDisp == normQuery ||
                     normDisp.replace(" ", "") == compactQuery
                 ) {
-                    Log.d(TAG, "Matched by normalized name: $keyOrName")
-                    return profile
+                    matchingProfiles.add(profile)
                 }
+            }
+
+            val distinctProfiles = matchingProfiles.distinct()
+            if (distinctProfiles.size == 1) {
+                Log.d(TAG, "Matched by normalized name")
+                return distinctProfiles.first()
+            } else if (distinctProfiles.size > 1) {
+                Log.d(
+                    TAG,
+                    "Ambiguous full name match: " +
+                        "${distinctProfiles.size} candidates"
+                )
+                return null
             }
         }
 
-        // 5. مطابقة الاسم الأول إن كان وحيداً في المخزن (ع٤٥ - الأمر 3 بند 5)
+        // 4. مطابقة الاسم الأول إن كان وحيداً في المخزن (البند 20)
         val queryFirst = ContactLookupNormalizer.firstName(keyOrName)
         if (queryFirst.length >= 2) {
             val matchingProfiles = LinkedHashSet<VoiceProfile>()
@@ -121,23 +158,23 @@ object ContactVoiceLookup {
             }
             if (matchingProfiles.size == 1) {
                 val single = matchingProfiles.first()
-                Log.d(TAG, "Matched by unique first name: $queryFirst")
+                Log.d(TAG, "Matched by unique first name")
                 return single
             } else if (matchingProfiles.size > 1) {
                 Log.d(
                     TAG,
-                    "Ambiguous first name ($queryFirst): " +
+                    "Ambiguous first name: " +
                         "${matchingProfiles.size} matches found"
                 )
             }
         }
 
-        // 6. استعلام مزود جهات الاتصال بالنظام (يتطلب READ_CONTACTS)
+        // 5. استعلام مزود جهات الاتصال بالنظام (يتطلب READ_CONTACTS)
         val granted = ContextCompat.checkSelfPermission(
             context, Manifest.permission.READ_CONTACTS
         ) == PackageManager.PERMISSION_GRANTED
         if (!granted) {
-            Log.d(TAG, "No match for: $keyOrName (READ_CONTACTS not granted)")
+            Log.d(TAG, "No match (READ_CONTACTS not granted)")
             return null
         }
 
@@ -145,11 +182,11 @@ object ContactVoiceLookup {
             context, store, keyOrName, compactQuery
         )
         if (sysMatch != null) {
-            Log.d(TAG, "Matched via system contacts query: $keyOrName")
+            Log.d(TAG, "Matched via system contacts query")
             return sysMatch
         }
 
-        Log.d(TAG, "ContactVoice lookup failed for: $keyOrName")
+        Log.d(TAG, "ContactVoice lookup failed")
         return null
     }
 

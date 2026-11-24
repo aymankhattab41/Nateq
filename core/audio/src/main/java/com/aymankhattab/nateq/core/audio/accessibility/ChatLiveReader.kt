@@ -1,20 +1,26 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
 import android.content.Context
+import android.os.SystemClock
 import com.aymankhattab.nateq.core.audio.engine.SpeechEntryPoints
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * قارئ الدردشة الحية (ع٢٧-24).
+ * قارئ الدردشة الحية (ع٢٧-24، ع٤١-ب5).
  * يقرأ الرسائل الجديدة الواردة داخل نافذة الدردشة المفتوحة دون تكرار.
+ * يعتمد على بصمات مركبة (محادثة + مرسل + نص + نافذة صلاحية) مع
+ * تنظيف دوري وحد أقصى وسجل مرتب، دون نطق أسماء الحزم.
  */
 class ChatLiveReader private constructor() {
 
-    private val seenMessageHashes =
-        ConcurrentHashMap.newKeySet<Int>()
-    private val historyOrder = CopyOnWriteArrayList<Int>()
+    internal data class MessageFingerprint(
+        val conversationId: String,
+        val sender: String?,
+        val normalizedBody: String,
+        val timestamp: Long
+    )
 
+    private val history = CopyOnWriteArrayList<MessageFingerprint>()
     private var lastSender: String? = null
 
     /**
@@ -24,29 +30,44 @@ class ChatLiveReader private constructor() {
         context: Context,
         sender: String?,
         messageBody: String?,
-        packageName: String?
+        packageName: String?,
+        conversationId: String? = null
     ): Boolean {
         if (messageBody.isNullOrBlank()) return false
 
-        val hash = (sender.orEmpty() + ":" + messageBody.trim()).hashCode()
-        if (seenMessageHashes.contains(hash)) {
-            return false
+        val cleanSender = sanitizeSender(sender, packageName)
+        val cleanBody = cleanBidiAndNoise(messageBody)
+        if (cleanBody.isBlank()) return false
+
+        val convId = conversationId?.trim()?.takeIf { it.isNotBlank() }
+            ?: packageName?.takeIf { it.isNotBlank() }
+            ?: "unknown_chat"
+
+        val now = SystemClock.uptimeMillis()
+        pruneExpired(now)
+
+        val isDuplicate = history.any { entry ->
+            entry.conversationId == convId &&
+                entry.sender == cleanSender &&
+                entry.normalizedBody == cleanBody &&
+                (now - entry.timestamp <= DEDUP_WINDOW_MS)
+        }
+        if (isDuplicate) return false
+
+        history.add(
+            MessageFingerprint(convId, cleanSender, cleanBody, now)
+        )
+        if (history.size > MAX_SEEN_MESSAGES) {
+            history.removeAt(0)
         }
 
-        // إضافة للذاكرة مع الحفاظ على سعة 100 رسالة
-        seenMessageHashes.add(hash)
-        historyOrder.add(hash)
-        if (historyOrder.size > MAX_SEEN_MESSAGES) {
-            val oldest = historyOrder.removeAt(0)
-            seenMessageHashes.remove(oldest)
-        }
-
-        // صياغة النص المقروء
-        val textToSpeak = if (!sender.isNullOrBlank() && sender != lastSender) {
-            lastSender = sender
-            "$sender: $messageBody"
+        val textToSpeak = if (!cleanSender.isNullOrBlank() &&
+            cleanSender != lastSender
+        ) {
+            lastSender = cleanSender
+            "$cleanSender: $cleanBody"
         } else {
-            messageBody
+            cleanBody
         }
 
         val repo = com.aymankhattab.nateq.core.data.SettingsRepository
@@ -59,13 +80,11 @@ class ChatLiveReader private constructor() {
         )
 
         if (isFeatureActive) {
-            // ع٤١-ب10/ب11: صوت جهة الاتصال (باسم المرسِل) وملف التطبيق
-            // الأمامي يتقدّمان على إعدادات الفئة.
             val voice = A11yVoiceResolver.resolve(
                 context = context,
                 settings = repo,
                 packageName = packageName,
-                senderName = sender
+                senderName = cleanSender
             )
             A11ySpeechCoordinator.speakAnnouncement(
                 context = context,
@@ -84,14 +103,36 @@ class ChatLiveReader private constructor() {
         return false
     }
 
+    private fun sanitizeSender(
+        sender: String?,
+        packageName: String?
+    ): String? {
+        val s = sender?.trim().orEmpty()
+        if (s.isBlank()) return null
+        if (s == packageName) return null
+        if (s.startsWith("com.") || s.startsWith("android.")) return null
+        return s
+    }
+
+    private fun cleanBidiAndNoise(text: String): String {
+        return text.replace(
+            Regex("[\u200B-\u200F\u202A-\u202E\u061C]"),
+            ""
+        ).trim()
+    }
+
+    private fun pruneExpired(now: Long) {
+        history.removeAll { now - it.timestamp > DEDUP_WINDOW_MS }
+    }
+
     fun clearHistory() {
-        seenMessageHashes.clear()
-        historyOrder.clear()
+        history.clear()
         lastSender = null
     }
 
     companion object {
         private const val MAX_SEEN_MESSAGES = 100
+        const val DEDUP_WINDOW_MS = 60_000L
 
         @Volatile
         private var instance: ChatLiveReader? = null

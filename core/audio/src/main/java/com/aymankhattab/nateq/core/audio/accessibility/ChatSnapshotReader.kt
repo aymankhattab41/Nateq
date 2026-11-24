@@ -43,6 +43,45 @@ object ChatSnapshotReader {
     }
 
     /**
+     * استخراج عنوان أو اسم المحادثة الموثوق من عقد الشاشة (البند 15).
+     * يبحث في معرّفات العناوين ورؤوس المحادثات المعتمدة.
+     */
+    fun extractConversationTitle(views: List<NodeView>): String? {
+        if (views.isEmpty()) return null
+        for (view in views) {
+            if (!view.isVisibleToUser) continue
+            val id = view.viewIdResourceName?.lowercase().orEmpty()
+            if (id.contains("conversation_contact_name") ||
+                id.contains("conversation_title") ||
+                id.contains("chat_title") ||
+                id.contains("contact_name") ||
+                id.contains("action_bar_title") ||
+                id.contains("toolbar_title")
+            ) {
+                val t = view.text?.toString()?.trim()
+                    ?: view.contentDescription?.toString()?.trim()
+                if (!t.isNullOrBlank() && t.length in 1..80 &&
+                    !t.contains('\n')
+                ) {
+                    return t
+                }
+            }
+        }
+        val topCandidate = views.firstOrNull { v ->
+            v.isVisibleToUser &&
+                v.boundsInScreen.top <= 250 &&
+                v.boundsInScreen.height() in 20..180 &&
+                !v.isClickable &&
+                !v.text.isNullOrBlank() &&
+                v.text.toString().trim().length in 1..80 &&
+                !v.text.toString().contains('\n') &&
+                !SelectorPacks.isMessageViewId(v.viewIdResourceName)
+        }?.text?.toString()?.trim()
+
+        return topCandidate?.takeIf { it.isNotBlank() }
+    }
+
+    /**
      * يستنتج اسم المرسل من contentDescription إن كان على هيئة
      * «المرسل: النص»، وإلا يعيد null.
      */

@@ -93,6 +93,154 @@ class ContactVoiceStoreTest {
     }
 
     @Test
+    fun store_ownership_updateNameAndVoice_clearsOldNameIndices() {
+        val s = store()
+        val num = "+201011112222"
+        s.put(num, VoiceProfile(voiceId = "vOld", displayName = "Old Name"))
+        assertEquals("vOld", s.get("Old Name")?.voiceId)
+        assertEquals("vOld", s.get(num)?.voiceId)
+
+        // تحديث الاسم والصوت لنفس الرقم (البند 18)
+        s.put(num, VoiceProfile(voiceId = "vNew", displayName = "New Name"))
+        assertEquals("vNew", s.get("New Name")?.voiceId)
+        assertEquals("vNew", s.get(num)?.voiceId)
+        assertNull(s.get("Old Name"))
+
+        s.remove(num)
+        assertNull(s.get("New Name"))
+        assertNull(s.get(num))
+    }
+
+    @Test
+    fun store_ownership_removeByAnyKey_removesRecordAndDerivedForms() {
+        val s = store()
+        val num = "+201099998888"
+        s.put(num, VoiceProfile(voiceId = "vTest", displayName = "سامر"))
+        assertEquals("vTest", s.get("01099998888")?.voiceId)
+
+        // الحذف بالاسم (مفتاح تدعمه الواجهة)
+        assertTrue(s.remove("سامر"))
+        assertNull(s.get(num))
+        assertNull(s.get("01099998888"))
+        assertNull(s.get("سامر"))
+    }
+
+    @Test
+    fun store_ownership_repeatedModifications_remainClean() {
+        val s = store()
+        val num = "+201077776666"
+        for (i in 1..5) {
+            s.put(
+                num,
+                VoiceProfile(
+                    voiceId = "v$i",
+                    displayName = "اسم $i",
+                    speechRate = 1.0f + (i * 0.1f)
+                )
+            )
+        }
+        assertEquals("v5", s.get(num)?.voiceId)
+        assertEquals("v5", s.get("اسم 5")?.voiceId)
+        assertNull(s.get("اسم 1"))
+        assertNull(s.get("اسم 4"))
+        assertEquals(1, s.displayEntries().filter { it.first == num }.size)
+        s.remove(num)
+    }
+
+    @Test
+    fun store_migration_conservativeMigration_doesNotPickAmbiguousRandomly() {
+        val rawMap = mapOf(
+            "+201000000001" to VoiceProfile(
+                voiceId = "v1", displayName = "أحمد علي"
+            ),
+            "01000000001" to VoiceProfile(
+                voiceId = "v1", displayName = "أحمد علي"
+            ),
+            "+201000000002" to VoiceProfile(
+                voiceId = "v2", displayName = "أحمد علي"
+            ),
+            "01000000002" to VoiceProfile(
+                voiceId = "v2", displayName = "أحمد علي"
+            ),
+            "احمد علي" to VoiceProfile(
+                voiceId = "v2", displayName = "أحمد علي"
+            ),
+            "زيد" to VoiceProfile(
+                voiceId = "v3", displayName = "زيد"
+            )
+        )
+        val migrated = ContactVoiceStore.migrateLegacyEntries(rawMap)
+        assertEquals(3, migrated.size)
+        val keys = migrated.map { it.primaryKey }
+        assertTrue(keys.contains("+201000000001"))
+        assertTrue(keys.contains("+201000000002"))
+        assertTrue(keys.contains("زيد"))
+        assertFalse(keys.contains("احمد علي"))
+    }
+
+    @Test
+    fun displayEntries_showsIndependentRecordsWithSameNameAndVoice() {
+        val s = store()
+        val num1 = "+201055551111"
+        val num2 = "+201055552222"
+        s.put(
+            num1,
+            VoiceProfile(
+                voiceId = "sharedVoice",
+                engine = "com.test.engine",
+                displayName = "أحمد",
+                speechRate = 1.0f
+            )
+        )
+        s.put(
+            num2,
+            VoiceProfile(
+                voiceId = "sharedVoice",
+                engine = "com.test.engine",
+                displayName = "أحمد",
+                speechRate = 1.5f
+            )
+        )
+
+        val entries = s.displayEntries()
+        assertEquals(2, entries.size)
+
+        s.put(
+            num1,
+            VoiceProfile(
+                voiceId = "updatedVoice",
+                displayName = "أحمد",
+                speechRate = 1.0f
+            )
+        )
+        assertEquals("updatedVoice", s.get(num1)?.voiceId)
+        assertEquals("sharedVoice", s.get(num2)?.voiceId)
+
+        assertTrue(s.remove(num1))
+        assertEquals(1, s.displayEntries().size)
+        assertEquals(num2, s.displayEntries().first().first)
+        s.remove(num2)
+    }
+
+    @Test
+    fun nameAmbiguity_twoPeopleSameName_disambiguatedByPhone() {
+        val s = store()
+        val num1 = "+201033331111"
+        val num2 = "+201033332222"
+        s.put(num1, VoiceProfile(voiceId = "vA", displayName = "محمد علي"))
+        s.put(num2, VoiceProfile(voiceId = "vB", displayName = "محمد علي"))
+
+        assertNull(s.get("محمد علي"))
+
+        assertEquals("vA", s.get(num1)?.voiceId)
+        assertEquals("vB", s.get(num2)?.voiceId)
+
+        assertTrue(s.remove(num1))
+        assertEquals("vB", s.get("محمد علي")?.voiceId)
+        s.remove(num2)
+    }
+
+    @Test
     fun resolver_contactMultipliesRateAndPitchOverCategoryAndApp() {
         val base = EffectiveVoice()
         val contact = VoiceProfile(
@@ -105,9 +253,7 @@ class ContactVoiceStoreTest {
             contact = contact
         )
         assertEquals("contactVoice", resolved.voiceId)
-        // 1.1 * 1.0 * 1.5 = 1.65
         assertEquals(1.65f, resolved.speechRate!!, 0.001f)
-        // 0.9 * 1.2 = 1.08
         assertEquals(1.08f, resolved.pitch!!, 0.001f)
         assertNull(resolved.volume)
     }

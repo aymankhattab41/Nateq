@@ -130,26 +130,78 @@ object VoiceProfileCodec {
 }
 
 /**
- * مخزن أصوات جهات الاتصال — مشترك بين العمليات عبر SettingsRepository (ع٤٥).
+ * سجل صوت جهة اتصال بهوية أساسية وفهارس مشتقة مملوكة له (البنود 18 و19 و20).
+ */
+data class ContactVoiceRecord(
+    val primaryKey: String,
+    val profile: VoiceProfile
+)
+
+/**
+ * مخزن أصوات جهات الاتصال — مشترك بين العمليات عبر SettingsRepository.
+ * يدير الهويات الأساسية والفهارس المشتقة دون ترك فهارس يتيمة أو خلط هويات.
  */
 class ContactVoiceStore private constructor(
     private val context: Context,
     private val settings: SettingsRepository
 ) {
 
-    val all: Map<String, VoiceProfile>
-        get() = VoiceProfileCodec.decode(settings.getContactVoicesRaw())
+    internal fun loadRecords(): List<ContactVoiceRecord> {
+        val raw = settings.getContactVoicesRaw()
+        val rawMap = VoiceProfileCodec.decode(raw)
+        return migrateLegacyEntries(rawMap)
+    }
 
-    /** يبحث بأيٍّ من صِيغ الرقم حتى يجد أول تطابق. */
+    private fun saveRecords(records: List<ContactVoiceRecord>) {
+        val map = LinkedHashMap<String, VoiceProfile>()
+        for (rec in records) {
+            map[rec.primaryKey] = rec.profile
+        }
+        settings.setContactVoicesRaw(VoiceProfileCodec.encode(map))
+    }
+
+    val all: Map<String, VoiceProfile>
+        get() = loadRecords().associate { it.primaryKey to it.profile }
+
+    /** يبحث بأيٍّ من صِيغ الرقم حتى يجد أول تطابق غير ملتبس. */
     fun find(keys: List<String>): VoiceProfile? {
-        val map = all
+        val records = loadRecords()
         for (key in keys) {
             val normalized = key.trim()
             if (normalized.isEmpty()) continue
-            map[normalized]?.let { return it }
+
+            // 1. المطابقة المباشرة للمفتاح الأساسي
+            records.firstOrNull { it.primaryKey == normalized }?.let {
+                return it.profile
+            }
+
+            // 2. مطابقة صيغ الهاتف
+            if (isPhoneCandidate(normalized)) {
+                records.firstOrNull { rec ->
+                    isPhoneCandidate(rec.primaryKey) &&
+                        areSamePhone(normalized, rec.primaryKey)
+                }?.let { return it.profile }
+            }
+
+            // 3. مطابقة الاسم المطبّع (إن كان غير ملتبس)
             val normName = ContactLookupNormalizer.normalizeName(normalized)
             if (normName.isNotEmpty()) {
-                map[normName]?.let { return it }
+                val compact = normName.replace(" ", "")
+                val matches = records.filter { rec ->
+                    val recNorm =
+                        ContactLookupNormalizer.normalizeName(rec.primaryKey)
+                    val dispNorm = rec.profile.displayName?.let {
+                        ContactLookupNormalizer.normalizeName(it)
+                    }.orEmpty()
+                    recNorm == normName ||
+                        recNorm.replace(" ", "") == compact ||
+                        dispNorm == normName ||
+                        dispNorm.replace(" ", "") == compact
+                }
+                val distinctProfiles = matches.map { it.profile }.distinct()
+                if (distinctProfiles.size == 1) {
+                    return distinctProfiles.first()
+                }
             }
         }
         return null
@@ -157,21 +209,39 @@ class ContactVoiceStore private constructor(
 
     fun get(key: String): VoiceProfile? {
         val trimmed = key.trim()
-        val currentAll = all
-        var result = currentAll[trimmed]
+        if (trimmed.isEmpty()) return null
+        val records = loadRecords()
+
+        // 1. مطابقة مباشرة بالمفتاح
+        var result = records.firstOrNull { it.primaryKey == trimmed }?.profile
+
+        // 2. مطابقة الهاتف إن كان رقماً
+        if (result == null && isPhoneCandidate(trimmed)) {
+            result = records.firstOrNull { rec ->
+                isPhoneCandidate(rec.primaryKey) &&
+                    areSamePhone(trimmed, rec.primaryKey)
+            }?.profile
+        }
+
+        // 3. مطابقة الاسم إن كان غير ملتبس
         if (result == null) {
             val normName = ContactLookupNormalizer.normalizeName(trimmed)
             if (normName.isNotEmpty()) {
-                result = currentAll[normName]
-            }
-        }
-        if (result == null && trimmed.any { it.isDigit() }) {
-            val forms = ContactLookupNormalizer.phoneLookupForms(trimmed)
-            for (f in forms) {
-                val found = currentAll[f]
-                if (found != null) {
-                    result = found
-                    break
+                val compact = normName.replace(" ", "")
+                val matches = records.filter { rec ->
+                    val recNorm =
+                        ContactLookupNormalizer.normalizeName(rec.primaryKey)
+                    val dispNorm = rec.profile.displayName?.let {
+                        ContactLookupNormalizer.normalizeName(it)
+                    }.orEmpty()
+                    recNorm == normName ||
+                        recNorm.replace(" ", "") == compact ||
+                        dispNorm == normName ||
+                        dispNorm.replace(" ", "") == compact
+                }
+                val distinctProfiles = matches.map { it.profile }.distinct()
+                if (distinctProfiles.size == 1) {
+                    result = distinctProfiles.first()
                 }
             }
         }
@@ -179,93 +249,109 @@ class ContactVoiceStore private constructor(
         val proc = detectProcessName(context)
         Log.d(
             TAG,
-            "ContactVoice.get: proc=$proc, key=$trimmed, " +
-                "found=${result != null}, count=${currentAll.size}"
+            "ContactVoice.get: proc=$proc, found=${result != null}, " +
+                "count=${records.size}"
         )
         return result
     }
 
     /**
-     * حفظ صوت جهة اتصال مع تطبيع المفتاح وفهرسته (ع٤٥).
+     * حفظ صوت جهة اتصال بتحديث الهوية الأساسية وفهارسها المشتقة (البند 18).
      */
     @Synchronized
     fun put(key: String, profile: VoiceProfile) {
         val trimmed = key.trim()
         if (trimmed.isEmpty()) return
-        val map = LinkedHashMap(all)
+        val records = loadRecords().toMutableList()
 
-        val disp = profile.displayName ?: trimmed
+        val disp = profile.displayName?.ifBlank { null } ?: trimmed
         val enriched = profile.copy(displayName = disp)
-        map[trimmed] = enriched
 
-        if (trimmed.any { it.isDigit() }) {
-            val forms = ContactLookupNormalizer.phoneLookupForms(trimmed)
-            for (f in forms) {
-                map[f] = enriched
-            }
-            if (!profile.displayName.isNullOrBlank()) {
-                val normDisp = ContactLookupNormalizer.normalizeName(
-                    profile.displayName
-                )
-                if (normDisp.isNotEmpty()) {
-                    map[normDisp] = enriched
-                }
-            }
-        } else {
-            val normName = ContactLookupNormalizer.normalizeName(trimmed)
-            if (normName.isNotEmpty()) {
-                map[normName] = enriched
-            }
+        val idx = records.indexOfFirst { rec ->
+            rec.primaryKey == trimmed || (
+                isPhoneCandidate(trimmed) &&
+                    isPhoneCandidate(rec.primaryKey) &&
+                    areSamePhone(trimmed, rec.primaryKey)
+            )
         }
 
-        settings.setContactVoicesRaw(VoiceProfileCodec.encode(map))
+        if (idx >= 0) {
+            val existing = records[idx]
+            val keepKey = if (trimmed.startsWith("+")) {
+                trimmed
+            } else {
+                existing.primaryKey
+            }
+            records[idx] = existing.copy(
+                primaryKey = keepKey,
+                profile = enriched
+            )
+        } else {
+            records.add(ContactVoiceRecord(trimmed, enriched))
+        }
+
+        saveRecords(records)
     }
 
+    /**
+     * حذف السجل الأساسي وفهارسه المشتقة دون المساس بالآخرين (البند 18).
+     */
     @Synchronized
     fun remove(key: String): Boolean {
         val trimmed = key.trim()
-        val map = LinkedHashMap(all)
-        val existing = map[trimmed] ?: get(trimmed) ?: return false
+        if (trimmed.isEmpty()) return false
+        val records = loadRecords().toMutableList()
 
-        map.remove(trimmed)
-        if (trimmed.any { it.isDigit() }) {
-            val forms = ContactLookupNormalizer.phoneLookupForms(trimmed)
-            for (f in forms) {
-                map.remove(f)
+        // 1. المطابقة المباشرة للمفتاح الأساسي
+        var targetIdx = records.indexOfFirst { it.primaryKey == trimmed }
+
+        // 2. مطابقة صيغ الهاتف إن كان رقماً
+        if (targetIdx < 0 && isPhoneCandidate(trimmed)) {
+            targetIdx = records.indexOfFirst { rec ->
+                isPhoneCandidate(rec.primaryKey) &&
+                    areSamePhone(trimmed, rec.primaryKey)
             }
         }
-        val norm = ContactLookupNormalizer.normalizeName(trimmed)
-        if (norm.isNotEmpty()) {
-            map.remove(norm)
-        }
-        val disp = existing.displayName
-        if (!disp.isNullOrBlank()) {
-            map.remove(disp)
-            map.remove(ContactLookupNormalizer.normalizeName(disp))
+
+        // 3. مطابقة الاسم إن كان وحيداً
+        if (targetIdx < 0) {
+            val norm = ContactLookupNormalizer.normalizeName(trimmed)
+            val compact = norm.replace(" ", "")
+            val matches = records.indices.filter { i ->
+                val rec = records[i]
+                val recNorm =
+                    ContactLookupNormalizer.normalizeName(rec.primaryKey)
+                val dispNorm = rec.profile.displayName?.let {
+                    ContactLookupNormalizer.normalizeName(it)
+                }.orEmpty()
+                recNorm == norm || recNorm.replace(" ", "") == compact ||
+                    dispNorm == norm || dispNorm.replace(" ", "") == compact
+            }
+            if (matches.size == 1) {
+                targetIdx = matches.first()
+            } else if (matches.size > 1) {
+                Log.w(TAG, "Cannot remove: ambiguous contact name")
+                return false
+            }
         }
 
-        settings.setContactVoicesRaw(VoiceProfileCodec.encode(map))
-        return true
+        if (targetIdx >= 0) {
+            records.removeAt(targetIdx)
+            saveRecords(records)
+            return true
+        }
+        return false
     }
 
     fun keys(): Set<String> = all.keys
 
     /**
-     * قائمة السجلات الأساسية للعرض في الواجهة (استبعاد التكرار المفهرس).
+     * قائمة السجلات الأساسية للعرض في الواجهة دون تكرار مفهرس ودون إخفاء
+     * أرقام مستقلة تشابهت في الصوت أو الاسم (البند 19).
      */
     fun displayEntries(): List<Pair<String, VoiceProfile>> {
-        val map = all
-        val seen = mutableSetOf<String>()
-        val result = mutableListOf<Pair<String, VoiceProfile>>()
-
-        for ((k, v) in map) {
-            val label = v.displayName ?: k
-            val id = "${v.voiceId}_${v.engine}_$label"
-            if (seen.add(id)) {
-                result.add(k to v)
-            }
-        }
-        return result
+        val records = loadRecords()
+        return records.map { it.primaryKey to it.profile }
     }
 
     companion object {
@@ -291,6 +377,87 @@ class ContactVoiceStore private constructor(
                     ).also { instance = it }
                 }
             }
+        }
+
+        fun isPhoneCandidate(s: String): Boolean =
+            ContactLookupNormalizer.isPhoneCandidate(s)
+
+        fun areSamePhone(a: String, b: String): Boolean =
+            ContactLookupNormalizer.areSamePhone(a, b)
+
+        /**
+         * ترحيل محافظ للبيانات القديمة دون فقدان أو حسم عشوائي (البند 18).
+         */
+        internal fun migrateLegacyEntries(
+            rawMap: Map<String, VoiceProfile>
+        ): List<ContactVoiceRecord> {
+            if (rawMap.isEmpty()) return emptyList()
+
+            val phoneEntries = mutableListOf<Pair<String, VoiceProfile>>()
+            val nonPhoneEntries = mutableListOf<Pair<String, VoiceProfile>>()
+
+            for ((key, profile) in rawMap) {
+                if (isPhoneCandidate(key)) {
+                    phoneEntries.add(key to profile)
+                } else {
+                    nonPhoneEntries.add(key to profile)
+                }
+            }
+
+            val primaryPhoneRecords = mutableListOf<ContactVoiceRecord>()
+            val handledPhoneKeys = mutableSetOf<String>()
+
+            for (entry in phoneEntries) {
+                val key = entry.first
+                if (handledPhoneKeys.contains(key)) continue
+
+                val related = phoneEntries.filter { other ->
+                    areSamePhone(key, other.first)
+                }
+                related.forEach { handledPhoneKeys.add(it.first) }
+
+                val bestKey = related.map { it.first }.maxWithOrNull(
+                    compareBy<String> { it.startsWith("+") }
+                        .thenBy { it.length }
+                ) ?: key
+
+                val bestProfile = related.map { it.second }.firstOrNull {
+                    !it.displayName.isNullOrBlank()
+                } ?: entry.second
+
+                primaryPhoneRecords.add(
+                    ContactVoiceRecord(bestKey, bestProfile)
+                )
+            }
+
+            val result = primaryPhoneRecords.toMutableList()
+
+            val derivedNamesByDisp =
+                mutableMapOf<String, MutableList<ContactVoiceRecord>>()
+            for (rec in primaryPhoneRecords) {
+                val disp = rec.profile.displayName
+                if (!disp.isNullOrBlank()) {
+                    val norm = ContactLookupNormalizer.normalizeName(disp)
+                    if (norm.isNotEmpty()) {
+                        derivedNamesByDisp.getOrPut(norm) {
+                            mutableListOf()
+                        }.add(rec)
+                    }
+                }
+            }
+
+            for ((key, profile) in nonPhoneEntries) {
+                val normKey = ContactLookupNormalizer.normalizeName(key)
+                val matchingPhoneRecs = derivedNamesByDisp[normKey]
+                if (matchingPhoneRecs != null &&
+                    matchingPhoneRecs.isNotEmpty()
+                ) {
+                    continue
+                }
+                result.add(ContactVoiceRecord(key, profile))
+            }
+
+            return result
         }
 
         private fun detectProcessName(context: Context): String {

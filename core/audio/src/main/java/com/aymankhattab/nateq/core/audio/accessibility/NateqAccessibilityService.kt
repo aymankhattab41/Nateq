@@ -17,6 +17,7 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import com.aymankhattab.nateq.core.audio.announcement.RingCallerIdentity
 import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
@@ -88,6 +89,9 @@ object ForegroundTracker : A11yFeatureHandler {
         if (isIgnoredWindow) return
 
         AccessibilityBridge.updateForeground(pkg, cls)
+        val isGame = A11ySmartPauseController.isGamePackage(service, pkg)
+        A11ySmartPauseController.getInstance(service)
+            .setReasonActive(A11ySmartPauseController.REASON_GAME, isGame)
     }
 }
 
@@ -103,17 +107,18 @@ object TypingEchoHandler : A11yFeatureHandler {
         settings: SettingsRepository,
         stateStore: A11yStateStore?
     ) {
-        val isSensitive = A11ySensitivityGate.isSensitive(event)
+        val newTextStr = event.text
+            ?.map { it.toString() }
+            ?.joinToString("") ?: ""
         val rawEcho = TypingEcho.getEchoText(
-            event.beforeText,
-            event.text?.map { it.toString() }?.joinToString("") ?: "",
-            TypingEcho.EchoMode.CHARACTERS
+            oldText = event.beforeText,
+            newText = newTextStr,
+            mode = TypingEcho.EchoMode.CHARACTERS,
+            fromIndex = event.fromIndex,
+            addedCount = event.addedCount,
+            removedCount = event.removedCount
         )
-        val echoText = if (isSensitive) {
-            if (!rawEcho.isNullOrBlank()) "•" else null
-        } else {
-            rawEcho
-        }
+        val echoText = A11ySensitivityGate.sanitizeEchoText(event, rawEcho)
         if (!echoText.isNullOrBlank()) {
             A11ySpeechCoordinator.speakAnnouncement(
                 context = service,
@@ -166,11 +171,11 @@ object ChatLiveHandler : A11yFeatureHandler {
         val pkg = event.packageName?.toString()
         val source = event.source ?: return
         try {
-            val text = source.text?.map { it.toString() }
-                ?.joinToString("") ?: ""
-            if (text.isNullOrBlank()) return
+            if (source.isPassword) return
+            val messageBody = source.text?.toString()?.trim().orEmpty()
+            if (messageBody.isBlank()) return
+
             val context = service.applicationContext
-            val repo = SettingsRepository.create(context)
             val isFeatureActive = FeatureFlags.isActive(
                 FeatureFlags.FEATURE_CHAT_LIVE_READING,
                 packageName = pkg,
@@ -178,18 +183,96 @@ object ChatLiveHandler : A11yFeatureHandler {
                 settings = settings
             )
             if (!isFeatureActive) return
-            val sender = source.packageName?.toString() ?: ""
-            val messageBody = source.text?.map { it.toString() }
-                ?.joinToString("") ?: ""
+
+            val sender = extractSender(source)
+            val conversationId = extractConversationId(source, service, pkg)
+
             ChatLiveReader.getInstance().processIncomingMessage(
                 context = context,
                 sender = sender,
                 messageBody = messageBody,
-                packageName = pkg
+                packageName = pkg,
+                conversationId = conversationId
             )
         } finally {
             SafeNodeWalker.safeRecycle(source)
         }
+    }
+
+    private fun extractSender(node: AccessibilityNodeInfo): String? {
+        val cd = node.contentDescription?.toString()?.trim().orEmpty()
+        if (cd.isNotBlank()) {
+            val colon = cd.indexOfAny(charArrayOf(':', '\u061B', '\uFF1A'))
+            if (colon > 0) {
+                val candidate = cd.substring(0, colon).trim()
+                if (isValidSender(candidate)) return candidate
+            }
+        }
+        val parent = node.parent ?: return null
+        try {
+            for (i in 0 until parent.childCount) {
+                val child = parent.getChild(i) ?: continue
+                try {
+                    val viewId = child.viewIdResourceName.orEmpty()
+                    if (viewId.contains("name", ignoreCase = true) ||
+                        viewId.contains("sender", ignoreCase = true) ||
+                        viewId.contains("author", ignoreCase = true)
+                    ) {
+                        val name = child.text?.toString()?.trim()
+                        if (!name.isNullOrBlank() && isValidSender(name)) {
+                            return name
+                        }
+                    }
+                } finally {
+                    SafeNodeWalker.safeRecycle(child)
+                }
+            }
+        } finally {
+            SafeNodeWalker.safeRecycle(parent)
+        }
+        return null
+    }
+
+    private fun extractConversationId(
+        node: AccessibilityNodeInfo,
+        service: AccessibilityService,
+        pkg: String?
+    ): String {
+        val root = service.rootInActiveWindow
+        if (root != null) {
+            try {
+                for (i in 0 until root.childCount) {
+                    val child = root.getChild(i) ?: continue
+                    try {
+                        val viewId = child.viewIdResourceName.orEmpty()
+                        if (viewId.contains("toolbar", ignoreCase = true) ||
+                            viewId.contains("action_bar", ignoreCase = true) ||
+                            viewId.contains("conversation_title", true)
+                        ) {
+                            val title = child.text?.toString()?.trim()
+                            if (!title.isNullOrBlank()) {
+                                return "${pkg.orEmpty()}:$title"
+                            }
+                        }
+                    } finally {
+                        SafeNodeWalker.safeRecycle(child)
+                    }
+                }
+            } finally {
+                SafeNodeWalker.safeRecycle(root)
+            }
+        }
+        return "${pkg.orEmpty()}:win_${node.windowId}"
+    }
+
+    private fun isValidSender(candidate: String): Boolean {
+        if (candidate.isBlank() || candidate.length > 50) return false
+        if (candidate.startsWith("com.") ||
+            candidate.startsWith("android.")
+        ) {
+            return false
+        }
+        return true
     }
 }
 
@@ -264,18 +347,63 @@ object PopupHandler : A11yFeatureHandler {
 }
 
 /**
- * معالج مراقبة التقدم — يغلف ProgressMonitor.
+ * معالج مراقبة وإعلان نسب التقدم لعناصر التحميل والعمليات (البند 26).
  */
 object ProgressHandler : A11yFeatureHandler {
     override val feature = FeatureFlags.FEATURE_PROGRESS_MONITORING
-    override val acceptedEventTypes = AccessibilityEvent.TYPE_VIEW_SCROLLED
+    override val acceptedEventTypes =
+        AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+        AccessibilityEvent.TYPE_VIEW_SELECTED
+
     override fun handle(
         service: AccessibilityService,
         event: AccessibilityEvent,
         settings: SettingsRepository,
         stateStore: A11yStateStore?
     ) {
-        // ProgressMonitor يُستدعى من خارج (مستمع تقدم التنزيل)
+        if (stateStore?.isPaused() == true) return
+        if (!settings.isAccessibilityFeatureEnabled(feature)) return
+
+        val node = event.source ?: return
+        try {
+            val pkg = event.packageName?.toString().orEmpty()
+            if (pkg.isBlank()) return
+            if (settings.isProtectedApp(pkg)) return
+
+            val cls = event.className?.toString().orEmpty()
+            val isProgress = cls.contains("ProgressBar", true) ||
+                cls.contains("SeekBar", true) ||
+                node.rangeInfo != null
+
+            if (!isProgress) return
+
+            val range = node.rangeInfo
+            val (current, max) = when {
+                range != null && range.max > 0 -> {
+                    range.current.toInt() to range.max.toInt()
+                }
+                event.itemCount > 0 -> {
+                    event.currentItemIndex to event.itemCount
+                }
+                else -> return
+            }
+
+            if (max <= 0) return
+
+            val viewId = node.viewIdResourceName?.takeIf { it.isNotBlank() }
+                ?: cls.ifBlank { "progress" }
+            val trackerKey = "$pkg#$viewId"
+
+            ProgressMonitor.onProgressChanged(
+                context = service.applicationContext,
+                trackerKey = trackerKey,
+                current = current,
+                max = max
+            )
+        } finally {
+            @Suppress("DEPRECATION")
+            runCatching { node.recycle() }
+        }
     }
 }
 
@@ -570,7 +698,7 @@ class NateqAccessibilityService : AccessibilityService() {
             if (isCallPause || isGamePause) {
                 A11ySmartPauseController.getInstance(
                     this@NateqAccessibilityService
-                )
+                ).registerPhoneStateReceiver()
             }
 
             keyShortcutRouter = KeyShortcutRouter(
@@ -1061,29 +1189,43 @@ class NateqAccessibilityService : AccessibilityService() {
         val volumeKey = volumeKeyOf(event.keyCode)
         if (volumeKey != null && isCallKeyActionsActive()) {
             val ringing = CallStateReader.isRinging(this)
-            when (event.action) {
-                KeyEvent.ACTION_DOWN -> {
-                    if (callKeyDetector.onDown(
+            if (!ringing) {
+                callKeyDetector.reset()
+            } else {
+                val isCanceled = event.isCanceled ||
+                    (event.flags and KeyEvent.FLAG_CANCELED != 0) ||
+                    (event.flags and KeyEvent.FLAG_CANCELED_LONG_PRESS != 0)
+                if (isCanceled) {
+                    callKeyDetector.onCancel(volumeKey)
+                    return true
+                }
+                val sessionId = RingCallerIdentity.currentSessionId()
+                when (event.action) {
+                    KeyEvent.ACTION_DOWN -> {
+                        if (callKeyDetector.onDown(
+                                volumeKey,
+                                ringing,
+                                event.eventTime,
+                                sessionId
+                            )
+                        ) {
+                            return true
+                        }
+                    }
+                    KeyEvent.ACTION_UP -> {
+                        val action = callKeyDetector.onUp(
                             volumeKey,
                             ringing,
-                            event.eventTime
+                            event.eventTime,
+                            isCallKeysSwapped(),
+                            sessionId
                         )
-                    ) {
-                        return true
+                        if (action != null) {
+                            performCallAction(action)
+                            return true
+                        }
+                        if (ringing) return true
                     }
-                }
-                KeyEvent.ACTION_UP -> {
-                    val action = callKeyDetector.onUp(
-                        volumeKey,
-                        ringing,
-                        event.eventTime,
-                        isCallKeysSwapped()
-                    )
-                    if (action != null) {
-                        performCallAction(action)
-                        return true
-                    }
-                    if (ringing) return true
                 }
             }
         }
@@ -1098,6 +1240,15 @@ class NateqAccessibilityService : AccessibilityService() {
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
             keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
         ) {
+            val isCanceled = event.isCanceled ||
+                (event.flags and KeyEvent.FLAG_CANCELED != 0) ||
+                (event.flags and KeyEvent.FLAG_CANCELED_LONG_PRESS != 0)
+            if (isCanceled) {
+                isVolUpPressed = false
+                isVolDownPressed = false
+                emergencyHandler.removeCallbacks(emergencyRunnable)
+                return true
+            }
             when (action) {
                 KeyEvent.ACTION_DOWN -> {
                     if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
@@ -1311,9 +1462,16 @@ class NateqAccessibilityService : AccessibilityService() {
         packageName: String,
         chatScreen: String?
     ): ChatSummary? {
-        val messages = ChatSnapshotReader.messagesFrom(readScreenViews())
+        val views = readScreenViews()
+        val messages = ChatSnapshotReader.messagesFrom(views)
         if (messages.isEmpty()) return null
-        val chatKey = packageName + "#" + chatScreen.orEmpty()
+        val title = ChatSnapshotReader.extractConversationTitle(views)
+        if (title.isNullOrBlank()) {
+            // إن تعذر التمييز فلا تدمج تاريخ محادثتين
+            // أو تخمّن هوية شخص (البند 15)
+            return null
+        }
+        val chatKey = "$packageName#${chatScreen.orEmpty()}#$title"
         return chatSummaryTracker.onVisit(
             chatKey = chatKey,
             messages = messages,
@@ -2084,10 +2242,15 @@ class NateqAccessibilityService : AccessibilityService() {
         unregisterProtectedDisableReceiver()
         unregisterBluetoothReceiver()
         unregisterAudioRouteCallback()
+        runCatching {
+            A11ySmartPauseController.getInstance(this)
+                .unregisterPhoneStateReceiver()
+        }
         emergencyHandler.removeCallbacks(youtubeAdSkipRunnable)
         deviceEventGate.clear()
         chatSummaryTracker.clear()
         callKeyDetector.reset()
+        keyShortcutRouter?.reset()
         OcrScreenReader.shutdown()
 
         // ع٢٩-16: إزالة مستمع حالة الخدمة

@@ -466,6 +466,178 @@ class PcmResamplerTest {
         }
     }
 
+    @Test
+    fun item9_100Frames_22050To16000_singleFrameChunks_produces144Bytes() {
+        // حماية العيب 9: تقسيم 100 إطار من 22050 إلى 16000 ينتج 144 بايت
+        // في دفعة واحدة؛ وإدخالها إطاراً إطاراً يجب أن ينتج 144 بايت تماماً
+        // وليس 0 بايت!
+        val input = encode(*IntArray(100) { (it * 300) - 15000 })
+        val singleBatch = PcmResampler.convert(
+            input, 0, input.size, 22050, 1, 16000
+        )
+        assertEquals(144, singleBatch.size)
+
+        // إدخالها إطاراً إطاراً (100 دفعة كل منها فريم واحد = 2 بايت)
+        val phase = LongArray(4)
+        val chunkOutputs = ArrayList<ByteArray>()
+        var offset = 0
+        var totalBytes = 0
+
+        while (offset < input.size) {
+            val chunkLen = 2 // فريم واحد
+            val cap = PcmResampler.streamingCapacity(
+                input, offset, chunkLen, 22050, 1, 16000
+            )
+            assertTrue("تقدير السعة لا يصفر لفريم صالح: $cap", cap >= 2)
+            val out = ByteArray(cap)
+            val written = PcmResampler.convertInto(
+                input, offset, chunkLen, 22050, 1, 16000,
+                out, 0, phase
+            )
+            assertEquals("طول المكتوب زوجي دائماً", 0, written % 2)
+            if (written > 0) {
+                chunkOutputs.add(out.copyOf(written))
+                totalBytes += written
+            }
+            offset += chunkLen
+        }
+
+        val flushBuf = ByteArray(4)
+        val flushed = PcmResampler.flush(16000, flushBuf, 0, phase)
+        if (flushed > 0) {
+            chunkOutputs.add(flushBuf.copyOf(flushed))
+            totalBytes += flushed
+        }
+
+        assertTrue(
+            "إجمالي البايتات الناتج غير صفري وبفرق فريم: $totalBytes",
+            kotlin.math.abs(singleBatch.size - totalBytes) <= 2
+        )
+        val joined = chunkOutputs.reduce { a, b -> a + b }
+        val decodedSingle = decode(singleBatch)
+        val decodedJoined = decode(joined)
+        val commonFrames = minOf(decodedSingle.size, decodedJoined.size)
+        for (i in 0 until commonFrames) {
+            val diff = kotlin.math.abs(decodedSingle[i] - decodedJoined[i])
+            assertTrue(
+                "فرق العينة $i ضمن خطأ التكميم والتقريب: $diff",
+                diff <= 300
+            )
+        }
+    }
+
+    @Test
+    fun item9_arbitraryRandomChunkSplits_matchesFullConversion() {
+        val testRates = listOf(
+            22050 to 16000,
+            44100 to 16000,
+            16000 to 22050,
+            44100 to 48000,
+            48000 to 44100
+        )
+        val randomSplitFrames = intArrayOf(
+            1, 3, 2, 7, 5, 1, 10, 4, 1, 6, 2, 8, 3, 1, 15, 20
+        )
+        val totalFrames = randomSplitFrames.sum()
+        val input = encode(*IntArray(totalFrames) { (it * 150) - 5000 })
+
+        for ((inRate, outRate) in testRates) {
+            val singleBatch = PcmResampler.convert(
+                input, 0, input.size, inRate, 1, outRate
+            )
+            val phase = LongArray(4)
+            val chunks = ArrayList<ByteArray>()
+            var offset = 0
+
+            for (frames in randomSplitFrames) {
+                val len = frames * 2
+                val cap = PcmResampler.convertedByteCount(
+                    input, offset, len, inRate, 1, outRate
+                )
+                val out = ByteArray(cap + 4)
+                val written = PcmResampler.convertInto(
+                    input, offset, len, inRate, 1, outRate,
+                    out, 0, phase
+                )
+                if (written > 0) {
+                    chunks.add(out.copyOf(written))
+                }
+                offset += len
+            }
+
+            val joined = chunks.reduce { a, b -> a + b }
+            val diff = kotlin.math.abs(singleBatch.size - joined.size)
+            assertTrue(
+                "فرق الطول عند $inRate->$outRate لا يتجاوز 2 بايت: $diff",
+                diff <= 2
+            )
+        }
+    }
+
+    @Test
+    fun item9_stereoDownmix_smallChunks_matchesFullBatch() {
+        // استريو (فريمان = 8 بايت) مقسم فريماً فريماً (4 بايت لكل دفعة)
+        val stereoInput = encode(1000, 2000, -1000, -2000, 4000, 6000)
+        val fullBatch = PcmResampler.convert(
+            stereoInput, 0, stereoInput.size, 22050, 2, 22050
+        )
+        assertEquals(6, fullBatch.size) // 3 أطر مونو
+
+        val phase = LongArray(4)
+        val chunks = ArrayList<ByteArray>()
+        var offset = 0
+        while (offset < stereoInput.size) {
+            val len = 4 // فريم استريو واحد (قناتان × 2 بايت)
+            val cap = PcmResampler.convertedByteCount(
+                stereoInput, offset, len, 22050, 2, 22050
+            )
+            val out = ByteArray(cap)
+            val written = PcmResampler.convertInto(
+                stereoInput, offset, len, 22050, 2, 22050,
+                out, 0, phase
+            )
+            if (written > 0) {
+                chunks.add(out.copyOf(written))
+            }
+            offset += len
+        }
+
+        val joined = chunks.reduce { a, b -> a + b }
+        assertArrayEquals(fullBatch, joined)
+    }
+
+    @Test
+    fun item9_noOddByteOutput() {
+        val pcm = encode(100, 200, 300)
+        for (rate in intArrayOf(16000, 22050, 44100, 48000)) {
+            val cap = PcmResampler.convertedByteCount(
+                pcm, 0, pcm.size, 22050, 1, rate
+            )
+            assertEquals("السعة زوجية دائماً", 0, cap % 2)
+            val out = ByteArray(cap)
+            val written = PcmResampler.convertInto(
+                pcm, 0, pcm.size, 22050, 1, rate, out, 0
+            )
+            assertEquals("المكتوب زوجي دائماً", 0, written % 2)
+        }
+    }
+
+    @Test
+    fun item9_capacityEstimationDecoupledFromConsumption() {
+        // فريم واحد صالح: السعة لا تعيد 0 إطلاقاً
+        val pcm = encode(500)
+        val cap = PcmResampler.streamingCapacity(
+            pcm, 0, 2, 22050, 1, 16000
+        )
+        assertTrue("تقدير السعة آمن وغير صفري لفريم صالح", cap >= 2)
+
+        // إدخال فارغ: يعيد 0
+        assertEquals(
+            0,
+            PcmResampler.convertedByteCount(pcm, 0, 0, 22050, 1, 16000)
+        )
+    }
+
     private fun assertEqualsPcm(expected: ByteArray, actual: ByteArray) {
         assertArrayEquals("مطابقة PCM", expected, actual)
     }

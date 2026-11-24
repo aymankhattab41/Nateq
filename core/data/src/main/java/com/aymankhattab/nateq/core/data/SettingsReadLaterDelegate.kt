@@ -18,9 +18,25 @@ internal class SettingsReadLaterDelegate(
     private val repo: SettingsRepository
 ) {
 
+    private fun parseExistingMaxId(raw: String?): Long {
+        if (raw.isNullOrBlank()) return 0L
+        return runCatching {
+            val arr = JSONArray(raw)
+            var maxId = 0L
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val id = obj.optLong("id", 0L)
+                if (id > maxId) maxId = id
+            }
+            maxId
+        }.getOrDefault(0L)
+    }
+
     private val idCounter: AtomicLong by lazy {
-        val maxExisting = getReadLaterItems(loadFullText = false)
-            .maxOfOrNull { it.id } ?: 0L
+        val raw = repo.prefs.getString(
+            SettingsRepository.KEY_READ_LATER, null
+        )
+        val maxExisting = parseExistingMaxId(raw)
         val initial = maxOf(
             System.currentTimeMillis() * 1000L,
             maxExisting + 1L

@@ -26,7 +26,8 @@ internal class TimeStep(
             defaultInstance.apply(input, languageTag)
 
         private val PATTERN_TIME = Pattern.compile(
-            """(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*""" +
+            """(?<![\d\p{L}./])(\d{1,2}):(\d{2})""" +
+                """(?::(\d{2}))?(?!\d)(?!:\d)(?:\s*""" +
                 """([AaPp]\.?[Mm]\.?|صباح(?:اً|ا)?|""" +
                 """مساء(?:اً|ً|ا)?|ظهر(?:اً|ا)?|صم|""" +
                 """(?<!\p{L})[صم](?!\p{L})))?"""
@@ -174,11 +175,17 @@ internal class TimeStep(
                 if (suffix?.contains("ظهر") == true) "ظهراً" else "مساءً"
             }
             else -> {
-                val roundedHour = if (minute >= 45) rawHour + 1 else rawHour
+                val hasOmission = (seconds == null || seconds == 0) &&
+                    minute >= 45
+                val effectiveHour = if (hasOmission) {
+                    (rawHour + 1) % 24
+                } else {
+                    rawHour
+                }
                 when {
-                    roundedHour == 0 -> "بعد منتصف الليل"
-                    roundedHour == 12 -> "ظهراً"
-                    roundedHour <= 11 -> "صباحاً"
+                    effectiveHour == 0 -> "بعد منتصف الليل"
+                    effectiveHour == 12 -> "ظهراً"
+                    effectiveHour in 1..11 -> "صباحاً"
                     else -> "مساءً"
                 }
             }

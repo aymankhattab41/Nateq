@@ -55,6 +55,21 @@ internal class DateStep(
             PATTERN_DATE_DMY to false,  // DD-MM-YYYY أو DD/MM/YYYY
             PATTERN_DATE_DOTY to false  // DD.MM.YYYY
         )
+
+        fun isLeapYear(year: Int): Boolean =
+            (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+
+        fun maxDaysInMonth(year: Int, month: Int): Int = when (month) {
+            1, 3, 5, 7, 8, 10, 12 -> 31
+            4, 6, 9, 11 -> 30
+            2 -> if (isLeapYear(year)) 29 else 28
+            else -> 0
+        }
+
+        fun isValidDate(year: Int, month: Int, day: Int): Boolean {
+            if (year <= 0 || month !in 1..12) return false
+            return day in 1..maxDaysInMonth(year, month)
+        }
     }
 
     override fun apply(input: String): String = process(input, english = false)
@@ -82,10 +97,12 @@ internal class DateStep(
                     month = matcher.group(2)!!
                     year = matcher.group(3)!!
                 }
-                // حماية من تاريخ شاذ (شهر 13+ أو يوم 32+) تُسقط مصفوفة الأشهر.
+                // التحقق من صحة التاريخ الميلادي كاملاً
+                // (أيام الشهور والسنة الكبيسة).
                 val dayNum = day.toInt()
                 val monthNum = month.toInt()
-                if (monthNum !in 1..12 || dayNum !in 1..31) {
+                val yearNum = year.toInt()
+                if (!isValidDate(yearNum, monthNum, dayNum)) {
                     matcher.appendReplacement(
                         buffer,
                         Matcher.quoteReplacement(matcher.group(0)!!)
@@ -93,9 +110,9 @@ internal class DateStep(
                     continue
                 }
                 val dateText = if (english) {
-                    formatDateEnglish(dayNum, monthNum, year.toInt())
+                    formatDateEnglish(dayNum, monthNum, yearNum)
                 } else {
-                    formatDate(dayNum, monthNum, year.toInt())
+                    formatDate(dayNum, monthNum, yearNum)
                 }
                 matcher.appendReplacement(
                     buffer,
@@ -110,8 +127,7 @@ internal class DateStep(
 
     /** تنسيق التاريخ بالعربية بالتقويم الميلادي فقط. */
     private fun formatDate(day: Int, month: Int, year: Int): String {
-        if (month !in 1..12) return "التاريخ غير صالح"
-        if (day !in 1..31) return "التاريخ غير صالح"
+        if (!isValidDate(year, month, day)) return "التاريخ غير صالح"
         val dayText = NumberWordsConverter.numberToWords(
             day.toLong(), markNumbers = markNumbers
         )
@@ -124,7 +140,7 @@ internal class DateStep(
     /** تنسيق التاريخ بالإنجليزية: شهر أولاً ثم اليوم الترتيبي ثم السنة
      *  («March fifteenth two thousand twenty four»). */
     private fun formatDateEnglish(day: Int, month: Int, year: Int): String {
-        if (month !in 1..12 || day !in 1..31) return "invalid date"
+        if (!isValidDate(year, month, day)) return "invalid date"
         val dayText = englishOrdinal(day, markNumbers = markNumbers)
         val yearText = NumberSpeech.toEnglishWords(
             year, markNumbers = markNumbers

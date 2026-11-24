@@ -1536,12 +1536,40 @@ class LordPhoneActivity : AppCompatActivity() {
             }
 
             holder.btnDelete.setOnClickListener {
-                CallRecordManager.deleteRecording(
+                val res = CallRecordManager.deleteRecordingWithResult(
                     this@LordPhoneActivity,
                     item.id
                 )
-                speak("تم حذف التسجيل")
-                loadRecordings()
+                when (res) {
+                    is CallRecordManager.DeleteRecordResult.Success -> {
+                        speak("تم حذف التسجيل")
+                        loadRecordings()
+                    }
+                    is CallRecordManager.DeleteRecordResult.NotFound -> {
+                        speak("التسجيل غير موجود")
+                        loadRecordings()
+                    }
+                    is CallRecordManager.DeleteRecordResult.RequiresConsent -> {
+                        speak("يلزم تأكيد النظام لحذف التسجيل")
+                        try {
+                            startIntentSenderForResult(
+                                res.intentSender,
+                                9002,
+                                null,
+                                0,
+                                0,
+                                0
+                            )
+                        } catch (_: Exception) {}
+                    }
+                    is CallRecordManager.DeleteRecordResult
+                        .PermissionDenied -> {
+                        speak("تعذر حذف التسجيل لعدم وجود الصلاحية")
+                    }
+                    is CallRecordManager.DeleteRecordResult.Failed -> {
+                        speak("تعذر حذف التسجيل")
+                    }
+                }
             }
         }
 

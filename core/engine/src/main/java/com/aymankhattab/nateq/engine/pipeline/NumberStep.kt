@@ -42,16 +42,34 @@ internal class NumberStep(
     // شبكة لا مبلغ يُلفظ، فتُترك كما هي كاملةً من دون قراءتها عدّاً.
     private val PATTERN_IPV4 = Pattern.compile("""\d{1,3}(?:\.\d{1,3}){3}""")
 
-    // أرقام الإصدارات (1.6.1 / 10.2.15): تُنطق خانةً خانة مع «فاصلة» بين
-    // الأجزاء. **بلا هذا التمييز كان رقم الإصدار يُنطق مدمجاً**: فـ
-    // `AmountParser.sanitizeNumerals` يفترض أن كل فاصلٍ ما قبل الأخير
-    // فاصلُ آلاف، فيُسقط النقطة الأولى من «1.6.1» فيصير «16.1» — أي أن
-    // «Lord TTS 1.6.1» كان يُنطق «ستة عشر فاصلة واحد»! (الإصدار يُقرأ من
-    // نصّ «آخر التحديثات» عبر `%1$s`.)
-    // التمييز: كل الأجزاء خانة أو خانتان (فلا فاصل آلاف ممكن، إذ يفرض
-    // ثلاثةَ خاناتٍ في المجموعة الوسيطة) وثلاثةُ أجزاء فأكثر.
-    private val PATTERN_VERSION =
-        Pattern.compile("""^\d{1,2}(?:\.\d{1,2}){2,}$""")
+    // أرقام الإصدارات (1.6.1 / 1.6.164 / 10.20.300): تُنطق خانةً خانة مع
+    // «فاصلة» بين الأجزاء. تدعم أجزاء ذات أطوال مختلفة وسياقات الإصدارات.
+    private fun hasVersionContext(input: String, start: Int): Boolean {
+        if (start <= 0) return false
+        val before = input.substring(0, start).trimEnd()
+        val regex = Regex(
+            """(?i)(?:version|ver|v|release|build|إصدار|الإصدار|""" +
+                """نسخة|النسخة|تحديث|التحديث)[\s:#_-]*$"""
+        )
+        return regex.containsMatchIn(before)
+    }
+
+    private fun isVersion(
+        numberStr: String,
+        hasVerContext: Boolean
+    ): Boolean {
+        if (!numberStr.contains('.') || numberStr.contains(',')) return false
+        val parts = numberStr.split('.')
+        if (parts.size < 2) return false
+        if (!parts.all { it.isNotEmpty() && it.all(Char::isDigit) }) {
+            return false
+        }
+        if (hasVerContext) return true
+        if (parts.size < 3) return false
+        val isThousandsFormat = parts[0].length in 1..3 &&
+            parts.drop(1).all { it.length == 3 }
+        return !isThousandsFormat
+    }
 
     // رموز العملات التي تحمي الأرقام المحيطة بها من النطق الرقمي،
     // مُعرّفة مرة واحدة لا داخل حلقة المطابقات لكل رقم.
@@ -128,7 +146,14 @@ internal class NumberStep(
             }
             sb.append(cleanedPre)
             sb.append(if (minus) minusWord(english) else "")
-            sb.append(parseNumberText(numberStr, english, markNumbers))
+            sb.append(
+                parseNumberText(
+                    numberStr,
+                    english,
+                    markNumbers,
+                    hasVersionContext(input, start)
+                )
+            )
             if (end < input.length && isLetterOrMark(input[end])) {
                 sb.append(' ')
             }
@@ -156,12 +181,11 @@ internal class NumberStep(
     private fun parseNumberText(
         numberStr: String,
         english: Boolean,
-        markNumbers: Boolean = false
+        markNumbers: Boolean = false,
+        hasVerContext: Boolean = false
     ): String {
-        // **رقم إصدار قبل أي تطبيع:** «1.6.1» تُعامل خانةً خانة. فـ
-        // `sanitizeNumerals` في الأسفل تعتبر النقطة الأولى فاصلَ آلاف
-        // فتصف «1.6.1» ← «16.1» (نطقٌ خطأ لاسم التطبيق نفسه).
-        if (PATTERN_VERSION.matcher(numberStr).matches()) {
+        // **رقم إصدار قبل أي تطبيع:** يُعامل خانةً خانة أو كأجزاء منفصلة.
+        if (isVersion(numberStr, hasVerContext)) {
             return versionWords(numberStr, english, markNumbers)
         }
         // الفصل بين فواصل الآلاف والفاصلة العشرية يتم عبر sanitizeNumerals

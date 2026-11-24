@@ -77,13 +77,29 @@ object CallRecordManager {
     private var recordingThread: Thread? = null
     private var currentItem: CallRecordItem? = null
     private var currentTarget: RecordingTarget? = null
+    private var currentCall: Any? = null
     private var recordingStartTime = 0L
+
+    /**
+     * نتائج محاولة حذف التسجيل الصوتي.
+     */
+    sealed class DeleteRecordResult {
+        object Success : DeleteRecordResult()
+        object NotFound : DeleteRecordResult()
+        data class PermissionDenied(val message: String) : DeleteRecordResult()
+        data class RequiresConsent(
+            val intentSender: android.content.IntentSender
+        ) : DeleteRecordResult()
+        data class Failed(val reason: String) : DeleteRecordResult()
+    }
 
     fun isRecording(): Boolean = recordingState == RecordingState.RECORDING
 
     fun getRecordingState(): RecordingState = recordingState
 
     fun getCurrentItem(): CallRecordItem? = currentItem
+
+    fun getCurrentCall(): Any? = currentCall
 
     fun getRecordingFolderDisplayName(): String =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -116,7 +132,8 @@ object CallRecordManager {
     fun startRecording(
         context: Context,
         phoneNumber: String,
-        callerName: String
+        callerName: String,
+        call: Any? = null
     ): Boolean {
         val thread: Thread
         synchronized(stateLock) {
@@ -161,6 +178,7 @@ object CallRecordManager {
 
             currentItem = item
             currentTarget = target
+            currentCall = call
             recordingStartTime = timestamp
             recordingState = RecordingState.RECORDING
 
@@ -275,6 +293,7 @@ object CallRecordManager {
                 recordingState = RecordingState.IDLE
                 currentItem = null
                 currentTarget = null
+                currentCall = null
                 recordingThread = null
             }
             CallRecordingForegroundService.stop(context)
@@ -591,6 +610,7 @@ object CallRecordManager {
                 recordingState = RecordingState.IDLE
                 currentItem = null
                 currentTarget = null
+                currentCall = null
                 recordingThread = null
             }
         }
@@ -728,30 +748,99 @@ object CallRecordManager {
     }
 
     fun deleteRecording(context: Context, id: String): Boolean {
+        return deleteRecordingWithResult(context, id) ==
+            DeleteRecordResult.Success
+    }
+
+    /**
+     * حذف التسجيل والتحقق من النتيجة الفعلية لحذف الملف من وسيط التخزين
+     * قبل مسح القيد من الفهرس، والتعامل مع طلب الموافقة من المزود.
+     */
+    fun deleteRecordingWithResult(
+        context: Context,
+        id: String
+    ): DeleteRecordResult {
         synchronized(indexLock) {
             val all = getRecordings(context).toMutableList()
-            val target = all.find { it.id == id } ?: return false
+            val target = all.find { it.id == id }
+                ?: return DeleteRecordResult.NotFound
+
+            var fileDeletedOrAbsent = false
 
             if (!target.uriString.isNullOrEmpty()) {
+                val uri = Uri.parse(target.uriString)
                 try {
-                    context.contentResolver.delete(
-                        Uri.parse(target.uriString),
-                        null,
-                        null
+                    val rows = context.contentResolver.delete(uri, null, null)
+                    if (rows > 0) {
+                        fileDeletedOrAbsent = true
+                    } else {
+                        val exists = try {
+                            context.contentResolver.openFileDescriptor(
+                                uri,
+                                "r"
+                            )?.use { true } ?: false
+                        } catch (_: Exception) {
+                            false
+                        }
+                        if (!exists) {
+                            fileDeletedOrAbsent = true
+                        } else {
+                            return DeleteRecordResult.Failed(
+                                "تعذر حذف الملف: المزود أعاد 0 صفوف"
+                            )
+                        }
+                    }
+                } catch (secEx: SecurityException) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                        secEx is android.app.RecoverableSecurityException
+                    ) {
+                        return DeleteRecordResult.RequiresConsent(
+                            secEx.userAction.actionIntent.intentSender
+                        )
+                    }
+                    return DeleteRecordResult.PermissionDenied(
+                        secEx.message ?: "إذن الحذف مرفوض"
                     )
-                } catch (_: Exception) {}
-            }
-            if (target.filePath.isNotEmpty()) {
-                val file = File(target.filePath)
-                if (file.exists()) {
-                    file.delete()
+                } catch (e: Exception) {
+                    return DeleteRecordResult.Failed(
+                        e.message ?: "خطأ أثناء حذف الملف"
+                    )
                 }
             }
 
+            if (target.filePath.isNotEmpty()) {
+                val file = File(target.filePath)
+                if (file.exists()) {
+                    val ok = file.delete()
+                    if (ok) {
+                        fileDeletedOrAbsent = true
+                    } else if (!fileDeletedOrAbsent) {
+                        return DeleteRecordResult.Failed(
+                            "تعذر حذف ملف التسجيل من القرص"
+                        )
+                    }
+                } else {
+                    fileDeletedOrAbsent = true
+                }
+            }
+
+            if (target.uriString.isNullOrEmpty() && target.filePath.isEmpty()) {
+                fileDeletedOrAbsent = true
+            }
+
+            if (!fileDeletedOrAbsent) {
+                return DeleteRecordResult.Failed("لم يتم حذف الملف")
+            }
+
             all.removeAll { it.id == id }
-            saveAllRecordings(context, all)
+            val indexSaved = saveAllRecordings(context, all)
+            if (!indexSaved) {
+                return DeleteRecordResult.Failed(
+                    "تم حذف الملف ولكن فشل تحديث الفهرس"
+                )
+            }
+            return DeleteRecordResult.Success
         }
-        return true
     }
 
     fun getRecordingsForNumber(
@@ -776,7 +865,7 @@ object CallRecordManager {
     private fun saveAllRecordings(
         context: Context,
         items: List<CallRecordItem>
-    ) {
+    ): Boolean {
         synchronized(indexLock) {
             val dir = getRecordingsDir(context)
             val indexFile = File(dir, INDEX_FILE_NAME)
@@ -798,7 +887,7 @@ object CallRecordManager {
                 jsonArray.put(obj)
             }
 
-            try {
+            return try {
                 tempFile.writeText(jsonArray.toString(), Charsets.UTF_8)
                 if (tempFile.exists() && tempFile.length() > 0) {
                     if (indexFile.exists()) {
@@ -808,12 +897,16 @@ object CallRecordManager {
                         tempFile.copyTo(indexFile, overwrite = true)
                         tempFile.delete()
                     }
+                    true
+                } else {
+                    false
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed atomic index save: ${e.message}")
                 try {
                     tempFile.delete()
                 } catch (_: Exception) {}
+                false
             }
         }
     }

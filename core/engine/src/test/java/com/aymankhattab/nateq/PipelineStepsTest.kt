@@ -147,8 +147,8 @@ class PipelineStepsTest {
 
     @Test
     fun unit_data_storage_case_insensitive_mb() {
-        assertEquals("حمّل خمسون ميجابايت", UnitStep.apply("حمّل 50mb"))
-        assertEquals("حمّل خمسون ميجابايت", UnitStep.apply("حمّل 50Mb"))
+        assertEquals("حمّل خمسون ميجابت", UnitStep.apply("حمّل 50mb"))
+        assertEquals("حمّل خمسون ميجابت", UnitStep.apply("حمّل 50Mb"))
         assertEquals("حمّل خمسون ميجابايت", UnitStep.apply("حمّل 50MB"))
         assertEquals("حمّل خمسون ميجابايت", UnitStep.apply("حمّل 50mB"))
     }
@@ -186,14 +186,14 @@ class PipelineStepsTest {
 
     @Test
     fun unit_data_storage_case_insensitive_other_bytes() {
-        assertEquals("عشرة كيلوبايتات", UnitStep.apply("10kb"))
-        assertEquals("عشرة كيلوبايتات", UnitStep.apply("10Kb"))
+        assertEquals("عشرة كيلوبتات", UnitStep.apply("10kb"))
+        assertEquals("عشرة كيلوبتات", UnitStep.apply("10Kb"))
         assertEquals("عشرة كيلوبايتات", UnitStep.apply("10KB"))
-        assertEquals("خمسة جيجابايتات", UnitStep.apply("5gb"))
-        assertEquals("خمسة جيجابايتات", UnitStep.apply("5Gb"))
+        assertEquals("خمسة جيجابتات", UnitStep.apply("5gb"))
+        assertEquals("خمسة جيجابتات", UnitStep.apply("5Gb"))
         assertEquals("خمسة جيجابايتات", UnitStep.apply("5GB"))
-        assertEquals("تيرابايت واحد", UnitStep.apply("1tb"))
-        assertEquals("تيرابايت واحد", UnitStep.apply("1Tb"))
+        assertEquals("تيرابت واحد", UnitStep.apply("1tb"))
+        assertEquals("تيرابت واحد", UnitStep.apply("1Tb"))
         assertEquals("تيرابايت واحد", UnitStep.apply("1TB"))
     }
 
@@ -387,7 +387,8 @@ class PipelineStepsTest {
     @Test
     fun time_quarterTo_lateNight_evening() {
         assertEquals(
-            "الثانية عشرة إلا ربع مساءً", TimeStep.apply("23:45")
+            "الثانية عشرة إلا ربع بعد منتصف الليل",
+            TimeStep.apply("23:45")
         )
     }
 

@@ -10,12 +10,21 @@ enum class CallAction { ANSWER, REJECT }
  * كلها أثناء الرنين فلا يتغيّر مستوى الصوت، وتُهمل خارج الرنين.
  *
  * منطقٌ نقيّ بلا اعتمادٍ على أندرويد (قابل للاختبار بساعةٍ مُمرَّرة).
+ * - يحسب مدة الاستمرار من أول ضغطة down، ولا يعيد كتابتها مع تكرار
+ *   down (البند 13).
+ * - يربط الضغطة بجلسة المكالمة لمنع تطبيق ضغطة مكالمة منتهية على التالية.
+ * - يصفّي الحالة عند الإلغاء أو انتهاء الرنين أو توقف الخدمة (البندان 12 و13).
  */
 class CallKeyDetector(
     private val longPressMs: Long = LONG_PRESS_MS
 ) {
 
-    private val downAt = HashMap<VolumeKey, Long>()
+    private data class DownRecord(
+        val downTimeMs: Long,
+        val callSessionId: String? = null
+    )
+
+    private val downRecords = HashMap<VolumeKey, DownRecord>()
 
     /**
      * عند الضغط. @return هل يُستهلك الحدث (أي أثناء الرنين)؟
@@ -23,13 +32,17 @@ class CallKeyDetector(
     fun onDown(
         key: VolumeKey,
         ringing: Boolean,
-        eventTimeMs: Long
+        eventTimeMs: Long,
+        callSessionId: String? = null
     ): Boolean {
         if (!ringing) {
-            downAt.remove(key)
+            downRecords.remove(key)
             return false
         }
-        downAt[key] = eventTimeMs
+        val existing = downRecords[key]
+        if (existing == null || existing.callSessionId != callSessionId) {
+            downRecords[key] = DownRecord(eventTimeMs, callSessionId)
+        }
         return true
     }
 
@@ -41,17 +54,26 @@ class CallKeyDetector(
         key: VolumeKey,
         ringing: Boolean,
         eventTimeMs: Long,
-        swapped: Boolean = false
+        swapped: Boolean = false,
+        callSessionId: String? = null
     ): CallAction? {
-        val start = downAt.remove(key) ?: return null
+        val record = downRecords.remove(key) ?: return null
         if (!ringing) return null
-        if (eventTimeMs - start < longPressMs) return null
+        if (record.callSessionId != callSessionId) return null
+        if (eventTimeMs - record.downTimeMs < longPressMs) return null
         return resolve(key, swapped)
+    }
+
+    /**
+     * معالجة حدث ملغى (البند 12): إزالة تسجيل الضغطة دون اتخاذ إجراء.
+     */
+    fun onCancel(key: VolumeKey) {
+        downRecords.remove(key)
     }
 
     /** مسح الحالة (عند توقّف الخدمة أو خروج الرنين). */
     fun reset() {
-        downAt.clear()
+        downRecords.clear()
     }
 
     private fun resolve(key: VolumeKey, swapped: Boolean): CallAction {

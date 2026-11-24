@@ -227,22 +227,153 @@ class NateqNotificationListener : NotificationListenerService() {
         }
 
         /**
-         * بند ١٧: إضافة محتوى MessagingStyle نفسه (لا المرسل فقط) إلى
-         * المرشحين، واختيار الأطول — إشعارات المراسلة تضع النص الكامل
-         * داخل الرسائل لا في EXTRA_TEXT المختصر.
+         * بند ١٧ و٢٥: استخراج الرسائل الجديدة فقط من MessagingStyle
+         * دون إعادة نطق كامل السجل عند كل رسالة جديدة (البند 25).
          */
-        fun notificationBodyText(notification: Notification?): String? {
+        fun notificationBodyText(
+            notification: Notification?,
+            conversationKey: String? = null
+        ): String? {
             if (notification == null) return null
-            val fromExtras = notificationBodyText(notification.extras)
-            val messagesText = runCatching {
+            val hasMessaging = runCatching {
                 NotificationCompat.MessagingStyle
                     .extractMessagingStyleFromNotification(notification)
-            }.getOrNull()?.messages?.mapNotNull { message ->
-                message.text?.toString()?.trim()
+            }.getOrNull() != null
+
+            if (hasMessaging) {
+                return MessagingStyleTracker.extractFreshText(
+                    notification = notification,
+                    conversationKey = conversationKey
+                )
+            }
+            return notificationBodyText(notification.extras)
+        }
+    }
+
+    internal object MessagingStyleTracker {
+        private const val MAX_CONVERSATIONS = 100
+        private const val MAX_MESSAGES_PER_CONV = 100
+        private val seenByConv = LinkedHashMap<String, MutableSet<String>>(
+            MAX_CONVERSATIONS, 0.75f, true
+        )
+
+        @Synchronized
+        fun extractFreshText(
+            notification: Notification?,
+            conversationKey: String?
+        ): String? {
+            if (notification == null) return null
+            val messagingStyle = runCatching {
+                NotificationCompat.MessagingStyle
+                    .extractMessagingStyleFromNotification(notification)
+            }.getOrNull()
+            val messages = messagingStyle?.messages
+            if (messages.isNullOrEmpty()) {
+                return notificationBodyText(notification.extras)
+            }
+
+            val convKey = conversationKey ?: deriveScope(notification)
+            if (convKey.isBlank()) {
+                return messages.lastOrNull()?.text?.toString()?.trim()
                     ?.takeIf { it.isNotEmpty() }
-            }?.joinToString("\n")?.takeIf { it.isNotEmpty() }
-            return listOfNotNull(fromExtras, messagesText)
-                .maxByOrNull { it.length }
+                    ?: notificationBodyText(notification.extras)
+            }
+
+            val seen = seenByConv.getOrPut(convKey) { LinkedHashSet() }
+            val freshMessages = ArrayList<String>()
+
+            for ((idx, msg) in messages.withIndex()) {
+                val text = msg.text?.toString()?.trim().orEmpty()
+                if (text.isEmpty()) continue
+                val sender = msg.person?.name?.toString()
+                    ?: msg.sender?.toString().orEmpty()
+                val ts = msg.timestamp
+                val id = "$sender\u0000$ts\u0000$idx\u0000$text"
+                if (seen.add(id)) {
+                    freshMessages.add(text)
+                }
+            }
+
+            while (seen.size > MAX_MESSAGES_PER_CONV) {
+                val first = seen.iterator().next()
+                seen.remove(first)
+            }
+            while (seenByConv.size > MAX_CONVERSATIONS) {
+                val oldestKey = seenByConv.keys.iterator().next()
+                seenByConv.remove(oldestKey)
+            }
+
+            return if (freshMessages.isNotEmpty()) {
+                freshMessages.joinToString("\n")
+            } else {
+                null
+            }
+        }
+
+        private fun deriveScope(notification: Notification): String {
+            val extras = notification.extras ?: return ""
+            val convTitle = extras.getCharSequence(
+                Notification.EXTRA_CONVERSATION_TITLE
+            )?.toString()?.trim().orEmpty()
+            val title = extras.getCharSequence(
+                Notification.EXTRA_TITLE
+            )?.toString()?.trim().orEmpty()
+            val shortcutId = if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ) {
+                notification.shortcutId.orEmpty()
+            } else ""
+            val channelId = if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ) {
+                notification.channelId.orEmpty()
+            } else ""
+            return "$channelId#$shortcutId#$convTitle#$title"
+        }
+
+        @Synchronized
+        fun clear() {
+            seenByConv.clear()
+        }
+    }
+
+    internal object SmsNlsDeduplicator {
+        private const val MAX_ENTRIES = 50
+        private const val THROTTLE_WINDOW_MS = 10_000L
+        private val recentSms = LinkedHashMap<String, Long>(
+            MAX_ENTRIES, 0.75f, true
+        )
+
+        @Synchronized
+        fun shouldDrop(
+            notificationKey: String,
+            notificationId: Int,
+            sender: String?,
+            content: String,
+            nowMs: Long
+        ): Boolean {
+            val dedupeKey = "$notificationKey#$notificationId#" +
+                "${sender.orEmpty()}#${content.hashCode()}"
+            val lastTime = recentSms[dedupeKey]
+            if (lastTime != null && nowMs - lastTime < THROTTLE_WINDOW_MS) {
+                return true
+            }
+            recentSms[dedupeKey] = nowMs
+            while (recentSms.size > MAX_ENTRIES) {
+                val oldest = recentSms.keys.iterator().next()
+                recentSms.remove(oldest)
+            }
+            return false
+        }
+
+        @Synchronized
+        fun onNotificationRemoved(notificationKey: String) {
+            recentSms.keys.removeAll { it.startsWith("$notificationKey#") }
+        }
+
+        @Synchronized
+        fun clear() {
+            recentSms.clear()
         }
     }
 
@@ -459,18 +590,13 @@ class NateqNotificationListener : NotificationListenerService() {
             }
 
             val settings = settingsRepository
-            if (!settings.isNotificationReadingEnabled()) return
-            // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
+            // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة (البند 23).
             if (!settings.isAllAnnouncementsEnabled()) return
 
             // إشعار من تطبيق الرسائل النصية مع قراءة SMS مفعّلة:
-            // يُعالج بمسار SMS المستقل (قبل فحص قائمة تطبيقات قراءة الإشعارات
-            // العادية) لأنه ميزة منفصلة لها إعداداتها الخاصة.
-            // - إن كان RECEIVE_SMS ممنوحاً فسيَنطقه SmsReadingReceiver
-            //   مباشرة (نتجنب هنا).
-            // - إن لم يكن ممنوحاً نقرأ الرسالة عبر خدمة الاستماع
-            //   للإشعارات (NLS) بإعدادات SMS المتخصصة
-            //   (الصوت/السرعة/الخصوصية/فلتر OTP) بدل الإذن المقيّد.
+            // يُعالج بمسار SMS المستقل حتى لو قراءة الإشعارات
+            // العامة مغلقة (البند 23).
+            // - إن كان RECEIVE_SMS ممنوحاً فسيَنطقه SmsReadingReceiver مباشرة.
             val defaultSmsApp = runCatching {
                 android.provider.Telephony.Sms
                     .getDefaultSmsPackage(applicationContext)
@@ -486,6 +612,9 @@ class NateqNotificationListener : NotificationListenerService() {
                 return
             }
 
+            // بوابة قراءة الإشعارات العامة:
+            if (!settings.isNotificationReadingEnabled()) return
+
             // قراءة التطبيقات المختارة فقط (للمستخدم حرية اختيار قائمتها).
             if (!settings.shouldReadNotificationApp(pkg)) return
 
@@ -493,9 +622,15 @@ class NateqNotificationListener : NotificationListenerService() {
 
             val title = extras.getCharSequence(Notification.EXTRA_TITLE)
                 ?.toString()?.trim()
-            // بند ١٧: نص الرسالة من أطول مرشح متاح بما في ذلك
-            // محتوى MessagingStyle لا المرسل وحده.
-            val text = notificationBodyText(sbn.notification)
+            val shortcutId = if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ) {
+                sbn.notification?.shortcutId.orEmpty()
+            } else ""
+            val convKey = "${sbn.packageName}#${sbn.id}#${sbn.tag.orEmpty()}#" +
+                (if (shortcutId.isNotEmpty()) shortcutId else title.orEmpty())
+            // بند ١٧ و٢٥: نص الرسالة الجديدة من MessagingStyle بنطاق المحادثة
+            val text = notificationBodyText(sbn.notification, convKey)
 
             // بند ١٨: الحدّ لكل محادثة/رسالة لا للحزمة — إشعاران من
             // شخصين مختلفين في نفس التطبيق لا يُسقط أحدهما الآخر.
@@ -937,11 +1072,7 @@ class NateqNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         sbn ?: return
-        // حذفُ إشعار المكالمة = انتهاؤها (أو ردٌّ يُخفيه التطبيق). وهو
-        // **الحدثُ الوحيد الذي ينهي مكالمة VoIP** فلا يُصدره النظام بثّاً،
-        // فبلاه يُكبح النطقُ كلُّ مكالماتِ نفس المتصل التالية بمفتاحه.
-        // والإجراءُ نفسه يتحقق من الحزمة فلا يختلُّ شيءٌ لحذفِ إشعارِ
-        // مكالمةِ شبكةٍ أثناءَ جولةِ إشعارٍ جارية.
+        SmsNlsDeduplicator.onNotificationRemoved(sbn.key)
         if (sbn.notification?.category != Notification.CATEGORY_CALL) return
         CallerAnnouncementReceiver.endNotificationCall(
             applicationContext, sbn.packageName
@@ -990,6 +1121,8 @@ class NateqNotificationListener : NotificationListenerService() {
 
     override fun onDestroy() {
         if (activeInstance == this) activeInstance = null
+        SmsNlsDeduplicator.clear()
+        MessagingStyleTracker.clear()
         screenReceiver?.let {
             runCatching { unregisterReceiver(it) }
         }
@@ -1062,6 +1195,8 @@ class NateqNotificationListener : NotificationListenerService() {
         super.onListenerConnected()
         activeInstance = this
         isConnected = true
+        SmsNlsDeduplicator.clear()
+        MessagingStyleTracker.clear()
         val scope = (applicationContext as? AnnouncementAppContext)?.appScope
             ?: CoroutineScope(Dispatchers.Default)
         scope.launch {
@@ -1129,6 +1264,8 @@ class NateqNotificationListener : NotificationListenerService() {
         super.onListenerDisconnected()
         if (activeInstance == this) activeInstance = null
         isConnected = false
+        SmsNlsDeduplicator.clear()
+        MessagingStyleTracker.clear()
         AnnouncementSpeaker.getInstance(applicationContext).stop()
         Log.w(TAG, "NotificationListener disconnected — محاولة إعادة الربط")
         // إعادة الربط التلقائي بعد فصل النظام (توفير الطاقة/إيقاف مؤقت)
@@ -1167,16 +1304,32 @@ class NateqNotificationListener : NotificationListenerService() {
 
         val content = (body ?: "").trim()
             .take(SmsReadingReceiver.MAX_SMS_CONTENT_LENGTH)
+
+        // منع التكرار لمسار SMS عبر NLS (البند 24)
+        if (SmsNlsDeduplicator.shouldDrop(
+                notificationKey = sbn.key,
+                notificationId = sbn.id,
+                sender = sender,
+                content = content,
+                nowMs = System.currentTimeMillis()
+            )
+        ) {
+            return
+        }
+
         // خصوصية قفل الشاشة: عند القفل يُنطق المصدر فقط
         // دون المحتوى (حماية OTP).
         val privacyLocked = settings.isLockScreenPrivacyEnabled()
                 && settings.isDeviceScreenLocked()
-        val effectiveMode =
-            if (privacyLocked) SmsReadingReceiver.MODE_SOURCE else smsMode
+        val effectiveMode = SmsReadingReceiver.resolveEffectiveMode(
+            mode = smsMode,
+            privacyLocked = privacyLocked
+        )
 
-        val dynamicText = "$displayAddress $content"
-        val useArabicVoice = !dynamicText.any { it.isLetter() } ||
-            LocaleUtils.containsArabic(dynamicText)
+        val useArabicVoice = SmsReadingReceiver.resolveUseArabicVoice(
+            displayAddress = displayAddress,
+            content = content
+        )
 
         val template = settings.getSmsAnnouncementTemplate()
         // فلتر رمز التحقق (OTP): لا يُنطق الرمز نفسه في الأماكن العامة.
@@ -1188,22 +1341,24 @@ class NateqNotificationListener : NotificationListenerService() {
             R.string.sms_from
         ).replace("{name}", displayAddress)
 
-        val text = when {
-            privacyLocked -> smsFrom
-            isOtp -> LocaleUtils.stringForSpeech(
-                applicationContext,
-                if (useArabicVoice) LanguageCode.AR.tag
-                else LanguageCode.EN.tag,
-                R.string.sms_otp_safe,
-                R.string.sms_otp_safe
-            ).replace("{name}", displayAddress)
-            template.isNotBlank() -> template
-                .replace("{name}", displayAddress)
-                .replace("{message}", content.ifBlank { displayAddress })
-            content.isBlank() -> smsFrom
-            effectiveMode == SmsReadingReceiver.MODE_SOURCE -> smsFrom
-            else -> "$smsFrom، $content"
-        }
+        val otpSafeText = LocaleUtils.stringForSpeech(
+            applicationContext,
+            if (useArabicVoice) LanguageCode.AR.tag else LanguageCode.EN.tag,
+            R.string.sms_otp_safe,
+            R.string.sms_otp_safe
+        ).replace("{name}", displayAddress)
+
+        // توحيد أولويات الخصوصية والقالب بين المسارين (البند 22)
+        val text = SmsReadingReceiver.resolveSpeechText(
+            privacyLocked = privacyLocked,
+            isOtp = isOtp,
+            smsFrom = smsFrom,
+            otpSafeText = otpSafeText,
+            template = template,
+            content = content,
+            displayAddress = displayAddress,
+            effectiveMode = effectiveMode
+        )
 
         val isArabic = LocaleUtils.containsArabic(text)
         val locale =

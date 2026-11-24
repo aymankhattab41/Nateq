@@ -324,40 +324,66 @@ object DownloadHttpHelper {
 
                 var conn: HttpURLConnection
                 var isResume = false
+                var crTotal = -1L
                 try {
                     conn = openWithManualRedirects(
                         urlString = urlString,
                         rangeBytes = initialBytes,
                         ifRange = ifRange
                     )
-                    val respCode = conn.responseCode
+                    var respCode = conn.responseCode
                     if (respCode == 206) {
                         isResume = true
                         val cr = conn.getHeaderField("Content-Range")
-                        if (cr != null) {
+                        val newEtag = conn.getHeaderField("ETag")
+                        var resumeValid = true
+                        if (cr.isNullOrBlank()) {
+                            resumeValid = false
+                        } else {
                             val match = Regex(
                                 """bytes\s+(\d+)-(\d+)/(\d+|\*)"""
                             ).find(cr)
                             val startByte = match?.groupValues?.getOrNull(1)
                                 ?.toLongOrNull() ?: -1L
-                            if (startByte != initialBytes) {
-                                isResume = false
+                            crTotal = match?.groupValues?.getOrNull(3)
+                                ?.toLongOrNull() ?: -1L
+                            if (startByte != initialBytes || crTotal <= 0L) {
+                                resumeValid = false
                             }
                         }
-                        val newEtag = conn.getHeaderField("ETag")
                         if (savedEtag != null && newEtag != null &&
                             savedEtag != newEtag
                         ) {
+                            resumeValid = false
+                        }
+                        // رفض استئناف 206: إعادة الطلب من الصفر (البند 29)
+                        if (!resumeValid) {
+                            Log.w(
+                                TAG,
+                                "رفض استئناف 206 لتغير ETag أو عدم تطابق " +
+                                    "Content-Range؛ إعادة الطلب من الصفر"
+                            )
+                            conn.disconnect()
+                            partFile.delete()
+                            metaFile.delete()
                             isResume = false
+                            conn = openWithManualRedirects(
+                                urlString = urlString,
+                                rangeBytes = 0L,
+                                ifRange = null
+                            )
+                            respCode = conn.responseCode
                         }
                     } else if (respCode == 416) {
                         conn.disconnect()
                         partFile.delete()
                         metaFile.delete()
+                        isResume = false
                         conn = openWithManualRedirects(
                             urlString = urlString,
                             rangeBytes = 0L
                         )
+                        respCode = conn.responseCode
                     } else if (respCode == 200 && initialBytes > 0L) {
                         Log.w(
                             TAG,
@@ -388,9 +414,13 @@ object DownloadHttpHelper {
                     }
 
                     val contentLen = conn.contentLengthLong
-                    val totalBytes = if (contentLen > 0) {
+                    val totalBytes = if (appendMode && crTotal > 0L) {
+                        crTotal
+                    } else if (appendMode && contentLen > 0L) {
                         baseDownloaded + contentLen
-                    } else if (savedTotal > 0) {
+                    } else if (!appendMode && contentLen > 0L) {
+                        contentLen
+                    } else if (savedTotal > 0L) {
                         savedTotal
                     } else {
                         -1L

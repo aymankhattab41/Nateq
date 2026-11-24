@@ -290,32 +290,41 @@ class CallPlacer(
                         }
                     }
 
+                    // مطابقة مباشرة عبر معرف الحساب أو معرف الشريحة ICCID
+                    for (h in accounts) {
+                        val handleId = h.id.orEmpty()
+                        val iccId = subInfo.iccId.orEmpty()
+                        if (handleId == targetSubId.toString() ||
+                            (iccId.isNotEmpty() && handleId.contains(iccId))
+                        ) {
+                            return h
+                        }
+                    }
+
                     val telecom = context.getSystemService(
                         TelecomManager::class.java
                     )
-                    for (h in accounts) {
-                        try {
-                            val account = telecom?.getPhoneAccount(h)
-                                ?: continue
-                            val subAddress = account.subscriptionAddress
-                                ?.schemeSpecificPart
-                            val number = subInfo.number
-                            if (
-                                !number.isNullOrEmpty() &&
+                    // التحقق من رقم الهاتف الفريد للاشتراك إن توفر
+                    val number = subInfo.number
+                    if (!number.isNullOrEmpty()) {
+                        val matches = accounts.filter { h ->
+                            try {
+                                val account = telecom?.getPhoneAccount(h)
+                                val subAddress = account?.subscriptionAddress
+                                    ?.schemeSpecificPart
                                 subAddress == number
-                            ) {
-                                return h
+                            } catch (_: Exception) {
+                                false
                             }
-                            val label = account.label?.toString().orEmpty()
-                            val disp = subInfo.displayName?.toString().orEmpty()
-                            if (
-                                disp.isNotEmpty() &&
-                                label.contains(disp, ignoreCase = true)
-                            ) {
-                                return h
-                            }
-                        } catch (_: Exception) {}
+                        }
+                        if (matches.size == 1) {
+                            return matches.first()
+                        }
                     }
+
+                    // لا نعتمد مطابقة اسم المشغل/التسمية إطلاقاً لمنع توجيه
+                    // الاتصال بالخطأ عند وجود شريحتين من نفس المشغل بنفس الاسم.
+                    // نترك الحساب فارغاً ليطلب النظام اختيار الشريحة صراحةً.
                 }
             }
 

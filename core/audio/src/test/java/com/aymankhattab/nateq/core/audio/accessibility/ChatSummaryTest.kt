@@ -122,4 +122,119 @@ class ChatSummaryTest {
         )
         assertEquals(1, after?.messageCount)
     }
+
+    @Test
+    fun extractConversationTitle_fromKnownIds() {
+        val views = listOf(
+            NodeView(
+                text = "مجموعة العمل",
+                viewIdResourceName = "com.whatsapp:id/conversation_contact_name"
+            ),
+            messageNode("مرحباً")
+        )
+        val title = ChatSnapshotReader.extractConversationTitle(views)
+        assertEquals("مجموعة العمل", title)
+    }
+
+    @Test
+    fun extractConversationTitle_unidentified_returnsNull() {
+        val views = listOf(
+            messageNode("مرحباً")
+        )
+        val title = ChatSnapshotReader.extractConversationTitle(views)
+        assertNull(title)
+    }
+
+    @Test
+    fun tracker_messagesDuringThrottle_areNotLostForever() {
+        // البند 16: رسالة تصل أثناء التثبيط لا تضيع بل تُعلن بعد انتهاء المهلة
+        val tracker = ChatSummaryTracker(throttleMs = 30_000L)
+        val chatKey = "com.whatsapp#Conversation#أحمد"
+
+        val first = tracker.onVisit(
+            chatKey,
+            listOf(chat("a", "أحمد")),
+            nowMs = 1_000L
+        )
+        assertEquals(1, first?.messageCount)
+
+        val second = tracker.onVisit(
+            chatKey,
+            listOf(chat("a", "أحمد"), chat("b", "أحمد")),
+            nowMs = 2_000L
+        )
+        assertNull(second)
+
+        val third = tracker.onVisit(
+            chatKey,
+            listOf(chat("a", "أحمد"), chat("b", "أحمد")),
+            nowMs = 40_000L
+        )
+        assertEquals(1, third?.messageCount)
+        assertEquals(listOf("أحمد"), third?.senders)
+    }
+
+    @Test
+    fun tracker_multipleMessagesDuringThrottle_allAnnouncedWhenUnthrottled() {
+        val tracker = ChatSummaryTracker(throttleMs = 30_000L)
+        val chatKey = "com.whatsapp#Conversation#أحمد"
+
+        tracker.onVisit(chatKey, listOf(chat("a")), nowMs = 1_000L)
+        tracker.onVisit(chatKey, listOf(chat("a"), chat("b")), nowMs = 5_000L)
+        tracker.onVisit(
+            chatKey,
+            listOf(chat("a"), chat("b"), chat("c")),
+            nowMs = 10_000L
+        )
+
+        val summary = tracker.onVisit(
+            chatKey,
+            listOf(chat("a"), chat("b"), chat("c")),
+            nowMs = 40_000L
+        )
+        assertEquals(2, summary?.messageCount)
+    }
+
+    @Test
+    fun tracker_independentChats_doNotThrottleEachOther() {
+        // البند 15 و16: انتقال بين محادثتين بنفس Activity
+        val tracker = ChatSummaryTracker(throttleMs = 30_000L)
+        val chatAhmed = "com.whatsapp#Conversation#أحمد"
+        val chatSarah = "com.whatsapp#Conversation#سارة"
+
+        val firstAhmed = tracker.onVisit(
+            chatAhmed,
+            listOf(chat("مرحباً من أحمد")),
+            nowMs = 1_000L
+        )
+        assertEquals(1, firstAhmed?.messageCount)
+
+        val firstSarah = tracker.onVisit(
+            chatSarah,
+            listOf(chat("أهلاً من سارة")),
+            nowMs = 2_000L
+        )
+        assertEquals(1, firstSarah?.messageCount)
+    }
+
+    @Test
+    fun tracker_rollback_allowsReannouncementOnFailure() {
+        val tracker = ChatSummaryTracker(throttleMs = 30_000L)
+        val chatKey = "c1"
+        val summary = tracker.onVisit(
+            chatKey,
+            listOf(chat("msg1")),
+            nowMs = 1_000L
+        )
+        assertEquals(1, summary?.messageCount)
+
+        tracker.rollback(chatKey, summary!!)
+
+        val retry = tracker.onVisit(
+            chatKey,
+            listOf(chat("msg1")),
+            nowMs = 2_000L
+        )
+        assertEquals(1, retry?.messageCount)
+    }
 }

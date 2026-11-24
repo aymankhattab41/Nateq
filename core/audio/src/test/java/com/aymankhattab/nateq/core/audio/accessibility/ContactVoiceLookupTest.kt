@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * اختبارات مطابقة وتطبيع أسماء وأرقام جهات الاتصال (ع٤٢-11، ع٤٥).
+ * اختبارات مطابقة وتطبيع أسماء وأرقام جهات الاتصال (ع٤٢-11، ع٤٥، البنود 17-20).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
@@ -98,6 +98,108 @@ class ContactVoiceLookupTest {
         assertNotNull(found)
         assertEquals("numVoice", found!!.voiceId)
         store.remove("+201000000000")
+    }
+
+    @Test
+    fun find_suffixMatching_distinguishesNameWithDigitsFromPhoneNumber() {
+        val store = ContactVoiceStore.create(context)
+        // اسم يحوي رقماً واحداً (البند 17)
+        store.put("Person 1", VoiceProfile(voiceId = "personOneVoice"))
+
+        // استعلام برقم هاتف ينتهي بـ1
+        val found = ContactVoiceLookup.find(context, "+201000000001")
+        assertNull(found)
+
+        store.remove("Person 1")
+    }
+
+    @Test
+    fun find_suffixMatching_requiresSafeThresholdOnBothSides() {
+        val store = ContactVoiceStore.create(context)
+        // رقم قصير مشترك (أقل من 7 خانات دالة)
+        store.put("123", VoiceProfile(voiceId = "shortCodeVoice"))
+
+        // استعلام برقم طويل ينتهي بالرقم القصير
+        val found = ContactVoiceLookup.find(context, "+201000000123")
+        assertNull(found)
+
+        store.remove("123")
+    }
+
+    @Test
+    fun find_suffixMatching_differentNumbers_doesNotPickRandom() {
+        val store = ContactVoiceStore.create(context)
+        store.put("0101234567", VoiceProfile(voiceId = "v1"))
+        store.put("0111234567", VoiceProfile(voiceId = "v2"))
+
+        // استعلام باللاحقة المشتركة 1234567 (7 خانات دالة) يلتبس بين v1 و v2
+        val found = ContactVoiceLookup.find(context, "1234567")
+        // لا يجوز أن يرجع أول مدخل عشوائي (البند 17)
+        assertNull(found)
+
+        store.remove("0101234567")
+        store.remove("0111234567")
+    }
+
+    @Test
+    fun find_suffixMatching_localAndInternationalAndSymbols() {
+        val store = ContactVoiceStore.create(context)
+        store.put("+201012345678", VoiceProfile(voiceId = "intlVoice"))
+
+        val local = ContactVoiceLookup.find(context, "01012345678")
+        assertNotNull(local)
+        assertEquals("intlVoice", local?.voiceId)
+
+        val zeros = ContactVoiceLookup.find(context, "00201012345678")
+        assertNotNull(zeros)
+        assertEquals("intlVoice", zeros?.voiceId)
+
+        val symbols = ContactVoiceLookup.find(context, "+20 (101) 234-5678")
+        assertNotNull(symbols)
+        assertEquals("intlVoice", symbols?.voiceId)
+
+        store.remove("+201012345678")
+    }
+
+    @Test
+    fun find_nameAmbiguity_twoPeopleSameName_disambiguated() {
+        val store = ContactVoiceStore.create(context)
+        val num1 = "+201011111111"
+        val num2 = "+201022222222"
+        store.put(
+            num1, VoiceProfile(voiceId = "vA", displayName = "محمد علي")
+        )
+        store.put(
+            num2, VoiceProfile(voiceId = "vB", displayName = "محمد علي")
+        )
+        store.put(
+            "conv_A",
+            VoiceProfile(voiceId = "vA", displayName = "محمد علي")
+        )
+
+        // الاسم وحده ملتبس: لا يختار شخصاً بغير دليل (البند 20)
+        assertNull(ContactVoiceLookup.find(context, "محمد علي"))
+
+        // الرقم الصريح يحسم هوية كل شخص
+        assertEquals("vA", ContactVoiceLookup.find(context, num1)?.voiceId)
+        assertEquals("vB", ContactVoiceLookup.find(context, num2)?.voiceId)
+
+        // مفتاح المحادثة يحسم بدقة
+        val convMatch = ContactVoiceLookup.find(
+            context = context,
+            keyOrName = "محمد علي",
+            conversationKey = "conv_A"
+        )
+        assertEquals("vA", convMatch?.voiceId)
+
+        // حذف أحدهما يزيل الالتباس
+        store.remove(num1)
+        store.remove("conv_A")
+        val remaining = ContactVoiceLookup.find(context, "محمد علي")
+        assertNotNull(remaining)
+        assertEquals("vB", remaining?.voiceId)
+
+        store.remove(num2)
     }
 
     @Test

@@ -3,7 +3,9 @@ package com.aymankhattab.nateq
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.engine.PronunciationDictionary
+import com.aymankhattab.nateq.core.audio.accessibility.UnlabeledElementStore
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.data.SpeedDialManager
 import com.aymankhattab.nateq.settings.SettingsViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +39,9 @@ class SettingsViewModelBackupTest {
         // تنظيف نظيف قبل كل اختبار
         context.getSharedPreferences("nateq_settings", 0)
             .edit().clear().commit()
+        SpeedDialManager.clearAll(context)
+        UnlabeledElementStore.getInstance(context)
+            .replaceAllCustomLabels(emptyMap())
     }
 
     // ===== الدورة الكاملة: بناء + استعادة =====
@@ -388,5 +393,112 @@ class SettingsViewModelBackupTest {
         assertFalse(vm.applyBackupJson(corruptJson))
         // الحالة السليمة تبقى كما هي دون مسح
         assertEquals(1.4f, settings.getDefaultSpeechRate(), 0.01f)
+    }
+
+    @Test
+    fun roundTrip_speedDialAndUnlabeledElements_restoresCompletely() {
+        SpeedDialManager.saveSlot(
+            context = context,
+            slot = 3,
+            name = "أيمن خطاب",
+            phoneNumber = "01012345678",
+            contactId = 999L
+        )
+
+        val unlabeledStore = UnlabeledElementStore.getInstance(context)
+        unlabeledStore.setCustomLabel("com.test", "btn", "زر تجريبي")
+
+        // تسجيل تركيز مؤقت يجب ألا يخرج مع النسخة الاحتياطية
+        unlabeledStore.setLastFocusedElement(
+            packageName = "com.test",
+            viewIdResourceName = "com.test:id/temp"
+        )
+
+        val json = vm.buildBackupJson()
+        assertTrue(json.isNotEmpty())
+        assertFalse(
+            "التركيز المؤقت لا يصدر كتسمية",
+            json.contains("com.test:id/temp")
+        )
+
+        // مسح كل شيء
+        SpeedDialManager.clearAll(context)
+        unlabeledStore.replaceAllCustomLabels(emptyMap())
+
+        val freshVm = SettingsViewModel(
+            SettingsRepository(context),
+            PronunciationDictionary(context)
+        )
+        assertTrue(freshVm.applyBackupJson(json))
+
+        val slot = SpeedDialManager.getSlot(context, 3)
+        assertEquals("أيمن خطاب", slot?.name)
+        assertEquals("01012345678", slot?.phoneNumber)
+        assertEquals(999L, slot?.contactId)
+
+        assertEquals(
+            "زر تجريبي",
+            unlabeledStore.getCustomLabel("com.test", "btn")
+        )
+    }
+
+    @Test
+    fun legacyBackupWithoutSpeedDialOrUnlabeled_restoresSafely() {
+        val legacyJson = """
+            {
+              "version": 1,
+              "exportedAt": 12345678,
+              "settings": {
+                "default_speech_rate": {"type": "float", "value": 1.15}
+              }
+            }
+        """.trimIndent()
+
+        val freshVm = SettingsViewModel(
+            SettingsRepository(context),
+            PronunciationDictionary(context)
+        )
+        assertTrue(freshVm.applyBackupJson(legacyJson))
+        assertEquals(
+            1.15f,
+            SettingsRepository(context).getDefaultSpeechRate(),
+            0.01f
+        )
+    }
+
+    @Test
+    fun corruptSpeedDial_doesNotBreakRestOfBackup() {
+        val jsonWithBadSpeedDial = """
+            {
+              "version": 1,
+              "exportedAt": 12345678,
+              "settings": {
+                "default_speech_rate": {"type": "float", "value": 1.5}
+              },
+              "speedDial": [
+                {"slot": 9999999, "name": "bad", "phoneNumber": "123"}
+              ],
+              "unlabeledElements": {
+                "com.test:save": "حفظ"
+              }
+            }
+        """.trimIndent()
+
+        val freshVm = SettingsViewModel(
+            SettingsRepository(context),
+            PronunciationDictionary(context)
+        )
+        assertTrue(freshVm.applyBackupJson(jsonWithBadSpeedDial))
+
+        assertEquals(
+            1.5f,
+            SettingsRepository(context).getDefaultSpeechRate(),
+            0.01f
+        )
+        assertEquals(
+            "حفظ",
+            UnlabeledElementStore.getInstance(context)
+                .getCustomLabel("com.test", "save")
+        )
     }
 }

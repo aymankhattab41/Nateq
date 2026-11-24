@@ -3,6 +3,9 @@ package com.aymankhattab.nateq.core.audio.phone
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import java.io.File
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -179,5 +182,95 @@ class CallRecordManagerTest {
             val stopped = CallRecordManager.stopRecording(context)
             assertEquals("01012345678", stopped?.phoneNumber)
         }
+    }
+
+    private fun seedIndex(items: List<CallRecordItem>) {
+        val dir = CallRecordManager.getRecordingsDir(context)
+        val file = File(dir, "call_recordings_index.json")
+        val array = JSONArray()
+        for (item in items) {
+            val obj = JSONObject().apply {
+                put("id", item.id)
+                put("phoneNumber", item.phoneNumber)
+                put("callerName", item.callerName)
+                put("timestamp", item.timestamp)
+                put("durationSeconds", item.durationSeconds)
+                put("filePath", item.filePath)
+                put("fileSize", item.fileSize)
+                put("uriString", item.uriString ?: "")
+                put("isSilent", item.isSilent)
+            }
+            array.put(obj)
+        }
+        file.writeText(array.toString(), Charsets.UTF_8)
+    }
+
+    @Test
+    fun deleteRecording_notFound_returnsNotFoundResult() {
+        val res = CallRecordManager.deleteRecordingWithResult(
+            context,
+            "non_existent_id"
+        )
+        assertEquals(CallRecordManager.DeleteRecordResult.NotFound, res)
+    }
+
+    @Test
+    fun deleteRecording_successfulFileDelete_updatesIndexAndReturnsSuccess() {
+        val dummyFile = File(context.cacheDir, "test_rec_success.wav")
+        dummyFile.writeBytes(ByteArray(100))
+        assertTrue(dummyFile.exists())
+
+        val item = CallRecordItem(
+            id = "test_success_1",
+            phoneNumber = "01000000001",
+            callerName = "ناجح",
+            timestamp = System.currentTimeMillis(),
+            durationSeconds = 5L,
+            filePath = dummyFile.absolutePath,
+            fileSize = 100L
+        )
+        seedIndex(listOf(item))
+        assertEquals(1, CallRecordManager.getRecordings(context).size)
+
+        val res = CallRecordManager.deleteRecordingWithResult(
+            context,
+            "test_success_1"
+        )
+        assertEquals(CallRecordManager.DeleteRecordResult.Success, res)
+        assertFalse(dummyFile.exists())
+        assertEquals(0, CallRecordManager.getRecordings(context).size)
+    }
+
+    @Test
+    fun deleteRecording_fileDeleteFails_keepsIndexAndReturnsFailed() {
+        // إنشاء مجلد غير فارغ بنفس مسار الملف ليجعل File.delete() يعيد false
+        val blockedDir = File(context.cacheDir, "blocked_rec_dir")
+        blockedDir.mkdirs()
+        val child = File(blockedDir, "child.wav")
+        child.writeBytes(ByteArray(50))
+
+        val item = CallRecordItem(
+            id = "test_fail_1",
+            phoneNumber = "01000000002",
+            callerName = "فاشل",
+            timestamp = System.currentTimeMillis(),
+            durationSeconds = 10L,
+            filePath = blockedDir.absolutePath,
+            fileSize = 50L
+        )
+        seedIndex(listOf(item))
+        assertEquals(1, CallRecordManager.getRecordings(context).size)
+
+        val res = CallRecordManager.deleteRecordingWithResult(
+            context,
+            "test_fail_1"
+        )
+        assertTrue(res is CallRecordManager.DeleteRecordResult.Failed)
+        // التأكد من عدم فقدان التسجيل من الفهرس عند فشل حذف الملف
+        assertEquals(1, CallRecordManager.getRecordings(context).size)
+
+        // تنظيف
+        child.delete()
+        blockedDir.delete()
     }
 }

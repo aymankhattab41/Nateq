@@ -860,6 +860,11 @@ class AnnouncementSpeaker(
         return utteranceId != null && activeUtteranceIds.contains(utteranceId)
     }
 
+    /** هل النطق جارٍ حالياً أو توجد مقاطع نشطة في طابور المتحدث؟ */
+    fun isSpeaking(): Boolean {
+        return activeUtteranceIds.isNotEmpty() || (tts?.isSpeaking == true)
+    }
+
     /** إبطال صريح لكل المعرّفات النشطة (دورة FLUSH جديدة أو إيقاف/إغلاق). */
     internal fun invalidateActiveUtterances(
         clearLastQueued: Boolean = true
