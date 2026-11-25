@@ -507,7 +507,7 @@ object SpeechPlanner {
         val splitItems = ArrayList<SpeechPlanItem>()
         for (item in phoneSplitItems) {
             if (item.text.length > 220) {
-                val sentenceChunks = splitLongSentenceChunks(item.text, 220)
+                val sentenceChunks = splitSentenceChunks(item.text, 220)
                 if (sentenceChunks.size > 1) {
                     for (chunk in sentenceChunks) {
                         splitItems.add(item.copy(text = chunk))
@@ -692,44 +692,7 @@ object SpeechPlanner {
     internal fun splitLongSentenceChunks(
         text: String,
         maxChars: Int = 220
-    ): List<String> {
-        if (text.length <= maxChars) return listOf(text)
-        val result = ArrayList<String>()
-        val delimiters = setOf('.', '!', '?', '…', '؛', '؟', '\n', '\r')
-        var start = 0
-        while (start < text.length) {
-            val remaining = text.length - start
-            if (remaining <= maxChars) {
-                val lastPart = text.substring(start).trim()
-                if (lastPart.isNotEmpty()) result.add(lastPart)
-                break
-            }
-            var cut = -1
-            val searchLimit = (start + maxChars).coerceAtMost(text.length)
-            for (i in (start + 60) until searchLimit) {
-                if (text[i] in delimiters) {
-                    cut = i + 1
-                }
-            }
-            if (cut == -1) {
-                val lastSpace = text.lastIndexOf(' ', searchLimit - 1)
-                if (lastSpace > start + 60) {
-                    cut = lastSpace + 1
-                } else {
-                    cut = searchLimit
-                }
-            }
-            val chunk = text.substring(start, cut).trim()
-            if (chunk.isNotEmpty()) {
-                result.add(chunk)
-            }
-            start = cut
-            while (start < text.length && text[start] == ' ') {
-                start++
-            }
-        }
-        return if (result.isEmpty()) listOf(text) else result
-    }
+    ): List<String> = splitSentenceChunks(text, maxChars)
 
     /**
      * معامل سرعة ديناميكي لكل مقطع (قصير/أرقام أبطأ، طويل أسرع) بحدود آمنة.

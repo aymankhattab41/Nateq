@@ -19,6 +19,12 @@ package com.aymankhattab.nateq.core.audio.engine
 /** عتبةُ التعثّر: أطولُ من هذا يُعاد تخليقه على أجزاء. */
 internal const val SEGMENT_SPLIT_FALLBACK_CHARS = 1_500
 
+/**
+ * العتبة الدنيا لتقسيم الجمل الطويلة مسبقاً (280 حرفاً):
+ * النصوص الأطول من ذلك تُقسَّم عند حدود الجمل الآمنة لتسريع أول صوت.
+ */
+internal const val SENTENCE_CHUNK_MAX_CHARS = 280
+
 /** حدودٌ لغوية آمنة — القطع بعدها لا يقطع كلمةً في منتصفها. */
 internal val SEGMENT_BOUNDARIES = charArrayOf(
     '.', '!', '?', '،', '؛', ':', '؟', '۔', '।', '\n'
@@ -75,4 +81,58 @@ private fun boundaryCutIndex(text: String): Int {
         i--
     }
     return limit
+}
+
+/**
+ * يقسّم النص الطويل (فوق [maxChars] حرفاً، افتراضياً 280)
+ * عند حدود الجمل الآمنة ([SEGMENT_BOUNDARIES]) إلى أجزاء متوسطة،
+ * لتسريع زمن أول صوت (TTFB) للمحركات التي تُخلِّق النص كله قبل الكتابة.
+ * لا يقطع الكلمات في منتصفها ويحافظ على النص كاملاً بلا فقدان.
+ */
+internal fun splitSentenceChunks(
+    text: String,
+    maxChars: Int = SENTENCE_CHUNK_MAX_CHARS
+): List<String> {
+    if (text.length <= maxChars) {
+        return listOf(text)
+    }
+    val parts = ArrayList<String>()
+    var start = 0
+    while (start < text.length) {
+        val remaining = text.length - start
+        if (remaining <= maxChars) {
+            val lastPart = text.substring(start).trim()
+            if (lastPart.isNotEmpty()) {
+                parts.add(lastPart)
+            }
+            break
+        }
+        val limit = (start + maxChars).coerceAtMost(text.length)
+        var cut = -1
+        // نبحث عن أقرب حد لغوي آمن من نهاية النافذة رجوعاً
+        for (i in (limit - 1) downTo start) {
+            if (text[i] in SEGMENT_BOUNDARIES) {
+                cut = i + 1
+                break
+            }
+        }
+        // إن لم نجد حداً لغوياً، نقطع عند آخر مسافة لتفادي قطع الكلمات
+        if (cut == -1) {
+            val lastSpace = text.lastIndexOf(' ', limit - 1)
+            if (lastSpace > start) {
+                cut = lastSpace + 1
+            } else {
+                cut = limit
+            }
+        }
+        val chunk = text.substring(start, cut).trim()
+        if (chunk.isNotEmpty()) {
+            parts.add(chunk)
+        }
+        start = cut
+        while (start < text.length && text[start] == ' ') {
+            start++
+        }
+    }
+    return if (parts.isEmpty()) listOf(text) else parts
 }

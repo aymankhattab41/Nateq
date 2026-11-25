@@ -199,8 +199,9 @@ class SystemVoiceProvider(
          *  وسقفُ الانتظار الكلي هو [INIT_TIMEOUT_MS]. */
         private const val ENGINE_MATURITY_POLL_MS = 100L
 
-        /** دورية فحص الإلغاء أثناء انتظار اكتمال الكتابة. */
-        private const val CANCELLATION_POLL_MS = 100L
+        /** دورية فحص الإلغاء أثناء انتظار اكتمال الكتابة
+         *  (25ms لتقليل التأخير). */
+        internal const val CANCELLATION_POLL_MS = 25L
 
         /**
          * مهلة انتظار اكتمال كتابة المحرك لملف الصوت حسب طول
@@ -225,7 +226,13 @@ class SystemVoiceProvider(
          *  16KB (≈0.2–0.4 ثانية صوت) بدل 64KB السابقة: أول صوتٍ لقارئ
          *  الشاشة كان ينتظر عتبةً بعيدة (~1.4 ث عند 24k) فبدا النطقُ
          *  متأخراً ("بطء الاستجابة") خصوصاً مع النصوص الإنجليزية الطويلة. */
-        private const val STREAM_CHUNK_BYTES = 16 * 1024
+        internal const val STREAM_CHUNK_BYTES = 16 * 1024
+
+        /**
+         * عتبة الشريحة الأولى لتسريع زمن أول صوت (TTFB): 4KB فوراً
+         * ثم ترتفع العتبة للشرائح التالية إلى 16KB لتفادي إجهاد المعالج.
+         */
+        internal const val STREAM_FIRST_CHUNK_BYTES = 4 * 1024
 
         /** مطابقة اسم الصوت بتسامح (تامة، تجاهل الحالة، تجريد اللواحق). */
         internal fun matchVoice(
@@ -1755,7 +1762,12 @@ class SystemVoiceProvider(
                             )
                         }
                         val toRead = available - readSoFar
-                        if (toRead >= STREAM_CHUNK_BYTES) {
+                        val threshold = if (emittedAny) {
+                            STREAM_CHUNK_BYTES
+                        } else {
+                            STREAM_FIRST_CHUNK_BYTES
+                        }
+                        if (toRead >= threshold) {
                             try {
                                 emitStreamChunk(
                                     tempFile, start + readSoFar,
