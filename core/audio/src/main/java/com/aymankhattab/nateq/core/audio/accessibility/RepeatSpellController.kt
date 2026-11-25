@@ -34,10 +34,12 @@ object RepeatSpellController {
     fun updateLastSpokenText(
         text: String?,
         source: Source = Source.ANNOUNCEMENT,
-        isCall: Boolean = false
+        isCall: Boolean = false,
+        isSensitive: Boolean = false
     ) {
         if (recordingSuppressed.get()) return
-        if (!SpeechHistoryPolicy.shouldRecord(text, isCall)) return
+        if (isSensitive) return
+        if (!SpeechHistoryPolicy.shouldRecord(text, isCall, isSensitive)) return
         val trimmed = text!!.trim()
         synchronized(lock) {
             entries.addLast(

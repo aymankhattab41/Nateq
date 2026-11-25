@@ -68,6 +68,43 @@ class RepeatSpellControllerTest {
     }
 
     @Test
+    fun otpFormattedSpacedDigits_areNotRecorded() {
+        RepeatSpellController.updateLastSpokenText("1 2 3 4 5 6")
+        assertEquals(0, RepeatSpellController.size())
+        assertNull(RepeatSpellController.getLastSpokenText())
+    }
+
+    @Test
+    fun otpArabicIndicDigits_areNotRecorded() {
+        RepeatSpellController.updateLastSpokenText("١ ٢ ٣ ٤ ٥ ٦")
+        assertEquals(0, RepeatSpellController.size())
+        assertNull(RepeatSpellController.getLastSpokenText())
+    }
+
+    @Test
+    fun otpWordRepresentation_isNotRecorded() {
+        RepeatSpellController.updateLastSpokenText(
+            "واحد اثنان ثلاثة أربعة خمسة ستة"
+        )
+        assertEquals(0, RepeatSpellController.size())
+        assertNull(RepeatSpellController.getLastSpokenText())
+        RepeatSpellController.updateLastSpokenText(
+            "one two three four five six"
+        )
+        assertEquals(0, RepeatSpellController.size())
+        assertNull(RepeatSpellController.getLastSpokenText())
+    }
+
+    @Test
+    fun sensitiveAnnouncements_areNotRecorded() {
+        RepeatSpellController.updateLastSpokenText(
+            "نص سري للغاية", isSensitive = true
+        )
+        assertEquals(0, RepeatSpellController.size())
+        assertNull(RepeatSpellController.getLastSpokenText())
+    }
+
+    @Test
     fun callAnnouncements_areNotRecorded() {
         RepeatSpellController.updateLastSpokenText("مكالمة", isCall = true)
         assertEquals(0, RepeatSpellController.size())

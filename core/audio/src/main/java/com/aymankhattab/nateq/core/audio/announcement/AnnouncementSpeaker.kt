@@ -1244,7 +1244,8 @@ class AnnouncementSpeaker(
                     ) {
                         // VZ2 / ع٢٧-A1: معالجة ERROR_NOT_INSTALLED_YET (-9)
                         if (utteranceId != null &&
-                            errorCode == TextToSpeech.ERROR_NOT_INSTALLED_YET &&
+                            errorCode ==
+                            TextToSpeech.ERROR_NOT_INSTALLED_YET &&
                             activeUtteranceIds.contains(utteranceId)
                         ) {
                             val retries =
@@ -1352,7 +1353,8 @@ class AnnouncementSpeaker(
         cue: AudioCue? = null,
         category: String? = null,
         source: SpeechEntryPoints.Source? = null,
-        isPrepared: Boolean = false
+        isPrepared: Boolean = false,
+        isSensitive: Boolean = false
     ) {
         val effectiveSource = source ?: when (category) {
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER ->
@@ -1374,15 +1376,20 @@ class AnnouncementSpeaker(
                 appContext
             )
         }
-        Log.d(TAG, "[DICT] Announcement processed: $dictText")
+        if (isSensitive) {
+            Log.d(TAG, "[DICT] Announcement processed: [REDACTED]")
+        } else {
+            Log.d(TAG, "[DICT] Announcement processed: $dictText")
+        }
 
         // ع٤١-ب4: تسجيل النص النهائي للإعلان في سجلّ
         // «ما قيل» قبل أي معالجة خاصة بالمحرك
-        // — مع استثناء فئة المكالمات ورموز OTP.
+        // — مع استثناء فئة المكالمات ورموز OTP والحساسيات.
         RepeatSpellController.updateLastSpokenText(
             dictText,
             source = RepeatSpellController.Source.ANNOUNCEMENT,
-            isCall = isCallerCategory(category)
+            isCall = isCallerCategory(category),
+            isSensitive = isSensitive
         )
         // إعدادات نطق الإيموجي تُحسم قبل طلب التركيز حتى تكون المقاطع جاهزة
         // للدورة (بلا قراءة متكررة للإعدادات عند كل عودة تركيز).
@@ -2420,7 +2427,9 @@ speechCycle.incrementAndGet()
                         pitch = effectivePitch,
                         volume = effectiveVolume,
                         onFormatInfo = { sampleRateInHz, channelCount ->
-                            if (gen != speechGeneration.get() || !nowSpeaking) {
+                            if (gen != speechGeneration.get() ||
+                                !nowSpeaking
+                            ) {
                                 return@synthesize
                             }
                             val channelConfig = if (channelCount == 2) {
@@ -2455,7 +2464,9 @@ speechCycle.incrementAndGet()
                             embeddedAudioTrack = newTrack
                         },
                         onAudioChunk = { chunk, validLength ->
-                            if (gen != speechGeneration.get() || !nowSpeaking) {
+                            if (gen != speechGeneration.get() ||
+                                !nowSpeaking
+                            ) {
                                 return@synthesize
                             }
                             val currentTrack = track
@@ -3369,7 +3380,8 @@ speechCycle.incrementAndGet()
             val max = audioManager.getStreamMaxVolume(stream)
             val current = audioManager.getStreamVolume(stream)
             if (max <= 0) return
-            val isHeadset = EventLoudnessPolicy.isHeadsetConnected(audioManager)
+            val isHeadset =
+                EventLoudnessPolicy.isHeadsetConnected(audioManager)
             val target = EventLoudnessPolicy.computeTargetVolume(
                 current = current,
                 max = max,
@@ -3412,8 +3424,8 @@ speechCycle.incrementAndGet()
         } catch (t: Throwable) {
             Log.w(
                 TAG,
-                "[EventLoudness] Failed to restore stream=$stream to $saved: " +
-                    "${t.message}",
+                "[EventLoudness] Failed to restore stream=$stream " +
+                    "to $saved: ${t.message}",
                 t
             )
         }

@@ -858,7 +858,8 @@ class NateqNotificationListener : NotificationListenerService() {
             speaker.speak(
                 speechText, locale, speechRate, pitch, volume,
                 engineOverride = finalEngine,
-                category = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+                category = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
+                isSensitive = isOtp
             )
             Log.i(
                 TAG,
@@ -1492,7 +1493,8 @@ class NateqNotificationListener : NotificationListenerService() {
         speech.speak(
             text, locale, finalRate, finalPitch, finalVolume,
             engineOverride = finalEngine,
-            category = SettingsRepository.ANNOUNCE_CATEGORY_SMS
+            category = SettingsRepository.ANNOUNCE_CATEGORY_SMS,
+            isSensitive = isOtp
         )
         Log.i(
             TAG,
