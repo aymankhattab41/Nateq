@@ -24,6 +24,7 @@ import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -487,7 +488,7 @@ class LordKeyboardService : InputMethodService(),
                 ic?.commitText(key.label, 1)
             }
             KeyType.ACTION_BACKSPACE -> {
-                ic?.deleteSurroundingText(1, 0)
+                performBackspace()
             }
             KeyType.ACTION_SPACE -> {
                 ic?.commitText(" ", 1)
@@ -543,9 +544,120 @@ class LordKeyboardService : InputMethodService(),
     }
 
     override fun onSwipeLeft() {
-        currentInputConnection?.deleteSurroundingText(1, 0)
+        performBackspace()
         speakText("حذف")
     }
+
+    /**
+     * ع٤١-ب16: تنفيذ الحذف الموحد لزر المسح وإيماءة السحب لليسار:
+     * 1. إن وُجد نص محدد، يُحذف وحده دون مساس بالحرف قبله.
+     * 2. إن لم يوجد تحديد، يُحذف الرمز السابق بأمان دون كسر أزواج UTF-16
+     *    أو الإيموجي المركب أو علامات التشكيل، مع fallback آمن عند عدم الدعم.
+     */
+    internal fun performBackspace() {
+        val ic = currentInputConnection ?: return
+        ic.beginBatchEdit()
+        try {
+            // 1. التعامل مع النص المحدد إن وُجد
+            val selected = ic.getSelectedText(0)
+            if (!selected.isNullOrEmpty()) {
+                ic.commitText("", 1)
+                return
+            }
+
+            val textBefore = ic.getTextBeforeCursor(16, 0)
+            if (textBefore.isNullOrEmpty()) {
+                // عند بداية الحقل أو إن لم يرجع المحرر نصاً
+                sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+                return
+            }
+
+            val charsToDelete = calculateCharsToDelete(textBefore)
+            val deleted = ic.deleteSurroundingText(charsToDelete, 0)
+            if (!deleted) {
+                var handled = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    handled = runCatching {
+                        ic.deleteSurroundingTextInCodePoints(1, 0)
+                    }.getOrDefault(false)
+                }
+                if (!handled) {
+                    sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+                }
+            }
+        } finally {
+            ic.endBatchEdit()
+        }
+    }
+
+    internal fun calculateCharsToDelete(textBefore: CharSequence?): Int {
+        if (textBefore.isNullOrEmpty()) return 0
+        val len = textBefore.length
+        val lastChar = textBefore[len - 1]
+
+        // 1. زوج بديل UTF-16 (Surrogate pair) مثل 😀
+        if (Character.isLowSurrogate(lastChar) && len >= 2 &&
+            Character.isHighSurrogate(textBefore[len - 2])
+        ) {
+            var chars = 2
+            var idx = len - 2
+
+            // فحص إيموجي الأعلام (Regional Indicator pairs)
+            val codePoint = Character.codePointBefore(textBefore, len)
+            if (isRegionalIndicator(codePoint) && idx >= 2) {
+                val prevCp = Character.codePointBefore(textBefore, idx)
+                if (isRegionalIndicator(prevCp)) {
+                    return 4
+                }
+            }
+
+            // فحص تسلسل ZWJ (\u200D)
+            while (idx > 0) {
+                if (textBefore[idx - 1] == '\u200D') {
+                    chars += 1
+                    idx -= 1
+                    if (idx >= 2 &&
+                        Character.isLowSurrogate(textBefore[idx - 1]) &&
+                        Character.isHighSurrogate(textBefore[idx - 2])
+                    ) {
+                        chars += 2
+                        idx -= 2
+                    } else if (idx >= 1) {
+                        chars += 1
+                        idx -= 1
+                    }
+                } else {
+                    break
+                }
+            }
+            return chars
+        }
+
+        // 2. فحص Variation Selector (\uFE0F) أو Keycap (\u20E3)
+        if (lastChar == '\u20E3' && len >= 2) {
+            var chars = 2
+            if (len >= 3 && textBefore[len - 2] == '\uFE0F') {
+                chars = 3
+            }
+            return chars
+        }
+        if ((lastChar == '\uFE0F' || lastChar == '\uFE0E') && len >= 2) {
+            val prev = textBefore[len - 2]
+            return if (Character.isLowSurrogate(prev) && len >= 3 &&
+                Character.isHighSurrogate(textBefore[len - 3])
+            ) {
+                3
+            } else {
+                2
+            }
+        }
+
+        // 3. حرف عادي أو علامة تشكيل منفردة
+        return 1
+    }
+
+    private fun isRegionalIndicator(codePoint: Int): Boolean =
+        codePoint in 0x1F1E6..0x1F1FF
 
     override fun onSwipeRight() {
         currentInputConnection?.commitText(" ", 1)
