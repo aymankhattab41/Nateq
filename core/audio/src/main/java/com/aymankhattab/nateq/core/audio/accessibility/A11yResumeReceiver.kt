@@ -20,6 +20,47 @@ class A11yResumeReceiver : BroadcastReceiver() {
         // (A11yBootReceiver) لأن البثّ الضمني للنظام لا يصل لغير المُصدَّر
         // على Android 14+، ولا يجوز تعريض إجراء الاستئناف لأي تطبيق.
         if (action != A11yPauseScheduler.ACTION_RESUME_A11Y) return
+
+        val isPaused = store.isPaused()
+        val untilEpoch = store.getPausedUntilEpoch()
+        val currentGen = store.getPauseGeneration()
+
+        // التحقق من الحصانة ضد التنبيهات القديمة:
+        // 1. إذا كانت الخدمة تعمل بالفعل فلا داعي للاستئناف
+        if (!isPaused) {
+            Log.i(TAG, "[A11yResume] Ignored: service already running")
+            return
+        }
+
+        // 2. إذا كانت الخدمة في وضع الإيقاف اليدوي (untilEpoch <= 0) فلا يجوز
+        // الاستئناف التلقائي إطلاقاً
+        if (untilEpoch <= 0L) {
+            Log.i(TAG, "[A11yResume] Ignored: service in manual pause mode")
+            return
+        }
+
+        // 3. التحقق من تطابق الجيل أو الموعد إن وُجد في الـ Intent
+        val intentGen = intent.getLongExtra(
+            A11yPauseScheduler.EXTRA_PAUSE_GENERATION, -1L
+        )
+        val intentEpoch = intent.getLongExtra(
+            A11yPauseScheduler.EXTRA_RESUME_EPOCH, -1L
+        )
+        if (intentGen != -1L && intentGen != currentGen) {
+            Log.i(
+                TAG,
+                "[A11yResume] Ignored: stale gen $intentGen vs $currentGen"
+            )
+            return
+        }
+        if (intentEpoch != -1L && intentEpoch < untilEpoch) {
+            Log.i(
+                TAG,
+                "[A11yResume] Ignored: stale epoch $intentEpoch < $untilEpoch"
+            )
+            return
+        }
+
         Log.i(TAG, "[A11yResume] Auto-resuming screen services")
         store.setPaused(paused = false, untilEpoch = 0L)
     }

@@ -473,7 +473,7 @@ class ScreenServicesCardController(
                     A11yPauseScheduler.scheduleResumeAlarm(
                         context, untilEpoch
                     )
-                } else if (!paused) {
+                } else {
                     A11yPauseScheduler.cancelResumeAlarm(context)
                 }
                 updateUiState()

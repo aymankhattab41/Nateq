@@ -21,6 +21,9 @@ object A11yPauseScheduler {
     const val ACTION_RESUME_A11Y =
         "com.aymankhattab.nateq.action.A11Y_RESUME"
 
+    const val EXTRA_PAUSE_GENERATION = "extra_pause_generation"
+    const val EXTRA_RESUME_EPOCH = "extra_resume_epoch"
+
     private const val REQUEST_CODE = 9011
 
     /**
@@ -42,14 +45,26 @@ object A11yPauseScheduler {
     /**
      * جدولة منبّه الاستئناف التلقائي عبر AlarmManager
      */
-    fun scheduleResumeAlarm(context: Context, resumeEpochMs: Long) {
+    fun scheduleResumeAlarm(
+        context: Context,
+        resumeEpochMs: Long,
+        generation: Long = -1L
+    ) {
         if (resumeEpochMs <= System.currentTimeMillis()) return
         val alarmManager =
             context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
                 ?: return
 
+        val gen = if (generation != -1L) {
+            generation
+        } else {
+            A11yStateStore.getInstance(context)?.getPauseGeneration() ?: 0L
+        }
+
         val intent = Intent(context, A11yResumeReceiver::class.java).apply {
             action = ACTION_RESUME_A11Y
+            putExtra(EXTRA_RESUME_EPOCH, resumeEpochMs)
+            putExtra(EXTRA_PAUSE_GENERATION, gen)
         }
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

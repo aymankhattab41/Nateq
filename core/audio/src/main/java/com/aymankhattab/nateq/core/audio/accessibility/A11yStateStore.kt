@@ -25,6 +25,7 @@ class A11yStateStore private constructor(private val appContext: Context) {
     private val isPaused = AtomicBoolean(false)
     private val pausedUntilEpoch = AtomicLong(0L)
     private val pauseLevel = AtomicInteger(1)
+    private val pauseGeneration = AtomicLong(0L)
 
     private val listeners = CopyOnWriteArrayList<(A11yStateStore) -> Unit>()
 
@@ -67,6 +68,7 @@ class A11yStateStore private constructor(private val appContext: Context) {
         isPaused.set(effectivePaused)
         pausedUntilEpoch.set(until)
         pauseLevel.set(level)
+        pauseGeneration.incrementAndGet()
 
         notifyListeners()
     }
@@ -83,16 +85,28 @@ class A11yStateStore private constructor(private val appContext: Context) {
 
     fun getPausedUntilEpoch(): Long = pausedUntilEpoch.get()
 
+    fun getPauseGeneration(): Long = pauseGeneration.get()
+
     fun getPauseLevel(): Int = pauseLevel.get()
 
     fun setPaused(paused: Boolean, untilEpoch: Long = 0L, level: Int = 1) {
+        val previousUntil = pausedUntilEpoch.get()
+        val previousPaused = isPaused.get()
+
         isPaused.set(paused)
         pausedUntilEpoch.set(untilEpoch)
         pauseLevel.set(level)
+        val gen = pauseGeneration.incrementAndGet()
 
         // ع٤١-ب4: يُمسح سجلّ «ما قيل» عند الإيقاف المؤقت.
         if (paused) {
             RepeatSpellController.clear()
+        }
+
+        // إلغاء منبه الاستئناف القديم تلقائياً عند استئناف الخدمة
+        // أو عند التحويل إلى إيقاف يدوي (untilEpoch <= 0L)
+        if (!paused || untilEpoch <= 0L) {
+            A11yPauseScheduler.cancelResumeAlarm(appContext)
         }
 
         settings.setA11yPausedState(paused, untilEpoch, level)
