@@ -17,6 +17,7 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.core.audio.announcement.RingCallerIdentity
 import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -2101,12 +2102,21 @@ class NateqAccessibilityService : AccessibilityService() {
         }
     }
 
+    @VisibleForTesting
+    internal var lastBluetoothReceiverFlags: Int = -1
+
     /**
      * ع٤١-ب9: يسجّل مستقبل اتصال/فصل أجهزة البلوتوث. يتطلّب إذن
      * BLUETOOTH_CONNECT على API 31+؛ وإن غاب لا يُسجَّل (يُعاد المحاولة
      * عند كل اتصال خدمة)، فتقع الإعلانات باسمٍ عام دون اسم الجهاز.
+     *
+     * على API 33+ يُسجَّل بعلم RECEIVER_EXPORTED لأن مكدس البلوتوث
+     * (com.android.bluetooth) تطبيق مميز يعمل تحت UID خاص (BLUETOOTH_UID) لا
+     * system UID، فاستخدام RECEIVER_NOT_EXPORTED يمنع تسليم البث.
+     * البث نظامي محمي مقتصر على أحداث ACL ومستقل تماماً عن أوامر التطبيق.
      */
-    private fun registerBluetoothReceiver() {
+    @VisibleForTesting
+    internal fun registerBluetoothReceiver() {
         if (bluetoothReceiver != null) return
         val granted = checkSelfPermission(
             android.Manifest.permission.BLUETOOTH_CONNECT
@@ -2125,8 +2135,10 @@ class NateqAccessibilityService : AccessibilityService() {
         }
         val registered = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+                lastBluetoothReceiverFlags = RECEIVER_EXPORTED
+                registerReceiver(receiver, filter, RECEIVER_EXPORTED)
             } else {
+                lastBluetoothReceiverFlags = 0
                 registerReceiver(receiver, filter)
             }
         }.isSuccess
@@ -2135,15 +2147,22 @@ class NateqAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun unregisterBluetoothReceiver() {
+    @VisibleForTesting
+    internal fun unregisterBluetoothReceiver() {
         bluetoothReceiver?.let {
             runCatching { unregisterReceiver(it) }
             bluetoothReceiver = null
         }
+        lastBluetoothReceiverFlags = -1
         clearBluetoothDebounce()
     }
 
-    private fun handleBluetoothEvent(intent: Intent?) {
+    @VisibleForTesting
+    internal fun isBluetoothReceiverRegistered(): Boolean =
+        bluetoothReceiver != null
+
+    @VisibleForTesting
+    internal fun handleBluetoothEvent(intent: Intent?) {
         val action = intent?.action ?: return
         val connected = when (action) {
             BluetoothDevice.ACTION_ACL_CONNECTED -> true
