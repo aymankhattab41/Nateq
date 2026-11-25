@@ -563,4 +563,55 @@ class NateqNotificationListenerTest {
         assertEquals("إشعار جديد من Lord TTS", lockedText)
         assertFalse(lockedText.contains("1 2 3 4 5 6 7 8"))
     }
+
+    @Test
+    fun resolveOtpSpeechText_longerNumbersNotTruncated() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val textLong = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "Verification",
+            text = "code 1234567890",
+            otpReadingEnabled = true
+        )
+        assertTrue(textLong.contains("Lord TTS"))
+        assertFalse(textLong.contains("1 2 3 4 5 6 7 8"))
+
+        val textBackup = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "Verification",
+            text = "verification code 1234567890, backup 4567",
+            otpReadingEnabled = true
+        )
+        assertEquals("4 5 6 7", textBackup)
+
+        val text4 = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "Verification",
+            text = "code 1234",
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4", text4)
+
+        val text8 = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "Verification",
+            text = "code 12345678",
+            otpReadingEnabled = true
+        )
+        assertEquals("1 2 3 4 5 6 7 8", text8)
+
+        val text9 = NateqNotificationListener.resolveOtpSpeechText(
+            context = context,
+            appName = "Lord TTS",
+            title = "Verification",
+            text = "code 123456789",
+            otpReadingEnabled = true
+        )
+        assertTrue(text9.contains("Lord TTS"))
+        assertFalse(text9.contains("1 2 3 4 5 6 7 8"))
+    }
 }

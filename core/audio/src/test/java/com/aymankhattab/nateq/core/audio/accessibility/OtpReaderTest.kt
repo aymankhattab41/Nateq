@@ -144,6 +144,37 @@ class OtpReaderTest {
     }
 
     @Test
+    fun extractOtp_longerNumbersNotTruncatedToEightDigits() {
+        // فحص code 1234567890 مع مسافة أو بدون مسافة لا يستخرج أول 8 خانات
+        assertNull(OtpReader.extractOtp("code 1234567890"))
+        assertNull(OtpReader.extractOtp("code1234567890"))
+        assertNull(OtpReader.extractOtp("code 123456789"))
+        assertNull(OtpReader.extractOtp("code123456789"))
+        assertNull(OtpReader.extractOtp("رمز التحقق 1234567890"))
+        assertNull(OtpReader.extractOtp("رمز التحقق 123456789"))
+
+        // رسالة تحوي رقماً أطول مع رمز احتياطي صالح يُستخرج الرمز الصالح
+        assertEquals(
+            "4567",
+            OtpReader.extractOtp(
+                "verification code 1234567890, backup 4567"
+            )
+        )
+        assertEquals(
+            "4567",
+            OtpReader.extractOtp(
+                "رمز التحقق 1234567890 والرمز البديل 4567"
+            )
+        )
+
+        // حدود 4 و8 خانات مقبولة، و9 و3 خانات غير صالحة
+        assertEquals("1234", OtpReader.extractOtp("code 1234"))
+        assertEquals("12345678", OtpReader.extractOtp("code 12345678"))
+        assertNull(OtpReader.extractOtp("code 123456789"))
+        assertNull(OtpReader.extractOtp("code 123"))
+    }
+
+    @Test
     fun extractOtp_boundariesAndInvalid() {
         assertNull(OtpReader.extractOtp("مرحبا بك في تطبيقنا"))
         assertNull(OtpReader.extractOtp("رمز التحقق 123"))

@@ -305,4 +305,20 @@ class LocaleUtilsTest {
         assertFalse(LocaleUtils.containsOtp("رمز التحقق 2024-11-25"))
         assertFalse(LocaleUtils.containsOtp("رمز التحقق 010-1234-5678"))
     }
+
+    @Test
+    fun containsOtp_longerNumbersNotTruncated() {
+        assertFalse(LocaleUtils.containsOtp("code 1234567890"))
+        assertFalse(LocaleUtils.containsOtp("code1234567890"))
+        assertFalse(LocaleUtils.containsOtp("code 123456789"))
+        assertTrue(
+            LocaleUtils.containsOtp(
+                "verification code 1234567890, backup 4567"
+            )
+        )
+        assertTrue(LocaleUtils.containsOtp("verification code 1234"))
+        assertTrue(LocaleUtils.containsOtp("verification code 12345678"))
+        assertTrue(LocaleUtils.containsOtp("رمز التحقق 1234"))
+        assertTrue(LocaleUtils.containsOtp("رمز التحقق 12345678"))
+    }
 }
