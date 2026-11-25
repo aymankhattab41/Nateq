@@ -135,6 +135,7 @@ class AnnouncementSchedulerService : Service() {
         ): Boolean {
             if (settings == null) return true
             return settings.isBatteryAnnouncementEnabled() ||
+                settings.isChargingCompleteAnnouncementEnabled() ||
                 settings.isCallerAnnouncementEnabled() ||
                 settings.getSmsReadingMode() != "off" ||
                 settings.isNotificationReadingEnabled()
@@ -446,6 +447,7 @@ class AnnouncementSchedulerService : Service() {
     private fun needsForegroundService(): Boolean {
         return try {
             settings.isBatteryAnnouncementEnabled() ||
+                settings.isChargingCompleteAnnouncementEnabled() ||
                 settings.isCallerAnnouncementEnabled() ||
                 settings.getSmsReadingMode() != "off" ||
                 settings.isNotificationReadingEnabled()

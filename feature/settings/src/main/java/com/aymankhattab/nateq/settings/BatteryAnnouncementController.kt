@@ -239,6 +239,15 @@ internal class BatteryAnnouncementController(
             runCatching {
                 settings.setChargingCompleteAnnouncementEnabled(checked)
             }
+            if (checked) {
+                AnnouncementSchedulerService.requestStart(
+                    fragment.requireContext()
+                )
+            } else {
+                AnnouncementSchedulerService.syncIfRunning(
+                    fragment.requireContext()
+                )
+            }
             fragment.view?.announceCompat(
                 fragment.getString(
                     if (checked) R.string.announcement_turned_on

@@ -645,6 +645,124 @@ class BatteryAnnouncementReceiverTest {
             spoke15
         )
     }
+
+    @Test
+    fun `full charge alone requires service and speaks 100 percent`() {
+        val settings = SettingsRepository(context)
+        settings.setBatteryAnnouncementEnabled(false)
+        settings.setBatteryAnnouncementLevels(setOf("20", "15"))
+        settings.setCallerAnnouncementEnabled(false)
+        settings.setSmsReadingMode("off")
+        settings.setNotificationReadingEnabled(false)
+        settings.setChargingCompleteAnnouncementEnabled(true)
+
+        // التحقق أن ميزة اكتمال الشحن وحدها تستوجب بقاء الخدمة
+        // لسماع بث BATTERY_CHANGED الدائم
+        val needsFg =
+            AnnouncementSchedulerService.needsForegroundService(settings)
+        assertTrue(
+            "ميزة اكتمال الشحن وحدها تستوجب الخدمة الأمامية",
+            needsFg
+        )
+
+        // اكتمال الشحن يُنطق بنجاح والمستويات صامتة
+        val intent100 = batteryIntent(100).apply {
+            putExtra(
+                BatteryManager.EXTRA_STATUS,
+                BatteryManager.BATTERY_STATUS_CHARGING
+            )
+        }
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        val spoke100 = receiver.handle(
+            context, intent100, Intent.ACTION_BATTERY_CHANGED
+        )
+        assertTrue(
+            "اكتمال الشحن يُنطق وحده عند 100% ومتصل بالشاحن",
+            spoke100
+        )
+
+        // التحقق من منع التكرار خلال نافذة المنع
+        val spokeDuplicate = receiver.handle(
+            context, intent100, Intent.ACTION_BATTERY_CHANGED
+        )
+        assertFalse(
+            "منع تكرار إعلان اكتمال الشحن عند تكرار البث بنفس الحالة",
+            spokeDuplicate
+        )
+
+        // التحقق أن مستويات البطارية تظل صامتة
+        val spoke20 = receiver.handle(
+            context, batteryIntent(20), Intent.ACTION_BATTERY_CHANGED
+        )
+        assertFalse(
+            "مستويات البطارية صامتة رغم تفعيل اكتمال الشحن",
+            spoke20
+        )
+    }
+
+    @Test
+    fun `full charge works when other services are also running`() {
+        val settings = SettingsRepository(context)
+        settings.setBatteryAnnouncementEnabled(false)
+        settings.setBatteryAnnouncementLevels(setOf("20", "15"))
+        settings.setCallerAnnouncementEnabled(true)
+        settings.setSmsReadingMode("all")
+        settings.setChargingCompleteAnnouncementEnabled(true)
+
+        val needsFg =
+            AnnouncementSchedulerService.needsForegroundService(settings)
+        assertTrue(
+            "الخدمة قائمة بسبب المتصل والرسائل واكتمال الشحن",
+            needsFg
+        )
+
+        val intent100 = batteryIntent(100).apply {
+            putExtra(
+                BatteryManager.EXTRA_STATUS,
+                BatteryManager.BATTERY_STATUS_FULL
+            )
+        }
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        val spoke100 = receiver.handle(
+            context, intent100, Intent.ACTION_BATTERY_CHANGED
+        )
+        assertTrue(
+            "اكتمال الشحن يُنطق مع وجود خدمات أخرى قائمة",
+            spoke100
+        )
+    }
+
+    @Test
+    fun `full charge disabled does not require service if all off`() {
+        val settings = SettingsRepository(context)
+        settings.setBatteryAnnouncementEnabled(false)
+        settings.setCallerAnnouncementEnabled(false)
+        settings.setSmsReadingMode("off")
+        settings.setNotificationReadingEnabled(false)
+        settings.setChargingCompleteAnnouncementEnabled(false)
+
+        val needsFg =
+            AnnouncementSchedulerService.needsForegroundService(settings)
+        assertFalse(
+            "لا حاجة للخدمة عند إطفاء كل الإعلانات بما فيها اكتمال الشحن",
+            needsFg
+        )
+
+        val intent100 = batteryIntent(100).apply {
+            putExtra(
+                BatteryManager.EXTRA_STATUS,
+                BatteryManager.BATTERY_STATUS_CHARGING
+            )
+        }
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        val spoke100 = receiver.handle(
+            context, intent100, Intent.ACTION_BATTERY_CHANGED
+        )
+        assertFalse(
+            "لا يُنطق اكتمال الشحن عند تعطيل ميزته",
+            spoke100
+        )
+    }
 }
 
 /** ساعة افتراضية قابلة للضبط — تحكّم كامل بالخط الزمني في الاختبارات. */
