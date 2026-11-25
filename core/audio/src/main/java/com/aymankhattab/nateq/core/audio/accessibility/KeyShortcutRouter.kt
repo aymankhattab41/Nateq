@@ -276,7 +276,12 @@ class KeyShortcutRouter(
             stateStore = stateStore
         )
 
-    private fun announce(context: Context, text: String) {
+    private fun announce(
+        context: Context,
+        text: String,
+        source: SpeechEntryPoints.Source =
+            SpeechEntryPoints.Source.KEY_SHORTCUT
+    ) {
         // ع٤١-ب11، ع٤٥: التبديل التلقائي حسب التطبيق الأمامي وصوت جهة الاتصال.
         val voice = A11yVoiceResolver.resolve(
             context = context,
@@ -293,7 +298,7 @@ class KeyShortcutRouter(
             speechRate = voice?.speechRate,
             pitch = voice?.pitch,
             volume = voice?.volume,
-            source = SpeechEntryPoints.Source.KEY_SHORTCUT
+            source = source
         )
     }
 
@@ -353,9 +358,11 @@ class KeyShortcutRouter(
         val message = if (urls.isEmpty()) {
             "لا يوجد رابط على الشاشة"
         } else {
-            urls.joinToString(". ") { "رابط $it" }
+            urls.joinToString(". ") {
+                UrlShortenerSpoken.sanitizeUrlsForSpeech(it, keepFullUrl = true)
+            }
         }
-        announce(context, message)
+        announce(context, message, source = SpeechEntryPoints.Source.FULL_URL)
     }
 
     private fun readClipboard(context: Context) {

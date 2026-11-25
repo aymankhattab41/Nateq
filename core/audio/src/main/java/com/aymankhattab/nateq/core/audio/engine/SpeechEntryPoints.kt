@@ -29,14 +29,16 @@ object SpeechEntryPoints {
         KEY_SHORTCUT("اختصار لوحة المفاتيح"),
         LORD_SYSTEM("نظام لورد"),
         TIME_EVENT("إعلان الوقت"),
-        BATTERY_EVENT("إعلان البطارية")
+        BATTERY_EVENT("إعلان البطارية"),
+        FULL_URL("قراءة الرابط كاملاً")
     }
 
     fun prepare(
         rawText: String,
         source: Source,
         context: Context,
-        requestLanguage: String? = null
+        requestLanguage: String? = null,
+        bypassUrlShortening: Boolean = (source == Source.FULL_URL)
     ): String {
         if (rawText.isBlank()) return rawText
 
@@ -74,7 +76,8 @@ object SpeechEntryPoints {
         val semanticText = processor.processSemantics(
             dictText,
             resolvedLang,
-            markNumbers = markNumbers
+            markNumbers = markNumbers,
+            bypassUrlShortening = bypassUrlShortening
         )
 
         // 4. التخطيط
@@ -84,7 +87,8 @@ object SpeechEntryPoints {
             processor.process(
                 semanticText,
                 languageTag = resolvedLang,
-                applyDictionary = false
+                applyDictionary = false,
+                bypassUrlShortening = bypassUrlShortening
             )
         }
     }

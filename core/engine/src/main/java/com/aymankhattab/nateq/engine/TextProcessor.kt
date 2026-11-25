@@ -366,7 +366,8 @@ class TextProcessor(
         languageTag: String = LanguageCode.AR.tag,
         enginePackage: String? = null,
         applyDictionary: Boolean = true,
-        markNumbers: Boolean = false
+        markNumbers: Boolean = false,
+        bypassUrlShortening: Boolean = false
     ): String {
         if (text.isBlank()) return text
 
@@ -400,7 +401,7 @@ class TextProcessor(
                     out = step.applyEnglish(out)
                 }
             }
-            out = unmaskUrls(out, urls)
+            out = unmaskUrls(out, urls, bypassUrlShortening)
             if (markNumbers) {
                 val spelledEnabled = injectedSettings
                     ?.isNumberVoiceSpelledWordsEnabled() ?: true
@@ -448,7 +449,7 @@ class TextProcessor(
         // الأوقات/العملات/الروابط/الرومانية/الهواتف/الأرقام/الرموز) ونذهب
         // مباشرةً لتنظيف المسافات. يوفّر تريليونات المطابقات على كل إعلان.
         if (!requiresRegexPipeline(out) && !markNumbers) {
-            out = unmaskUrls(out, urls)
+            out = unmaskUrls(out, urls, bypassUrlShortening)
             val cleaned = CleanupStep.apply(out)
             val finalized = finalizeArabic(voweledSource, cleaned)
             val egyptian = applyEgyptianProcessing(
@@ -458,7 +459,7 @@ class TextProcessor(
         }
 
         for (step in buildHeavySteps(markNumbers)) out = step.apply(out)
-        out = unmaskUrls(out, urls)
+        out = unmaskUrls(out, urls, bypassUrlShortening)
         if (markNumbers) {
             val spelledEnabled = injectedSettings
                 ?.isNumberVoiceSpelledWordsEnabled() ?: true
@@ -639,7 +640,8 @@ class TextProcessor(
         text: String,
         languageTag: String = LanguageCode.AR.tag,
         markNumbers: Boolean = false,
-        enginePackage: String? = null
+        enginePackage: String? = null,
+        bypassUrlShortening: Boolean = false
     ): String {
         if (text.isBlank()) return text
         // إزالة الفواصل بين الأرقام عربي أو إنجليزي
@@ -658,7 +660,7 @@ class TextProcessor(
                     english = step.applyEnglish(english)
                 }
             }
-            english = unmaskUrls(english, urls)
+            english = unmaskUrls(english, urls, bypassUrlShortening)
             if (markNumbers) {
                 if (spelledWordsEnabled) {
                     english = NumberWordDetector.detectAndMark(
@@ -677,7 +679,7 @@ class TextProcessor(
                 result = step.apply(result)
             }
         }
-        result = unmaskUrls(result, urls)
+        result = unmaskUrls(result, urls, bypassUrlShortening)
         if (markNumbers) {
             if (spelledWordsEnabled) {
                 result = NumberWordDetector.detectAndMark(
@@ -772,8 +774,13 @@ class TextProcessor(
      * لأنه ليس محجوزاً بعلامة، وإنما تُبدَّل مواضعُ الروابط المحجوزة
      * وحدها (حمايةُ العلامات المحجوزة). المفتاحُ مطفأٌ افتراضياً فلا
      * يتغيّر السلوك القائم.
+     * @param bypassUrlShortening تجاوز الاختصار وإبقاء الرابط الأصلي كاملاً.
      */
-    private fun unmaskUrls(text: String, store: List<String>): String {
+    private fun unmaskUrls(
+        text: String,
+        store: List<String>,
+        bypassUrlShortening: Boolean = false
+    ): String {
         if (store.isEmpty()) return text
         val shorten = injectedSettings?.isUrlShorteningEnabled() ?: false
         val sb = StringBuilder(text.length + store.sumOf { it.length })
@@ -781,7 +788,7 @@ class TextProcessor(
             val idx = ch - URL_MASK_BASE
             if (idx in store.indices) {
                 val original = store[idx]
-                val replacement = if (shorten) {
+                val replacement = if (shorten && !bypassUrlShortening) {
                     UrlSpeech.shorten(original)
                 } else {
                     original
