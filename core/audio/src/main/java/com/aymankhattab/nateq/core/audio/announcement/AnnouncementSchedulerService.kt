@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -128,7 +129,8 @@ class AnnouncementSchedulerService : Service() {
 
         /** هل الإعلانات الحالية تستوجب بقاء خدمة أمامية؟ («null» أو فشل قراءة
          *  يُرجع true — نبقي الخدمة احتياطاً ولا نخاطر بفقد إعلان). */
-        private fun needsForegroundService(
+        @VisibleForTesting
+        internal fun needsForegroundService(
             settings: SettingsRepository?
         ): Boolean {
             if (settings == null) return true

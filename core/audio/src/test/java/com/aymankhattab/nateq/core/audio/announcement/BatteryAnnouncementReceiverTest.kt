@@ -526,6 +526,125 @@ class BatteryAnnouncementReceiverTest {
             withPercent("البطارية ممتلئة", batteryIntent(100), arabic = true)
         )
     }
+
+    @Test
+    fun `battery disabled does not speak saved default levels`() {
+        val settings = SettingsRepository(context)
+        settings.setBatteryAnnouncementEnabled(false)
+        settings.setBatteryAnnouncementLevels(setOf("20", "15"))
+
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        val spoke20 = receiver.handle(
+            context, batteryIntent(20), Intent.ACTION_BATTERY_CHANGED
+        )
+        assertFalse(
+            "لا يُنطق مستوى 20 عند تعطيل مفتاح البطارية ولو حُفظ المستوى",
+            spoke20
+        )
+
+        val spoke15 = receiver.handle(
+            context, batteryIntent(15), Intent.ACTION_BATTERY_CHANGED
+        )
+        assertFalse(
+            "لا يُنطق مستوى 15 عند تعطيل مفتاح البطارية ولو حُفظ المستوى",
+            spoke15
+        )
+    }
+
+    @Test
+    fun `battery disabled still allows full charge announcement`() {
+        val settings = SettingsRepository(context)
+        settings.setBatteryAnnouncementEnabled(false)
+        settings.setBatteryAnnouncementLevels(setOf("20", "15"))
+        settings.setChargingCompleteAnnouncementEnabled(true)
+
+        val intent = batteryIntent(100).apply {
+            putExtra(
+                BatteryManager.EXTRA_STATUS,
+                BatteryManager.BATTERY_STATUS_CHARGING
+            )
+        }
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        val spoke = receiver.handle(
+            context, intent, Intent.ACTION_BATTERY_CHANGED
+        )
+        assertTrue(
+            "اكتمال الشحن ميزة مستقلة وتُنطق حتى مع تعطيل مفتاح المستويات",
+            spoke
+        )
+    }
+
+    @Test
+    fun `disabling battery preserves user saved levels`() {
+        val settings = SettingsRepository(context)
+        settings.setBatteryAnnouncementLevels(setOf("80", "50", "20"))
+        settings.setBatteryAnnouncementEnabled(false)
+
+        assertEquals(
+            "تعطيل المفتاح لا يفرغ مستويات المستخدم المحفوظة",
+            setOf("80", "50", "20"),
+            settings.getBatteryAnnouncementLevels()
+        )
+
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        assertFalse(
+            receiver.handle(
+                context, batteryIntent(80), Intent.ACTION_BATTERY_CHANGED
+            )
+        )
+        assertFalse(
+            receiver.handle(
+                context, batteryIntent(50), Intent.ACTION_BATTERY_CHANGED
+            )
+        )
+        assertFalse(
+            receiver.handle(
+                context, batteryIntent(20), Intent.ACTION_BATTERY_CHANGED
+            )
+        )
+
+        settings.setBatteryAnnouncementEnabled(true)
+        assertTrue(
+            "إعادة التفعيل تستعيد نطق المستويات المحفوظة فوراً",
+            receiver.handle(
+                context, batteryIntent(80), Intent.ACTION_BATTERY_CHANGED
+            )
+        )
+    }
+
+    @Test
+    fun `levels silent when disabled and service kept for other categories`() {
+        val settings = SettingsRepository(context)
+        settings.setBatteryAnnouncementEnabled(false)
+        settings.setBatteryAnnouncementLevels(setOf("20", "15"))
+        settings.setCallerAnnouncementEnabled(true)
+        settings.setSmsReadingMode("all")
+
+        // تحقق أن الخدمة تستوجب البقاء بسبب فئات أخرى
+        val needsFg =
+            AnnouncementSchedulerService.needsForegroundService(settings)
+        assertTrue(
+            "الخدمة تبقى قائمة بسبب إعلانات المتصل والرسائل",
+            needsFg
+        )
+
+        // مستقبل البطارية المُسجل بالخدمة لا ينطق المستويات وهي مطفأة
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        val spoke20 = receiver.handle(
+            context, batteryIntent(20), Intent.ACTION_BATTERY_CHANGED
+        )
+        assertFalse(
+            "لا يُنطق 20% عند بقاء الخدمة للمتصل/الرسائل والمفتاح مطفأ",
+            spoke20
+        )
+        val spoke15 = receiver.handle(
+            context, batteryIntent(15), Intent.ACTION_BATTERY_CHANGED
+        )
+        assertFalse(
+            "لا يُنطق 15% عند بقاء الخدمة للمتصل/الرسائل والمفتاح مطفأ",
+            spoke15
+        )
+    }
 }
 
 /** ساعة افتراضية قابلة للضبط — تحكّم كامل بالخط الزمني في الاختبارات. */

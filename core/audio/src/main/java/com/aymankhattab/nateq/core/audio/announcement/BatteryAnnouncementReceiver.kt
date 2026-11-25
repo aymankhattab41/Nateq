@@ -203,7 +203,8 @@ class BatteryAnnouncementReceiver(
      *  (أو مؤثرٌ صامت) يقتضي الإبقاء على نافذة goAsync حتى تمامه.
      *  يُسجَّل هذا المستقبل يدوياً من AnnouncementSchedulerService (لا عبر
      *  Hilt)، فيُفضَّل الحقل المحقون من التطبيق وإلا يُبنى محلياً. */
-    private fun handle(
+    @VisibleForTesting
+    internal fun handle(
         context: Context,
         intent: Intent,
         action: String?,
@@ -282,14 +283,6 @@ class BatteryAnnouncementReceiver(
             }
 
             else -> {
-                val enabledLevels = settings.getBatteryAnnouncementLevels()
-                    .mapNotNull { it.toIntOrNull() }
-                if (!settings.isBatteryAnnouncementEnabled() &&
-                    enabledLevels.isEmpty()
-                ) {
-                    return false
-                }
-
                 val percentage = batteryPercent(intent) ?: return false
                 val status =
                     intent.getIntExtra(
@@ -300,13 +293,23 @@ class BatteryAnnouncementReceiver(
                         .BATTERY_STATUS_CHARGING ||
                     status == android.os.BatteryManager.BATTERY_STATUS_FULL
 
-                // اكتمال الشحن (100% ومتصل): إعلان مستقل يُنطق
-                // مرة واحدة في الجلسة، ولا يُكرَّر إذا كان مستوى 100
-                // مفعّلاً أصلاً (يُغطيه إعلان المستوى).
+                // 1. ميزة شحن مستقلة: اكتمال الشحن (100% ومتصل).
+                // تُفصل تماماً عن مفتاح إعلان المستويات، ولا تُكبت إلا إذا
+                // كان إعلان المستويات مفعّلاً ومستوى 100 مشمولاً فيه صراحة
+                // منعاً لتكرار النطق.
+                val isLevelsEnabled = settings.isBatteryAnnouncementEnabled()
+                val enabledLevels = if (isLevelsEnabled) {
+                    settings.getBatteryAnnouncementLevels()
+                        .mapNotNull { it.toIntOrNull() }
+                } else {
+                    emptyList()
+                }
+
                 if (percentage == 100 && plugged &&
                     settings.isChargingCompleteAnnouncementEnabled()
                 ) {
-                    val allowFullAnnounce = !enabledLevels.contains(100)
+                    val allowFullAnnounce =
+                        !(isLevelsEnabled && enabledLevels.contains(100))
                     if (allowFullAnnounce &&
                         !announcedRecently(context, "full")
                     ) {
@@ -322,11 +325,14 @@ class BatteryAnnouncementReceiver(
                             CueType.BATTERY_FULL, onCueDone
                         )
                     }
-                } else {
-                    // توضيح متعمد: اكتمالُ الشحن ممكَّنٌ ولم يُعلن (إما أن
-                    // المستوى 100 مفعّل أصلاً فيُغطيه إعلان المستوى، أو
-                    // أُعلن حديثاً خلال نافذة المنع) — نستمر إلى فحص مستوى
-                    // البطارية التالي أدناه، وأي نطقٍ منه يرفع `spoke`.
+                }
+
+                // 2. حارس إعلان مستويات البطارية: يحترم صراحة مفتاح
+                // isBatteryAnnouncementEnabled وتوفر مستويات مفعلة؛ لا يُنطق
+                // أي مستوى إن كان المفتاح مطفأ حتى مع بقاء المستويات
+                // المحفوظة في الإعدادات (مثل 20 و15).
+                if (!isLevelsEnabled || enabledLevels.isEmpty()) {
+                    return spoke
                 }
 
                 if (percentage !in enabledLevels) return spoke
