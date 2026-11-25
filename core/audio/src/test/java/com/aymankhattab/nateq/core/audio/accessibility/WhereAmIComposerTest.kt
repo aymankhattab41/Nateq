@@ -78,6 +78,51 @@ class WhereAmIComposerTest {
     }
 
     @Test
+    fun disabledCheckableElementCombinesStateAndDisabled() {
+        val checkedDisabled = NodeView(
+            className = "android.widget.CheckBox",
+            isCheckable = true,
+            isChecked = true,
+            isEnabled = false
+        )
+        assertEquals("محدد، غير مفعّل", WhereAmIComposer.stateOf(checkedDisabled))
+
+        val uncheckedDisabled = NodeView(
+            className = "android.widget.CheckBox",
+            isCheckable = true,
+            isChecked = false,
+            isEnabled = false
+        )
+        assertEquals(
+            "غير محدد، غير مفعّل",
+            WhereAmIComposer.stateOf(uncheckedDisabled)
+        )
+    }
+
+    @Test
+    fun disabledSelectedElementCombinesStateAndDisabled() {
+        val selectedDisabled = NodeView(
+            className = "android.widget.TabWidget",
+            isSelected = true,
+            isEnabled = false
+        )
+        assertEquals(
+            "محدد، غير مفعّل",
+            WhereAmIComposer.stateOf(selectedDisabled)
+        )
+    }
+
+    @Test
+    fun enabledNormalElementHasNoState() {
+        val normal = NodeView(
+            text = "نص",
+            className = "android.widget.TextView",
+            isEnabled = true
+        )
+        assertNull(WhereAmIComposer.stateOf(normal))
+    }
+
+    @Test
     fun screenLabelStripsPackageAndActivity() {
         assertEquals(
             "Home",

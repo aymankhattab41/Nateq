@@ -41,10 +41,16 @@ object WhereAmIComposer {
         return if (text.isNotBlank()) "$role: $text" else role
     }
 
-    private fun stateOf(node: NodeView): String? = when {
-        node.isCheckable -> if (node.isChecked) "محدد" else "غير محدد"
-        node.isSelected -> "محدد"
-        !node.isEnabled -> "غير مفعّل"
-        else -> null
+    internal fun stateOf(node: NodeView): String? {
+        val states = mutableListOf<String>()
+        if (node.isCheckable) {
+            states += if (node.isChecked) "محدد" else "غير محدد"
+        } else if (node.isSelected) {
+            states += "محدد"
+        }
+        if (!node.isEnabled) {
+            states += "غير مفعّل"
+        }
+        return if (states.isEmpty()) null else states.joinToString("، ")
     }
 }
