@@ -71,7 +71,8 @@ class FeatureFlagsUsageGuardTest {
                 "NateqAccessibilityService (via UnlabeledLabelsHandler) ✅",
             ),
             FeatureFlags.FEATURE_AUTO_DESCRIBE_UNLABELED to listOf(
-                "NateqAccessibilityService (via AutoDescribeUnlabeledHandler) ✅",
+                "NateqAccessibilityService " +
+                    "(via AutoDescribeUnlabeledHandler) ✅",
             ),
             FeatureFlags.FEATURE_TYPING_ECHO to listOf(
                 "NateqAccessibilityService (via TypingEchoHandler) ✅",
@@ -83,13 +84,13 @@ class FeatureFlagsUsageGuardTest {
                 "ScreenServicesTileService.onClick ✅",
             ),
             FeatureFlags.FEATURE_READ_SCREEN_NOW to listOf(
-                "KeyShortcutRouter.handleDoubleVolUp ✅",
+                "KeyShortcutRouter.readScreenNow ✅",
             ),
             FeatureFlags.FEATURE_CONTINUOUS_READING to listOf(
                 "KeyShortcutRouter.toggleContinuous ✅",
             ),
             FeatureFlags.FEATURE_CLIPBOARD_READING to listOf(
-                "KeyShortcutRouter.handleDoubleVolDown ✅",
+                "KeyShortcutRouter.readClipboard ✅",
             ),
             FeatureFlags.FEATURE_OTP_READING to listOf(
                 "NateqNotificationListener.onNotificationPostedWorker ✅",

@@ -327,6 +327,14 @@ class KeyShortcutRouter(
         }
 
     private fun readScreenNow(context: Context) {
+        if (!isFeatureActive(
+                FeatureFlags.FEATURE_READ_SCREEN_NOW,
+                context
+            )
+        ) {
+            announce(context, "ميزة قراءة الشاشة غير مفعّلة")
+            return
+        }
         val texts = AccessibilityBridge.readScreenTexts()
             .filter { it.isNotBlank() }
         val focus = AccessibilityBridge.focusSnapshot()
@@ -366,6 +374,14 @@ class KeyShortcutRouter(
     }
 
     private fun readClipboard(context: Context) {
+        if (!isFeatureActive(
+                FeatureFlags.FEATURE_CLIPBOARD_READING,
+                context
+            )
+        ) {
+            announce(context, "ميزة قراءة الحافظة غير مفعّلة")
+            return
+        }
         val manager = context.getSystemService(
             Context.CLIPBOARD_SERVICE
         ) as? ClipboardManager
@@ -376,12 +392,7 @@ class KeyShortcutRouter(
             null
         }
         val message = text?.takeIf { it.isNotBlank() } ?: "الحافظة فارغة"
-        A11ySpeechCoordinator.speakAnnouncement(
-            context = context,
-            text = message,
-            isInterruptAllowed = true,
-            source = SpeechEntryPoints.Source.KEY_SHORTCUT
-        )
+        announce(context, message)
     }
 
     private fun togglePause(context: Context) {
