@@ -52,8 +52,9 @@ class LordKeyboardService : InputMethodService(),
 
     private lateinit var settingsRepo: SettingsRepository
     internal var keyboardView: LordKeyboardView? = null
-    private var currentLayer: KeyboardLayer = KeyboardLayer.ARABIC
-    private var isEnglishCaps: Boolean = false
+    internal var currentLayer: KeyboardLayer = KeyboardLayer.ARABIC
+    internal var previousLetterLayer: KeyboardLayer = KeyboardLayer.ARABIC
+    internal var isEnglishCaps: Boolean = false
     internal var isPasswordField: Boolean = false
 
     // تتبع دورة حياة جلسات الإدخال والإملاء الصوتي
@@ -214,6 +215,11 @@ class LordKeyboardService : InputMethodService(),
                 inputType = inputType
             )
             cancelVoiceTyping(announce = false)
+            if (currentLayer == KeyboardLayer.SYMBOLS ||
+                currentLayer == KeyboardLayer.TASHKEEL
+            ) {
+                currentLayer = previousLetterLayer
+            }
         }
     }
 
@@ -427,22 +433,34 @@ class LordKeyboardService : InputMethodService(),
         return wrapper
     }
 
-    private fun toggleLanguage() {
+    internal fun toggleLanguage() {
         currentLayer = when (currentLayer) {
             KeyboardLayer.ARABIC -> {
                 speakText("الإنجليزية")
+                previousLetterLayer = KeyboardLayer.ENGLISH
                 KeyboardLayer.ENGLISH
             }
             KeyboardLayer.ENGLISH -> {
                 speakText("العربية")
+                previousLetterLayer = KeyboardLayer.ARABIC
                 KeyboardLayer.ARABIC
             }
             KeyboardLayer.SYMBOLS -> {
-                speakText("العربية")
-                KeyboardLayer.ARABIC
+                val target = if (previousLetterLayer == KeyboardLayer.ENGLISH) {
+                    KeyboardLayer.ARABIC
+                } else {
+                    KeyboardLayer.ENGLISH
+                }
+                previousLetterLayer = target
+                speakText(
+                    if (target == KeyboardLayer.ENGLISH)
+                        "الإنجليزية" else "العربية"
+                )
+                target
             }
             KeyboardLayer.TASHKEEL -> {
                 speakText("العربية")
+                previousLetterLayer = KeyboardLayer.ARABIC
                 KeyboardLayer.ARABIC
             }
         }
@@ -501,10 +519,21 @@ class LordKeyboardService : InputMethodService(),
                 return
             }
             KeyType.ACTION_SYMBOLS -> {
-                currentLayer = if (currentLayer == KeyboardLayer.SYMBOLS) {
-                    KeyboardLayer.ARABIC
+                if (currentLayer == KeyboardLayer.SYMBOLS) {
+                    currentLayer = if (
+                        previousLetterLayer == KeyboardLayer.ENGLISH
+                    ) {
+                        KeyboardLayer.ENGLISH
+                    } else {
+                        KeyboardLayer.ARABIC
+                    }
                 } else {
-                    KeyboardLayer.SYMBOLS
+                    if (currentLayer == KeyboardLayer.ARABIC ||
+                        currentLayer == KeyboardLayer.ENGLISH
+                    ) {
+                        previousLetterLayer = currentLayer
+                    }
+                    currentLayer = KeyboardLayer.SYMBOLS
                 }
                 speakText(
                     if (currentLayer == KeyboardLayer.SYMBOLS)
