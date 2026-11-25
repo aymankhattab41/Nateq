@@ -33,26 +33,42 @@ class CommitGateTest {
     }
 
     @Test
-    fun liftMode_cooldownPerKey350ms_enforced() {
+    fun liftMode_rapidSuccessiveNewTouchCycles_acceptedForSameKey() {
+        // اختبار الأمر 17: enter1000/up1050 ثم enter1100/up1150 للحرف نفسه
+        val gate = CommitGate { "lift" }
+
+        // الدورة الأولى: دخول عند 1000ms ورفع عند 1050ms
+        gate.onHoverEnter(1000L)
+        assertTrue(
+            gate.shouldCommit("A", Source.RAW_UP, 1050L, true)
+        )
+
+        // الدورة الثانية الجديدة: دخول جديد عند 1100ms ورفع عند 1150ms
+        gate.onHoverEnter(1100L)
+        assertTrue(
+            gate.shouldCommit("A", Source.RAW_UP, 1150L, true)
+        )
+    }
+
+    @Test
+    fun liftMode_sameCycleDuplicate_rejected() {
+        // اختبار الأمر 17: أحداث hover exit مع accessibility click لنفس الدورة
         val gate = CommitGate { "lift" }
         gate.onHoverEnter(1000L)
+
+        // تأكيد أولي عبر HOVER_EXIT في نفس الدورة
         assertTrue(
             gate.shouldCommit("A", Source.HOVER_EXIT, 1050L, true)
         )
-        gate.onHoverEnter(1100L)
-        // 1200L - 1050L = 150ms < 350ms
+
+        // حدث accessibility click لنفس الدورة دون دخول جديد -> يُرفض
         assertFalse(
-            gate.shouldCommit("A", Source.HOVER_EXIT, 1200L, true)
+            gate.shouldCommit("A", Source.ACCESSIBILITY_CLICK, 1060L, true)
         )
-        // Different key "B" should be accepted independently
-        gate.onHoverEnter(1200L)
-        assertTrue(
-            gate.shouldCommit("B", Source.HOVER_EXIT, 1250L, true)
-        )
-        // After 350ms for "A", accepted
-        gate.onHoverEnter(1400L)
-        assertTrue(
-            gate.shouldCommit("A", Source.HOVER_EXIT, 1450L, true)
+
+        // حدث RAW_UP مكرر لنفس الدورة دون دخول جديد -> يُرفض
+        assertFalse(
+            gate.shouldCommit("A", Source.RAW_UP, 1070L, true)
         )
     }
 
@@ -76,17 +92,17 @@ class CommitGateTest {
     }
 
     @Test
-    fun liftMode_accessibilityClickSuppressedWithin700ms() {
+    fun liftMode_accessibilityClickWithoutNewEnter_suppressedWithin700ms() {
         val gate = CommitGate { "lift" }
         gate.onHoverEnter(1000L)
         assertTrue(
             gate.shouldCommit("A", Source.HOVER_EXIT, 1050L, true)
         )
-        // Acc click within 700ms should be rejected
+        // عند غياب onHoverEnter جديد، تُمنع النقرات ضمن نافذة 700ms
         assertFalse(
             gate.shouldCommit("A", Source.ACCESSIBILITY_CLICK, 1300L, true)
         )
-        // After 700ms should be allowed
+        // بعد انقضاء 700ms يُسمح به
         assertTrue(
             gate.shouldCommit("A", Source.ACCESSIBILITY_CLICK, 1800L, true)
         )
@@ -107,29 +123,23 @@ class CommitGateTest {
     @Test
     fun doubleTapMode_touchTypingSuppressionWithin120msOfHoverExit() {
         val gate = CommitGate { "double_tap" }
-        // Simulate hover exit at 1000ms (rejected)
         gate.shouldCommit("A", Source.HOVER_EXIT, 1000L, true)
-        // Acc click within 100ms of hover exit (rapid exploration)
+        // نقر ضمن 120ms من الخروج العابر للاستكشاف -> يُرفض
         assertFalse(
             gate.shouldCommit("A", Source.ACCESSIBILITY_CLICK, 1080L, true)
         )
-        // Acc click after 150ms of hover exit -> accepted
+        // بعد 150ms -> يُقبل
         assertTrue(
             gate.shouldCommit("A", Source.ACCESSIBILITY_CLICK, 1200L, true)
         )
     }
 
     @Test
-    fun doubleTapMode_perKeyCooldown350ms() {
+    fun doubleTapMode_multiTouch_rejected() {
         val gate = CommitGate { "double_tap" }
-        assertTrue(
-            gate.shouldCommit("A", Source.ACCESSIBILITY_CLICK, 1000L, true)
-        )
+        gate.setMultiTouchActive(true)
         assertFalse(
-            gate.shouldCommit("A", Source.ACCESSIBILITY_CLICK, 1200L, true)
-        )
-        assertTrue(
-            gate.shouldCommit("A", Source.ACCESSIBILITY_CLICK, 1400L, true)
+            gate.shouldCommit("A", Source.ACCESSIBILITY_CLICK, 1000L, true)
         )
     }
 
@@ -140,12 +150,11 @@ class CommitGateTest {
         assertTrue(
             gate.shouldCommit("A", Source.HOVER_EXIT, 1050L, true)
         )
-        // Normal cooldown blocks immediate re-commit
-        gate.onHoverEnter(1100L)
+        // حدث في نفس الدورة يُرفض
         assertFalse(
-            gate.shouldCommit("A", Source.HOVER_EXIT, 1150L, true)
+            gate.shouldCommit("A", Source.HOVER_EXIT, 1060L, true)
         )
-        // Reset with clearHistory = true
+        // تصفير الحالة
         gate.resetState(clearHistory = true)
         gate.onHoverEnter(1200L)
         assertTrue(

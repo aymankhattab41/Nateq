@@ -13,15 +13,21 @@ enum class Source {
 
 /**
  * بوابة تأكيد المفاتيح الموحدة لمنع الكتابة عند اللمس وتكرار الأحرف.
+ * تميز بدقة بين تكرار الأحداث لنفس دورة اللمس وبين دورة لمس جديدة مقصودة.
  */
 class CommitGate(private val mode: () -> String) {
 
     private val lastCommitTimePerKey = mutableMapOf<Any, Long>()
     private val lastHoverExitTimePerKey = mutableMapOf<Any, Long>()
+    private val lastCommittedCycleIdPerKey = mutableMapOf<Any, Long>()
+    private val lastCommittedCycleEnterTimePerKey = mutableMapOf<Any, Long>()
+
     private var hoverEnterTimeMs: Long = 0L
+    private var currentCycleId: Long = 0L
     private var isMultiTouchActive: Boolean = false
 
     fun onHoverEnter(nowMs: Long) {
+        currentCycleId++
         hoverEnterTimeMs = nowMs
     }
 
@@ -31,10 +37,13 @@ class CommitGate(private val mode: () -> String) {
 
     fun resetState(clearHistory: Boolean = false) {
         hoverEnterTimeMs = 0L
+        currentCycleId++
         isMultiTouchActive = false
         if (clearHistory) {
             lastCommitTimePerKey.clear()
             lastHoverExitTimePerKey.clear()
+            lastCommittedCycleIdPerKey.clear()
+            lastCommittedCycleEnterTimePerKey.clear()
         }
     }
 
@@ -59,23 +68,59 @@ class CommitGate(private val mode: () -> String) {
             Long.MAX_VALUE
         }
 
+        val lastCommittedCycleId =
+            lastCommittedCycleIdPerKey[key] ?: -1L
+        val lastCommittedEnterTime =
+            lastCommittedCycleEnterTimePerKey[key] ?: -1L
+
+        val isSameCycleAsLastCommit =
+            (currentCycleId == lastCommittedCycleId) ||
+                (hoverEnterTimeMs > 0L &&
+                    hoverEnterTimeMs == lastCommittedEnterTime)
+
         val allowed: Boolean
 
         if (isLift) {
             when (source) {
                 Source.HOVER_EXIT, Source.RAW_UP -> {
                     val dwellTime = nowMs - hoverEnterTimeMs
+                    val isNewTouchCycle =
+                        hoverEnterTimeMs > lastCommittedEnterTime ||
+                            !isSameCycleAsLastCommit
+
+                    val notDuplicateInSameCycle = isNewTouchCycle ||
+                        deltaFromCommit >= 350L
+
+                    // حماية الارتداد العتادي الصغير جداً (Debounce >= 40ms)
+                    val debounceOk = deltaFromCommit >= 40L
+
                     val condition = !isMultiTouchActive &&
                         exitedInsideKey &&
                         dwellTime >= 40L &&
-                        deltaFromCommit >= 350L
+                        notDuplicateInSameCycle &&
+                        debounceOk
+
                     if (source == Source.HOVER_EXIT) {
                         lastHoverExitTimePerKey[key] = nowMs
                     }
                     allowed = condition
                 }
                 Source.ACCESSIBILITY_CLICK -> {
-                    allowed = deltaFromCommit >= 700L
+                    // منع تكرار النقر لنفس دورة اللمس المؤكدة ضمن 700ms
+                    val isRecentSameCycle = isSameCycleAsLastCommit &&
+                        deltaFromCommit < 700L
+
+                    allowed = if (isRecentSameCycle) {
+                        false
+                    } else {
+                        val hasNewEnter =
+                            hoverEnterTimeMs > lastCommittedEnterTime
+                        if (hasNewEnter) {
+                            deltaFromCommit >= 40L
+                        } else {
+                            deltaFromCommit >= 700L
+                        }
+                    }
                 }
             }
         } else {
@@ -87,14 +132,19 @@ class CommitGate(private val mode: () -> String) {
                     allowed = false
                 }
                 Source.ACCESSIBILITY_CLICK -> {
-                    val wasTouchTypingHover = deltaFromHoverExit in 0L..120L
-                    allowed = !wasTouchTypingHover && deltaFromCommit >= 350L
+                    val wasTouchTypingHover =
+                        deltaFromHoverExit in 0L..120L
+                    allowed = !isMultiTouchActive &&
+                        !wasTouchTypingHover &&
+                        deltaFromCommit >= 150L
                 }
             }
         }
 
         if (allowed) {
             lastCommitTimePerKey[key] = nowMs
+            lastCommittedCycleIdPerKey[key] = currentCycleId
+            lastCommittedCycleEnterTimePerKey[key] = hoverEnterTimeMs
         }
 
         Log.i(

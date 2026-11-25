@@ -246,4 +246,50 @@ class LordKeyboardViewTest {
         assertTrue(swipedLeft)
         assertEquals(null, selectedKey)
     }
+
+    @Test
+    fun rapidSuccessiveTaps_onSameKey_inLiftMode_commitsBoth() {
+        keyboardView.activationMode =
+            SettingsRepository.KEYBOARD_ACTIVATION_LIFT
+
+        val committedKeys = mutableListOf<KeyModel>()
+        keyboardView.actionListener =
+            object : LordKeyboardView.OnKeyboardActionListener {
+                override fun onKeySelected(key: KeyModel) {
+                    committedKeys.add(key)
+                }
+
+                override fun onKeyHover(key: KeyModel) {}
+                override fun onSwipeLeft() {}
+                override fun onSwipeRight() {}
+                override fun onSwipeDown() {}
+                override fun onSwipeUp() {}
+            }
+
+        // الضغطة الأولى: down عند 1000ms و up عند 1050ms
+        val down1 = MotionEvent.obtain(
+            1000L, 1000L, MotionEvent.ACTION_DOWN, 100f, 100f, 0
+        )
+        keyboardView.onTouchEvent(down1)
+        val up1 = MotionEvent.obtain(
+            1000L, 1050L, MotionEvent.ACTION_UP, 100f, 100f, 0
+        )
+        keyboardView.onTouchEvent(up1)
+        assertEquals(1, committedKeys.size)
+
+        // الضغطة الثانية السريعة على نفس المفتاح:
+        // down عند 1100ms و up عند 1150ms
+        val down2 = MotionEvent.obtain(
+            1100L, 1100L, MotionEvent.ACTION_DOWN, 100f, 100f, 0
+        )
+        keyboardView.onTouchEvent(down2)
+        val up2 = MotionEvent.obtain(
+            1100L, 1150L, MotionEvent.ACTION_UP, 100f, 100f, 0
+        )
+        keyboardView.onTouchEvent(up2)
+
+        // يجب قبول الضغطة الثانية ولا تُسقط
+        assertEquals(2, committedKeys.size)
+        assertEquals(committedKeys[0], committedKeys[1])
+    }
 }
