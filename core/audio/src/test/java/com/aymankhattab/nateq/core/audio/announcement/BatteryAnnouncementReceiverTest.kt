@@ -8,6 +8,7 @@ import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.common.TimeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.engine.NumberSpeech
+import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Calendar
 import java.util.Locale
 import org.junit.After
@@ -40,6 +41,13 @@ class BatteryAnnouncementReceiverTest {
 
     @Before
     fun setUp() {
+        EventVoiceTrace.clear()
+        runCatching {
+            @Suppress("DEPRECATION")
+            context.removeStickyBroadcast(
+                Intent(Intent.ACTION_BATTERY_CHANGED)
+            )
+        }
         BatteryAnnouncementReceiver.resetLevelFilterForTesting()
         // إزالة أي مشترٍ وهمي للمؤثرات تسرّبَ من اختبار سابق (كائن مصاحب
         // ثابت يعيش ويكون بين الاختبارات في نفس عملية JVM).
@@ -60,6 +68,12 @@ class BatteryAnnouncementReceiverTest {
     fun tearDown() {
         BatteryAnnouncementReceiver.resetLevelFilterForTesting()
         AudioCuePlayer.replaceSharedForTesting(null)
+        runCatching {
+            @Suppress("DEPRECATION")
+            context.removeStickyBroadcast(
+                Intent(Intent.ACTION_BATTERY_CHANGED)
+            )
+        }
     }
 
     @Test
@@ -498,24 +512,222 @@ class BatteryAnnouncementReceiverTest {
     }
 
     @Test
-    fun `charger text keeps template when battery level is unavailable`() {
-        val template = context.getString(R.string.battery_connected)
-        assertEquals(
-            "بثٌّ بلا نسبة صالحة يُبقي النص كما هو",
-            template, withPercent(template, null, arabic = true)
+    fun `batteryPercent returns null on null intent or scale zero`() {
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        assertNull(
+            "null intent returns null",
+            receiver.batteryPercent(null)
         )
+        val scaleZero = Intent(Intent.ACTION_BATTERY_CHANGED).apply {
+            putExtra(BatteryManager.EXTRA_LEVEL, 50)
+            putExtra(BatteryManager.EXTRA_SCALE, 0)
+        }
+        assertNull(
+            "scale=0 returns null",
+            receiver.batteryPercent(scaleZero)
+        )
+        val negativeLevel = Intent(Intent.ACTION_BATTERY_CHANGED).apply {
+            putExtra(BatteryManager.EXTRA_LEVEL, -1)
+            putExtra(BatteryManager.EXTRA_SCALE, 100)
+        }
+        assertNull(
+            "level=-1 returns null",
+            receiver.batteryPercent(negativeLevel)
+        )
+        val validIntent = Intent(Intent.ACTION_BATTERY_CHANGED).apply {
+            putExtra(BatteryManager.EXTRA_LEVEL, 45)
+            putExtra(BatteryManager.EXTRA_SCALE, 100)
+        }
         assertEquals(
-            "نسبةٌ فاسدة (بلا مقياس) تُبقي النص كما هو",
-            template,
-            withPercent(
-                template,
-                Intent(Intent.ACTION_BATTERY_CHANGED).apply {
-                    putExtra(BatteryManager.EXTRA_LEVEL, 50)
-                    putExtra(BatteryManager.EXTRA_SCALE, 0)
-                },
-                arabic = true
+            45,
+            receiver.batteryPercent(validIntent)
+        )
+    }
+
+    @Test
+    fun `charger text removes placeholder without percent in arabic`() {
+        val templateConn = LocaleUtils.stringForSpeech(
+            context, "ar",
+            R.string.battery_connected,
+            R.string.battery_connected
+        )
+        val expectedConn = LocaleUtils.stringForSpeech(
+            context, "ar",
+            R.string.battery_connected_no_percent,
+            R.string.battery_connected_no_percent
+        )
+        val outConn = withPercent(templateConn, null, arabic = true)
+        assertFalse(
+            "لم يُحذف بديل النسبة من نص التوصيل العربي",
+            outConn.contains("{percent}")
+        )
+        assertEquals(expectedConn, outConn)
+
+        val templateDisc = LocaleUtils.stringForSpeech(
+            context, "ar",
+            R.string.battery_disconnected,
+            R.string.battery_disconnected
+        )
+        val expectedDisc = LocaleUtils.stringForSpeech(
+            context, "ar",
+            R.string.battery_disconnected_no_percent,
+            R.string.battery_disconnected_no_percent
+        )
+        val outDisc = withPercent(templateDisc, null, arabic = true)
+        assertFalse(
+            "لم يُحذف بديل النسبة من نص الفصل العربي",
+            outDisc.contains("{percent}")
+        )
+        assertEquals(expectedDisc, outDisc)
+
+        val badIntent = Intent(Intent.ACTION_BATTERY_CHANGED).apply {
+            putExtra(BatteryManager.EXTRA_LEVEL, 50)
+            putExtra(BatteryManager.EXTRA_SCALE, 0)
+        }
+        val outBad = withPercent(templateConn, badIntent, arabic = true)
+        assertFalse(
+            "لم يُحذف بديل النسبة عند مقياس صفري",
+            outBad.contains("{percent}")
+        )
+        assertEquals(expectedConn, outBad)
+    }
+
+    @Test
+    fun `charger text removes placeholder without percent in english`() {
+        val templateConn = LocaleUtils.stringForSpeech(
+            context, "en",
+            R.string.battery_connected,
+            R.string.battery_connected
+        )
+        val expectedConn = LocaleUtils.stringForSpeech(
+            context, "en",
+            R.string.battery_connected_no_percent,
+            R.string.battery_connected_no_percent
+        )
+        val outConn = withPercent(templateConn, null, arabic = false)
+        assertFalse(
+            "Placeholder should not remain in English connected text",
+            outConn.contains("{percent}")
+        )
+        assertEquals(expectedConn, outConn)
+
+        val templateDisc = LocaleUtils.stringForSpeech(
+            context, "en",
+            R.string.battery_disconnected,
+            R.string.battery_disconnected
+        )
+        val expectedDisc = LocaleUtils.stringForSpeech(
+            context, "en",
+            R.string.battery_disconnected_no_percent,
+            R.string.battery_disconnected_no_percent
+        )
+        val outDisc = withPercent(templateDisc, null, arabic = false)
+        assertFalse(
+            "Placeholder should not remain in English disconnected text",
+            outDisc.contains("{percent}")
+        )
+        assertEquals(expectedDisc, outDisc)
+
+        val badIntent = Intent(Intent.ACTION_BATTERY_CHANGED).apply {
+            putExtra(BatteryManager.EXTRA_LEVEL, 50)
+            putExtra(BatteryManager.EXTRA_SCALE, 0)
+        }
+        val outBad = withPercent(templateConn, badIntent, arabic = false)
+        assertFalse(
+            "Placeholder should not remain with scale=0 in English",
+            outBad.contains("{percent}")
+        )
+        assertEquals(expectedConn, outBad)
+    }
+
+    @Test
+    fun `handle power connected without sticky battery speaks no percent`() {
+        clearDebounceState()
+        val settings = SettingsRepository(context)
+        settings.setChargingConnectAnnouncementEnabled(true)
+        settings.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY, "ar-local"
+        )
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        val handled = receiver.handle(
+            context, Intent(Intent.ACTION_POWER_CONNECTED),
+            Intent.ACTION_POWER_CONNECTED
+        )
+        ShadowLooper.idleMainLooper()
+        assertTrue(handled)
+        val recent = EventVoiceTrace.getRecent(1)
+        assertTrue(recent.isNotEmpty())
+        val spoken = recent.first().textSnippet
+        assertFalse(spoken.contains("{percent}"))
+        val expected = LocaleUtils.stringForSpeech(
+            context, "ar",
+            R.string.battery_connected_no_percent,
+            R.string.battery_connected_no_percent
+        )
+        assertEquals(expected, spoken)
+    }
+
+    @Test
+    fun `handle power disconnected without sticky battery speaks no percent`() {
+        clearDebounceState()
+        val settings = SettingsRepository(context)
+        settings.setChargingDisconnectAnnouncementEnabled(true)
+        settings.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY, "ar-local"
+        )
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        val handled = receiver.handle(
+            context, Intent(Intent.ACTION_POWER_DISCONNECTED),
+            Intent.ACTION_POWER_DISCONNECTED
+        )
+        ShadowLooper.idleMainLooper()
+        assertTrue(handled)
+        val recent = EventVoiceTrace.getRecent(1)
+        assertTrue(recent.isNotEmpty())
+        val spoken = recent.first().textSnippet
+        assertFalse(spoken.contains("{percent}"))
+        val expected = LocaleUtils.stringForSpeech(
+            context, "ar",
+            R.string.battery_disconnected_no_percent,
+            R.string.battery_disconnected_no_percent
+        )
+        assertEquals(expected, spoken)
+    }
+
+    @Test
+    fun `handle power connected with valid sticky battery speaks percent`() {
+        clearDebounceState()
+        val settings = SettingsRepository(context)
+        settings.setChargingConnectAnnouncementEnabled(true)
+        settings.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY, "ar-local"
+        )
+        @Suppress("DEPRECATION")
+        context.sendStickyBroadcast(
+            Intent(Intent.ACTION_BATTERY_CHANGED).apply {
+                putExtra(BatteryManager.EXTRA_LEVEL, 63)
+                putExtra(BatteryManager.EXTRA_SCALE, 100)
+            }
+        )
+        try {
+            val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+            val handled = receiver.handle(
+                context, Intent(Intent.ACTION_POWER_CONNECTED),
+                Intent.ACTION_POWER_CONNECTED
             )
-        )
+            ShadowLooper.idleMainLooper()
+            assertTrue(handled)
+            val recent = EventVoiceTrace.getRecent(1)
+            assertTrue(recent.isNotEmpty())
+            val spoken = recent.first().textSnippet
+            assertFalse(spoken.contains("{percent}"))
+            assertTrue(spoken.contains(NumberSpeech.toArabicWords(63)))
+        } finally {
+            @Suppress("DEPRECATION")
+            context.removeStickyBroadcast(
+                Intent(Intent.ACTION_BATTERY_CHANGED)
+            )
+        }
     }
 
     @Test

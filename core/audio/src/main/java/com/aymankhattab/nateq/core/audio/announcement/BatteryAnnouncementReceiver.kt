@@ -256,11 +256,24 @@ class BatteryAnnouncementReceiver(
                 if (!settings.isChargingConnectAnnouncementEnabled()) {
                     return false
                 }
-                val text = LocaleUtils.stringForSpeech(
-                    context, if (isArabic) LanguageCode.AR.tag
-                    else LanguageCode.EN.tag,
-                    R.string.battery_connected, R.string.battery_connected
-                ).withBatteryPercent(readStickyBattery(context), isArabic)
+                val sticky = readStickyBattery(context)
+                val percent = batteryPercent(sticky)
+                val langTag = if (isArabic) LanguageCode.AR.tag
+                else LanguageCode.EN.tag
+                val text = if (percent != null) {
+                    val template = LocaleUtils.stringForSpeech(
+                        context, langTag,
+                        R.string.battery_connected,
+                        R.string.battery_connected
+                    )
+                    template.withBatteryPercent(sticky, isArabic)
+                } else {
+                    LocaleUtils.stringForSpeech(
+                        context, langTag,
+                        R.string.battery_connected_no_percent,
+                        R.string.battery_connected_no_percent
+                    )
+                }
                 spoke = speak(
                     context, settings, text, locale, voiceId,
                     CueType.BATTERY_CHARGING, onCueDone
@@ -271,11 +284,24 @@ class BatteryAnnouncementReceiver(
                 if (!settings.isChargingDisconnectAnnouncementEnabled()) {
                     return false
                 }
-                val text = LocaleUtils.stringForSpeech(
-                    context, if (isArabic) LanguageCode.AR.tag
-                    else LanguageCode.EN.tag,
-                    R.string.battery_disconnected, R.string.battery_disconnected
-                ).withBatteryPercent(readStickyBattery(context), isArabic)
+                val sticky = readStickyBattery(context)
+                val percent = batteryPercent(sticky)
+                val langTag = if (isArabic) LanguageCode.AR.tag
+                else LanguageCode.EN.tag
+                val text = if (percent != null) {
+                    val template = LocaleUtils.stringForSpeech(
+                        context, langTag,
+                        R.string.battery_disconnected,
+                        R.string.battery_disconnected
+                    )
+                    template.withBatteryPercent(sticky, isArabic)
+                } else {
+                    LocaleUtils.stringForSpeech(
+                        context, langTag,
+                        R.string.battery_disconnected_no_percent,
+                        R.string.battery_disconnected_no_percent
+                    )
+                }
                 spoke = speak(
                     context, settings, text, locale, voiceId,
                     CueType.BATTERY_DISCONNECTED, onCueDone
@@ -355,7 +381,8 @@ class BatteryAnnouncementReceiver(
     }
 
     /** نسبة البطارية من نَسَب extras، أو null إن غابت/فسدت. */
-    private fun batteryPercent(intent: Intent?): Int? {
+    @VisibleForTesting
+    internal fun batteryPercent(intent: Intent?): Int? {
         if (intent == null) return null
         val level = intent.getIntExtra(
             android.os.BatteryManager.EXTRA_LEVEL, -1
@@ -374,8 +401,8 @@ class BatteryAnnouncementReceiver(
      *
      * أحداث التوصيل والفصل لا تحمل EXTRA_LEVEL ولا EXTRA_SCALE (بثّان
      * منفصلان)، فنقرأ البث اللاصق للبطارية عبر [readStickyBattery] ونمرّره
-     * هنا — وبلا نسبة صالحة يبقى النص كما هو (بلا نسبة) بدل إعلانٍ يحمل
-     * البديلَ الحرفي.
+     * هنا — وبلا نسبة صالحة يُزال البديل وصياغته ليبقى النص بلا نسبة بدل
+     * إعلانٍ يحمل البديلَ الحرفي.
      */
     @VisibleForTesting
     internal fun String.withBatteryPercent(
@@ -383,7 +410,15 @@ class BatteryAnnouncementReceiver(
         isArabic: Boolean
     ): String {
         if (!contains(PERCENT_PLACEHOLDER)) return this
-        val percent = batteryPercent(batteryIntent) ?: return this
+        val percent = batteryPercent(batteryIntent)
+        if (percent == null) {
+            return replace("، نسبة البطارية $PERCENT_PLACEHOLDER بالمئة", "")
+                .replace(" نسبة البطارية $PERCENT_PLACEHOLDER بالمئة", "")
+                .replace(", battery at $PERCENT_PLACEHOLDER percent", "")
+                .replace(" battery at $PERCENT_PLACEHOLDER percent", "")
+                .replace(PERCENT_PLACEHOLDER, "")
+                .trim()
+        }
         val words = if (isArabic) {
             NumberSpeech.toArabicWords(percent)
         } else {

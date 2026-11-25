@@ -229,8 +229,13 @@ internal class DeviceHealthController(
         isEnglish: Boolean
     ): String {
         val (percent, charging) = batteryInfo(context)
-        val res = if (charging) AudioR.string.battery_connected
-            else AudioR.string.battery_disconnected
+        val res = if (charging) {
+            if (percent > 0) AudioR.string.battery_connected
+            else AudioR.string.battery_connected_no_percent
+        } else {
+            if (percent > 0) AudioR.string.battery_disconnected
+            else AudioR.string.battery_disconnected_no_percent
+        }
         val text = LocaleUtils.stringForSpeech(context, langTag, res, res)
         if (percent <= 0 || !text.contains(PERCENT_PLACEHOLDER)) return text
         return text.replace(
