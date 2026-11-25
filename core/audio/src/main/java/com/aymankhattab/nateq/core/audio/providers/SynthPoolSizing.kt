@@ -37,5 +37,6 @@ internal fun resolvedPoolSize(
         totalMemBytes < MID_MEM_BYTES -> MID_MEM_CAP
         else -> MAX_SYNTH_POOL
     }
-    return installedCount.coerceIn(1, minOf(MAX_SYNTH_POOL, memCap))
+    val minThreads = if (totalMemBytes >= LOW_MEM_BYTES) 2 else 1
+    return installedCount.coerceIn(minThreads, minOf(MAX_SYNTH_POOL, memCap))
 }

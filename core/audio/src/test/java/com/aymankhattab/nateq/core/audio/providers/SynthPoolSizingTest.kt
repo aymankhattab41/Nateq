@@ -12,13 +12,20 @@ import org.junit.Test
 class SynthPoolSizingTest {
 
     @Test
-    fun noEngines_fallsBackToOneThread() {
-        assertEquals(1, resolvedPoolSize(0))
+    fun noEngines_fallsBackToMinThreads() {
+        // افتراضياً ذاكرة غير محدودة >= 3GB فيكون الحد الأدنى 2
+        assertEquals(2, resolvedPoolSize(0))
+        val twoGb = 2L * 1024 * 1024 * 1024
+        assertEquals(1, resolvedPoolSize(0, twoGb))
     }
 
     @Test
-    fun singleEngine_singleThread() {
-        assertEquals(1, resolvedPoolSize(1))
+    fun singleEngine_resolvesThreads() {
+        // بذاكرة كافية >= 3GB يكون الحد الأدنى 2
+        // حتى لا تُعطّل التدفئة طلباً حقيقياً
+        assertEquals(2, resolvedPoolSize(1))
+        val twoGb = 2L * 1024 * 1024 * 1024
+        assertEquals(1, resolvedPoolSize(1, twoGb))
     }
 
     @Test
@@ -44,7 +51,7 @@ class SynthPoolSizingTest {
     fun midMemoryDevice_capsAtThree() {
         val threeAndHalfGb = (3.5 * 1024 * 1024 * 1024).toLong()
         assertEquals(3, resolvedPoolSize(4, threeAndHalfGb))
-        assertEquals(1, resolvedPoolSize(1, threeAndHalfGb))
+        assertEquals(2, resolvedPoolSize(1, threeAndHalfGb))
     }
 
     @Test
@@ -53,5 +60,6 @@ class SynthPoolSizingTest {
         assertEquals(4, resolvedPoolSize(4, eightGb))
         assertEquals(MAX_SYNTH_POOL, resolvedPoolSize(50, eightGb))
         assertEquals(2, resolvedPoolSize(2, eightGb))
+        assertEquals(2, resolvedPoolSize(1, eightGb))
     }
 }

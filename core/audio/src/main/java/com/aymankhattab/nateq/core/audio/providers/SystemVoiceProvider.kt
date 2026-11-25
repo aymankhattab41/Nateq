@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -327,6 +328,12 @@ class SystemVoiceProvider(
     private val engineVoiceConfigs =
         ConcurrentHashMap<TextToSpeech, EngineVoiceConfig>()
 
+    /** أقفال قابلة للمقاطعة لكل مثيل محرك لتفادي حجز المحرك بطلب ملغى. */
+    private val engineLocks = ConcurrentHashMap<TextToSpeech, ReentrantLock>()
+
+    private fun getEngineLock(instance: TextToSpeech): ReentrantLock =
+        engineLocks.computeIfAbsent(instance) { ReentrantLock() }
+
     /** محركاتٌ قيد التدفئة (بند ب.txt 3.4-2) تحت [ttsLock]: تبقى خارج
      *  [enginePool] حتى يكتمل ربط onInit الناجح فلا تُرَى في اختيارات
      *  النطق قبل نضجها؛ أي فشل تسقطه التدفئة وسكت (لا يكسر طلباً). */
@@ -411,6 +418,7 @@ class SystemVoiceProvider(
             synthesizedEngines.clear()
             consecutiveFailures.clear()
             engineVoiceConfigs.clear()
+            engineLocks.clear()
             lastEnginePackage = null
         }
         pcmCache.evictAll()
@@ -824,13 +832,38 @@ class SystemVoiceProvider(
             if (!done.getAndSet(true)) {
                 runSynthesisOnBackground(
                     beforeSpeak = {
-                        synchronized(engineInstance) {
+                        val lock = getEngineLock(engineInstance)
+                        val waitBudget = synthesisTimeoutMs(
+                            text.length,
+                            isColdStart = enginePackage !in synthesizedEngines
+                        )
+                        val locked = try {
+                            lock.tryLock(waitBudget, TimeUnit.MILLISECONDS)
+                        } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            false
+                        }
+                        if (!locked) {
+                            Log.w(
+                                TAG,
+                                "[Provider] failed to acquire lock for " +
+                                    "engine=$enginePackage cancelled=" +
+                                    "${cancelled.get()}"
+                            )
+                            return@runSynthesisOnBackground false
+                        }
+                        try {
+                            if (cancelled.get()) {
+                                return@runSynthesisOnBackground false
+                            }
                             synthesizeInternal(
                                 engineInstance, text, voice, speechRate,
                                 pitch, volume, onFormatInfo, onAudioChunk,
                                 cancelled, desiredVoiceName, cacheKey,
                                 enginePackage, bindTimeMs
                             )
+                        } finally {
+                            lock.unlock()
                         }
                     },
                     onSuccess = {
@@ -839,27 +872,32 @@ class SystemVoiceProvider(
                     },
                     onFailure = {
                         try {
-                            val count =
-                                (consecutiveFailures[enginePackage] ?: 0) + 1
-                            consecutiveFailures[enginePackage] = count
-                            if (count >= MAX_CONSECUTIVE_SYNTH_FAILURES) {
-                                Log.w(
-                                    TAG,
-                                    "[Provider] engine dropped after " +
-                                        "$count consecutive failures: " +
-                                        "$enginePackage"
-                                )
-                                dropBrokenEngine(engineInstance)
-                                consecutiveFailures.remove(enginePackage)
-                            } else {
-                                Log.w(
-                                    TAG,
-                                    "[Provider] synth failed (failure $count/" +
-                                        "$MAX_CONSECUTIVE_SYNTH_FAILURES), " +
-                                        "retaining in pool: $enginePackage"
-                                )
+                            if (!cancelled.get()) {
+                                val current =
+                                    consecutiveFailures[enginePackage] ?: 0
+                                val count = current + 1
+                                consecutiveFailures[enginePackage] = count
+                                if (count >= MAX_CONSECUTIVE_SYNTH_FAILURES) {
+                                    Log.w(
+                                        TAG,
+                                        "[Provider] engine dropped after " +
+                                            "$count consecutive failures: " +
+                                            "$enginePackage"
+                                    )
+                                    dropBrokenEngine(engineInstance)
+                                    consecutiveFailures.remove(enginePackage)
+                                } else {
+                                    val maxFail =
+                                        MAX_CONSECUTIVE_SYNTH_FAILURES
+                                    Log.w(
+                                        TAG,
+                                        "[Provider] synth failed (" +
+                                            "failure $count/$maxFail), " +
+                                            "retaining in pool: $enginePackage"
+                                    )
+                                }
+                                notifyEngineFailedOnce(enginePackage)
                             }
-                            notifyEngineFailedOnce(enginePackage)
                         } catch (t: Throwable) {
                             Log.e(TAG, "onFailure handling failed", t)
                         } finally {
@@ -970,6 +1008,53 @@ class SystemVoiceProvider(
                                         // إذا نجحت التهيئة فلا نغلق المثيل بل
                                         // نضيفه للمسبح لخدمة الطلب التالي.
                                         if (status == TextToSpeech.SUCCESS) {
+                                            synthExecutor.execute {
+                                                val voiceNames = runCatching {
+                                                    built.voices.orEmpty()
+                                                        .map { it.name }
+                                                }.getOrDefault(emptyList())
+                                                logBindEvidence(eng, voiceNames)
+                                                if (!EngineBindVerifier
+                                                    .isWronglyBoundToGoogle(
+                                                        eng, voiceNames
+                                                    )
+                                                ) {
+                                                    synchronized(ttsLock) {
+                                                        if (!shutdownCalled) {
+                                                            enginePool[eng] =
+                                                                built
+                                                            initializedEngines
+                                                                .add(eng)
+                                                            prewarmingEngines
+                                                                .remove(eng)
+                                                            Log.i(
+                                                                TAG,
+                                                                "[Provider] " +
+                                                                "late init " +
+                                                                "salvaged to " +
+                                                                "pool: $eng"
+                                                            )
+                                                        } else {
+                                                            runCatching {
+                                                                built.shutdown()
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    runCatching {
+                                                        built.shutdown()
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            runCatching { built.shutdown() }
+                                        }
+                                        return@TextToSpeech
+                                    }
+                                    if (status == TextToSpeech.SUCCESS
+                                        && !cancelled.get()
+                                    ) {
+                                        synthExecutor.execute {
                                             val voiceNames = runCatching {
                                                 built.voices.orEmpty()
                                                     .map { it.name }
@@ -981,108 +1066,77 @@ class SystemVoiceProvider(
                                                 )
                                             ) {
                                                 synchronized(ttsLock) {
-                                                    if (!shutdownCalled) {
-                                                        enginePool[eng] = built
-                                                        initializedEngines
-                                                            .add(eng)
-                                                        prewarmingEngines
-                                                            .remove(eng)
-                                                        Log.i(
-                                                            TAG,
-                                                            "[Provider] late " +
-                                                            "init salvaged " +
-                                                            "to pool: $eng"
-                                                        )
-                                                    } else {
+                                                    if (shutdownCalled) {
                                                         runCatching {
                                                             built.shutdown()
                                                         }
+                                                    } else {
+                                                        enginePool[eng] = built
+                                                        initializedEngines.add(
+                                                            eng
+                                                        )
+                                                        prewarmingEngines
+                                                            .remove(eng)
+                                                        onActiveEngineSwitch(
+                                                            eng
+                                                        )
                                                     }
                                                 }
-                                            } else {
-                                                runCatching { built.shutdown() }
-                                            }
-                                        } else {
-                                            runCatching { built.shutdown() }
-                                        }
-                                        return@TextToSpeech
-                                    }
-                                    if (status == TextToSpeech.SUCCESS
-                                        && !cancelled.get()
-                                    ) {
-                                        val voiceNames = runCatching {
-                                            built.voices.orEmpty()
-                                                .map { it.name }
-                                        }.getOrDefault(emptyList())
-                                        logBindEvidence(eng, voiceNames)
-                                        if (!EngineBindVerifier
-                                            .isWronglyBoundToGoogle(
-                                                eng, voiceNames
-                                            )
-                                        ) {
-                                            synchronized(ttsLock) {
                                                 if (shutdownCalled) {
-                                                    runCatching {
-                                                        built.shutdown()
+                                                    if (!done.getAndSet(true)) {
+                                                        cont.resume(Unit)
                                                     }
                                                 } else {
-                                                    enginePool[eng] = built
-                                                    initializedEngines.add(eng)
+                                                    speakNow(built, eng)
+                                                }
+                                            } else {
+                                                // سامسونج أو مشخّص آخر ربط
+                                                // محركاً غير الحزمة المطلوبة
+                                                // (جوجل بدل المختار): لا نقبل
+                                                // المثيل ولا نُخرج صوته — إعادة
+                                                // ربط واحدة ثم إعلان فشل صريح.
+                                                Log.w(
+                                                    TAG,
+                                                    "[Provider] bind " +
+                                                    "mismatch: req=$eng" +
+                                                    " voices=$voiceNames" +
+                                                    " attempt=$rebindAttempts"
+                                                )
+                                                synchronized(ttsLock) {
                                                     prewarmingEngines.remove(
                                                         eng
                                                     )
-                                                    onActiveEngineSwitch(eng)
                                                 }
-                                            }
-                                            if (shutdownCalled) {
-                                                if (!done.getAndSet(true)) {
-                                                    cont.resume(Unit)
-                                                }
-                                            } else {
-                                                speakNow(built, eng)
-                                            }
-                                        } else {
-                                            // سامسونج أو مشخّص آخر ربط محركاً
-                                            // غير الحزمة المطلوبة (جوجل بدل
-                                            // المختار): لا نقبل المثيل ولا
-                                            // نُخرج صوت محركٍ دخيل — إعادة
-                                            // ربط واحدة ثم إعلان فشل صريح.
-                                            Log.w(TAG,
-                                                "[Provider] bind mismatch:" +
-                                                " requested=$eng" +
-                                                " voices=$voiceNames" +
-                                                " attempt=$rebindAttempts")
-                                            synchronized(ttsLock) {
-                                                prewarmingEngines.remove(eng)
-                                            }
-                                            dropBrokenEngine(built)
-                                            if (!cancelled.get()
-                                                && EngineBindVerifier
-                                                .shouldRetryRebind(
-                                                    rebindAttempts
-                                                )
-                                            ) {
-                                                attemptWith(
-                                                    eng, rebindAttempts + 1
-                                                )
-                                            } else {
-                                                notifyEngineFailedOnce(eng)
-                                                val fallback =
-                                                    resolveFallbackEngine(
-                                                        eng, attemptedEngines
+                                                dropBrokenEngine(built)
+                                                if (!cancelled.get()
+                                                    && EngineBindVerifier
+                                                    .shouldRetryRebind(
+                                                        rebindAttempts
                                                     )
-                                                if (fallback != null
-                                                    && !cancelled.get()
                                                 ) {
-                                                    attemptedEngines.add(
-                                                        fallback
+                                                    attemptWith(
+                                                        eng, rebindAttempts + 1
                                                     )
-                                                    done.set(false)
-                                                    attemptWith(fallback, 0)
-                                                } else if (!done
-                                                    .getAndSet(true)
-                                                ) {
-                                                    cont.resume(Unit)
+                                                } else {
+                                                    notifyEngineFailedOnce(eng)
+                                                    val fallback =
+                                                        resolveFallbackEngine(
+                                                            eng,
+                                                            attemptedEngines
+                                                        )
+                                                    if (fallback != null
+                                                        && !cancelled.get()
+                                                    ) {
+                                                        attemptedEngines.add(
+                                                            fallback
+                                                        )
+                                                        done.set(false)
+                                                        attemptWith(fallback, 0)
+                                                    } else if (!done
+                                                        .getAndSet(true)
+                                                    ) {
+                                                        cont.resume(Unit)
+                                                    }
                                                 }
                                             }
                                         }
@@ -1195,6 +1249,7 @@ class SystemVoiceProvider(
             runCatching { instance.shutdown() }
             enginePool.entries.removeAll { e -> e.value === instance }
             engineVoiceConfigs.remove(instance)
+            engineLocks.remove(instance)
         }
     }
 
@@ -1342,7 +1397,7 @@ class SystemVoiceProvider(
                     TextToSpeech.LANG_AVAILABLE
                 if (voicesReady && langReady) return true
                 try {
-                    Thread.sleep(20)
+                    Thread.sleep(5)
                 } catch (_: InterruptedException) {
                     Thread.currentThread().interrupt()
                     return false
@@ -1390,7 +1445,7 @@ class SystemVoiceProvider(
                     return true
                 }
                 try {
-                    Thread.sleep(25)
+                    Thread.sleep(5)
                 } catch (_: InterruptedException) {
                     Thread.currentThread().interrupt()
                     return false
