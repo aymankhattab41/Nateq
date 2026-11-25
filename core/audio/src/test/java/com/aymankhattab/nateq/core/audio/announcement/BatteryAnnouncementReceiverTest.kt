@@ -763,6 +763,296 @@ class BatteryAnnouncementReceiverTest {
             spoke100
         )
     }
+
+    private fun setTestSpeakerVoice(v: String?) {
+        val voiceField = AnnouncementSpeaker::class.java
+            .getDeclaredField("voiceId")
+        voiceField.isAccessible = true
+        voiceField.set(AnnouncementSpeaker.getInstance(context), v)
+    }
+
+    private fun clearDebounceState() {
+        context.getSharedPreferences(
+            "nateq_battery_state", Context.MODE_PRIVATE
+        ).edit().clear().commit()
+        BatteryAnnouncementReceiver.resetLevelFilterForTesting()
+    }
+
+    @Test
+    fun `cue only mode across levels 20 15 10 100 and charger events`() {
+        val settings = SettingsRepository(context)
+        settings.setAllAnnouncementsEnabled(true)
+        settings.setBatteryAnnouncementEnabled(true)
+        settings.setBatteryAnnouncementLevels(
+            setOf("20", "15", "10", "100", "50")
+        )
+        settings.setChargingDisconnectAnnouncementEnabled(true)
+        settings.setChargingCompleteAnnouncementEnabled(true)
+        settings.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY, "voice-target"
+        )
+        settings.setBatterySoundCueMode(2)
+        settings.setBatteryCueVolume(0.45f)
+
+        val sink = FakeCueSink()
+        AudioCuePlayer.replaceSharedForTesting(
+            AudioCuePlayer.forTesting(sink, CueSynth)
+        )
+        val clock = FakeClock(baseNow)
+        val receiver = BatteryAnnouncementReceiver(clock)
+
+        try {
+            val levelsToTest = listOf(
+                20 to CueType.BATTERY_LOW,
+                15 to CueType.BATTERY_LOW,
+                10 to CueType.BATTERY_LOW,
+                100 to CueType.BATTERY_FULL
+            )
+            for ((lvl, expectedCue) in levelsToTest) {
+                clearDebounceState()
+                sink.reset()
+                setTestSpeakerVoice("sentinel-untouched")
+                var cueDoneInvoked = false
+                val intent = batteryIntent(lvl)
+                val handled = receiver.handle(
+                    context, intent, Intent.ACTION_BATTERY_CHANGED,
+                    onCueDone = { cueDoneInvoked = true }
+                )
+                ShadowLooper.idleMainLooper()
+                assertTrue("معالجة إعلان المستوى $lvl%", handled)
+                assertTrue("استدعاء onCueDone للمستوى $lvl%", cueDoneInvoked)
+                assertEquals(
+                    "المؤثر الصوتي الصحيح لمستوى $lvl%",
+                    expectedCueSamples(expectedCue),
+                    sink.played?.size
+                )
+                assertEquals(0.45f, sink.volume, 0.0f)
+                assertEquals(
+                    "مؤثر فقط لا ينطق كلاماً للمستوى $lvl%",
+                    "sentinel-untouched", currentVoiceId()
+                )
+            }
+
+            // توصيل الشاحن (مؤثر فقط)
+            clearDebounceState()
+            sink.reset()
+            setTestSpeakerVoice("sentinel-untouched")
+            var connectDone = false
+            val handledConnect = receiver.handle(
+                context, batteryIntent(50), Intent.ACTION_POWER_CONNECTED,
+                onCueDone = { connectDone = true }
+            )
+            ShadowLooper.idleMainLooper()
+            assertTrue(handledConnect)
+            assertTrue(connectDone)
+            assertEquals(
+                expectedCueSamples(CueType.BATTERY_CHARGING),
+                sink.played?.size
+            )
+            assertEquals(0.45f, sink.volume, 0.0f)
+            assertEquals(
+                "مؤثر فقط لا ينطق عند توصيل الشاحن",
+                "sentinel-untouched", currentVoiceId()
+            )
+
+            // فصل الشاحن (مؤثر فقط)
+            clearDebounceState()
+            sink.reset()
+            setTestSpeakerVoice("sentinel-untouched")
+            var disconnectDone = false
+            val handledDisconnect = receiver.handle(
+                context, batteryIntent(50), Intent.ACTION_POWER_DISCONNECTED,
+                onCueDone = { disconnectDone = true }
+            )
+            ShadowLooper.idleMainLooper()
+            assertTrue(handledDisconnect)
+            assertTrue(disconnectDone)
+            assertEquals(
+                expectedCueSamples(CueType.BATTERY_DISCONNECTED),
+                sink.played?.size
+            )
+            assertEquals(0.45f, sink.volume, 0.0f)
+            assertEquals(
+                "مؤثر فقط لا ينطق عند فصل الشاحن",
+                "sentinel-untouched", currentVoiceId()
+            )
+
+            // مستوى بدون مؤثر مخصص (50%): سلوك صامت موثق دون السقوط للكلام
+            clearDebounceState()
+            sink.reset()
+            setTestSpeakerVoice("sentinel-untouched")
+            var done50 = false
+            val handled50 = receiver.handle(
+                context, batteryIntent(50), Intent.ACTION_BATTERY_CHANGED,
+                onCueDone = { done50 = true }
+            )
+            ShadowLooper.idleMainLooper()
+            assertTrue(handled50)
+            assertTrue(done50)
+            assertNull("لا مؤثر صوتي لمستوى 50%", sink.played)
+            assertEquals(
+                "مؤثر فقط لمستوى بلا مؤثر لا يسقط إلى الكلام",
+                "sentinel-untouched", currentVoiceId()
+            )
+        } finally {
+            AudioCuePlayer.replaceSharedForTesting(null)
+            AnnouncementSpeaker.getInstance(context).shutdown()
+        }
+    }
+
+    @Test
+    fun `narration only mode across levels 20 15 10 100 and charger events`() {
+        val settings = SettingsRepository(context)
+        settings.setAllAnnouncementsEnabled(true)
+        settings.setBatteryAnnouncementEnabled(true)
+        settings.setBatteryAnnouncementLevels(
+            setOf("20", "15", "10", "100")
+        )
+        settings.setChargingDisconnectAnnouncementEnabled(true)
+        settings.setChargingCompleteAnnouncementEnabled(true)
+        settings.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY, "voice-target"
+        )
+        settings.setBatterySoundCueMode(1)
+        settings.setBatteryCueVolume(0.7f)
+
+        val sink = FakeCueSink()
+        AudioCuePlayer.replaceSharedForTesting(
+            AudioCuePlayer.forTesting(sink, CueSynth)
+        )
+        val clock = FakeClock(baseNow)
+        val receiver = BatteryAnnouncementReceiver(clock)
+
+        try {
+            for (lvl in listOf(20, 15, 10, 100)) {
+                clearDebounceState()
+                sink.reset()
+                setTestSpeakerVoice("sentinel-untouched")
+                val handled = receiver.handle(
+                    context, batteryIntent(lvl), Intent.ACTION_BATTERY_CHANGED
+                )
+                ShadowLooper.idleMainLooper()
+                assertTrue(handled)
+                assertNull("نطق فقط: لا مؤثر صوتي لمستوى $lvl%", sink.played)
+                assertEquals(
+                    "نطق فقط: تطبيق الصوت لمستوى $lvl%",
+                    "voice-target", currentVoiceId()
+                )
+            }
+
+            // توصيل الشاحن
+            clearDebounceState()
+            sink.reset()
+            setTestSpeakerVoice("sentinel-untouched")
+            val handledConnect = receiver.handle(
+                context, batteryIntent(50), Intent.ACTION_POWER_CONNECTED
+            )
+            ShadowLooper.idleMainLooper()
+            assertTrue(handledConnect)
+            assertNull("نطق فقط: لا مؤثر عند التوصيل", sink.played)
+            assertEquals("voice-target", currentVoiceId())
+
+            // فصل الشاحن
+            clearDebounceState()
+            sink.reset()
+            setTestSpeakerVoice("sentinel-untouched")
+            val handledDisconnect = receiver.handle(
+                context, batteryIntent(50), Intent.ACTION_POWER_DISCONNECTED
+            )
+            ShadowLooper.idleMainLooper()
+            assertTrue(handledDisconnect)
+            assertNull("نطق فقط: لا مؤثر عند الفصل", sink.played)
+            assertEquals("voice-target", currentVoiceId())
+        } finally {
+            AudioCuePlayer.replaceSharedForTesting(null)
+            AnnouncementSpeaker.getInstance(context).shutdown()
+        }
+    }
+
+    @Test
+    fun `cue and narration mode across levels 20 15 10 100 and charger`() {
+        val settings = SettingsRepository(context)
+        settings.setAllAnnouncementsEnabled(true)
+        settings.setBatteryAnnouncementEnabled(true)
+        settings.setBatteryAnnouncementLevels(
+            setOf("20", "15", "10", "100")
+        )
+        settings.setChargingDisconnectAnnouncementEnabled(true)
+        settings.setChargingCompleteAnnouncementEnabled(true)
+        settings.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY, "voice-target"
+        )
+        settings.setBatterySoundCueMode(0)
+        settings.setBatteryCueVolume(0.8f)
+
+        val sink = FakeCueSink()
+        AudioCuePlayer.replaceSharedForTesting(
+            AudioCuePlayer.forTesting(sink, CueSynth)
+        )
+        val clock = FakeClock(baseNow)
+        val receiver = BatteryAnnouncementReceiver(clock)
+
+        try {
+            val levelsToTest = listOf(
+                20 to CueType.BATTERY_LOW,
+                15 to CueType.BATTERY_LOW,
+                10 to CueType.BATTERY_LOW,
+                100 to CueType.BATTERY_FULL
+            )
+            for ((lvl, expectedCue) in levelsToTest) {
+                clearDebounceState()
+                sink.reset()
+                setTestSpeakerVoice("sentinel-untouched")
+                val handled = receiver.handle(
+                    context, batteryIntent(lvl), Intent.ACTION_BATTERY_CHANGED
+                )
+                ShadowLooper.idleMainLooper()
+                assertTrue(handled)
+                assertEquals(
+                    "نطق ومؤثر: تشغيل المؤثر لمستوى $lvl%",
+                    expectedCueSamples(expectedCue),
+                    sink.played?.size
+                )
+                assertEquals(
+                    "نطق ومؤثر: تطبيق صوت النطق لمستوى $lvl%",
+                    "voice-target", currentVoiceId()
+                )
+            }
+
+            // توصيل الشاحن
+            clearDebounceState()
+            sink.reset()
+            setTestSpeakerVoice("sentinel-untouched")
+            val handledConnect = receiver.handle(
+                context, batteryIntent(50), Intent.ACTION_POWER_CONNECTED
+            )
+            ShadowLooper.idleMainLooper()
+            assertTrue(handledConnect)
+            assertEquals(
+                expectedCueSamples(CueType.BATTERY_CHARGING),
+                sink.played?.size
+            )
+            assertEquals("voice-target", currentVoiceId())
+
+            // فصل الشاحن
+            clearDebounceState()
+            sink.reset()
+            setTestSpeakerVoice("sentinel-untouched")
+            val handledDisconnect = receiver.handle(
+                context, batteryIntent(50), Intent.ACTION_POWER_DISCONNECTED
+            )
+            ShadowLooper.idleMainLooper()
+            assertTrue(handledDisconnect)
+            assertEquals(
+                expectedCueSamples(CueType.BATTERY_DISCONNECTED),
+                sink.played?.size
+            )
+            assertEquals("voice-target", currentVoiceId())
+        } finally {
+            AudioCuePlayer.replaceSharedForTesting(null)
+            AnnouncementSpeaker.getInstance(context).shutdown()
+        }
+    }
 }
 
 /** ساعة افتراضية قابلة للضبط — تحكّم كامل بالخط الزمني في الاختبارات. */
@@ -783,6 +1073,11 @@ private class FakeCueSink : CueSink {
 
     var played: ShortArray? = null
     var volume: Float = 0f
+
+    fun reset() {
+        played = null
+        volume = 0f
+    }
 
     @Suppress("UNUSED_PARAMETER")
     override fun play(

@@ -340,10 +340,10 @@ class BatteryAnnouncementReceiver(
                 markAnnounced(context, "%$percentage")
 
                 val text = buildLevelText(context, percentage, isArabic)
-                val levelCue = if (percentage <= 10) {
-                    CueType.BATTERY_LOW
-                } else {
-                    null
+                val levelCue = when {
+                    percentage <= 20 -> CueType.BATTERY_LOW
+                    percentage == 100 -> CueType.BATTERY_FULL
+                    else -> null
                 }
                 spoke = spoke || speak(
                     context, settings, text, locale, voiceId, levelCue,
@@ -456,12 +456,17 @@ class BatteryAnnouncementReceiver(
             .getOrDefault(0.8f)
         val mode = runCatching { settings.getBatterySoundCueMode() }
             .getOrDefault(0)
-        if (mode == 2 && cueType != null) {
+        if (mode == 2) {
             // «مؤثر فقط»: لا نطق، نغمة فقط (بدون تركيز — طويلة قصيرة
-            // ضمن مسار الإتاحة).
-            AudioCuePlayer.getInstance(context).play(
-                AudioCue(type = cueType, volume = cueVolume)
-            ) {
+            // ضمن مسار الإتاحة). إن لم يكن للحدث مؤثر مخصص يتبع سلوكاً
+            // صامتاً موثقاً دون السقوط إلى الكلام.
+            if (cueType != null) {
+                AudioCuePlayer.getInstance(context).play(
+                    AudioCue(type = cueType, volume = cueVolume)
+                ) {
+                    onCueDone?.invoke()
+                }
+            } else {
                 onCueDone?.invoke()
             }
             return true
