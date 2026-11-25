@@ -80,16 +80,21 @@ class KeyShortcutRouter(
             return true
         }
 
-        val active = FeatureFlags.isActive(
-            FeatureFlags.FEATURE_KEY_SHORTCUTS,
-            context = service.applicationContext,
-            settings = settings,
-            stateStore = stateStore
+        val isConnected = stateStore?.isConnected() == true ||
+            AccessibilityBridge.isConnected() ||
+            com.aymankhattab.nateq.util.AccessibilityUtils
+                .isNateqAccessibilityServiceEnabled(
+                    service.applicationContext
+                )
+        val isFeatureEnabled = settings.isAccessibilityFeatureEnabled(
+            FeatureFlags.FEATURE_KEY_SHORTCUTS
         )
-        if (!active) {
+        if (!isConnected || !isFeatureEnabled) {
             reset()
             return false
         }
+
+        val isPaused = stateStore?.isPaused() == true
 
         return when (event.action) {
             KeyEvent.ACTION_DOWN -> {
@@ -101,7 +106,12 @@ class KeyShortcutRouter(
                 )
                 if (detection.gesture != null) {
                     cancelPendingTimeout()
-                    executeGesture(detection.gesture)
+                    if (!isPaused ||
+                        bindingsRef.get().actionFor(detection.gesture) ==
+                        ShortcutAction.TOGGLE_PAUSE
+                    ) {
+                        executeGesture(detection.gesture)
+                    }
                 } else if (detector.hasPending()) {
                     cancelPendingTimeout()
                     val run = Runnable {
@@ -109,7 +119,14 @@ class KeyShortcutRouter(
                             currentTimeMs = SystemClock.uptimeMillis(),
                             key = key
                         )
-                        timeoutDetection.gesture?.let { executeGesture(it) }
+                        timeoutDetection.gesture?.let { g ->
+                            if (!isPaused ||
+                                bindingsRef.get().actionFor(g) ==
+                                ShortcutAction.TOGGLE_PAUSE
+                            ) {
+                                executeGesture(g)
+                            }
+                        }
                     }
                     pendingTimeoutRunnable = run
                     timeoutHandler.postDelayed(
@@ -117,15 +134,43 @@ class KeyShortcutRouter(
                         detector.doublePressWindowMs
                     )
                 }
-                detection.consume
+                if (isPaused) {
+                    val gesture = detection.gesture
+                    if (gesture != null) {
+                        bindingsRef.get().actionFor(gesture) ==
+                            ShortcutAction.TOGGLE_PAUSE
+                    } else if (detector.hasPending()) {
+                        // كاشف الإيماءات يرتقب إمكانية ثلاثية أو مهلة
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    detection.consume
+                }
             }
             KeyEvent.ACTION_UP -> {
                 val detection = detector.onKeyUp(key, event.eventTime)
                 if (detection.gesture != null) {
                     cancelPendingTimeout()
-                    executeGesture(detection.gesture)
+                    if (!isPaused ||
+                        bindingsRef.get().actionFor(detection.gesture) ==
+                        ShortcutAction.TOGGLE_PAUSE
+                    ) {
+                        executeGesture(detection.gesture)
+                    }
                 }
-                detection.consume
+                if (isPaused) {
+                    val gesture = detection.gesture
+                    if (gesture != null) {
+                        bindingsRef.get().actionFor(gesture) ==
+                            ShortcutAction.TOGGLE_PAUSE
+                    } else {
+                        false
+                    }
+                } else {
+                    detection.consume
+                }
             }
             else -> false
         }
