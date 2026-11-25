@@ -904,6 +904,8 @@
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_battery_announcement" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/battery_announcement_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
             
+            <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_charging_connect_announcement" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/charging_connect_announcement_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
+
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_charging_complete_announcement" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/charging_complete_announcement_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
             

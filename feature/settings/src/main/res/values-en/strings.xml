@@ -258,7 +258,8 @@
 <string name="cd_test_voice_button">Test</string>
 <string name="cd_convert_play_for_language">Play a sample voice for testing, %1$s language</string>
 <string name="cd_convert_save_for_language">Save settings for the %1$s language</string>
-<string name="charging_complete_announcement_enabled" formatted="false">Announce when charging completes (100%%)</string>
+<string name="charging_connect_announcement_enabled">Announce when the charger is plugged in</string>
+    <string name="charging_complete_announcement_enabled" formatted="false">Announce when charging completes (100%%)</string>
 <string name="charging_disconnect_announcement_enabled">Announce when the charger is unplugged</string>
 <string name="check_updates">Check for updates</string>
 <string name="check_updates_desc">Check if a newer version is available</string>

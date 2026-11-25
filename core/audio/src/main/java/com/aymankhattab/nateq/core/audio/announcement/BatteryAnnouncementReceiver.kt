@@ -253,7 +253,7 @@ class BatteryAnnouncementReceiver(
         var spoke = false
         when (action) {
             Intent.ACTION_POWER_CONNECTED -> {
-                if (!settings.isChargingCompleteAnnouncementEnabled()) {
+                if (!settings.isChargingConnectAnnouncementEnabled()) {
                     return false
                 }
                 val text = LocaleUtils.stringForSpeech(

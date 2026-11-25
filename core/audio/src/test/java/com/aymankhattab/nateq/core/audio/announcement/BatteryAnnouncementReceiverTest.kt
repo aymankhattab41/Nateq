@@ -1053,6 +1053,166 @@ class BatteryAnnouncementReceiverTest {
             AnnouncementSpeaker.getInstance(context).shutdown()
         }
     }
+
+    @Test
+    fun `charging complete disabled does not silence charging connect`() {
+        val settings = SettingsRepository(context)
+        settings.setAllAnnouncementsEnabled(true)
+        settings.setBatteryAnnouncementEnabled(true)
+        settings.setBatteryAnnouncementLevels(setOf("20", "15"))
+        // تعطيل اكتمال الشحن (100%) مع إبقاء إعلان توصيل الشاحن مفعلاً
+        settings.setChargingCompleteAnnouncementEnabled(false)
+        settings.setChargingConnectAnnouncementEnabled(true)
+        settings.setChargingDisconnectAnnouncementEnabled(true)
+
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+
+        // إعلان توصيل الشاحن يعمل ولا يُسكت
+        clearDebounceState()
+        val spokeConnect = receiver.handle(
+            context, batteryIntent(50), Intent.ACTION_POWER_CONNECTED
+        )
+        assertTrue(
+            "تعطيل اكتمال 100% لا يسكت إعلان توصيل الشاحن",
+            spokeConnect
+        )
+
+        // إعلان اكتمال الشحن (100%) مسكت
+        clearDebounceState()
+        val intent100 = batteryIntent(100).apply {
+            putExtra(
+                BatteryManager.EXTRA_STATUS,
+                BatteryManager.BATTERY_STATUS_CHARGING
+            )
+        }
+        val spoke100 = receiver.handle(
+            context, intent100, Intent.ACTION_BATTERY_CHANGED
+        )
+        assertFalse(
+            "اكتمال الشحن مسكت لتعطيل ميزته",
+            spoke100
+        )
+    }
+
+    @Test
+    fun `charging connect disabled does not silence charging complete`() {
+        val settings = SettingsRepository(context)
+        settings.setAllAnnouncementsEnabled(true)
+        settings.setBatteryAnnouncementEnabled(true)
+        settings.setBatteryAnnouncementLevels(setOf("20", "15"))
+        // تعطيل إعلان توصيل الشاحن مع إبقاء إعلان اكتمال الشحن (100%) مفعلاً
+        settings.setChargingConnectAnnouncementEnabled(false)
+        settings.setChargingCompleteAnnouncementEnabled(true)
+        settings.setChargingDisconnectAnnouncementEnabled(true)
+
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+
+        // إعلان توصيل الشاحن مسكت
+        clearDebounceState()
+        val spokeConnect = receiver.handle(
+            context, batteryIntent(50), Intent.ACTION_POWER_CONNECTED
+        )
+        assertFalse(
+            "إعلان توصيل الشاحن مسكت لتعطيل ميزته",
+            spokeConnect
+        )
+
+        // إعلان اكتمال الشحن (100%) يعمل
+        clearDebounceState()
+        val intent100 = batteryIntent(100).apply {
+            putExtra(
+                BatteryManager.EXTRA_STATUS,
+                BatteryManager.BATTERY_STATUS_CHARGING
+            )
+        }
+        val spoke100 = receiver.handle(
+            context, intent100, Intent.ACTION_BATTERY_CHANGED
+        )
+        assertTrue(
+            "اكتمال 100% يعمل مستقلاً عن مفتاح التوصيل",
+            spoke100
+        )
+    }
+
+    @Test
+    fun `charging disconnect is completely independent`() {
+        val settings = SettingsRepository(context)
+        settings.setAllAnnouncementsEnabled(true)
+        settings.setBatteryAnnouncementEnabled(true)
+        settings.setBatteryAnnouncementLevels(setOf("20", "15"))
+        // تعطيل التوصيل والاكتمال مع تفعيل الفصل فقط
+        settings.setChargingConnectAnnouncementEnabled(false)
+        settings.setChargingCompleteAnnouncementEnabled(false)
+        settings.setChargingDisconnectAnnouncementEnabled(true)
+
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+
+        clearDebounceState()
+        val spokeDisconnect = receiver.handle(
+            context, batteryIntent(50), Intent.ACTION_POWER_DISCONNECTED
+        )
+        assertTrue(
+            "إعلان فصل الشاحن يعمل مستقلاً عن التوصيل والاكتمال",
+            spokeDisconnect
+        )
+
+        clearDebounceState()
+        val spokeConnect = receiver.handle(
+            context, batteryIntent(50), Intent.ACTION_POWER_CONNECTED
+        )
+        assertFalse("إعلان التوصيل معطل", spokeConnect)
+
+        // العكس: تعطيل الفصل فقط مع تفعيل التوصيل والاكتمال
+        settings.setChargingDisconnectAnnouncementEnabled(false)
+        settings.setChargingConnectAnnouncementEnabled(true)
+        settings.setChargingCompleteAnnouncementEnabled(true)
+
+        clearDebounceState()
+        val spokeDisconnect2 = receiver.handle(
+            context, batteryIntent(50), Intent.ACTION_POWER_DISCONNECTED
+        )
+        assertFalse(
+            "إعلان فصل الشاحن مسكت لتعطيل ميزته",
+            spokeDisconnect2
+        )
+
+        clearDebounceState()
+        val spokeConnect2 = receiver.handle(
+            context, batteryIntent(50), Intent.ACTION_POWER_CONNECTED
+        )
+        assertTrue("إعلان التوصيل يعمل عند تفعيله", spokeConnect2)
+    }
+
+    @Test
+    fun `charging connect migration preserves previous choice`() {
+        val prefs = context.getSharedPreferences(
+            "nateq_settings", Context.MODE_PRIVATE
+        )
+        prefs.edit().clear().commit()
+        val repo = SettingsRepository(context)
+
+        // 1. عند غياب كلا المفتاحين: الافتراضي مفعل
+        assertTrue(repo.isChargingConnectAnnouncementEnabled())
+
+        // 2. ترحيل السلوك السابق: إن كان اكتمال الشحن معطلاً قديماً
+        // وغاب مفتاح التوصيل المستقل يُحفظ السلوك السابق المعطل
+        prefs.edit()
+            .putBoolean("charging_complete_announcement_enabled", false)
+            .remove("charging_connect_announcement_enabled")
+            .commit()
+        assertFalse(repo.isChargingConnectAnnouncementEnabled())
+
+        // 3. التعيين المستقل يحرر المفتاح من التبعية السابقة
+        repo.setChargingConnectAnnouncementEnabled(true)
+        assertTrue(repo.isChargingConnectAnnouncementEnabled())
+        assertFalse(repo.isChargingCompleteAnnouncementEnabled())
+
+        // 4. تغيير مفتاح الاكتمال بعد ذلك لا يؤثر على التوصيل
+        repo.setChargingCompleteAnnouncementEnabled(true)
+        repo.setChargingConnectAnnouncementEnabled(false)
+        assertFalse(repo.isChargingConnectAnnouncementEnabled())
+        assertTrue(repo.isChargingCompleteAnnouncementEnabled())
+    }
 }
 
 /** ساعة افتراضية قابلة للضبط — تحكّم كامل بالخط الزمني في الاختبارات. */

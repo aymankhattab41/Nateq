@@ -635,7 +635,13 @@ interface AnnouncementPrefs {
     /** ÙŠØ¹ÙŠÙ‘Ù† ÙˆØ¶Ø¹ Ø§Ù„ØªÙ„Ù…ÙŠØ­ Ø§Ù„ØµÙˆØªÙŠ Ù„Ù„Ø¨Ø·Ø§Ø±ÙŠØ©. */
     fun setBatterySoundCueMode(mode: Int)
 
-    /** ØªÙØ¹ÙŠÙ„ Ø¥Ø¹Ù„Ø§Ù† Ø§ÙƒØªÙ…Ø§Ù„ Ø§Ù„Ø´Ø­Ù†. */
+    /** تفعيل إعلان توصيل الشاحن. */
+    fun isChargingConnectAnnouncementEnabled(): Boolean
+
+    /** يعيّن تفعيل إعلان توصيل الشاحن. */
+    fun setChargingConnectAnnouncementEnabled(enabled: Boolean)
+
+    /** تفعيل إعلان اكتمال الشحن. */
     fun isChargingCompleteAnnouncementEnabled(): Boolean
 
     /** ÙŠØ¹ÙŠÙ‘Ù† ØªÙØ¹ÙŠÙ„ Ø¥Ø¹Ù„Ø§Ù† Ø§ÙƒØªÙ…Ø§Ù„ Ø§Ù„Ø´Ø­Ù†. */

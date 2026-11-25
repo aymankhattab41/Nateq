@@ -30,6 +30,7 @@ internal class BatteryAnnouncementController(
     private var spinnerBatteryCueMode: Spinner? = null
     private var seekBatteryCueVolume: SeekBar? = null
     private var tvBatteryCueVolumeValue: TextView? = null
+    private var switchChargingConnect: SwitchMaterial? = null
     private var switchChargingComplete: SwitchMaterial? = null
     private var switchChargingDisconnect: SwitchMaterial? = null
     private var switchPowerSaver: SwitchMaterial? = null
@@ -53,6 +54,8 @@ internal class BatteryAnnouncementController(
         seekBatteryCueVolume = view.findViewById(R.id.seek_battery_cue_volume)
         tvBatteryCueVolumeValue =
             view.findViewById(R.id.tv_battery_cue_volume_value)
+        switchChargingConnect =
+            view.findViewById(R.id.switch_charging_connect_announcement)
         switchChargingComplete =
             view.findViewById(R.id.switch_charging_complete_announcement)
         switchChargingDisconnect =
@@ -231,6 +234,22 @@ internal class BatteryAnnouncementController(
             }
         })
 
+        // إعلان توصيل الشاحن
+        switchChargingConnect?.isChecked =
+            runCatching { settings.isChargingConnectAnnouncementEnabled() }
+                .getOrDefault(true)
+        switchChargingConnect?.setOnCheckedChangeListener { _, checked ->
+            runCatching {
+                settings.setChargingConnectAnnouncementEnabled(checked)
+            }
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
+                )
+            )
+        }
+
         // إعلان اكتمال الشحن (100%)
         switchChargingComplete?.isChecked =
             runCatching { settings.isChargingCompleteAnnouncementEnabled() }
@@ -388,6 +407,7 @@ internal class BatteryAnnouncementController(
         spinnerBatteryCueMode = null
         seekBatteryCueVolume = null
         tvBatteryCueVolumeValue = null
+        switchChargingConnect = null
         switchChargingComplete = null
         switchChargingDisconnect = null
         switchPowerSaver = null

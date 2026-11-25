@@ -1862,6 +1862,26 @@ class SettingsRepository(context: Context) :
             )
             .apply()
 
+    /** إعلان توصيل الشاحن. */
+    override fun isChargingConnectAnnouncementEnabled(): Boolean {
+        if (prefs.contains("charging_connect_announcement_enabled")) {
+            return prefs.getBoolean(
+                "charging_connect_announcement_enabled", true
+            )
+        }
+        // ترحيل شفاف وحفظ السلوك السابق: إن كانت تفضيلات اكتمال الشحن مضبوطة
+        // سابقاً فنعاملها كخيار أولي لمفتاح التوصيل دون تغيير خيار المستخدم.
+        return prefs.getBoolean("charging_complete_announcement_enabled", true)
+    }
+
+    override fun setChargingConnectAnnouncementEnabled(enabled: Boolean) =
+        prefs.edit()
+            .putBoolean(
+                "charging_connect_announcement_enabled",
+                enabled
+            )
+            .apply()
+
     /** إعلان اكتمال الشحن (وصول 100% والمتصالة). */
     override fun isChargingCompleteAnnouncementEnabled(): Boolean =
         prefs.getBoolean("charging_complete_announcement_enabled", true)
