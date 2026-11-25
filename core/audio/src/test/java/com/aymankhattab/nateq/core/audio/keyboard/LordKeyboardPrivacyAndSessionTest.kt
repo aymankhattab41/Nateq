@@ -375,6 +375,29 @@ class LordKeyboardPrivacyAndSessionTest {
     }
 
     @Test
+    fun testKeyCommitInUriField_speaksCharacterNameAndDoesNotMask() {
+        val settings = SettingsRepository.create(
+            ApplicationProvider.getApplicationContext()
+        )
+        settings.setKeyboardAnnounceAfterLift(true)
+
+        // حقل URI (0x10 مع TYPE_CLASS_TEXT)
+        val uriInfo = createEditorInfo(
+            InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_VARIATION_URI
+        )
+        service.onStartInput(uriInfo, false)
+        assertFalse(service.isPasswordField)
+
+        val keyH = KeyModel(label = "h", spokenText = "إتش")
+        service.onKeySelected(keyH)
+
+        // تأكيد الإدخال في حقل URI ينطق اسم المفتاح ولا يعامله كرمز كلمة مرور
+        assertEquals("تم إدخال إتش", service.lastSpokenText)
+        assertFalse(service.lastSpokenText == "تم إدخال رمز")
+    }
+
+    @Test
     fun testDictation_inNormalField_commitsAndSpeaksContent() {
         val normalInfo = createEditorInfo(
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_NORMAL
