@@ -50,7 +50,7 @@ class LordKeyboardService : InputMethodService(),
     LordKeyboardView.OnKeyboardActionListener {
 
     private lateinit var settingsRepo: SettingsRepository
-    private var keyboardView: LordKeyboardView? = null
+    internal var keyboardView: LordKeyboardView? = null
     private var currentLayer: KeyboardLayer = KeyboardLayer.ARABIC
     private var isEnglishCaps: Boolean = false
     internal var isPasswordField: Boolean = false
@@ -145,11 +145,9 @@ class LordKeyboardService : InputMethodService(),
         // مسطح لوحة المفاتيح
         val kbView = LordKeyboardView(this).apply {
             actionListener = this@LordKeyboardService
-            val displayMetrics = resources.displayMetrics
-            val kbHeightPx = (270 * displayMetrics.density).toInt()
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                kbHeightPx
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
         keyboardView = kbView
@@ -235,19 +233,21 @@ class LordKeyboardService : InputMethodService(),
         }
     }
 
-    private fun applySettingsToKeyboard() {
+    internal fun applySettingsToKeyboard() {
         val kv = keyboardView ?: return
         val mode = settingsRepo.getKeyboardMode()
         val activation = settingsRepo.getKeyboardActivation()
         val announceAfter = settingsRepo.isKeyboardAnnounceAfterLift()
         val haptic = settingsRepo.isKeyboardHapticEnabled()
         val sound = settingsRepo.isKeyboardSoundEnabled()
+        val sizeLevel = settingsRepo.getKeyboardSizeLevel()
 
         kv.keyboardMode = mode
         kv.activationMode = activation
         kv.announceAfterLift = announceAfter
         kv.hapticEnabled = haptic
         kv.soundEnabled = sound
+        kv.sizeLevel = sizeLevel
 
         updateToolbarTheme(mode)
     }

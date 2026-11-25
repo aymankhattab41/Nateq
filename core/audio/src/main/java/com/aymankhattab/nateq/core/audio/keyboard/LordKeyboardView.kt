@@ -65,6 +65,15 @@ class LordKeyboardView @JvmOverloads constructor(
     var activationMode: String =
         SettingsRepository.KEYBOARD_ACTIVATION_LIFT
 
+    var sizeLevel: Int = -1
+        set(value) {
+            if (field != value) {
+                field = value
+                requestLayout()
+                invalidate()
+            }
+        }
+
     var announceAfterLift: Boolean = false
     var hapticEnabled: Boolean = true
     var soundEnabled: Boolean = true
@@ -175,8 +184,12 @@ class LordKeyboardView @JvmOverloads constructor(
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val desiredWidth = MeasureSpec.getSize(widthMeasureSpec)
         val rowCount = if (rows.isNotEmpty()) rows.size else 5
-        val sizeLevel = settingsRepo.getKeyboardSizeLevel()
-        val rowHeightDp = when (sizeLevel) {
+        val currentSizeLevel = if (sizeLevel >= 0) {
+            sizeLevel
+        } else {
+            settingsRepo.getKeyboardSizeLevel()
+        }
+        val rowHeightDp = when (currentSizeLevel) {
             1 -> 48
             2 -> 56
             else -> 40
@@ -211,24 +224,51 @@ class LordKeyboardView @JvmOverloads constructor(
         touchHelper.invalidateRoot()
     }
 
+    fun getKeyRect(key: KeyModel): RectF? = keyRects[key]
+
+    fun getCalculatedRowHeightDp(): Int {
+        val currentSizeLevel = if (sizeLevel >= 0) {
+            sizeLevel
+        } else {
+            settingsRepo.getKeyboardSizeLevel()
+        }
+        return when (currentSizeLevel) {
+            1 -> 48
+            2 -> 56
+            else -> 40
+        }
+    }
+
+    fun getActiveRowHeightPx(): Float {
+        val rowCount = if (rows.isNotEmpty()) rows.size else 5
+        val availableHeight = (height - paddingTop - paddingBottom)
+            .coerceAtLeast(0)
+        return if (rowCount > 0) availableHeight.toFloat() / rowCount else 0f
+    }
+
     private fun recalculateKeyBounds() {
         keyRects.clear()
         if (rows.isEmpty() || width == 0 || height == 0) return
 
         val rowCount = rows.size
-        val rowHeight = height.toFloat() / rowCount
+        val availableHeight = (height - paddingTop - paddingBottom)
+            .coerceAtLeast(0)
+        val rowHeight = availableHeight.toFloat() / rowCount
+        val availableWidth = (width - paddingLeft - paddingRight)
+            .coerceAtLeast(0).toFloat()
 
         for ((rowIndex, row) in rows.withIndex()) {
             val totalWeight =
                 row.sumOf { it.widthWeight.toDouble() }.toFloat()
             if (totalWeight <= 0f) continue
 
-            val top = rowIndex * rowHeight
-            val bottom = (rowIndex + 1) * rowHeight
-            var currentX = 0f
+            val top = paddingTop + rowIndex * rowHeight
+            val bottom = paddingTop + (rowIndex + 1) * rowHeight
+            var currentX = paddingLeft.toFloat()
 
             for (key in row) {
-                val keyWidth = (key.widthWeight / totalWeight) * width
+                val keyWidth = (key.widthWeight / totalWeight) *
+                    availableWidth
                 keyRects[key] = RectF(
                     currentX, top, currentX + keyWidth, bottom
                 )
