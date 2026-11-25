@@ -257,6 +257,11 @@ class NateqTtsService : TextToSpeechService() {
         SupervisorJob() + synthesisExecutor.asCoroutineDispatcher()
     )
 
+    /** خيط نداءات موحد مملوك للخدمة طوال دورة حياتها (بند ١٣). */
+    private val sharedCallbackDispatcher by lazy {
+        SynthesisCallbackDispatcher()
+    }
+
 
     private lateinit var settings: SettingsRepository
     private lateinit var catalog: VoiceCatalog
@@ -567,6 +572,7 @@ class NateqTtsService : TextToSpeechService() {
         // مراجعها في السجل — فلا تبقى نسخة أصلية حيّة بعد تدمير
         // الخدمة، وتعاد الإنشاء لاحقاً من إنشاءٍ حيٍّ عند الحاجة.
         EmbeddedProviders.shutdownAll()
+        runCatching { sharedCallbackDispatcher.close() }
         super.onDestroy()
     }
 
@@ -887,6 +893,8 @@ class NateqTtsService : TextToSpeechService() {
 
         val rawText = request.charSequenceText?.toString().orEmpty()
         val reqVoiceName = request.voiceName?.takeIf { it.isNotBlank() }
+        val queueEnqueuedUptime = SystemClock.uptimeMillis()
+        val queueWaitDurationMs = AtomicLong(0L)
         val startUptime = SystemClock.uptimeMillis()
         val lastProgressAt = AtomicLong(startUptime)
         val lastPieceDurationMs = AtomicLong(0L)
@@ -899,8 +907,8 @@ class NateqTtsService : TextToSpeechService() {
             Collections.synchronizedList(
                 ArrayList<SpeechLatencyTracker.SegmentMetric>()
             )
-        // بند ١٠: مُوجِّهُ النداءات إلى خيط تخليق واحد مخصّص (لا الرئيسي).
-        val callbackDispatcher = SynthesisCallbackDispatcher()
+        // بند ١٠ و١٣: خيط نداءات موحد مملوك للخدمة (لا خيط جديد لكل طلب).
+        val callbackDispatcher = sharedCallbackDispatcher
         val monitoredCallback = MonitoredSynthesisCallback(
             callback,
             { bytes ->
@@ -937,6 +945,8 @@ class NateqTtsService : TextToSpeechService() {
         val timeoutHolder = AtomicLong(synthesisTimeoutMs(rawText.length))
         fun timeoutMs(): Long = timeoutHolder.get()
         val job = synthesisScope.launch(start = CoroutineStart.LAZY) {
+            val executionStart = SystemClock.uptimeMillis()
+            queueWaitDurationMs.set(executionStart - queueEnqueuedUptime)
             try {
                 // إعادة تحميل الإعدادات من القرص لأن `:tts`
                 // process منفصل عن عملية الإعدادات
@@ -1235,7 +1245,6 @@ class NateqTtsService : TextToSpeechService() {
         if (myGen < requestGeneration.get()) {
             Log.d(TAG, "onSynthesizeText stopped before start ($myGen)")
             runCatching { monitoredCallback.error() }
-            callbackDispatcher.close()
             return
         }
         activeJob = job
@@ -1253,10 +1262,20 @@ class NateqTtsService : TextToSpeechService() {
                     if (joined || job.isCompleted) {
                         break
                     }
+                    if (myGen < requestGeneration.get() ||
+                        cycleInvalidated.get()
+                    ) {
+                        job.cancel()
+                        withTimeoutOrNull(300L) { job.join() }
+                        break
+                    }
                     val now = SystemClock.uptimeMillis()
                     val idleElapsed = now - lastProgressAt.get()
+                    val isWarm = lastPieceDurationMs.get() > 0L ||
+                        ttfbMs.get() > 0L
                     val currentIdleLimit = SynthesisBudget.idleTimeoutMs(
-                        lastPieceDurationMs.get()
+                        lastPieceDurationMs.get(),
+                        isWarm = isWarm
                     )
                     if (idleElapsed >= currentIdleLimit) {
                         Log.w(
@@ -1304,6 +1323,7 @@ class NateqTtsService : TextToSpeechService() {
                     text = rawText,
                     preprocessDurationMs = preprocessDurationMs.get(),
                     planningDurationMs = planningDurationMs.get(),
+                    queueWaitMs = queueWaitDurationMs.get(),
                     segments = segmentMetrics.toList(),
                     timeToFirstByteMs = ttfb,
                     totalDurationMs = totalDurationMs
@@ -1321,8 +1341,6 @@ class NateqTtsService : TextToSpeechService() {
             // فينطلق الإعلانُ المؤجَّل خلف القراءة.
             SpeechLock.setSpeaking(applicationContext, false)
             VoiceReadinessCoordinator.onSpeechCompleted(speechToken)
-            // بند ١٠: إغلاق خيط النداءات بعد أن أنهت كل الدفعات عملها.
-            callbackDispatcher.close()
         }
     }
 

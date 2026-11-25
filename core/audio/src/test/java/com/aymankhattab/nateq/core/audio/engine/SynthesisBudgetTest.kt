@@ -283,6 +283,29 @@ class SynthesisBudgetTest {
         assertEquals(15_000L, SynthesisBudget.idleTimeoutMs(5_000L))
         assertEquals(18_000L, SynthesisBudget.idleTimeoutMs(6_000L))
         assertEquals(30_000L, SynthesisBudget.idleTimeoutMs(10_000L))
+
+        // فحص السلوك المتكيف للمحرك الدافئ (6 ثوانٍ كحد أدنى)
+        assertEquals(
+            6_000L,
+            SynthesisBudget.idleTimeoutMs(0L, isWarm = true)
+        )
+        assertEquals(
+            6_000L,
+            SynthesisBudget.idleTimeoutMs(1_000L, isWarm = true)
+        )
+        assertEquals(
+            6_000L,
+            SynthesisBudget.idleTimeoutMs(2_000L, isWarm = true)
+        )
+        assertEquals(
+            9_000L,
+            SynthesisBudget.idleTimeoutMs(3_000L, isWarm = true)
+        )
+        assertEquals(
+            18_000L,
+            SynthesisBudget.idleTimeoutMs(6_000L, isWarm = true)
+        )
+
         assertEquals(
             30 * 60_000L,
             SynthesisBudget.ABSOLUTE_REQUEST_TIMEOUT_MS
@@ -305,6 +328,17 @@ class SynthesisBudgetTest {
             SynthesisBudget.pieceTimeoutMs(20_000),
             SynthesisBudget.inactivityBudgetMs(20_000)
         )
+
+        // فحص للمحرك الدافئ
+        assertEquals(
+            6_000L,
+            SynthesisBudget.inactivityBudgetMs(0, isWarm = true)
+        )
+        assertEquals(
+            6_000L,
+            SynthesisBudget.inactivityBudgetMs(10, isWarm = true)
+        )
+
         for (chars in charCounts) {
             assertTrue(
                 "خمول المحرك عند $chars حرفاً أقصر من الأرضية",

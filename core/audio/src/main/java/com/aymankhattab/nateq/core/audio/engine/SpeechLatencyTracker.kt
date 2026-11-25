@@ -32,9 +32,10 @@ object SpeechLatencyTracker {
         val text: String,
         val preprocessDurationMs: Long,
         val planningDurationMs: Long,
-        val segments: List<SegmentMetric>,
+        val segments: List<SegmentMetric> = emptyList(),
         val timeToFirstByteMs: Long,
         val totalDurationMs: Long,
+        val queueWaitMs: Long = 0L,
         val timestamp: Long = System.currentTimeMillis()
     )
 
@@ -140,7 +141,8 @@ object SpeechLatencyTracker {
                 }
                 sb.appendLine(
                     "  ${idx + 1}. \"$preview\" — إجمالي: " +
-                        "${item.totalDurationMs}ms (معالجة: " +
+                        "${item.totalDurationMs}ms (انتظار: " +
+                        "${item.queueWaitMs}ms, معالجة: " +
                         "${item.preprocessDurationMs}ms, تخطيط: " +
                         "${item.planningDurationMs}ms, أول بايت: " +
                         "$itemTtfb, " +

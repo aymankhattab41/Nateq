@@ -35,23 +35,42 @@ internal object SynthesisBudget {
     private const val MAX_REQUEST_MS = 15 * 60_000L
 
     /**
-     * هامش المعاينة فوق ميزانية الطلب: تجهيز AudioTrack وتفريغه
+     * مهلة المعاينة فوق ميزانية الطلب: تجهيز AudioTrack وتفريغه
      * (سداسية ثوانٍ) — لا يدخل في ميزانية النطق الفعلي.
      */
     private const val PREVIEW_DRAIN_MARGIN_MS = 10_000L
 
-    /** الحد الأدنى لمهلة خمول التقدّم (15 ثانية). */
-    const val IDLE_TIMEOUT_FLOOR_MS = 15_000L
+    /** الحد الأدنى لمهلة خمول التقدّم للبدء البارد (15 ثانية). */
+    const val IDLE_TIMEOUT_FLOOR_COLD_MS = 15_000L
+
+    /** الحد الأدنى لمهلة خمول التقدّم للمحرك الدافئ (6 ثوانٍ). */
+    const val IDLE_TIMEOUT_FLOOR_WARM_MS = 6_000L
+
+    /**
+     * الحد الأدنى الافتراضي لمهلة خمول التقدّم (15 ثانية للتوافق القديم).
+     */
+    const val IDLE_TIMEOUT_FLOOR_MS = IDLE_TIMEOUT_FLOOR_COLD_MS
 
     /** سقفٌ مطلق لحارس التخليق (30 دقيقة) لحماية النظام من التعليق الدائم. */
     const val ABSOLUTE_REQUEST_TIMEOUT_MS = 30 * 60_000L
 
     /**
      * مهلة حارس الخمول: تُلغى المهمة فقط إن لم يصل أي صوت خلال
-     * max(15s, 3 × مدة آخر قطعة).
+     * max(floor, 3 × مدة آخر قطعة).
+     * يكون الحد الأدنى متكيفاً: 6 ثوانٍ إن كان المحرك دافئاً،
+     * و15 ثانية للبدء البارد.
      */
-    fun idleTimeoutMs(lastPieceDurationMs: Long = 0L): Long =
-        maxOf(IDLE_TIMEOUT_FLOOR_MS, 3L * lastPieceDurationMs)
+    fun idleTimeoutMs(
+        lastPieceDurationMs: Long = 0L,
+        isWarm: Boolean = false
+    ): Long {
+        val floor = if (isWarm) {
+            IDLE_TIMEOUT_FLOOR_WARM_MS
+        } else {
+            IDLE_TIMEOUT_FLOOR_COLD_MS
+        }
+        return maxOf(floor, 3L * lastPieceDurationMs)
+    }
 
     /**
      * ميزانية إضافية للمحرك البارد عند أول تخليق للمثيل (علاوة بدء بارد).
@@ -67,8 +86,14 @@ internal object SynthesisBudget {
      * تُرسَل فيها نبضاتُ التقدّم. مصدرٌ واحد للرقمين فلا تختلف
      * نافذتان على الميزانية نفسها.
      */
-    fun inactivityBudgetMs(chars: Int): Long =
-        maxOf(IDLE_TIMEOUT_FLOOR_MS, pieceTimeoutMs(chars))
+    fun inactivityBudgetMs(chars: Int, isWarm: Boolean = false): Long {
+        val floor = if (isWarm) {
+            IDLE_TIMEOUT_FLOOR_WARM_MS
+        } else {
+            IDLE_TIMEOUT_FLOOR_COLD_MS
+        }
+        return maxOf(floor, pieceTimeoutMs(chars))
+    }
 
     /**
      * ميزانية تخليق **نصٍّ واحد** بطول [chars] حرفاً: تُنتظر فيها
