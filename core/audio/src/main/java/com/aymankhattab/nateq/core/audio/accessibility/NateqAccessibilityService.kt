@@ -586,6 +586,8 @@ class NateqAccessibilityService : AccessibilityService() {
 
     // ع٤١-ب9: بوّابة تثبيط أحداث البلوتوث ومسارات الصوت
     private val deviceEventGate = BluetoothEventGate()
+    private val bluetoothTrailingJobs =
+        java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
 
     // ع٤١-ب5: متتبّع ملخّصات المحادثات (ذاكرة فقط)
     private val chatSummaryTracker = ChatSummaryTracker()
@@ -660,6 +662,9 @@ class NateqAccessibilityService : AccessibilityService() {
         // ع٢٩-16: خزن المستمع لإزالته لاحقاً
         a11yStateListener = { store: A11yStateStore ->
             if (store.isPaused()) ContinuousReader.stopSilently()
+            if (!isBluetoothAnnouncementActive()) {
+                clearBluetoothDebounce()
+            }
             applyServiceInfo()
         }
         stateStore?.addListener(a11yStateListener!!)
@@ -2135,6 +2140,7 @@ class NateqAccessibilityService : AccessibilityService() {
             runCatching { unregisterReceiver(it) }
             bluetoothReceiver = null
         }
+        clearBluetoothDebounce()
     }
 
     private fun handleBluetoothEvent(intent: Intent?) {
@@ -2144,14 +2150,15 @@ class NateqAccessibilityService : AccessibilityService() {
             BluetoothDevice.ACTION_ACL_DISCONNECTED -> false
             else -> return
         }
-        if (!isBluetoothAnnouncementActive()) return
+        if (!isBluetoothAnnouncementActive()) {
+            clearBluetoothDebounce()
+            return
+        }
         val device = deviceFrom(intent)
         val key = device?.address ?: UNKNOWN_DEVICE_KEY
         val name = runCatching { device?.name }.getOrNull()
         val now = SystemClock.elapsedRealtime()
-        if (deviceEventGate.shouldAnnounce(key, connected, now)) {
-            BluetoothAnnouncer.announceDeviceState(this, name, connected)
-        }
+        processDeviceAnnouncement(key, name, connected, now)
     }
 
     private fun deviceFrom(intent: Intent): BluetoothDevice? =
@@ -2219,11 +2226,57 @@ class NateqAccessibilityService : AccessibilityService() {
     }
 
     private fun announceRoute(type: Int, name: String, connected: Boolean) {
+        if (!isBluetoothAnnouncementActive()) {
+            clearBluetoothDebounce()
+            return
+        }
         val key = "route:$type"
         val now = SystemClock.elapsedRealtime()
-        if (deviceEventGate.shouldAnnounce(key, connected, now)) {
-            BluetoothAnnouncer.announceDeviceState(this, name, connected)
+        processDeviceAnnouncement(key, name, connected, now)
+    }
+
+    private fun processDeviceAnnouncement(
+        key: String,
+        name: String?,
+        connected: Boolean,
+        now: Long
+    ) {
+        when (val decision = deviceEventGate.evaluate(key, connected, now)) {
+            is BluetoothEventGate.Action.AnnounceImmediate -> {
+                bluetoothTrailingJobs.remove(key)?.cancel()
+                BluetoothAnnouncer.announceDeviceState(this, name, connected)
+            }
+            is BluetoothEventGate.Action.ScheduleTrailing -> {
+                bluetoothTrailingJobs.remove(key)?.cancel()
+                bluetoothTrailingJobs[key] = serviceScope.launch {
+                    delay(decision.delayMs)
+                    if (!isBluetoothAnnouncementActive()) return@launch
+                    val finalState = deviceEventGate.onTrailingDue(
+                        key, SystemClock.elapsedRealtime()
+                    )
+                    if (finalState != null) {
+                        BluetoothAnnouncer.announceDeviceState(
+                            this@NateqAccessibilityService,
+                            name,
+                            finalState
+                        )
+                    }
+                    bluetoothTrailingJobs.remove(key)
+                }
+            }
+            is BluetoothEventGate.Action.CancelTrailing -> {
+                bluetoothTrailingJobs.remove(key)?.cancel()
+            }
+            is BluetoothEventGate.Action.Drop -> {
+                // حدث مكرر تم تثبيطه
+            }
         }
+    }
+
+    private fun clearBluetoothDebounce() {
+        bluetoothTrailingJobs.values.forEach { it.cancel() }
+        bluetoothTrailingJobs.clear()
+        deviceEventGate.clear()
     }
 
     private fun isBluetoothAnnouncementActive(): Boolean =
@@ -2247,7 +2300,7 @@ class NateqAccessibilityService : AccessibilityService() {
                 .unregisterPhoneStateReceiver()
         }
         emergencyHandler.removeCallbacks(youtubeAdSkipRunnable)
-        deviceEventGate.clear()
+        clearBluetoothDebounce()
         chatSummaryTracker.clear()
         callKeyDetector.reset()
         keyShortcutRouter?.reset()
