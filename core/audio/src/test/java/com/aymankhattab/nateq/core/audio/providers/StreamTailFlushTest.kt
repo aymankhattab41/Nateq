@@ -31,6 +31,35 @@ class StreamTailFlushTest {
     }
 
     @Test
+    fun fastStallGraceWindow_flushesQuicklyWithoutSevering() {
+        // للمحركات التي أرسلت صوتاً وانتهى نمو الملف: نافذة جمود قصيرة
+        // (2 إلى 3 جولات = 200 إلى 300ms) تصرف الذيل الصغير بنجاح دون بتر
+        val fastGrace = FAST_STALL_GRACE_POLLS
+        assertTrue(fastGrace in 2..3)
+        assertTrue(
+            shouldFlushTailAfterStall(
+                emittedAny = true,
+                finished = false,
+                stallPolls = fastGrace,
+                remainingBytes = 1024L,
+                gracePolls = fastGrace,
+                maxTailBytes = maxTailBytes
+            )
+        )
+        // قبل بلوغ النافذة السريعة لا تصريف
+        assertFalse(
+            shouldFlushTailAfterStall(
+                emittedAny = true,
+                finished = false,
+                stallPolls = fastGrace - 1,
+                remainingBytes = 1024L,
+                gracePolls = fastGrace,
+                maxTailBytes = maxTailBytes
+            )
+        )
+    }
+
+    @Test
     fun stableFile_zeroRemainder_emitted_flushes() {
         // كل ما كُتب صُدر، وonDone متأخر — يُعلَّم الذيل منجزاً لينجح.
         assertTrue(

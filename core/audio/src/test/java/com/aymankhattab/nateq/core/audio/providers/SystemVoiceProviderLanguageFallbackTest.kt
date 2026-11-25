@@ -121,10 +121,11 @@ class SystemVoiceProviderLanguageFallbackTest {
         // 1. لا بايتات من المحرك الفاشل
         assertTrue(chunks.isEmpty())
 
-        // 2. المحرك الفاشل أُسقط من المسبح وأُغلق
+        // 2. المحرك الفاشل لا يُسقط من أول فشل
+        // (مجموعة 1: إسقاط بعد إخفاقات متتالية فقط)
         val pool = enginePoolOf(provider)
-        assertNull(pool[ENGINE_A])
-        assertTrue(shadowOf(ttsA).isShutdown)
+        assertTrue(pool[ENGINE_A] === ttsA)
+        assertTrue(!shadowOf(ttsA).isShutdown)
 
         // 3. لم يتم التبديل التلقائي إلى المحرك B
         assertNull(shadowOf(ttsB).getLastSynthesizeToFile())

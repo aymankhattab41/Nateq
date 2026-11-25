@@ -54,6 +54,11 @@ internal object SynthesisBudget {
         maxOf(IDLE_TIMEOUT_FLOOR_MS, 3L * lastPieceDurationMs)
 
     /**
+     * ميزانية إضافية للمحرك البارد عند أول تخليق للمثيل (علاوة بدء بارد).
+     */
+    const val COLD_START_EXTRA_MS = 6_000L
+
+    /**
      * ميزانية **خمول المحرك** لنصٍّ طوله [chars] حرفاً: أرضيةُ
      * [IDLE_TIMEOUT_FLOOR_MS] أو ميزانية تخليقه، أيّهما أطول.
      *
@@ -73,13 +78,19 @@ internal object SynthesisBudget {
      * طلباً واحداً متّصلاً، فمهلةُ 3 ثوانٍ الموروثة من زمن النصّ
      * القصير كانت تقتل جملةً طبيعيةً على محركٍ بطيء أو باردِ
      * الشبكة، فتُسقط كلماتٍ كاملةً بصمت.
+     * عند أول تخليق للمثيل ([isColdStart] = true) تُمنح علاوة بدء بارد
+     * ([COLD_START_EXTRA_MS]).
      */
-    fun pieceTimeoutMs(chars: Int): Long = when {
-        chars <= 10 -> 1_500L
-        chars <= 80 -> 3_000L
-        chars <= 300 -> 8_000L
-        else -> (8_000L + (chars - 300) * 30L)
-            .coerceAtMost(MAX_UNIT_MS)
+    fun pieceTimeoutMs(chars: Int, isColdStart: Boolean = false): Long {
+        val base = when {
+            chars <= 10 -> 1_500L
+            chars <= 80 -> 3_000L
+            chars <= 300 -> 8_000L
+            else -> (8_000L + (chars - 300) * 30L)
+                .coerceAtMost(MAX_UNIT_MS)
+        }
+        val extra = if (isColdStart) COLD_START_EXTRA_MS else 0L
+        return (base + extra).coerceAtMost(MAX_UNIT_MS)
     }
 
     /**

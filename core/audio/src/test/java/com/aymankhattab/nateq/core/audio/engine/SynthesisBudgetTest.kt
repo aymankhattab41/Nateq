@@ -130,6 +130,15 @@ class SynthesisBudgetTest {
         assertEquals(8_000L, SynthesisBudget.pieceTimeoutMs(300))
         assertEquals(8_030L, SynthesisBudget.pieceTimeoutMs(301))
         assertEquals(5 * 60_000L, SynthesisBudget.pieceTimeoutMs(1_000_000))
+        // فحص علاوة البدء البارد
+        assertEquals(
+            7_500L,
+            SynthesisBudget.pieceTimeoutMs(10, isColdStart = true)
+        )
+        assertEquals(
+            14_000L,
+            SynthesisBudget.pieceTimeoutMs(300, isColdStart = true)
+        )
         var previous = 0L
         for (chars in listOf(1, 50, 150, 400, 900, 2_500, 9_000)) {
             val current = SynthesisBudget.pieceTimeoutMs(chars)
