@@ -146,6 +146,7 @@ internal class AcapelaHostSession(
 
         /** الحد الأقصى لمرات الفشل المتتالية قبل تثبيت قفل الجلسة. */
         private const val MAX_CONSECUTIVE_FAILURES = 3
+        private const val MAX_POISON_RETRIES = 2
 
         /** نمط الصوت الممتد الذي يفرضه MultiTTS قبل تحميل الحزمة. */
         private const val VOICE_MODE_HD = "MODE=prep_hd"
@@ -807,6 +808,45 @@ internal class AcapelaHostSession(
     private fun shutdownQuietly(inst: acattsandroid) {
         runCatching { inst.nStop() }
         runCatching { inst.nShutdown() }
+    }
+
+    private fun voiceDirFingerprint(dir: File?): String {
+        if (dir == null || !dir.exists()) return "missing"
+        val keyFiles = dir.listFiles().orEmpty()
+            .filter { it.isFile }
+            .sortedBy { it.name.lowercase(Locale.ROOT) }
+            .take(40)
+        return buildString {
+            append(dir.absolutePath)
+            keyFiles.forEach { f ->
+                append('|')
+                append(f.name)
+                append(':')
+                append(f.length())
+                append(':')
+                append(f.lastModified())
+            }
+        }
+    }
+
+    private fun clearPoisonedServiceIfStale(voiceDir: File?) {
+        val managed = activeManagedService ?: return
+        if (managed.state != ExtendedServiceState.POISONED) return
+        val currentFp = voiceDirFingerprint(voiceDir)
+        if (currentFp != managed.voiceDirFingerprint) {
+            Log.i(
+                TAG,
+                "تغيّرت بصمة ملفات الصوت؛ إزالة عزل الخدمة المسمومة وإعادة المحاولة"
+            )
+            closeExtended()
+            return
+        }
+        if (managed.poisonRetryCount >= MAX_POISON_RETRIES) {
+            Log.w(
+                TAG,
+                "الخدمة المسمومة بلغت حد إعادة المحاولة (${managed.poisonRetryCount})"
+            )
+        }
     }
 
     /** إغلاق المحرك الممتد الحالي (إن وُجد) وتصفير مفتاحه بأمان. */
@@ -1641,7 +1681,7 @@ internal class AcapelaHostSession(
             if (nativeLines.isEmpty()) {
                 appendLine("(لم يُعثر على أسطر في سجل المكتبة الأصلية)")
             } else {
-                AcapelaVoiceDiagnostics.redactSensitiveLines(nativeLines)
+                AcapelaVoiceDiagnostics.sanitizeNativeReportLines(nativeLines)
                     .forEach { line ->
                         appendLine(line)
                     }
@@ -1824,7 +1864,7 @@ internal class AcapelaHostSession(
             if (trial.nativeLines.isEmpty()) {
                 appendLine("(لم يُعثر على أسطر في سجل المكتبة الأصلية)")
             } else {
-                AcapelaVoiceDiagnostics.redactSensitiveLines(
+                AcapelaVoiceDiagnostics.sanitizeNativeReportLines(
                     trial.nativeLines
                 ).forEach { line ->
                     appendLine(line)
@@ -1928,6 +1968,20 @@ internal class AcapelaHostSession(
 
         val voiceKey = registrationKey(voice)
         val expectedSpeaker = voice.rawSpeaker ?: voice.voiceName
+        clearPoisonedServiceIfStale(voice.dir)
+        val poisoned = activeManagedService
+        if (poisoned?.state == ExtendedServiceState.POISONED) {
+            if (poisoned.poisonRetryCount >= MAX_POISON_RETRIES) {
+                return HostResult.failure(
+                    "VOICE_POISONED",
+                    "عُزل صوت Acapela بعد ${poisoned.poisonRetryCount} محاولات فاشلة: " +
+                        (poisoned.poisonReason ?: "سبب غير معروف") +
+                        ". غيّر ملفات الصوت/أعد تثبيته لإزالة العزل."
+                )
+            }
+            poisoned.notePoisonRetry()
+            closeExtended()
+        }
         val cachedPackage = lastResolvedPackage
         val normalizedReg = cachedPackage?.registration.orEmpty()
         val expectedKey = "$voiceKey|$normalizedReg"
@@ -2142,10 +2196,19 @@ internal class AcapelaHostSession(
     internal class ManagedExtendedService(
         val service: AcattsandroidService,
         val audioHandler: TrialAudio,
-        val resolvedPackage: ResolvedVerifiedPackage?
+        val resolvedPackage: ResolvedVerifiedPackage?,
+        val voiceDirFingerprint: String = ""
     ) {
         var state: ExtendedServiceState = ExtendedServiceState.CREATED
             private set
+        var poisonReason: String? = null
+            private set
+        var poisonRetryCount: Int = 0
+            private set
+
+        fun notePoisonRetry() {
+            poisonRetryCount += 1
+        }
 
         fun markInitialized() {
             if (state == ExtendedServiceState.CREATED) {
@@ -2181,6 +2244,7 @@ internal class AcapelaHostSession(
 
         fun markPoisoned(reason: String) {
             if (state != ExtendedServiceState.CLOSED) {
+                poisonReason = reason
                 state = ExtendedServiceState.POISONED
                 Log.w(TAG, "[ManagedService] عُزلت الخدمة كمسمومة: $reason")
             }
@@ -2862,7 +2926,8 @@ internal class AcapelaHostSession(
         val managed = ManagedExtendedService(
             srv,
             audioHandler,
-            resolvedPackage
+            resolvedPackage,
+            voiceDirFingerprint(trialDir)
         )
 
         val idFuncVal = runCatching {
@@ -3672,7 +3737,7 @@ internal class AcapelaHostSession(
             }
         }
 
-        val sanitizedTail = AcapelaVoiceDiagnostics.redactSensitiveLines(
+        val sanitizedTail = AcapelaVoiceDiagnostics.sanitizeNativeReportLines(
             nativeTail
         )
         sb.appendLine(

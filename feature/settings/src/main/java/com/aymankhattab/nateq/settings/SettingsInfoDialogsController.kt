@@ -14,12 +14,17 @@ internal class SettingsInfoDialogsController(
 ) {
 
     fun showChangelogDialog() {
-        val versionName = runCatching {
-            host.requireContext().packageManager.getPackageInfo(
-                host.requireContext().packageName, 0
-            ).versionName
-        }.getOrNull() ?: "?"
-        val body = host.getString(R.string.changelog_text, versionName)
+        val body = runCatching {
+            host.getString(R.string.changelog_text)
+        }.getOrElse {
+            runCatching {
+                @Suppress("DiscouragedApi")
+                val id = host.resources.getIdentifier(
+                    "changelog_text", "string", host.requireContext().packageName
+                )
+                if (id != 0) host.getString(id) else ""
+            }.getOrDefault("")
+        }
         val dialog = MaterialAlertDialogBuilder(host.requireContext())
             .setTitle(R.string.changelog_title)
             .setMessage(body)

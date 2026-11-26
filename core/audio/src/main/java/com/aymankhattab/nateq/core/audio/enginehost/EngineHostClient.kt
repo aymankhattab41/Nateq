@@ -852,6 +852,12 @@ internal class HostConnection(
     @Volatile
     private var signal = CompletableDeferred<IEmbeddedEngineHost>()
 
+    @Volatile
+    private var deathBinder: IBinder? = null
+
+    @Volatile
+    private var deathRecipient: IBinder.DeathRecipient? = null
+
     private val callback = object : ServiceConnection {
 
         override fun onServiceConnected(
@@ -889,8 +895,12 @@ internal class HostConnection(
                     EngineHostClient.lastKnownHostPid = hostProc.pid
                 }
             }
+            val recipient = IBinder.DeathRecipient { onBinderDied(thisGen) }
             try {
-                binder?.linkToDeath({ onBinderDied(thisGen) }, 0)
+                unlinkDeathRecipient()
+                binder?.linkToDeath(recipient, 0)
+                deathBinder = binder
+                deathRecipient = recipient
             } catch (t: RemoteException) {
                 onBinderDied(thisGen)
                 return
@@ -986,11 +996,22 @@ internal class HostConnection(
 
     private fun drop() {
         service = null
+        unlinkDeathRecipient()
         if (bound) {
             bound = false
             runCatching { app.unbindService(callback) }
         }
         failSignal()
+    }
+
+    private fun unlinkDeathRecipient() {
+        val binder = deathBinder
+        val recipient = deathRecipient
+        deathBinder = null
+        deathRecipient = null
+        if (binder != null && recipient != null) {
+            runCatching { binder.unlinkToDeath(recipient, 0) }
+        }
     }
 
     private fun failSignal() {

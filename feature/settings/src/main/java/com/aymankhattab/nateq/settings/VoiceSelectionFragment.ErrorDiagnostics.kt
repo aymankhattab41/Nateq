@@ -251,14 +251,19 @@ internal suspend fun VoiceSelectionFragment.buildErrorReport(
                 .readLastRealSpeechFailure(context)
             if (!lastRealFail.isNullOrBlank() &&
                 !diagnostics.contains("=== آخر محاولة نطق حقيقية فاشلة ===") &&
-                !diagnostics.contains("=== [فشل سابق قبل النجاح الحالي] ===")
+                !diagnostics.contains(
+                    "=== [فشل سابق بتاريخه — لا نجاح حالي] ==="
+                )
             ) {
-                if (diagnostics.contains("نجاح حقيقي") &&
-                    !lastRealFail.contains(
-                        "=== [فشل سابق قبل النجاح الحالي] ==="
+                if (!lastRealFail.contains(
+                        "=== [فشل سابق بتاريخه — لا نجاح حالي] ==="
                     )
                 ) {
-                    appendLine("=== [فشل سابق قبل النجاح الحالي] ===")
+                    val stamp = java.text.SimpleDateFormat(
+                        "yyyy-MM-dd HH:mm:ss", java.util.Locale.US
+                    ).format(java.util.Date())
+                    appendLine("=== [فشل سابق بتاريخه — لا نجاح حالي] ===")
+                    appendLine("(ختم وقت الفصل: $stamp)")
                 }
                 appendLine(
                     AcapelaVoiceDiagnostics.redactSensitiveText(lastRealFail)

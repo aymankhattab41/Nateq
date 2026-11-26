@@ -2819,7 +2819,22 @@ speechCycle.incrementAndGet()
             repo.getPreferredVoiceIdForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             )
-        }.getOrNull() ?: return null
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
+        val engineId = runCatching {
+            repo.getEngineForCategory(SettingsRepository.VOICE_CATEGORY_NUMBERS)
+        }.getOrNull()
+        val usableVoiceId = if (engineId.isNullOrBlank() ||
+            VoiceIdContract.isVoiceBelongingToEngine(voiceId, engineId)
+        ) {
+            voiceId
+        } else {
+            android.util.Log.w(
+                "AnnouncementSpeaker",
+                "صوت الأرقام المحفوظ غير صالح للمحرك ($voiceId/$engineId)؛ " +
+                    "تراجع تلقائي إلى صوت عام"
+            )
+            return null
+        }
         val rate = runCatching {
             repo.getSpeechRateForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
@@ -2835,7 +2850,7 @@ speechCycle.incrementAndGet()
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             )
         }.getOrDefault(1.0f)
-        return NumbersCategorySpeech(voiceId, rate, pitch, volume)
+        return NumbersCategorySpeech(usableVoiceId, rate, pitch, volume)
     }
 
     /** صوتُ الإنجليزية المفضّل لسقوط مقاطع «en» في الإعلانات المختلطة. */

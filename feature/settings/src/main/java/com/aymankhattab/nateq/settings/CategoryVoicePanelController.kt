@@ -824,16 +824,18 @@ if (!dirtyPanel) {
 
     /** لاحقة إصدار الرأس أو الجودة — تُجرَّد قبل مقارنة عائلة الصوت. */
     private val voiceSuffixRegex = Regex(
-        """(_\d+-\d+-\d+|-(compact|high|standard|enhanced|premium))$""",
+        """(_\d+-\d+-\d+|[-\s](compact|high|standard|enhanced|premium))$""",
         RegexOption.IGNORE_CASE
     )
 
-    private fun voiceFamily(name: String): String =
-        name.replace(voiceSuffixRegex, "").trim()
+    private fun voiceFamily(name: String): String {
+        val raw = name.replace(voiceSuffixRegex, "").trim()
+        return VoiceIdContract.canonicalVoiceName(raw)
+    }
 
     private fun voiceQuality(name: String): String? =
-        Regex("""-(compact|high|standard|enhanced|premium)$""")
-            .find(name)?.groupValues?.get(1)?.lowercase()
+        Regex("""[-\s](compact|high|standard|enhanced|premium)$""")
+            .find(name)?.groupValues?.get(1)?.lowercase(Locale.ROOT)
 
     /**
      * مقارنة الاسم المحفوظ بالأسماء المتاحة وتحديثه عند وجود بديل واضح
@@ -885,13 +887,54 @@ if (!dirtyPanel) {
             return
         }
 
-        // لا بديل واضح: الإبقاء على القيمة المحفوظة أفضل من كتابة اسم
-        // عشوائي أو مسحها بصمت (كان يُكتب available.first().name).
+        // لا بديل واضح بالاسم/العائلة: جرّب تطابقاً قانونياً ثم تراجع لصوت صالح.
+        val canonicalSaved = VoiceIdContract.canonicalVoiceName(savedName)
+        val canonicalMatch = available.firstOrNull {
+            VoiceIdContract.sameVoiceName(it.name, canonicalSaved) ||
+                VoiceIdContract.sameVoiceName(it.name, savedName)
+        }
+        if (canonicalMatch != null) {
+            Log.i(
+                TAG,
+                "Reconciling voice by canonical match: $savedName → ${canonicalMatch.name}"
+            )
+            settings.setPreferredVoiceIdForCategory(
+                categoryKey, canonicalMatch.name
+            )
+            return
+        }
+
+        val fallback = available.firstOrNull { opt ->
+            enginePkg == null ||
+                VoiceIdContract.isVoiceBelongingToEngine(opt.name, enginePkg)
+        } ?: available.firstOrNull()
+        if (fallback != null) {
+            Log.w(
+                TAG,
+                "الصوت المحفوظ $savedName غير متاح في $categoryKey " +
+                    "(engine=$enginePkg) — تراجع تلقائي إلى ${fallback.name}"
+            )
+            settings.setPreferredVoiceIdForCategory(categoryKey, fallback.name)
+            runCatching {
+                ToastDebouncer.show(
+                    fragment.requireContext(),
+                    "الصوت المحفوظ غير متاح ($savedName)، تم التراجع إلى ${fallback.name}"
+                )
+            }
+            return
+        }
+
         Log.w(
             TAG,
             "لا مطابقة واضحة للصوت $savedName في $categoryKey " +
-                "(engine=$enginePkg) — الإبقاء على القيمة المحفوظة"
+                "(engine=$enginePkg) — لا يوجد بديل صالح"
         )
+        runCatching {
+            ToastDebouncer.show(
+                fragment.requireContext(),
+                "الصوت المحفوظ غير متاح: $savedName"
+            )
+        }
     }
 
     /** يعيد بناء سبnner الأصوات للغة/محرك الفئة الحالية: أصوات (اللغة،

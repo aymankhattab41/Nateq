@@ -1784,4 +1784,32 @@ class AcapelaVoiceDiagnosticsTest {
             cleanedText.contains("tts_function_load_voice : Salma - done")
         )
     }
+
+    @Test
+    fun sanitizeNativeReportLines_allowlistBlocksRawLicenseValues() {
+        val fakeReg = "0x00FAKE42"
+        val fakeUser = "user_fake_12345"
+        val fakePass = "pass_fake_67890"
+        val rawLines = listOf(
+            "05-23 12:34:56.789 1 1 I acattsandroid: registration=$fakeReg",
+            "05-23 12:34:56.789 1 1 I acattsandroid: babParam.uid.userId $fakeUser",
+            "05-23 12:34:56.789 1 1 I acattsandroid: babParam.uid.passwd $fakePass",
+            "05-23 12:34:56.790 1 1 I acattsandroid: nSpeak: -25",
+            "05-23 12:34:56.791 1 1 I acattsandroid: babParam.license MIIEFAKEBLOB1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        )
+        val sanitized = AcapelaVoiceDiagnostics.sanitizeNativeReportLines(rawLines)
+        val joined = sanitized.joinToString("\n")
+        assertFalse(joined.contains(fakeReg))
+        assertFalse(joined.contains(fakeUser))
+        assertFalse(joined.contains(fakePass))
+        assertFalse(joined.contains("MIIEFAKEBLOB1234567890"))
+        assertTrue(
+            "السطر الآمن يجب أن يمر بعد السماح",
+            sanitized.any { it.contains("nSpeak") }
+        )
+        assertTrue(
+            "السطور الحساسة يجب أن تُحجب بقائمة سماح",
+            sanitized.count { it.contains("[محجوب") } >= 4
+        )
+    }
 }

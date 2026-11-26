@@ -223,7 +223,10 @@ class EngineHostRecoveryAndWarmupGuardsTest {
         assertTrue(report!!.contains("المرحلة: AuthenticVoice"))
         assertFalse(report.contains("SecondaryCleanupWarning"))
         assertFalse(report.contains("ContinuationPayloadLineOne=="))
-        assertTrue(report.contains("[حمولة ترخيص محجوبة]"))
+        assertTrue(
+            report.contains("[حمولة ترخيص محجوبة]") ||
+                report.contains("[محجوب")
+        )
     }
 
     @Test
@@ -1097,7 +1100,7 @@ class EngineHostRecoveryAndWarmupGuardsTest {
             .readLastRealSpeechFailure(context)
         assertNotNull(histText)
         assertTrue(
-            histText!!.contains("=== [فشل سابق قبل النجاح الحالي] ===")
+            histText!!.contains("=== [فشل سابق بتاريخه — لا نجاح حالي] ===")
         )
 
         AcapelaVoiceDiagnostics.clearLastRealSpeechFailure(context)

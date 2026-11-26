@@ -2087,6 +2087,29 @@ object AcapelaVoiceManifest {
             )
             return chosen.token
         } else {
+            // احتياطي آمن: بعض حزم Acapela الحقيقية (مثل Leila) تضع ملف تسجيل 0x
+            // ثنائي/معتم لا يحتوي رمزاً نصياً يطابق نمط metadata. نقبله فقط عندما
+            // يكون المحتوى غير نصي قابل للقراءة، لتجنب قبول محتوى نصي مرفوض صراحةً.
+            val printable = rawBytes.count { b ->
+                val c = b.toInt() and 0xFF
+                c == 0x09 || c == 0x0A || c == 0x0D || c in 0x20..0x7E
+            }
+            val looksBinary = rawBytes.isNotEmpty() &&
+                printable.toDouble() / rawBytes.size.toDouble() < 0.85
+            if (looksBinary) {
+                val hexEncoded = rawBytes.joinToString("") { b ->
+                    "%02x".format(b.toInt() and 0xFF)
+                }
+                if (hexEncoded.length in 16..4096 &&
+                    hexEncoded.matches(REGISTRATION_METADATA_REGEX)
+                ) {
+                    diagLog(
+                        "[فحص المفتاح] قبول احتياطي لملف 0x ثنائي/معتم " +
+                            "كبيانات تسجيل (hexEncoded length=${hexEncoded.length})"
+                    )
+                    return hexEncoded
+                }
+            }
             diagLog(
                 "[فحص المفتاح] رُفض: لم يتم العثور على أي رمز " +
                     "يطابق نمط بيانات التسجيل"
@@ -2240,15 +2263,18 @@ object AcapelaVoiceManifest {
         }
 
         // 1. فحص مباشر داخل dir نفسه مع التحقق من عدم التعارض
-        paramFrom(File(dir, "config.yaml"))?.let { cand ->
-            if (!isParamConflicting(cand.second)) return cand
+        listOf("config.yaml", "engines.yaml").forEach { name ->
+            paramFrom(File(dir, name))?.let { cand ->
+                if (!isParamConflicting(cand.second)) return cand
+            }
         }
 
         // 2. فحص داخل المجلدات الفرعية التابعة لـ dir نفسه
         val localSub = runCatching {
             dir.walkTopDown().maxDepth(4).firstNotNullOfOrNull { f ->
                 if (f.isFile &&
-                    f.name.equals("config.yaml", ignoreCase = true)
+                    (f.name.equals("config.yaml", ignoreCase = true) ||
+                        f.name.equals("engines.yaml", ignoreCase = true))
                 ) {
                     val cand = paramFrom(f)
                     if (cand != null && !isParamConflicting(cand.second)) {
@@ -2260,11 +2286,17 @@ object AcapelaVoiceManifest {
         if (localSub != null) return localSub
 
         // 3. فحص المجلد الأب المباشر dir.parentFile
-        val parentYaml = dir.parentFile?.let { File(it, "config.yaml") }
-        if (parentYaml != null && parentYaml.isFile) {
-            val candidate = paramFrom(parentYaml)
-            if (candidate != null && !isParamConflicting(candidate.second)) {
-                return candidate
+        dir.parentFile?.let { parent ->
+            listOf("config.yaml", "engines.yaml").forEach { name ->
+                val parentYaml = File(parent, name)
+                if (parentYaml.isFile) {
+                    val candidate = paramFrom(parentYaml)
+                    if (candidate != null &&
+                        !isParamConflicting(candidate.second)
+                    ) {
+                        return candidate
+                    }
+                }
             }
         }
 

@@ -213,8 +213,10 @@ object AcapelaPackageResolver {
             }
         }
 
-        // 3. فحص config.yaml العام في الحاوية الأب (شرط تطابق الهوية)
-        val defaultYaml = File(parentDir, "config.yaml").takeIf { it.isFile }
+        // 3. فحص config.yaml/engines.yaml العام في الحاوية الأب (شرط تطابق الهوية)
+        val defaultYaml = listOf("config.yaml", "engines.yaml")
+            .map { File(parentDir, it) }
+            .firstOrNull { it.isFile }
         if (defaultYaml != null) {
             return checkYamlSpeakerMatch(defaultYaml, expectedSpeaker) == true
         }
@@ -760,12 +762,16 @@ object AcapelaPackageResolver {
             voiceSubpackageDir = voiceSubpackageDir
         )
 
-        // 4. فحص ملف config.yaml (المجلد الفرعي أولاً ثم الحاوية)
-        val subYaml = File(voiceSubpackageDir, "config.yaml")
-            .takeIf { it.isFile }
-        val rootYaml = File(canonicalVoiceDir, "config.yaml")
-            .takeIf { it.isFile }
-            ?: File(packageContainerRoot, "config.yaml").takeIf { it.isFile }
+        // 4. فحص ملف config.yaml/engines.yaml (المجلد الفرعي أولاً ثم الحاوية)
+        val subYaml = listOf("config.yaml", "engines.yaml")
+            .map { File(voiceSubpackageDir, it) }
+            .firstOrNull { it.isFile }
+        val rootYaml = listOf("config.yaml", "engines.yaml")
+            .map { File(canonicalVoiceDir, it) }
+            .firstOrNull { it.isFile }
+            ?: listOf("config.yaml", "engines.yaml")
+                .map { File(packageContainerRoot, it) }
+                .firstOrNull { it.isFile }
 
         val directYaml = subYaml ?: rootYaml
         var matchingYaml: File? = null
