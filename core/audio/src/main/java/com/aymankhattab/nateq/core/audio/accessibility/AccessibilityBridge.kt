@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
 import android.os.Build
+import android.os.SystemClock
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
@@ -68,6 +69,8 @@ object AccessibilityBridge {
         if (packageName.contains("talkback", ignoreCase = true)) return
         foregroundPackageRef.set(packageName)
         foregroundActivityRef.set(activityName)
+        cachedResolvedPackage = null
+        cachedResolvedPackageTime = 0L
     }
 
     /** التطبيق الأمامي الحالي النشط */
@@ -77,6 +80,8 @@ object AccessibilityBridge {
     fun clearForegroundForTesting() {
         foregroundPackageRef.set(null)
         foregroundActivityRef.set(null)
+        cachedResolvedPackage = null
+        cachedResolvedPackageTime = 0L
     }
 
     /**
@@ -105,11 +110,45 @@ object AccessibilityBridge {
         return false
     }
 
+    private const val RESOLVE_PACKAGE_CACHE_TTL_MS = 1000L
+    @Volatile private var cachedResolvedPackage: ResolvedPackageInfo? = null
+    @Volatile private var cachedResolvedPackageTime: Long = 0L
+
+    @androidx.annotation.VisibleForTesting
+    val resolveForegroundPackageCallCount =
+        java.util.concurrent.atomic.AtomicInteger(0)
+
+    @androidx.annotation.VisibleForTesting
+    val currentSenderHintCallCount =
+        java.util.concurrent.atomic.AtomicInteger(0)
+
+    @androidx.annotation.VisibleForTesting
+    fun resetCallCountsForTesting() {
+        resolveForegroundPackageCallCount.set(0)
+        currentSenderHintCallCount.set(0)
+        cachedResolvedPackage = null
+        cachedResolvedPackageTime = 0L
+    }
+
     /**
      * حسم الحزمة الأمامية مع المصدر بدقة (عقدة مفوكسة، نافذة، احتياط)
      * — الجولة 48 (الأمر 5).
      */
     fun resolveForegroundPackageWithSource(): ResolvedPackageInfo {
+        val now = SystemClock.uptimeMillis()
+        val cached = cachedResolvedPackage
+        if (cached != null &&
+            now - cachedResolvedPackageTime < RESOLVE_PACKAGE_CACHE_TTL_MS
+        ) {
+            return cached
+        }
+        val resolved = resolveForegroundPackageInternal()
+        cachedResolvedPackage = resolved
+        cachedResolvedPackageTime = now
+        return resolved
+    }
+
+    private fun resolveForegroundPackageInternal(): ResolvedPackageInfo {
         val service = activeServiceRef.get()
         if (service != null) {
             // 1) الأولوية لحزمة العقدة المفوكسة نفسها
@@ -164,8 +203,10 @@ object AccessibilityBridge {
      * حساب الحزمة الأمامية بدقة من نوافذ التطبيق النشطة أو المفوكسة،
      * والرجوع إلى [foregroundPackage] كاحتياط (ع٤٥، الجولة 48 - الأمر 5).
      */
-    fun resolveForegroundPackage(): String? =
-        resolveForegroundPackageWithSource().packageName
+    fun resolveForegroundPackage(): String? {
+        resolveForegroundPackageCallCount.incrementAndGet()
+        return resolveForegroundPackageWithSource().packageName
+    }
 
     /**
      * تنفيذ نقرة إيماءة في إحداثيات محددة على الشاشة (الجولة 48 - الأمر 4).
@@ -187,6 +228,7 @@ object AccessibilityBridge {
      * استخراج تلميح اسم المرسل من العقدة المفوكسة أو رأس المحادثة (ع٤٥).
      */
     fun currentSenderHint(): String? {
+        currentSenderHintCallCount.incrementAndGet()
         val service = activeServiceRef.get() ?: return null
         return service.extractCurrentSenderHint()
     }

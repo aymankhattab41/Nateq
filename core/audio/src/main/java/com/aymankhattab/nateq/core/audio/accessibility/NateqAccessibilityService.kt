@@ -1343,12 +1343,21 @@ class NateqAccessibilityService : AccessibilityService() {
         }
     }
 
+    @Volatile private var cachedSenderHint: String? = null
+    @Volatile private var cachedSenderHintTime: Long = 0L
+
     /**
      * استخراج تلميح اسم المرسل من العقدة المفوكسة أو رأس المحادثة
      * في التطبيقات المسموحة (ع٤٥ - الأمر 3).
      */
     fun extractCurrentSenderHint(): String? {
-        return runCatching {
+        val now = SystemClock.uptimeMillis()
+        if (now - cachedSenderHintTime < SENDER_HINT_CACHE_TTL_MS &&
+            cachedSenderHint != null
+        ) {
+            return cachedSenderHint
+        }
+        val hint = runCatching {
             val focus = findCurrentAccessibilityFocusSnapshot()
             val focusText = focus?.readableText().orEmpty().trim()
             if (focusText.contains(':')) {
@@ -1360,7 +1369,11 @@ class NateqAccessibilityService : AccessibilityService() {
 
             val root = rootInActiveWindow ?: return@runCatching null
             try {
-                val nodes = SafeNodeWalker.walk(root)
+                val nodes = SafeNodeWalker.walk(
+                    root,
+                    maxNodes = SENDER_HINT_MAX_NODES,
+                    maxTimeoutMs = SENDER_HINT_TIMEOUT_MS
+                )
                 for (node in nodes) {
                     val id = node.viewIdResourceName.orEmpty()
                     if (id.contains("contact_name") ||
@@ -1390,6 +1403,12 @@ class NateqAccessibilityService : AccessibilityService() {
                 SafeNodeWalker.safeRecycle(root)
             }
         }.getOrNull()
+
+        if (hint != null) {
+            cachedSenderHint = hint
+            cachedSenderHintTime = now
+        }
+        return hint
     }
 
     /**
@@ -2514,6 +2533,10 @@ class NateqAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "NATEQ_A11Y"
+
+        private const val SENDER_HINT_CACHE_TTL_MS = 1500L
+        private const val SENDER_HINT_MAX_NODES = 60
+        private const val SENDER_HINT_TIMEOUT_MS = 8L
 
         /** حدّ خنق أحداث TYPE_WINDOW_CONTENT_CHANGED (ع٤١-ب0.4). */
         private const val CONTENT_CHANGE_THROTTLE_MS = 80L

@@ -976,15 +976,6 @@ class NateqTtsService : TextToSpeechService() {
                 val effectCategory = request.params?.getString(
                     AudioEffectManager.PARAM_CATEGORY
                 ).orEmpty()
-                val targetPkg =
-                    AccessibilityBridge.resolveForegroundPackage()
-                val senderHint =
-                    AccessibilityBridge.currentSenderHint()
-                val activeAppVoice = resolveActiveAppVoice(
-                    effectCategory = effectCategory,
-                    targetPackage = targetPkg,
-                    senderName = senderHint
-                )
                 val appProfilesOn = runCatching {
                     settings.isAccessibilityFeatureEnabled(
                         FeatureFlags.FEATURE_APP_PROFILES
@@ -995,6 +986,22 @@ class NateqTtsService : TextToSpeechService() {
                         FeatureFlags.FEATURE_CONTACT_VOICES
                     )
                 }.getOrDefault(false)
+
+                val targetPkg = if (appProfilesOn) {
+                    AccessibilityBridge.resolveForegroundPackage()
+                } else null
+
+                val senderHint = if (contactVoicesOn) {
+                    AccessibilityBridge.currentSenderHint()
+                } else null
+
+                val activeAppVoice = if (appProfilesOn || contactVoicesOn) {
+                    resolveActiveAppVoice(
+                        effectCategory = effectCategory,
+                        targetPackage = targetPkg,
+                        senderName = senderHint
+                    )
+                } else null
                 val diagReason = when {
                     effectCategory.isNotEmpty() ->
                         "الفئة غير فارغة ($effectCategory)"

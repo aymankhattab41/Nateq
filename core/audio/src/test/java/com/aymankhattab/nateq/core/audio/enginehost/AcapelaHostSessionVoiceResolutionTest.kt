@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.core.audio.enginehost
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceDiagnostics
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -211,7 +212,13 @@ class AcapelaHostSessionVoiceResolutionTest {
             rawSpeaker = "salma22k",
             registration = "reg_test_123"
         )
-        val trialKey = "${voiceDir.absolutePath}|salma22k|reg_test_123"
+        val canonicalDir = AcapelaVoiceDiagnostics
+            .normalizeToUser0(voiceDir)
+            .canonicalPath
+        val trialKey =
+            "$canonicalDir" +
+                "|${voice.rawSpeaker?.lowercase(Locale.ROOT)}" +
+                "|${voice.registration}"
 
         // محاولة أولى فاشلة: لا يتم قفل الجلسة
         session.handleRealSpeechFailure(

@@ -24,6 +24,8 @@ object SafeNodeWalker {
      */
     fun walk(
         root: AccessibilityNodeInfo?,
+        maxNodes: Int = MAX_NODES,
+        maxTimeoutMs: Long = MAX_TIMEOUT_MS,
         filter: ((AccessibilityNodeInfo) -> Boolean)? = null
     ): List<NodeView> {
         if (root == null) return emptyList()
@@ -35,7 +37,9 @@ object SafeNodeWalker {
             depth = 0,
             result = result,
             filter = filter,
-            startTime = startTime
+            startTime = startTime,
+            maxNodes = maxNodes,
+            maxTimeoutMs = maxTimeoutMs
         )
         return result
     }
@@ -45,10 +49,12 @@ object SafeNodeWalker {
         depth: Int,
         result: MutableList<NodeView>,
         filter: ((AccessibilityNodeInfo) -> Boolean)?,
-        startTime: Long
+        startTime: Long,
+        maxNodes: Int = MAX_NODES,
+        maxTimeoutMs: Long = MAX_TIMEOUT_MS
     ) {
-        if (result.size >= MAX_NODES || depth > MAX_DEPTH) return
-        if (SystemClock.uptimeMillis() - startTime > MAX_TIMEOUT_MS) return
+        if (result.size >= maxNodes || depth > MAX_DEPTH) return
+        if (SystemClock.uptimeMillis() - startTime > maxTimeoutMs) return
 
         // تخطي العقد غير المرئية وكلمات المرور
         if (!node.isVisibleToUser || node.isPassword) return
@@ -59,11 +65,21 @@ object SafeNodeWalker {
 
         val childCount = node.childCount
         for (i in 0 until childCount) {
-            if (result.size >= MAX_NODES) break
-            if (SystemClock.uptimeMillis() - startTime > MAX_TIMEOUT_MS) break
-            val child = runCatching { node.getChild(i) }.getOrNull() ?: continue
+            if (result.size >= maxNodes) break
+            if (SystemClock.uptimeMillis() - startTime > maxTimeoutMs) break
+            val child = runCatching {
+                node.getChild(i)
+            }.getOrNull() ?: continue
             try {
-                traverse(child, depth + 1, result, filter, startTime)
+                traverse(
+                    node = child,
+                    depth = depth + 1,
+                    result = result,
+                    filter = filter,
+                    startTime = startTime,
+                    maxNodes = maxNodes,
+                    maxTimeoutMs = maxTimeoutMs
+                )
             } finally {
                 safeRecycle(child)
             }

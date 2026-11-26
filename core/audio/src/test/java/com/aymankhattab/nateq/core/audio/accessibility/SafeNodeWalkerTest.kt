@@ -54,4 +54,26 @@ class SafeNodeWalkerTest {
             SafeNodeWalker.safeRecycle(node)
         }
     }
+
+    // ── حارس maxNodes/maxTimeoutMs (الجولة 48) ─────────────────────────
+
+    @Test
+    fun `walk accepts explicit maxNodes parameter`() {
+        // تحقق من أن الدالة تقبل maxNodes دون خطأ
+        val result = SafeNodeWalker.walk(
+            root = null,
+            maxNodes = 10
+        )
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun `walk accepts explicit maxTimeoutMs parameter`() {
+        // تحقق من أن الدالة تقبل maxTimeoutMs دون خطأ
+        val result = SafeNodeWalker.walk(
+            root = null,
+            maxTimeoutMs = 50L
+        )
+        assertTrue(result.isEmpty())
+    }
 }

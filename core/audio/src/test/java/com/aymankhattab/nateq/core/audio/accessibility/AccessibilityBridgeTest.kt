@@ -4,11 +4,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 
 class AccessibilityBridgeTest {
+
+    @Before
+    fun resetCounts() {
+        AccessibilityBridge.resetCallCountsForTesting()
+    }
 
     @Test
     fun `foreground package updates and returns cleanly`() {
@@ -135,4 +141,47 @@ class AccessibilityBridgeTest {
                 AccessibilityBridge.setExpandInternalForTesting(null)
             }
         }
+
+    // ── حارس كاش resolveForegroundPackage (الجولة 48) ─────────────────
+
+    @Test
+    fun `resolveForegroundPackage increments call counter`() {
+        val before = AccessibilityBridge
+            .resolveForegroundPackageCallCount.get()
+        AccessibilityBridge.resolveForegroundPackage()
+        assertEquals(
+            "resolveForegroundPackage يجب أن يزيد العداد",
+            before + 1,
+            AccessibilityBridge.resolveForegroundPackageCallCount.get()
+        )
+    }
+
+    @Test
+    fun `currentSenderHint increments call counter`() {
+        val before = AccessibilityBridge
+            .currentSenderHintCallCount.get()
+        AccessibilityBridge.currentSenderHint()
+        assertEquals(
+            "currentSenderHint يجب أن يزيد العداد",
+            before + 1,
+            AccessibilityBridge.currentSenderHintCallCount.get()
+        )
+    }
+
+    @Test
+    fun `resetCallCountsForTesting resets both counters to zero`() {
+        AccessibilityBridge.resolveForegroundPackage()
+        AccessibilityBridge.currentSenderHint()
+        AccessibilityBridge.resetCallCountsForTesting()
+        assertEquals(
+            "resolveForegroundPackageCallCount يجب أن يُصفَّر",
+            0,
+            AccessibilityBridge.resolveForegroundPackageCallCount.get()
+        )
+        assertEquals(
+            "currentSenderHintCallCount يجب أن يُصفَّر",
+            0,
+            AccessibilityBridge.currentSenderHintCallCount.get()
+        )
+    }
 }
