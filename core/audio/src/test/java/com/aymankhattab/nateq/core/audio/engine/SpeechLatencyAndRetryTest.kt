@@ -8,8 +8,10 @@ import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -323,5 +325,186 @@ class SpeechLatencyAndRetryTest {
                 words.size in 3..4
             )
         }
+    }
+
+    @Test
+    fun testParallelLookaheadPreservesSegmentOrder() = runBlocking {
+        // المقطع الثاني أسرع تخليقاً، لكن الإخراج يجب أن يبقى بترتيب
+        // المقاطع: بايتات المقطع الأول قبل الثاني.
+        val firstStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val mockProvider = MockVoiceProvider { text, _, _ ->
+            when {
+                text.contains("أول") -> {
+                    firstStarted.complete(Unit)
+                    releaseFirst.await()
+                    ByteArray(2048) { 1 }
+                }
+                text.contains("ثان") -> {
+                    // انتظر حتى يبدأ الأول ليضمن وجود سباق حقيقي.
+                    firstStarted.await()
+                    ByteArray(2048) { 2 }
+                }
+                else -> ByteArray(512) { 9 } // تدفئة/نداءات أخرى
+            }
+        }
+        injectMockCatalog(mockProvider)
+
+        val segments = listOf(
+            Segment("أولاً", LanguageCode.AR.tag, SpeechRole.TEXT),
+            Segment("ثانياً", LanguageCode.AR.tag, SpeechRole.TEXT)
+        )
+        val emittedMarkers = mutableListOf<Int>()
+        var started = false
+        var done = false
+        var errored = false
+        val callback = object : SynthesisCallback {
+            override fun getMaxBufferSize(): Int = 8192
+            override fun start(
+                sampleRateInHz: Int, audioFormat: Int, channelCount: Int
+            ): Int { started = true; return 0 }
+            override fun audioAvailable(
+                buffer: ByteArray?, offset: Int, length: Int
+            ): Int {
+                val buf = buffer ?: return 0
+                for (i in offset until offset + length) {
+                    val b = buf[i].toInt()
+                    if ((b == 1 || b == 2) &&
+                        emittedMarkers.lastOrNull() != b
+                    ) {
+                        emittedMarkers.add(b)
+                    }
+                }
+                return 0
+            }
+            override fun done(): Int { done = true; return 0 }
+            override fun error() { errored = true }
+            override fun error(errorCode: Int) { errored = true }
+            override fun hasStarted(): Boolean = started
+            override fun hasFinished(): Boolean = done
+        }
+
+        val job = launch(Dispatchers.Default) {
+            service.synthesizeParallel(
+                segments = segments,
+                readerRate = 1.0f,
+                callback = callback
+            )
+        }
+        firstStarted.await()
+        // أطلق الأول بعد أن تكون نافذة look-ahead قد بدأت الثاني.
+        delay(50)
+        releaseFirst.complete(Unit)
+        job.join()
+
+        assertTrue("Should start", started)
+        assertTrue("Should finish", done)
+        assertFalse("Should not error", errored)
+        val firstIdx = emittedMarkers.indexOf(1)
+        val secondIdx = emittedMarkers.indexOf(2)
+        assertTrue(
+            "First segment must be emitted: $emittedMarkers",
+            firstIdx >= 0
+        )
+        assertTrue(
+            "Second segment must be emitted: $emittedMarkers",
+            secondIdx >= 0
+        )
+        assertTrue(
+            "Segment order must be preserved: $emittedMarkers",
+            firstIdx < secondIdx
+        )
+    }
+
+    @Test
+    fun testParallelPartialFailureSkipsNonCriticalSegment() = runBlocking {
+        // مقطع غير حرج يفشل تخليقه فلا يسقط الجملة كلها؛ المقاطع الأخرى تُنطق.
+        val mockProvider = MockVoiceProvider { text, _, _ ->
+            if (text.contains("يفشل")) {
+                null // فشل غير حرج
+            } else {
+                ByteArray(2048) { 7 }
+            }
+        }
+        injectMockCatalog(mockProvider)
+
+        val segments = listOf(
+            Segment("بداية", LanguageCode.AR.tag, SpeechRole.TEXT),
+            Segment("يفشل هذا", LanguageCode.AR.tag, SpeechRole.TEXT),
+            Segment("نهاية", LanguageCode.AR.tag, SpeechRole.TEXT)
+        )
+        var started = false
+        var done = false
+        var errored = false
+        var audioBytes = 0
+        val callback = object : SynthesisCallback {
+            override fun getMaxBufferSize(): Int = 8192
+            override fun start(
+                sampleRateInHz: Int, audioFormat: Int, channelCount: Int
+            ): Int { started = true; return 0 }
+            override fun audioAvailable(
+                buffer: ByteArray?, offset: Int, length: Int
+            ): Int { audioBytes += length; return 0 }
+            override fun done(): Int { done = true; return 0 }
+            override fun error() { errored = true }
+            override fun error(errorCode: Int) { errored = true }
+            override fun hasStarted(): Boolean = started
+            override fun hasFinished(): Boolean = done
+        }
+
+        service.synthesizeParallel(
+            segments = segments,
+            readerRate = 1.0f,
+            callback = callback
+        )
+
+        assertTrue("Audio should be produced from healthy segments", started)
+        assertTrue("Should complete despite non-critical failure", done)
+        assertFalse("Non-critical failure must not error whole sentence", errored)
+        assertTrue("Should emit audio bytes", audioBytes > 0)
+    }
+
+    @Test
+    fun testParallelCancellationStopsSynthesis() = runBlocking {
+        // الإلغاء يجب أن يوقف التخليق ولا يعلّق على المقاطع المسبقة.
+        val entered = CompletableDeferred<Unit>()
+        val never = CompletableDeferred<ByteArray?>()
+        val mockProvider = MockVoiceProvider { _, _, _ ->
+            entered.complete(Unit)
+            never.await()
+        }
+        injectMockCatalog(mockProvider)
+
+        val segments = listOf(
+            Segment("أول", LanguageCode.AR.tag, SpeechRole.TEXT),
+            Segment("ثانٍ", LanguageCode.AR.tag, SpeechRole.TEXT)
+        )
+        val callback = object : SynthesisCallback {
+            override fun getMaxBufferSize(): Int = 8192
+            override fun start(
+                sampleRateInHz: Int, audioFormat: Int, channelCount: Int
+            ): Int = 0
+            override fun audioAvailable(
+                buffer: ByteArray?, offset: Int, length: Int
+            ): Int = 0
+            override fun done(): Int = 0
+            override fun error() {}
+            override fun error(errorCode: Int) {}
+            override fun hasStarted(): Boolean = false
+            override fun hasFinished(): Boolean = false
+        }
+
+        val job = launch(Dispatchers.Default) {
+            service.synthesizeParallel(
+                segments = segments,
+                readerRate = 1.0f,
+                callback = callback
+            )
+        }
+        entered.await()
+        job.cancel()
+        val result = runCatching { job.join() }
+        assertTrue("Cancellation should complete job", job.isCompleted)
+        assertFalse("Job should not fail with non-cancellation error", job.isCancelled.not() && result.isFailure)
     }
 }

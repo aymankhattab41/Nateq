@@ -2991,9 +2991,11 @@ class NateqTtsService : TextToSpeechService() {
         onFirstByteEmitted: (() -> Unit)? = null,
         onSegmentMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
     ): Unit = coroutineScope {
-        // بند ١٣: نافذة look-ahead محدودة بدل إطلاق كل المقاطع دفعةً واحدة.
-        // كل مقطع يُطلَق قبل استهلاك سابقه بـ [PARALLEL_LOOKAHEAD] فقط،
-        // وبشرط ألا تتجاوز بايتات المكتمل غير المستهلك [السقف].
+        // نافذة look-ahead محدودة: يُخلَّق المقطع N+1 أثناء بث N
+        // بحدود [PARALLEL_LOOKAHEAD] و[PARALLEL_MAX_RETAINED_BYTES]،
+        // مع الحفاظ على ترتيب الإخراج وعدم إسقاط الجملة عند فشل مقطع
+        // غير حرج (الأرقام حرجة). إعادة واحدة قبل الإسقاط تتم داخل
+        // synthesizeSegmentRaw.
         val deferreds = ArrayList<kotlinx.coroutines.Deferred<SegmentAudio?>>()
         val producedBytes = java.util.concurrent.ConcurrentHashMap<Int, Long>()
         var nextToLaunch = 0
@@ -3027,72 +3029,94 @@ class NateqTtsService : TextToSpeechService() {
                 })
             }
         }
+
+        fun cancelPending(fromIndex: Int) {
+            for (i in fromIndex until deferreds.size) {
+                deferreds[i].cancel()
+            }
+        }
+
         fillWindow()
         var started = false
         val maxBytes = callback.maxBufferSize
         val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
         var hadCriticalDrop = false
+        var criticalDropIndex = -1
 
-        for (index in segments.indices) {
-            val deferred = deferreds[index]
-            val segment = segments[index]
-            val cat = when (segment.role) {
-                SpeechRole.NUMBER ->
-                    SettingsRepository.VOICE_CATEGORY_NUMBERS
-                SpeechRole.EMOJI ->
-                    SettingsRepository.VOICE_CATEGORY_EMOJI
-                SpeechRole.DIALOGUE ->
-                    SettingsRepository.VOICE_CATEGORY_DIALOGUE
-                SpeechRole.NARRATION ->
-                    SettingsRepository.VOICE_CATEGORY_NARRATION
-                SpeechRole.TEXT -> effectCategory.ifBlank {
-                    "default"
+        try {
+            for (index in segments.indices) {
+                val deferred = deferreds[index]
+                val segment = segments[index]
+                val cat = when (segment.role) {
+                    SpeechRole.NUMBER ->
+                        SettingsRepository.VOICE_CATEGORY_NUMBERS
+                    SpeechRole.EMOJI ->
+                        SettingsRepository.VOICE_CATEGORY_EMOJI
+                    SpeechRole.DIALOGUE ->
+                        SettingsRepository.VOICE_CATEGORY_DIALOGUE
+                    SpeechRole.NARRATION ->
+                        SettingsRepository.VOICE_CATEGORY_NARRATION
+                    SpeechRole.TEXT -> effectCategory.ifBlank {
+                        "default"
+                    }
                 }
-            }
-            val audio = try {
-                deferred.await()
-            } catch (e: CancellationException) {
-                crossfader.reset()
-                throw e
-            }
-            if (audio == null) {
-                CategoryFailureTracker.recordFailure(cat)
-                crossfader.onSegmentSkipped()
-                if (isCriticalNumericSegment(segment)) {
-                    hadCriticalDrop = true
-                    Log.w(
-                        TAG,
-                        "synthesizeParallel: dropped critical segment " +
-                            segment.text
+                val audio = try {
+                    deferred.await()
+                } catch (e: CancellationException) {
+                    crossfader.reset()
+                    cancelPending(index + 1)
+                    throw e
+                }
+                if (audio == null) {
+                    CategoryFailureTracker.recordFailure(cat)
+                    crossfader.onSegmentSkipped()
+                    if (isCriticalNumericSegment(segment)) {
+                        hadCriticalDrop = true
+                        criticalDropIndex = index
+                        Log.w(
+                            TAG,
+                            "synthesizeParallel: dropped critical segment " +
+                                segment.text
+                        )
+                        break
+                    }
+                    producedBytes.remove(index)
+                    consumedCount++
+                    fillWindow()
+                    continue
+                }
+                CategoryFailureTracker.recordSuccess(cat)
+                val phase = LongArray(4)
+                for (chunk in audio.chunks) {
+                    emitMixedChunk(
+                        chunk, chunk.size,
+                        audio.nativeRate, audio.nativeChannels,
+                        phase, crossfader, maxBytes,
+                        { started },
+                        {
+                            started = true
+                            onFirstByteEmitted?.invoke()
+                        },
+                        callback
                     )
-                    break
                 }
+                crossfader.onSegmentComplete()
+                // استُهلك المقطع فأُطلق سراح بايتاته ومنافذه للنافذة التالية.
                 producedBytes.remove(index)
                 consumedCount++
                 fillWindow()
-                continue
             }
-            CategoryFailureTracker.recordSuccess(cat)
-            val phase = LongArray(4)
-            for (chunk in audio.chunks) {
-                emitMixedChunk(
-                    chunk, chunk.size,
-                    audio.nativeRate, audio.nativeChannels,
-                    phase, crossfader, maxBytes,
-                    { started },
-                    {
-                        started = true
-                        onFirstByteEmitted?.invoke()
-                    },
-                    callback
-                )
+        } finally {
+            // عند الخروج المبكر (إلغاء/إسقاط حرج) ألغِ المقاطع المسبقة
+            // غير المستهلكة حتى لا تُهدر CPU/ذاكرة.
+            val from = if (hadCriticalDrop) {
+                criticalDropIndex + 1
+            } else {
+                consumedCount
             }
-            crossfader.onSegmentComplete()
-            // استُهلك المقطع فأُطلق سراح بايتاته ومنافذه للنافذة التالية.
-            producedBytes.remove(index)
-            consumedCount++
-            fillWindow()
+            cancelPending(from)
         }
+
         if (hadCriticalDrop) {
             crossfader.reset()
             callback.error()
@@ -3124,14 +3148,25 @@ class NateqTtsService : TextToSpeechService() {
         onFirstByteEmitted: (() -> Unit)? = null,
         onSegmentMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
     ) {
-        // نطق متسلسل مجزأ: يبدأ تشغيل الصوت فور جاهزية أول شريحة من أول مقطع
-        // دون انتظار تركيب كامل القائمة أو العبارة (يختصر زمن قوائم المحركات
-        // والأسماء من ~3.6s إلى البدء الفوري بعد أول اسم محرك).
-        synthesizeMixedSequential(
-            segments, readerRate, callback, effectCategory,
-            appVoice, reqVoiceName, onFirstByteEmitted,
-            onSegmentMetric
-        )
+        // النص القصير ضمن سقف الذاكرة: تخليق مسبق (look-ahead) للمقطع
+        // التالي أثناء بث الحالي عبر synthesizeParallel، فيُختصر زمن
+        // التراكم بين المقاطع مع حدود PARALLEL_LOOKAHEAD و
+        // PARALLEL_MAX_RETAINED_BYTES. النص الطويل يبقى متسلسلاً متدفقاً
+        // لتجنب ذروة الذاكرة.
+        val totalChars = segments.sumOf { it.text.length }
+        if (totalChars <= PARALLEL_MAX_CHARS) {
+            synthesizeParallel(
+                segments, readerRate, callback, effectCategory,
+                appVoice, reqVoiceName, onFirstByteEmitted,
+                onSegmentMetric
+            )
+        } else {
+            synthesizeMixedSequential(
+                segments, readerRate, callback, effectCategory,
+                appVoice, reqVoiceName, onFirstByteEmitted,
+                onSegmentMetric
+            )
+        }
     }
 
     private val commonNumberWords = listOf(
