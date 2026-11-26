@@ -139,4 +139,40 @@ class PronunciationDictionaryTransactionAndExportTest {
         val reloaded = PronunciationDictionary(context)
         assertNotNull(reloaded.getAllEntries()["مهمة"])
     }
+
+    @Test
+    fun prebuildMatcher_buildsCacheBeforeFirstApply() {
+        dict.addEntry("نطق", "تلفظ")
+        dict.invalidate()
+        assertFalse(dict.isMatcherBuiltForTesting())
+
+        dict.prebuildMatcher()
+
+        assertTrue(dict.isMatcherBuiltForTesting())
+        assertEquals("تلفظ", dict.apply("نطق"))
+        assertTrue(dict.isMatcherBuiltForTesting())
+    }
+
+    @Test
+    fun prebuildMatcher_rebuildsAfterReloadInBackground() {
+        dict.addEntry("قديم", "قيمة_قديمة")
+        dict.prebuildMatcher()
+        assertTrue(dict.isMatcherBuiltForTesting())
+
+        dict.reload()
+        assertFalse(dict.isMatcherBuiltForTesting())
+
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val built = java.util.concurrent.atomic.AtomicBoolean(false)
+        val thread = Thread {
+            dict.prebuildMatcher()
+            built.set(dict.isMatcherBuiltForTesting())
+            latch.countDown()
+        }
+        thread.start()
+        assertTrue(latch.await(5, java.util.concurrent.TimeUnit.SECONDS))
+
+        assertTrue(built.get())
+        assertTrue(dict.isMatcherBuiltForTesting())
+    }
 }

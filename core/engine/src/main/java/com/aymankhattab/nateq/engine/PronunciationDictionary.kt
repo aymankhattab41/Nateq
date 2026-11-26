@@ -314,6 +314,37 @@ open class PronunciationDictionary(private val context: Context) {
         }
     }
 
+    /**
+     * يبني مصفوفة مطابقة القاموس (Aho-Corasick) مسبقاً في خيط خلفي حتى لا
+     * تدفعها أول جملة بعد الإقلاع أو بعد تعديل القاموس. يعيد الاستخدام إن
+     * كان الكاش صالحاً؛ ويُعاد البناء فقط عند تغيّر الإصدار/الحالة.
+     */
+    open fun prebuildMatcher() {
+        synchronized(this) {
+            reloadIfChanged()
+            val cached = cache
+            if (cached != null && cached.version == version &&
+                cached.standaloneMaxLength == standaloneMaxLength &&
+                cached.caseInsensitive == caseInsensitive
+            ) {
+                return
+            }
+            val outputs = buildAllOutputs(caseInsensitive)
+            val machine = UnifiedAhoCorasick(outputs, caseInsensitive)
+            cache = MachineCache(
+                version, standaloneMaxLength, caseInsensitive, machine
+            )
+        }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    fun isMatcherBuiltForTesting(): Boolean = synchronized(this) {
+        val cached = cache
+        cached != null && cached.version == version &&
+            cached.standaloneMaxLength == standaloneMaxLength &&
+            cached.caseInsensitive == caseInsensitive
+    }
+
     open fun invalidate() {
         synchronized(this) {
             lastFileModified = -1L

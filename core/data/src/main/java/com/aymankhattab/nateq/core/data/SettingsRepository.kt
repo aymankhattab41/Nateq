@@ -104,6 +104,10 @@ class SettingsRepository(context: Context) :
         const val VOICE_CATEGORY_LORD_SYSTEM = "lord_system"
         const val ENGINE_LORD_TTS = "lord_tts"
 
+        /** آخر محركات TTS التي استُخدمت فعلياً (لتدفئتها عند الجلسة التالية). */
+        private const val KEY_LAST_USED_TTS_ENGINES = "last_used_tts_engines"
+        private const val MAX_LAST_USED_TTS_ENGINES = 8
+
         /** حدّا الفاصل الزمني بين تكرارات إعلان المتصل (بالثواني): ثلاث
          *  قيم فقط 3/4/5 — وهما حدُّ المخزن فيساوي حدَّ الواجهة. */
         const val CALLER_INTERVAL_MIN = 3
@@ -3427,6 +3431,76 @@ class SettingsRepository(context: Context) :
             return getEnginePreferenceForLanguage(norm).voiceName
         }
         return null
+    }
+
+    /**
+     * آخر محركات TTS التي استُخدمت فعلياً في الجلسات الأخيرة، مرتبة من
+     * الأحدث للأقدم. تُستخدم لتدفئتها عند بدء الخدمة حتى لا تبدأ باردةً
+     * محركاتٌ استُخدمت فعلاً خارج الإعدادات المسماة.
+     */
+    fun getLastUsedTtsEngines(): List<String> {
+        val raw = prefs.getString(KEY_LAST_USED_TTS_ENGINES, null)
+            ?: return emptyList()
+        return raw.split('\n')
+            .map { it.trim() }
+            .filter { it.isNotBlank() && VisibleEngines.isVisible(it) }
+            .distinct()
+    }
+
+    /**
+     * يسجّل محرك TTS استُخدم فعلياً في هذه الجلسة لتدفئته في الجلسة
+     * التالية. يحافظ على سقف [MAX_LAST_USED_TTS_ENGINES] ويقدّم الأحدث.
+     */
+    fun recordLastUsedTtsEngine(engine: String?) {
+        val normalized = engine?.trim()?.takeIf { it.isNotBlank() } ?: return
+        if (!VisibleEngines.isVisible(normalized)) return
+        val current = getLastUsedTtsEngines().toMutableList()
+        current.remove(normalized)
+        current.add(0, normalized)
+        val capped = current.take(MAX_LAST_USED_TTS_ENGINES)
+        prefs.edit()
+            .putString(KEY_LAST_USED_TTS_ENGINES, capped.joinToString("\n"))
+            .apply()
+    }
+
+    /**
+     * كل حزم محركات TTS المختارة صراحةً لكل فئة ولكل لغة مُعدّة، للتدفئة
+     * الأولية. لا تشمل آخر المحركات المستخدمة (يُدمجها المستدعي).
+     */
+    fun getAllConfiguredEnginePackagesForPrewarm(): List<String> {
+        val selected = LinkedHashSet<String>()
+        val categories = ALL_VOICE_CATEGORIES +
+            listOf(VOICE_CATEGORY_EMOJI, VOICE_CATEGORY_DEFAULT)
+        for (category in categories) {
+            val engine = getEngineForCategory(category)
+            if (!engine.isNullOrBlank()) selected.add(engine)
+        }
+        for ((languageTag, pref) in allConvertLanguagePreferences()) {
+            val engine = pref.engine?.takeIf { it.isNotBlank() }
+                ?: getEngineForLanguage(languageTag)
+            if (!engine.isNullOrBlank() && VisibleEngines.isVisible(engine)) {
+                selected.add(engine)
+            }
+        }
+        for (languageTag in listOf("ar", "en")) {
+            val engine = getEngineForLanguage(languageTag)
+            if (!engine.isNullOrBlank() && VisibleEngines.isVisible(engine)) {
+                selected.add(engine)
+            }
+        }
+        return selected.toList()
+    }
+
+    fun registerOnSettingsChangeListener(
+        listener: SharedPreferences.OnSharedPreferenceChangeListener
+    ) {
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun unregisterOnSettingsChangeListener(
+        listener: SharedPreferences.OnSharedPreferenceChangeListener
+    ) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
     }
 
     /**

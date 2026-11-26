@@ -226,7 +226,9 @@ class NateqTtsService : TextToSpeechService() {
     @Inject
     lateinit var pronunciationDictionary: PronunciationDictionary
 
-    /** يلتقط حفظ القاموس من عملية الواجهة ويحدّث لقطة عملية المحرك فوراً. */
+    /** يلتقط حفظ القاموس من عملية الواجهة ويحدّث لقطة عملية المحرك فوراً.
+     *  يُعاد تحميل القاموس وبناء مصفوفة المطابقة في خيط خلفي حتى لا تدفع
+     *  الكلفةَ أولُ جملة بعد التعديل ولا يُحجب الخيط الرئيسي. */
     private val dictionaryChangedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action !=
@@ -234,12 +236,11 @@ class NateqTtsService : TextToSpeechService() {
             ) {
                 return
             }
-            val dictionary = if (::pronunciationDictionary.isInitialized) {
-                pronunciationDictionary
-            } else {
-                PronunciationDictionary.shared(applicationContext)
+            val dictionary = resolvePronunciationDictionary()
+            serviceScope.launch {
+                runCatching { dictionary.reload() }
+                runCatching { dictionary.prebuildMatcher() }
             }
-            dictionary.reload()
         }
     }
 
@@ -266,15 +267,26 @@ class NateqTtsService : TextToSpeechService() {
     private lateinit var settings: SettingsRepository
     private lateinit var catalog: VoiceCatalog
     private lateinit var requestHandler: SynthesisRequestHandler
-    // معالج النصوص (والقاموس بداخله: Keystore I/O + JSON) كسول: لا يُبنى
-    // في onCreate على الرئيسي، بل عند أول نطق فعلي أو في التدفئة الخلفية.
+    private var systemVoiceProvider: SystemVoiceProvider? = null
+    // معالج النصوص والقاموس (Keystore I/O + JSON + مصفوفة المطابقة):
+    // تُبنى في خيط خلفي عند onCreate عبر warmupJob دون حجب الرئيسي، وأي
+    // طلب نطق مبكر ينتظر اكتمال البناء نفسه على خيط التخليق لا على الرئيسي.
     private val textProcessor: TextProcessor by lazy {
-        val dict = if (::pronunciationDictionary.isInitialized) {
+        val dict = resolvePronunciationDictionary()
+        TextProcessor(applicationContext, settings, dict).also {
+            dict.prebuildMatcher()
+        }
+    }
+
+    private fun resolvePronunciationDictionary(): PronunciationDictionary =
+        if (::pronunciationDictionary.isInitialized) {
             pronunciationDictionary
         } else {
-            PronunciationDictionary(applicationContext)
+            PronunciationDictionary.shared(applicationContext)
         }
-        TextProcessor(applicationContext, settings, dict)
+
+    private fun prebuildDictionaryMatcher() {
+        resolvePronunciationDictionary().prebuildMatcher()
     }
 
     /** مقسم النصوص المختلطة الكتابات (منطق نقي مشترك بلا حالة). */
@@ -381,8 +393,14 @@ class NateqTtsService : TextToSpeechService() {
     @Volatile
     private var numberWarmSettingsSnapshot: String? = null
 
+    /** بند ١٨: بصمة محركات التدفئة الأولية (مختارة لكل لغة/فئة + آخر
+     *  المستخدمة) لإعادة التدفئة عند تغيير الإعدادات فقط. */
+    @Volatile
+    private var engineWarmSettingsSnapshot: String? = null
+
     /** حارس تشغيل–واحد: مهمة تدفئة واحدة معلّقة مهما تكرّر إشعار التغيير. */
     private val numberWarmInFlight = AtomicBoolean(false)
+    private val engineWarmInFlight = AtomicBoolean(false)
 
     private fun currentNumberWarmSettingsSnapshot(): String = listOf(
         settings.getEngineForCategory(
@@ -406,29 +424,61 @@ class NateqTtsService : TextToSpeechService() {
         settings.getDefaultVolume().toString()
     ).joinToString("\u001f")
 
-    /** مراقب تغييرات الإعدادات لتسخين صوت الأرقام عند تعديلها فقط. */
+    private fun currentEngineWarmSettingsSnapshot(): String =
+        (settings.getAllConfiguredEnginePackagesForPrewarm() +
+            settings.getLastUsedTtsEngines()).joinToString("\u001f")
+
+    /** مراقب تغييرات الإعدادات: يعيد تدفئة صوت الأرقام ومحركات TTS المختارة
+     *  عند تغيّر الإعدادات المؤثرة فقط (بند ٨+١٨). */
     private val settingsChangeObserver = object : ContentObserver(
         Handler(Looper.getMainLooper())
     ) {
         override fun onChange(selfChange: Boolean) {
-            val fresh = currentNumberWarmSettingsSnapshot()
-            if (fresh == numberWarmSettingsSnapshot) return
-            numberWarmSettingsSnapshot = fresh
-            if (!numberWarmInFlight.compareAndSet(false, true)) return
-            // ربط المهمة بـ warmupJob: طلب كلامٍ واردٍ يُلغيها فوراً
-            // (onSynthesizeText يستدعي warmupJob?.cancel())، Debounce
-            // يجمع سيل الإشعارات، وsingle-flight يمنع التداخل.
+            val freshNumber = currentNumberWarmSettingsSnapshot()
+            val numberChanged = freshNumber != numberWarmSettingsSnapshot
+            val freshEngine = currentEngineWarmSettingsSnapshot()
+            val engineChanged = freshEngine != engineWarmSettingsSnapshot
+            if (!numberChanged && !engineChanged) return
+            if (numberChanged) numberWarmSettingsSnapshot = freshNumber
+            if (engineChanged) engineWarmSettingsSnapshot = freshEngine
+
+            val shouldWarmNumbers = numberChanged &&
+                numberWarmInFlight.compareAndSet(false, true)
+            val shouldWarmEngines = engineChanged &&
+                engineWarmInFlight.compareAndSet(false, true)
+            if (!shouldWarmNumbers && !shouldWarmEngines) return
+
             warmupJob?.cancel()
             warmupJob = serviceScope.launch(AppDispatchers.io) {
                 try {
                     delay(NUMBER_WARM_DEBOUNCE_MS)
-                    warmNumberVoiceCache()
+                    if (shouldWarmEngines) {
+                        try {
+                            prewarmConfiguredEngines()
+                        } finally {
+                            engineWarmInFlight.set(false)
+                        }
+                    }
+                    if (shouldWarmNumbers) {
+                        try {
+                            warmNumberVoiceCache()
+                        } finally {
+                            numberWarmInFlight.set(false)
+                        }
+                    }
                 } catch (e: CancellationException) {
+                    engineWarmInFlight.set(false)
+                    numberWarmInFlight.set(false)
                     throw e
                 } catch (t: Throwable) {
-                    Log.w(TAG, "تدفئة صوت الأرقام بعد تغيير الإعدادات فشلت", t)
+                    Log.w(
+                        TAG,
+                        "تدفئة الخلفية بعد تغيير الإعدادات فشلت",
+                        t
+                    )
                 } finally {
-                    numberWarmInFlight.set(false)
+                    if (shouldWarmEngines) engineWarmInFlight.set(false)
+                    if (shouldWarmNumbers) numberWarmInFlight.set(false)
                 }
             }
         }
@@ -459,19 +509,21 @@ class NateqTtsService : TextToSpeechService() {
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
         numberWarmSettingsSnapshot = currentNumberWarmSettingsSnapshot()
+        engineWarmSettingsSnapshot = currentEngineWarmSettingsSnapshot()
 
         // تدفئة محركات TTS المختارة فعلاً على الخلفية (بند ٨): أول ربط
         // TextToSpeech يكلف 150–800ms لدى بعض المحركات — نربط المحركات
         // التي تُشير إليها الإعدادات لا كلَّ مثبَّت، فيأتي النطقُ على
         // مثيلٍ دافئ من المسبح مباشرةً بلا إهدار ذاكرة على محركاتٍ
         // لم يخترها المستخدم.
-        providers.filterIsInstance<SystemVoiceProvider>()
+        systemVoiceProvider = providers
+            .filterIsInstance<SystemVoiceProvider>()
             .firstOrNull()
-            ?.let { system ->
-                runCatching {
-                    system.prewarmEngines(configuredEnginePackages())
-                }
+        systemVoiceProvider?.let { system ->
+            runCatching {
+                system.prewarmEngines(configuredEnginePackages())
             }
+        }
 
         // اكتشاف اللغات وتدفئة كاش كلمات التنقل على الخلفية (بند ب.txt
         // 3.5-1): استدعاءٌ واحدٌ مؤمَّن يحفظ حد ar/en المضمون عند أي تعذّر،
@@ -2589,6 +2641,7 @@ class NateqTtsService : TextToSpeechService() {
             )
         }
         onResolved?.invoke(params.engine, params.voiceName ?: params.voice.id)
+        recordLastUsedEngine(params.engine)
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0
         var nativeChannels = 1
@@ -2874,6 +2927,7 @@ class NateqTtsService : TextToSpeechService() {
                     "المحرك='${params.engine ?: "default"}', " +
                     "الصوت='${params.voiceName ?: params.voice.id}'"
             )
+            recordLastUsedEngine(params.engine)
             var nativeRate = 0
             var nativeChannels = 1
             val phase = LongArray(4)
@@ -3184,29 +3238,35 @@ class NateqTtsService : TextToSpeechService() {
         VoiceReadinessCoordinator.onTrimMemory(level)
     }
 
-    /** بند ٨: المحركات التي تُشير إليها الإعدادات فعلاً (افتراضي/أرقام/
-     *  إيموجي/لكل لغة)، بعد تقاطعها مع المثبَّتة — تُستخدم في التدفئة
-     *  الأولية بدل «كل ما هو مثبَّت» فلا تُربط مثيلاتٌ لا تُستعمل. */
+    /** بند ٨+١٨: محركات التدفئة الأولية = المحركات المختارة لكل لغة
+     *  وفئة + آخر المحركات المستخدمة في الجلسة السابقة، بعد تقاطعها مع
+     *  المثبَّتة. سقف الذاكرة يُطبَّقه [SystemVoiceProvider.prewarmEngines]. */
     private fun configuredEnginePackages(): List<String> {
         val installed = EnginePicker.installedEnginePackages(
             applicationContext
         ).toSet()
         val selected = LinkedHashSet<String>()
-        listOf(
-            settings.getEngineForCategory(
-                SettingsRepository.VOICE_CATEGORY_NUMBERS
-            ),
-            settings.getEngineForCategory(
-                SettingsRepository.VOICE_CATEGORY_EMOJI
-            ),
-            settings.getEngineForLanguage(LanguageCode.AR.tag),
-            settings.getEngineForLanguage(LanguageCode.EN.tag)
-        ).forEach { engine ->
-            if (!engine.isNullOrBlank() && engine in installed) {
+        settings.getAllConfiguredEnginePackagesForPrewarm().forEach { engine ->
+            if (engine in installed) {
+                selected.add(engine)
+            }
+        }
+        settings.getLastUsedTtsEngines().forEach { engine ->
+            if (engine in installed) {
                 selected.add(engine)
             }
         }
         return selected.toList()
+    }
+
+    private fun recordLastUsedEngine(engine: String?) {
+        val normalized = engine?.trim()?.takeIf { it.isNotBlank() } ?: return
+        runCatching { settings.recordLastUsedTtsEngine(normalized) }
+    }
+
+    private fun prewarmConfiguredEngines() {
+        val system = systemVoiceProvider ?: return
+        runCatching { system.prewarmEngines(configuredEnginePackages()) }
     }
 
     private suspend fun warmNumberVoiceCache() {
