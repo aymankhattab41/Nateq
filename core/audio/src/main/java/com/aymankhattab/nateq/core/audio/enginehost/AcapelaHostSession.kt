@@ -5,6 +5,7 @@ import android.content.ContextWrapper
 import android.os.SystemClock
 import android.speech.tts.SynthesisCallback
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.pm.PackageInfoCompat
 import com.acapelagroup.android.tts.AcattsandroidService
 import com.acapelagroup.android.tts.acattsandroid
@@ -167,8 +168,30 @@ internal class AcapelaHostSession(
         /** مهلة بدء الصوت قبل اعتبار المحرك عاجزاً عن النطق. */
         private const val START_SILENCE_MS = 2_500L
 
+        /**
+         * مهلة بدء صوت متكيّفة بعد نجاح قطعة سابقة: المحرك دافئ
+         * والصوت متوقع بسرعة، فلا حاجة لانتظار 2.5s كاملة.
+         */
+        private const val START_SILENCE_AFTER_AUDIO_MS = 350L
+
+        /**
+         * سقف انتظار nIsSpeaking العالق بعد توقف الصوت الفعلي؛ يمنع
+         * حجز ميزانية القطعة كاملة عندما يكون الصوت قد اكتمل فعلاً.
+         */
+        private const val STUCK_SPEAKING_AFTER_SILENCE_MS = 300L
+
+        /** تقليل تكرار نداء nIsSpeaking عندما الصوت يتدفق بثبات. */
+        private const val SPEAKING_POLL_STEP_MS = 45L
+
         /** عدد أحرف القطعة الواحدة — مطابق لتقسيم MultiTTS. */
         private const val CHUNK_CHARS = 200
+
+        /**
+         * القطعة القابلة للنطق تحتوي حرفاً أو رقماً واحداً على الأقل؛
+         * علامات الترقيم/الإيموجي/المسافات وحدها لا تُرسل للمحرك.
+         */
+        internal fun hasPronounceableText(text: String): Boolean =
+            text.any { it.isLetterOrDigit() }
 
         /** نصٌّ قصير لفحص قبول بيانات التسجيل قبل النطق الحقيقي. */
         private const val REGISTRATION_PROBE_TEXT = "مرحبا"
@@ -1176,11 +1199,17 @@ internal class AcapelaHostSession(
                 "G${hostGen}_PID${myPid} ==="
         Log.i("acattsandroid-extended-native", startMarker)
 
+        var spokeAnyPronounceable = false
         for (chunk in chunks) {
             if (cancelled.get()) {
                 Log.i("acattsandroid-extended-native", endMarker)
                 return HostResult.failure("CANCELLED", "أُلغي الطلب")
             }
+            if (!hasPronounceableText(chunk)) {
+                Log.i(TAG, "تخطي قطعة Acapela صامتة (لا حرف قابل للنطق)")
+                continue
+            }
+            spokeAnyPronounceable = true
 
             sink.enterNativeCall(nativeCapMs)
             val speakRes = try {
@@ -1210,6 +1239,11 @@ internal class AcapelaHostSession(
                 )
             }
             awaitChunkEnd(inst, chunk.length, sink, cancelled)
+        }
+        if (!spokeAnyPronounceable) {
+            Log.i(TAG, "تخطي طلب Acapela الكلاسيكي: لا نص قابل للنطق")
+            Log.i("acattsandroid-extended-native", endMarker)
+            return HostResult(ok = true)
         }
 
         val samples = totalAudioSamples.get()
@@ -1353,30 +1387,58 @@ internal class AcapelaHostSession(
     }
 
     /**
-     * انتظار انتهاء القطعة: صمتٌ بعد آخر عيّنة، مع نبضات تقدّم حتى
-     * لا يعدّ الحارس المحرك خاملاً. السقف ميزانية القطعة نفسها.
+     * انتظار انتهاء القطعة: إشارة nIsSpeaking + صمتٍ بعد آخر عيّنة،
+     * مع نبضات تقدّم. START_SILENCE متكيّف بعد أول قطعة ناجحة،
+     * وتكرار nIsSpeaking مخفَّض، وسقف للنطق العالق بعد توقف الصوت.
      */
-    private suspend fun awaitChunkEnd(
-        inst: acattsandroid,
+    @VisibleForTesting
+    internal suspend fun awaitChunkEnd(
+        inst: acattsandroid?,
         chars: Int,
         sink: PcmSink,
-        cancelled: AtomicBoolean
+        cancelled: AtomicBoolean,
+        speakingPoll: (() -> Int)? = null
     ) {
         val started = SystemClock.uptimeMillis()
         val budget = SynthesisBudget.pieceTimeoutMs(chars)
         var lastPing = started
+        var lastSpeakingPoll = 0L
+        var speakingState = 1
+        val hadAudioBeforeChunk = audioReceived.get()
+        val startSilenceMs = if (hadAudioBeforeChunk) {
+            START_SILENCE_AFTER_AUDIO_MS
+        } else {
+            START_SILENCE_MS
+        }
+        var stuckSince: Long? = null
         while (!cancelled.get()) {
             val now = SystemClock.uptimeMillis()
             if (now - started >= budget) break
-            val speaking = runCatching { inst.nIsSpeaking() }.getOrDefault(0)
-            if (speaking == 0) {
-                val silentFor = now - lastAudioTime.get()
-                val quiet = if (audioReceived.get()) {
+            if (now - lastSpeakingPoll >= SPEAKING_POLL_STEP_MS ||
+                lastSpeakingPoll == 0L
+            ) {
+                speakingState = runCatching {
+                    speakingPoll?.invoke() ?: inst?.nIsSpeaking() ?: 0
+                }.getOrDefault(speakingState)
+                lastSpeakingPoll = now
+            }
+            val silentFor = now - lastAudioTime.get()
+            val gotAudio = audioReceived.get()
+            if (speakingState == 0) {
+                val quiet = if (gotAudio) {
                     silentFor > TAIL_SILENCE_MS
                 } else {
-                    now - started > START_SILENCE_MS
+                    now - started > startSilenceMs
                 }
                 if (quiet) break
+                stuckSince = null
+            } else if (gotAudio && silentFor > TAIL_SILENCE_MS) {
+                val since = stuckSince ?: now.also { stuckSince = it }
+                if (now - since >= STUCK_SPEAKING_AFTER_SILENCE_MS) {
+                    break
+                }
+            } else {
+                stuckSince = null
             }
             if (now - lastPing >= PING_INTERVAL_MS) {
                 runCatching { sink.ping() }
@@ -1475,11 +1537,17 @@ internal class AcapelaHostSession(
             )
         }
 
+        var spokeAnyPronounceable = false
         for (chunk in chunks) {
             if (cancelled.get()) {
                 Log.i("acattsandroid-extended-native", endMarker)
                 return HostResult.failure("CANCELLED", "أُلغي الطلب")
             }
+            if (!hasPronounceableText(chunk)) {
+                Log.i(TAG, "تخطي قطعة Acapela ممتدة صامتة (لا حرف قابل للنطق)")
+                continue
+            }
+            spokeAnyPronounceable = true
             sink.enterNativeCall(nativeCapMs)
             val synthCallback = AcapelaSynthesisCallback { bArr, len ->
                 handleRawAudioBytes(bArr, len)
@@ -1513,6 +1581,11 @@ internal class AcapelaHostSession(
             }
             awaitExtendedChunkEnd(chunk.length, sink, cancelled)
         }
+        if (!spokeAnyPronounceable) {
+            Log.i(TAG, "تخطي طلب Acapela الممتد: لا نص قابل للنطق")
+            Log.i("acattsandroid-extended-native", endMarker)
+            return HostResult(ok = true)
+        }
 
         val samples = totalAudioSamples.get()
         val bytes = totalAudioBytes.get()
@@ -1545,7 +1618,7 @@ internal class AcapelaHostSession(
 
     /**
      * انتظار القطعة الممتدة: الخدمة لا تكشف `nIsSpeaking`، فيُعتمد
-     * على الصمت بعد آخر عيّنة وبمهلة القطعة كسقف.
+     * على الصمت بعد آخر عيّنة وبمهلة القطعة كسقف، مع بدء متكيّف.
      */
     private suspend fun awaitExtendedChunkEnd(
         chars: Int,
@@ -1555,6 +1628,12 @@ internal class AcapelaHostSession(
         val started = SystemClock.uptimeMillis()
         val budget = SynthesisBudget.pieceTimeoutMs(chars)
         var lastPing = started
+        val hadAudioBeforeChunk = audioReceived.get()
+        val startSilenceMs = if (hadAudioBeforeChunk) {
+            START_SILENCE_AFTER_AUDIO_MS
+        } else {
+            START_SILENCE_MS
+        }
         while (!cancelled.get()) {
             val now = SystemClock.uptimeMillis()
             if (now - started >= budget) break
@@ -1562,7 +1641,7 @@ internal class AcapelaHostSession(
             val quiet = if (audioReceived.get()) {
                 silentFor > TAIL_SILENCE_MS
             } else {
-                now - started > START_SILENCE_MS
+                now - started > startSilenceMs
             }
             if (quiet) break
             if (now - lastPing >= PING_INTERVAL_MS) {
