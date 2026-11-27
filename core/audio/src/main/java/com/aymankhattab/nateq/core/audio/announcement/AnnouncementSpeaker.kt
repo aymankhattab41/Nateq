@@ -210,12 +210,21 @@ class AnnouncementSpeaker(
         // المؤجلة — بعدها يُنطق الإعلان على أي حال (لا ضياع).
         private const val SPEAKING_WAIT_TIMEOUT_MS = 5000L
 
+        /** بند 28: مهلة مخفضة لقفل النطق لإعلانات الأحداث العاجلة (1.5s). */
+        private const val SPEAKING_WAIT_TIMEOUT_URGENT_MS = 1500L
+
         /** مهلة تهيئة TextToSpeech للإعلانات: إن لم يصل onInit يُفشل
          *  الربط ويُجرَّب المحرك الاحتياطي التالي (لا تعليق للأبد). */
         private const val INIT_TIMEOUT_MS = 8000L
 
         /** بند 25: سقف مسبح مثيلات TTS الدافئة (2-3 لتقليل ذاكرة المحركات). */
         private const val WARM_TTS_POOL_MAX = 3
+
+        /** مهلة التركيز المؤجل الافتراضية للإعلانات العادية (3 ثوانٍ). */
+        private const val FOCUS_DELAYED_TIMEOUT_MS = 3000L
+
+        /** بند 29: مهلة مخفضة للتركيز المؤجل لإعلانات الأحداث (1.5 ثانية). */
+        private const val FOCUS_DELAYED_EVENT_TIMEOUT_MS = 1500L
 
         // إعادة جدولة طلب التركيز المرفوض (AUDIOFOCUS_REQUEST_FAILED):
         // محاولات بفاصل وجيز، ثم إسقاطٌ صامت صريح (لا حلقة لا نهائية فوق
@@ -235,6 +244,29 @@ class AnnouncementSpeaker(
 
         fun isEventCategory(category: String?): Boolean =
             category != null && category in EVENT_CATEGORIES
+
+        /** بند 28: تحديد الأحداث العاجلة (مكالمة واردة أو بطارية حرجة). */
+        fun isUrgentEventCategory(
+            category: String?,
+            text: String? = null
+        ): Boolean {
+            if (category == null) return false
+            if (category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER ||
+                category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR ||
+                category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+            ) {
+                return true
+            }
+            if (category == SettingsRepository.VOICE_CATEGORY_BATTERY) {
+                if (text == null) return true
+                return text.contains("10") || text.contains("عشرة") ||
+                    text.contains("حرجة") ||
+                    text.contains("critical", ignoreCase = true) ||
+                    text.contains("20") || text.contains("عشرين") ||
+                    text.contains("low", ignoreCase = true)
+            }
+            return false
+        }
 
         fun isResumableCategory(category: String?): Boolean =
             category == SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ||
@@ -607,6 +639,8 @@ class AnnouncementSpeaker(
     private var speakingLockObserver: ContentObserver? = null
     private var dictionaryFileObserver: FileObserver? = null
     private var speakingLockTimeout: Runnable? = null
+    private var speakingLockTimeoutDurationMs: Long = 0L
+    private var simulatedAudioFocusResult: Int? = null
 
     // عدّاد جيل النطق: يزداد في كل دورة speak وينفي مسارات مؤجلة
     // من دورات سابقة — يمنع النطق القديم بعد stop()/speak جديد.
@@ -738,6 +772,36 @@ class AnnouncementSpeaker(
     internal fun setBoundEngineForTesting(engine: String?) {
         boundEngine = engine
     }
+
+    @VisibleForTesting
+    internal fun enqueueWhileSpeakingForTesting(
+        speakAction: () -> Unit,
+        isUrgent: Boolean = false
+    ) {
+        enqueueWhileSpeaking(speechGeneration.get(), speakAction, isUrgent)
+    }
+
+    @VisibleForTesting
+    internal fun setSimulatedAudioFocusResult(result: Int?) {
+        simulatedAudioFocusResult = result
+    }
+
+    @VisibleForTesting
+    internal fun onAudioFocusChangeForTesting(focusChange: Int) {
+        onAudioFocusChange.onAudioFocusChange(focusChange)
+    }
+
+    @VisibleForTesting
+    internal fun getOnAudioFocusChangeListenerForTesting():
+        AudioManager.OnAudioFocusChangeListener = onAudioFocusChange
+
+    @VisibleForTesting
+    internal fun hasPendingFocusActionForTesting(): Boolean =
+        pendingFocusAction != null
+
+    @VisibleForTesting
+    internal fun isSpeakingLockTimeoutScheduledForTesting(): Boolean =
+        speakingLockTimeout != null
 
     @VisibleForTesting
     internal fun setSimulatedVoicesEmpty(empty: Boolean) {
@@ -1664,6 +1728,7 @@ class AnnouncementSpeaker(
         val gen = speechGeneration.incrementAndGet()
         currentCategory = category
         val isEvent = isEventCategory(category)
+        val isUrgent = isUrgentEventCategory(category, dictText)
         val speakAction = {
             launchWithCue(
                 gen, dictText, locale, effRate, effPitch, effVolume,
@@ -1677,7 +1742,7 @@ class AnnouncementSpeaker(
         // (الساعة، البطارية، المتصل) تتجاوز القفل؛ والجميع يمر عبر
         // speakWithFocus احتراماً لنتائج التركيز (Delayed/Failed/Granted).
         if (!isEvent && SpeechLock.isSpeaking(appContext)) {
-            enqueueWhileSpeaking(gen, speakAction)
+            enqueueWhileSpeaking(gen, speakAction, isUrgent)
             return
         }
         speakWithFocus(gen, speakAction)
@@ -1740,7 +1805,12 @@ class AnnouncementSpeaker(
                     }
                 }
                 pendingFocusTimer = timer
-                mainHandler.postDelayed(timer, 3000L)
+                val delayTimeoutMs = if (isEventCategory(currentCategory)) {
+                    FOCUS_DELAYED_EVENT_TIMEOUT_MS
+                } else {
+                    FOCUS_DELAYED_TIMEOUT_MS
+                }
+                mainHandler.postDelayed(timer, delayTimeoutMs)
             }
             AudioManager.AUDIOFOCUS_REQUEST_FAILED -> {
                 // رفض التركيز (مشغّل آخر حجز الوسائط) — لا نطق فوقه؛ نعيد
@@ -1789,20 +1859,43 @@ class AnnouncementSpeaker(
     /** إلحاق إعلانٍ بانتظار انتهاء قراءة قارئ الشاشة: يُحرَّر كلُّ الطابور
      *  عند هبوط علم «نطق جارٍ» (ContentObserver على content://…/speaking)
      *  أو عند انقضاء مهلة الأمان القصوى — مع التحقق من سلامة دورة النطق. */
-    private fun enqueueWhileSpeaking(gen: Long, speakAction: () -> Unit) {
+    private fun enqueueWhileSpeaking(
+        gen: Long,
+        speakAction: () -> Unit,
+        isUrgent: Boolean = isUrgentEventCategory(currentCategory)
+    ) {
         deferredWhileSpeaking.add {
             speakWithFocus(speechGeneration.get(), speakAction)
         }
         registerSpeakingLockObserverIfNeeded()
+        val targetTimeout = if (isUrgent) {
+            SPEAKING_WAIT_TIMEOUT_URGENT_MS
+        } else {
+            SPEAKING_WAIT_TIMEOUT_MS
+        }
         if (speakingLockTimeout == null) {
             val timer = Runnable {
                 speakingLockTimeout = null
+                speakingLockTimeoutDurationMs = 0L
                 // المهلة القصوى انتهت — ننطق ما ينتظر على أي حال (لا ضياع
                 // إعلان) حتى لو هَبَطَ القفل قبل انقضائها.
                 flushDeferredWhileSpeaking(force = true)
             }
             speakingLockTimeout = timer
-            mainHandler.postDelayed(timer, SPEAKING_WAIT_TIMEOUT_MS)
+            speakingLockTimeoutDurationMs = targetTimeout
+            mainHandler.postDelayed(timer, targetTimeout)
+        } else if (isUrgent &&
+            speakingLockTimeoutDurationMs > targetTimeout
+        ) {
+            speakingLockTimeout?.let { mainHandler.removeCallbacks(it) }
+            val timer = Runnable {
+                speakingLockTimeout = null
+                speakingLockTimeoutDurationMs = 0L
+                flushDeferredWhileSpeaking(force = true)
+            }
+            speakingLockTimeout = timer
+            speakingLockTimeoutDurationMs = targetTimeout
+            mainHandler.postDelayed(timer, targetTimeout)
         }
     }
 
@@ -1872,6 +1965,7 @@ class AnnouncementSpeaker(
         if (!force && SpeechLock.isSpeaking(appContext)) return
         speakingLockTimeout?.let { mainHandler.removeCallbacks(it) }
         speakingLockTimeout = null
+        speakingLockTimeoutDurationMs = 0L
         if (force) {
             runCatching { SpeechLock.setSpeaking(appContext, false) }
         }
@@ -3735,6 +3829,7 @@ speechCycle.incrementAndGet()
      * يتم التحقق المباشر من نمط الصوت (Mode) لحماية المكالمات الهاتفية فقط.
      */
     private fun requestAudioFocus(): Int {
+        simulatedAudioFocusResult?.let { return it }
         val inCall = runCatching {
             val mode = audioManager.mode
             mode == AudioManager.MODE_IN_CALL ||

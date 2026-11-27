@@ -1504,6 +1504,7 @@ class NateqTtsService : TextToSpeechService() {
         reqVoiceName: String? = null,
         onFirstByteEmitted: (() -> Unit)? = null
     ) {
+        SpeechLock.heartbeat(applicationContext)
         val (voice, foundProvider) = resolveVoiceWithFallback(languageTag)
         val provider = foundProvider ?: run {
             Log.e(TAG,
@@ -2902,6 +2903,7 @@ class NateqTtsService : TextToSpeechService() {
         val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
         var lastSegmentEndUptime = -1L
         for (segment in segments) {
+            SpeechLock.heartbeat(applicationContext)
             val segStart = SystemClock.uptimeMillis()
             val gap = if (lastSegmentEndUptime > 0L) {
                 (segStart - lastSegmentEndUptime).coerceAtLeast(0L)

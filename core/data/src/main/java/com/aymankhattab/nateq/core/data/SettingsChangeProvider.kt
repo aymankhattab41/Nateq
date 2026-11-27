@@ -74,12 +74,15 @@ class SettingsChangeProvider : ContentProvider() {
             (now - speakingTimestamp) > SPEAKING_TTL_MS
         ) {
             speakingFlag = 0
+            speakingTimestamp = 0L
             0
         } else {
             speakingFlag
         }
-        return MatrixCursor(arrayOf(SPEAKING_COLUMN)).apply {
-            addRow(arrayOf(currentFlag))
+        return MatrixCursor(
+            arrayOf(SPEAKING_COLUMN, TIMESTAMP_COLUMN)
+        ).apply {
+            addRow(arrayOf<Any>(currentFlag, speakingTimestamp))
         }
     }
 
@@ -109,8 +112,13 @@ class SettingsChangeProvider : ContentProvider() {
         if (uri.lastPathSegment != SPEAKING_PATH) return 0
         val raw = values?.getAsInteger(SPEAKING_COLUMN) ?: return 0
         speakingFlag = if (raw > 0) 1 else 0
+        val customTs = values.getAsLong(TIMESTAMP_COLUMN)
         speakingTimestamp = if (speakingFlag > 0) {
-            android.os.SystemClock.elapsedRealtime()
+            if (customTs != null && customTs > 0L) {
+                customTs
+            } else {
+                android.os.SystemClock.elapsedRealtime()
+            }
         } else {
             0L
         }
@@ -131,8 +139,10 @@ class SettingsChangeProvider : ContentProvider() {
         const val AUTHORITY = "com.aymankhattab.nateq.settings"
 
         private const val SPEAKING_PATH = "speaking"
-        private const val SPEAKING_COLUMN = "speaking"
-        private const val SPEAKING_TTL_MS = 6000L
+        const val SPEAKING_COLUMN = "speaking"
+        const val TIMESTAMP_COLUMN = "timestamp"
+        /** بند 28: مهلة حياة قصيرة لعلم النطق لتفادي تعليق الإعلانات (2.5s). */
+        const val SPEAKING_TTL_MS = 2500L
         private const val UNLABELED_PATH = "unlabeled_elements"
 
         fun uri(): Uri = Uri.parse("content://$AUTHORITY")
