@@ -116,32 +116,59 @@ class LordPhoneActivity : AppCompatActivity() {
     private val voiceSearchLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val spoken = result.data?.getStringArrayListExtra(
-                RecognizerIntent.EXTRA_RESULTS
-            )?.firstOrNull() ?: ""
-            if (spoken.isNotEmpty()) {
-                val etSearch = findViewById<EditText>(R.id.et_contact_search)
-                etSearch.setText(spoken)
+        try {
+            if (result != null && result.resultCode == RESULT_OK) {
+                val spoken = result.data?.getStringArrayListExtra(
+                    RecognizerIntent.EXTRA_RESULTS
+                )?.firstOrNull() ?: ""
+                if (spoken.isNotEmpty()) {
+                    val etSearch =
+                        findViewById<EditText>(R.id.et_contact_search)
+                    etSearch?.setText(spoken)
+                }
             }
+        } catch (t: Throwable) {
+            Log.e(
+                "LordPhoneActivity",
+                "فشل معالجة نتيجة البحث الصوتي",
+                t
+            )
         }
     }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions[Manifest.permission.READ_CALL_LOG] == true) {
-            loadCallLog()
-        }
-        if (permissions[Manifest.permission.READ_CONTACTS] == true) {
-            loadContacts()
+        try {
+            if (permissions != null) {
+                if (permissions[Manifest.permission.READ_CALL_LOG] == true) {
+                    loadCallLog()
+                }
+                if (permissions[Manifest.permission.READ_CONTACTS] == true) {
+                    loadContacts()
+                }
+            }
+        } catch (t: Throwable) {
+            Log.e(
+                "LordPhoneActivity",
+                "فشل معالجة نتيجة أذونات الهاتف",
+                t
+            )
         }
     }
 
     private val defaultDialerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        updateDefaultDialerBanner()
+        try {
+            updateDefaultDialerBanner()
+        } catch (t: Throwable) {
+            Log.e(
+                "LordPhoneActivity",
+                "فشل معالجة نتيجة تعيين المشغل الافتراضي",
+                t
+            )
+        }
     }
 
     private val callPlacer = CallPlacer(this) { text ->

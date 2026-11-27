@@ -349,4 +349,159 @@ class AcapelaVoiceImporterTest {
         assertEquals(src.length(), dst.length())
         assertEquals(src.readText(), dst.readText())
     }
+
+    @Test
+    fun copyMatchingConfigsToTree_copiesConfigAndRegistrationFromOutside() {
+        val srcRoot = tempFolder.newFolder("unpack_root")
+        val configYaml = File(srcRoot, "config.yaml")
+        configYaml.writeText(
+            "param: \"leila22k_hq, test@example.com, 1234567890ABCDEF\"\n"
+        )
+        val regHex = File(srcRoot, "0x1234567890ABCDEF.txt")
+        regHex.writeText("registration_data")
+
+        val targetTree = tempFolder.newFolder("target_voice_tree")
+        val voiceDir = File(targetTree, "voice/acapela/leila22k_hq")
+        voiceDir.mkdirs()
+        File(voiceDir, "leila22k_hq.inf").writeText("Speaker=leila")
+
+        val count = AcapelaVoiceImporter.copyMatchingConfigsToTree(
+            sourceTree = srcRoot,
+            targetTree = targetTree
+        )
+        assertEquals(1, count)
+        val targetConfig = File(voiceDir, "config.yaml")
+        assertTrue(targetConfig.exists())
+        assertEquals(configYaml.length(), targetConfig.length())
+        val targetHex = File(voiceDir, "0x1234567890ABCDEF.txt")
+        assertTrue(targetHex.exists())
+    }
+
+    @Test
+    fun ensureValidConfigYamlForVoices_findsStagingDirs() {
+        val baseDir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        baseDir.mkdirs()
+        val voiceDir = File(baseDir, "leila22k_hq")
+        voiceDir.mkdirs()
+        File(voiceDir, "leila22k_hq.inf").writeText("Speaker=leila")
+
+        val stageDir = File(context.cacheDir, "acapela_staging_test_sess")
+        stageDir.mkdirs()
+        val stageYaml = File(stageDir, "config.yaml")
+        stageYaml.writeText(
+            "param: \"leila22k_hq, user@test.com, 1122334455667788\"\n"
+        )
+
+        try {
+            val repaired = AcapelaVoiceImporter.ensureValidConfigYamlForVoices(
+                context = context,
+                baseDir = baseDir,
+                stagingDir = stageDir
+            )
+            assertEquals(1, repaired)
+            val destYaml = File(voiceDir, "config.yaml")
+            assertTrue(destYaml.exists())
+            assertTrue(
+                AcapelaVoiceImporter.isValidConfigYaml(
+                    destYaml,
+                    "leila22k_hq"
+                )
+            )
+        } finally {
+            stageDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun isIgnoredOrNonVoiceDirectory_filtersHiddenAndReservedDirs() {
+        val base = tempFolder.newFolder("check_ignore")
+        val backupDir = File(base, ".backup_acapela_123")
+        val journalDir = File(base, ".journal_acapela_456")
+        val voiceDir = File(base, "voice")
+        val userdicosDir = File(base, "userdicos")
+        val filesDir = File(base, "files")
+        val validVoiceDir = File(base, "leila22k_hq")
+
+        assertTrue(
+            AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(backupDir)
+        )
+        assertTrue(
+            AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(journalDir)
+        )
+        assertTrue(
+            AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(voiceDir)
+        )
+        assertTrue(
+            AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(userdicosDir)
+        )
+        assertTrue(
+            AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(filesDir)
+        )
+        assertFalse(
+            AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(validVoiceDir)
+        )
+    }
+
+    @Test
+    fun recoverInterruptedTransactions_cleansLegacyBackupAndRecoversExternal() {
+        val baseDir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        baseDir.mkdirs()
+
+        // مجلد .backup_acapela_ قديم يجب حذفه عند بدء التشغيل
+        val legacyBackup = File(baseDir, ".backup_acapela_old")
+        legacyBackup.mkdirs()
+        File(legacyBackup, "dummy.txt").writeText("old")
+
+        // مجلد النسخ الاحتياطي الخارجي الآمن
+        val backupParent = File(context.filesDir, "acapela_backups")
+        backupParent.mkdirs()
+        val backupDir = File(backupParent, "acapela_backup_ext_sess")
+        backupDir.mkdirs()
+        val backupVoice = File(backupDir, "salma")
+        backupVoice.mkdirs()
+        val backupDat = File(backupVoice, "salma.dat")
+        backupDat.writeBytes(ByteArray(2000) { 3 })
+        val expectedSha = sha256(backupDat)
+
+        val liveVoice = File(baseDir, "salma")
+        liveVoice.mkdirs()
+        val liveDat = File(liveVoice, "salma.dat")
+        liveDat.writeBytes(ByteArray(10) { 0 })
+
+        val journalFile = File(
+            backupParent,
+            ".journal_acapela_ext_sess.json"
+        )
+        val journalJson = org.json.JSONObject().apply {
+            put("sessionId", "ext_sess")
+            put("backupDir", backupDir.name)
+            put("backupDirPath", backupDir.absolutePath)
+            put("baseDirPath", baseDir.absolutePath)
+            put("created", org.json.JSONArray())
+            val bu = org.json.JSONArray().apply {
+                val item = org.json.JSONObject().apply {
+                    put("target", liveVoice.absolutePath)
+                    put("backup", backupVoice.absolutePath)
+                }
+                put(item)
+            }
+            put("backedUp", bu)
+        }
+        journalFile.writeText(journalJson.toString(2), Charsets.UTF_8)
+
+        AcapelaVoiceImporter.recoverInterruptedTransactions(baseDir, context)
+
+        // التحقق من حذف المجلد القديم واستعادة النسخة الخارجية
+        assertFalse(legacyBackup.exists())
+        assertTrue(liveVoice.exists())
+        assertEquals(expectedSha, sha256(liveDat))
+        assertFalse(backupDir.exists())
+        assertFalse(journalFile.exists())
+    }
 }

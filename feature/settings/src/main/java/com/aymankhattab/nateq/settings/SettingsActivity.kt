@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.util.Log
 import android.view.View
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,12 +58,22 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
     private val requestNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) {
-            findViewById<View>(android.R.id.content).announceCompat(
-                getString(R.string.permission_notifications_granted)
+        try {
+            if (granted) {
+                findViewById<View>(android.R.id.content).announceCompat(
+                    getString(R.string.permission_notifications_granted)
+                )
+            } else {
+                showPermissionDeniedDialog(
+                    R.string.permission_notifications_denied
+                )
+            }
+        } catch (t: Throwable) {
+            Log.e(
+                "SettingsActivity",
+                "فشل معالجة نتيجة إذن الإشعارات",
+                t
             )
-        } else {
-            showPermissionDeniedDialog(R.string.permission_notifications_denied)
         }
     }
 

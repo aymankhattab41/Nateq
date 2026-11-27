@@ -143,6 +143,66 @@ object AcapelaVoiceImporter {
         }
     }
 
+    /**
+     * نسخ config.yaml وملفات التسجيل المطابقة للصوت من أي مكان داخل الحزمة
+     * المستخرجة إلى شجرة الهدف، حتى لو كانت خارج مجلد voice أو أعلى منه.
+     */
+    fun copyMatchingConfigsToTree(
+        sourceTree: File,
+        targetTree: File
+    ): Int {
+        if (!sourceTree.exists() || !targetTree.exists()) return 0
+        val allYamls = sourceTree.walkTopDown().filter {
+            it.isFile && it.name.equals("config.yaml", ignoreCase = true)
+        }.toList()
+        val allRegs = sourceTree.walkTopDown().filter {
+            it.isFile && (
+                it.name.matches(AcapelaVoiceManifest.HEX_REGISTRATION_REGEX) ||
+                it.name.startsWith("0x") ||
+                it.name.equals("registration.txt", ignoreCase = true) ||
+                it.extension.equals("hex", ignoreCase = true)
+            )
+        }.toList()
+
+        var copied = 0
+        val targetVoiceDirs = targetTree.walkTopDown().maxDepth(5).filter { d ->
+            d.isDirectory &&
+                !AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(d) &&
+                d.listFiles { f ->
+                    f.isFile && (
+                        f.extension.equals("inf", ignoreCase = true) ||
+                        f.extension.equals("ini", ignoreCase = true)
+                    )
+                }?.isNotEmpty() == true
+        }.toList()
+
+        for (tvd in targetVoiceDirs) {
+            val speaker = AcapelaVoiceManifest.cleanAcapelaSpeaker(tvd.name)
+            val matchingYaml = allYamls.firstOrNull {
+                isValidConfigYaml(it, speaker)
+            }
+            if (matchingYaml != null) {
+                val targetYaml = File(tvd, "config.yaml")
+                if (!targetYaml.exists() ||
+                    !isValidConfigYaml(targetYaml, speaker)
+                ) {
+                    if (copyConfigFileSafely(matchingYaml, targetYaml)) {
+                        copied++
+                    }
+                }
+            }
+            for (rf in allRegs) {
+                val destReg = File(tvd, rf.name)
+                if (!destReg.exists()) {
+                    runCatching {
+                        rf.copyTo(destReg, overwrite = true)
+                    }
+                }
+            }
+        }
+        return copied
+    }
+
     /** نسخ شجرة SAF مع الحفاظ على المسارات النسبية واستبعاد السجل. */
     private fun copyDocTreeVerbatim(
         context: Context,
@@ -344,21 +404,46 @@ object AcapelaVoiceImporter {
         baseDir: File = EmbeddedStorage.baseDir(
             context,
             EmbeddedStorage.Engine.ACAPELA
-        )
+        ),
+        stagingDir: File? = null
     ): Int {
         if (!baseDir.exists() || !baseDir.isDirectory) return 0
-        val voiceDirs = baseDir.listFiles { f -> f.isDirectory }
-            ?: return 0
+        val voiceDirs = baseDir.walkTopDown().maxDepth(4).filter { f ->
+            f.isDirectory &&
+                !AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(f) &&
+                f.listFiles { c ->
+                    c.isFile && (
+                        c.extension.equals("inf", ignoreCase = true) ||
+                        c.extension.equals("ini", ignoreCase = true)
+                    )
+                }?.isNotEmpty() == true
+        }.toList().ifEmpty {
+            baseDir.listFiles { f ->
+                f.isDirectory &&
+                    !AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(f)
+            }?.toList().orEmpty()
+        }
+        if (voiceDirs.isEmpty()) return 0
         var repairedCount = 0
         val searchDirs = EmbeddedStorage.allSearchDirs(
             context,
             EmbeddedStorage.Engine.ACAPELA
         )
-        val stageDir = File(context.cacheDir, "acapela_stage")
-        val allCandidateYamls = (searchDirs + listOf(stageDir, baseDir))
+        val stageDirs = mutableListOf<File>()
+        if (stagingDir != null && stagingDir.isDirectory) {
+            stageDirs.add(stagingDir)
+        }
+        context.cacheDir.listFiles { f ->
+            f.isDirectory && (
+                f.name.startsWith("acapela_staging_") ||
+                f.name == "acapela_stage"
+            )
+        }?.let { stageDirs.addAll(it) }
+
+        val allCandidateYamls = (searchDirs + stageDirs + listOf(baseDir))
             .filter { it.isDirectory }
             .flatMap { d ->
-                d.walkTopDown().maxDepth(4).filter {
+                d.walkTopDown().maxDepth(5).filter {
                     it.isFile && it.name.equals("config.yaml", true)
                 }.toList()
             }.distinctBy { it.absolutePath }
@@ -433,16 +518,28 @@ object AcapelaVoiceImporter {
         if (!baseDir.exists()) {
             baseDir.mkdirs()
         }
-        recoverInterruptedTransactions(baseDir)
+        recoverInterruptedTransactions(baseDir, context)
 
         val tempUnpack = File(context.cacheDir, "acapela_staging_$sessionId")
         if (tempUnpack.exists()) tempUnpack.deleteRecursively()
         tempUnpack.mkdirs()
 
-        val backupDir = File(baseDir, ".backup_acapela_$sessionId")
-        val journalFile = File(baseDir, ".journal_acapela_$sessionId.json")
+        val backupParent = File(context.filesDir, "acapela_backups")
+        if (!backupParent.exists()) backupParent.mkdirs()
+        val backupDir = File(backupParent, "acapela_backup_$sessionId")
+        val journalFile = File(backupParent, ".journal_acapela_$sessionId.json")
         val backups = mutableListOf<Pair<File, File>>()
         val createdTargets = mutableListOf<File>()
+
+        // 5) سجل المعاملة يُكتب قبل نسخ أي ملف وقبل نقل المجلد القديم
+        writeAcapelaJournal(
+            journalFile = journalFile,
+            sessionId = sessionId,
+            backupDir = backupDir,
+            createdTargets = createdTargets,
+            backups = backups,
+            baseDir = baseDir
+        )
 
         try {
             val guard = ZipExtractionGuard(tempUnpack)
@@ -512,18 +609,31 @@ object AcapelaVoiceImporter {
                 if (targetVoiceDir.exists()) {
                     val backupVoiceDir = File(backupDir, "voice")
                     if (!targetVoiceDir.renameTo(backupVoiceDir)) {
-                        copyVoiceTreeVerbatim(targetVoiceDir, backupVoiceDir)
+                        targetVoiceDir.copyRecursively(
+                            backupVoiceDir,
+                            overwrite = true
+                        )
                         targetVoiceDir.deleteRecursively()
                     }
                     backups.add(targetVoiceDir to backupVoiceDir)
                 } else {
                     createdTargets.add(targetVoiceDir)
                 }
+                writeAcapelaJournal(
+                    journalFile = journalFile,
+                    sessionId = sessionId,
+                    backupDir = backupDir,
+                    createdTargets = createdTargets,
+                    backups = backups,
+                    baseDir = baseDir
+                )
                 val copied = copyVoiceTreeVerbatim(
                     verbatimRoot,
                     targetVoiceDir
                 )
                 if (copied > 0) {
+                    copyMatchingConfigsToTree(tempUnpack, targetVoiceDir)
+                    copyMatchingConfigsToTree(tempUnpack, baseDir)
                     Log.i(
                         TAG,
                         "نسخ MultiTTS حرفي: $copied ملفاً تحت " +
@@ -541,7 +651,8 @@ object AcapelaVoiceImporter {
                         context = context,
                         baseDir = baseDir,
                         emptyMessage =
-                            "لم يُعثر على أصوات Acapela بعد النسخ الحرفي"
+                            "لم يُعثر على أصوات Acapela بعد النسخ الحرفي",
+                        stagingDir = tempUnpack
                     )
                     if (!finishResult.success) {
                         rollbackAcapela(
@@ -653,6 +764,14 @@ object AcapelaVoiceImporter {
                 } else {
                     createdTargets.add(targetDir)
                 }
+                writeAcapelaJournal(
+                    journalFile = journalFile,
+                    sessionId = sessionId,
+                    backupDir = backupDir,
+                    createdTargets = createdTargets,
+                    backups = backups,
+                    baseDir = baseDir
+                )
                 targetDir.mkdirs()
 
                 vd.copyRecursively(targetDir, overwrite = true)
@@ -742,6 +861,8 @@ object AcapelaVoiceImporter {
                 }
             }
 
+            copyMatchingConfigsToTree(tempUnpack, baseDir)
+
             writeAcapelaJournal(
                 journalFile = journalFile,
                 sessionId = sessionId,
@@ -756,7 +877,8 @@ object AcapelaVoiceImporter {
                 context = context,
                 baseDir = baseDir,
                 emptyMessage =
-                    "لم يتم العثور على أصوات Acapela صالحة بعد فك الضغط"
+                    "لم يتم العثور على أصوات Acapela صالحة بعد فك الضغط",
+                stagingDir = tempUnpack
             )
 
             if (!finishResult.success) {
@@ -1002,11 +1124,12 @@ object AcapelaVoiceImporter {
     private suspend fun finishImport(
         context: Context,
         baseDir: File,
-        emptyMessage: String
+        emptyMessage: String,
+        stagingDir: File? = null
     ): ImportResult {
         // تصفير سجل التعثر لإلغاء أي حظر طوارئ قائم فوراً
         CategoryFailureTracker.reset()
-        ensureValidConfigYamlForVoices(context, baseDir)
+        ensureValidConfigYamlForVoices(context, baseDir, stagingDir)
         // الكتابة والقراءة معاً على IO: الاستيراد ينتهي بنسخ ملفات،
         // وقارئ المانيفست لا يُشغَّل على الخيط الرئيسي هنا إطلاقاً.
         val voices = withContext(Dispatchers.IO) {
@@ -1016,7 +1139,29 @@ object AcapelaVoiceImporter {
             AcapelaVoiceManifest.listVoices(baseDir)
         }
         if (voices.isEmpty()) {
-            return ImportResult(success = false, errorMessage = emptyMessage)
+            val candidateDirs = baseDir.walkTopDown().maxDepth(4).filter { d ->
+                d.isDirectory &&
+                    !AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(d) &&
+                    d.listFiles { f ->
+                        f.isFile && (
+                            f.extension.equals("inf", ignoreCase = true) ||
+                            f.extension.lowercase(Locale.ROOT) in
+                                AcapelaVoiceManifest.DATA_EXTENSIONS
+                        )
+                    }?.isNotEmpty() == true
+            }.toList()
+            val rejected = candidateDirs.map { dir ->
+                AcapelaVoiceManifest.cleanAcapelaSpeaker(dir.name)
+                    .ifBlank { dir.name }
+            }.distinct()
+            val formattedMsg = if (rejected.isNotEmpty()) {
+                "ملف config.yaml أو التسجيل (param) للصوت " +
+                    "${rejected.joinToString("، ")} مفقود في الحزمة، " +
+                    "أضفه بجانب مجلد الصوت وأعد الاستيراد"
+            } else {
+                emptyMessage
+            }
+            return ImportResult(success = false, errorMessage = formattedMsg)
         }
         EngineStatusRegistry.noteFilesPresent(
             AcapelaEmbeddedVoiceProvider.PROVIDER_ID
@@ -1189,11 +1334,18 @@ object AcapelaVoiceImporter {
                     File(baseDir, "voice")
                 )
                 if (copied > 0) {
+                    copyMatchingConfigsToTree(
+                        sourceDir,
+                        File(baseDir, "voice")
+                    )
+                    copyMatchingConfigsToTree(sourceDir, baseDir)
                     notifyStorageChanged(context)
                     return@withContext finishImport(
                         context = context,
                         baseDir = baseDir,
-                        emptyMessage = "فشل التعرف على الأصوات بعد النسخ الحرفي"
+                        emptyMessage =
+                            "فشل التعرف على الأصوات بعد النسخ الحرفي",
+                        stagingDir = sourceDir
                     )
                 }
             } else if (sourceDir.name.equals("acapela", ignoreCase = true)) {
@@ -1202,11 +1354,18 @@ object AcapelaVoiceImporter {
                     File(baseDir, "voice/acapela")
                 )
                 if (copied > 0) {
+                    copyMatchingConfigsToTree(
+                        sourceDir,
+                        File(baseDir, "voice/acapela")
+                    )
+                    copyMatchingConfigsToTree(sourceDir, baseDir)
                     notifyStorageChanged(context)
                     return@withContext finishImport(
                         context = context,
                         baseDir = baseDir,
-                        emptyMessage = "فشل التعرف على الأصوات بعد النسخ الحرفي"
+                        emptyMessage =
+                            "فشل التعرف على الأصوات بعد النسخ الحرفي",
+                        stagingDir = sourceDir
                     )
                 }
             }
@@ -1302,12 +1461,14 @@ object AcapelaVoiceImporter {
                 }
             }
 
+            copyMatchingConfigsToTree(sourceDir, baseDir)
             notifyStorageChanged(context)
 
             finishImport(
                 context = context,
                 baseDir = baseDir,
-                emptyMessage = "فشل التعرف على الأصوات بعد نسخها"
+                emptyMessage = "فشل التعرف على الأصوات بعد نسخها",
+                stagingDir = sourceDir
             )
         } catch (t: Throwable) {
             Log.e(TAG, "فشل نسخ مجلد أصوات Acapela", t)
@@ -1330,19 +1491,22 @@ object AcapelaVoiceImporter {
         baseDir: File
     ) {
         runCatching {
+            journalFile.parentFile?.mkdirs()
             val json = org.json.JSONObject()
             json.put("sessionId", sessionId)
             json.put("backupDir", backupDir.name)
+            json.put("backupDirPath", backupDir.absolutePath)
+            json.put("baseDirPath", baseDir.absolutePath)
             val crArr = org.json.JSONArray()
             for (ct in createdTargets) {
-                crArr.put(ct.relativeTo(baseDir).path)
+                crArr.put(ct.absolutePath)
             }
             json.put("created", crArr)
             val buArr = org.json.JSONArray()
             for ((tgt, bak) in backups) {
                 val item = org.json.JSONObject()
-                item.put("target", tgt.relativeTo(baseDir).path)
-                item.put("backup", bak.relativeTo(backupDir).path)
+                item.put("target", tgt.absolutePath)
+                item.put("backup", bak.absolutePath)
                 buArr.put(item)
             }
             json.put("backedUp", buArr)
@@ -1368,7 +1532,7 @@ object AcapelaVoiceImporter {
             }
         }
 
-        // 2. استرجاع النسخ الاحتياطية السابقة
+        // 2. استرجاع النسخ الاحتياطية السابقة (يدعم النقل بين أقسام التخزين)
         for ((target, backup) in backups) {
             if (target.exists()) {
                 runCatching { target.deleteRecursively() }
@@ -1395,39 +1559,86 @@ object AcapelaVoiceImporter {
     /**
      * التعافي من المعاملات غير المكتملة في Acapela بعد توقف العملية.
      */
-    internal fun recoverInterruptedTransactions(baseDir: File) {
-        if (!baseDir.exists() || !baseDir.isDirectory) return
-        val journals = baseDir.listFiles { f ->
-            f.isFile && f.name.startsWith(".journal_acapela_") &&
-                f.name.endsWith(".json")
-        } ?: emptyArray()
+    internal fun recoverInterruptedTransactions(
+        baseDir: File,
+        context: Context? = null
+    ) {
+        val backupParent = if (context != null) {
+            File(context.filesDir, "acapela_backups")
+        } else {
+            File(baseDir.parentFile ?: baseDir, "acapela_backups")
+        }
+
+        val journalDirs = listOfNotNull(
+            backupParent.takeIf { it.exists() && it.isDirectory },
+            baseDir.takeIf { it.exists() && it.isDirectory }
+        ).distinctBy { it.absolutePath }
+
+        val journals = journalDirs.flatMap { d ->
+            d.listFiles { f ->
+                f.isFile && f.name.startsWith(".journal_acapela_") &&
+                    f.name.endsWith(".json")
+            }?.toList().orEmpty()
+        }
 
         for (jf in journals) {
             runCatching {
                 val text = jf.readText(Charsets.UTF_8)
                 val json = org.json.JSONObject(text)
-                val backupDirName = json.optString("backupDir")
-                val backupDir = File(baseDir, backupDirName)
+                val backupDirPath = json.optString("backupDirPath")
+                val backupDir = if (backupDirPath.isNotBlank()) {
+                    File(backupDirPath)
+                } else {
+                    val backupDirName = json.optString("backupDir")
+                    File(jf.parentFile ?: baseDir, backupDirName)
+                }
+                val baseDirPath = json.optString("baseDirPath")
+                val targetBaseDir = if (baseDirPath.isNotBlank()) {
+                    File(baseDirPath)
+                } else {
+                    baseDir
+                }
                 val createdArr = json.optJSONArray("created")
                 val backedUpArr = json.optJSONArray("backedUp")
                 val createdList = mutableListOf<File>()
                 if (createdArr != null) {
                     for (i in 0 until createdArr.length()) {
-                        val relPath = createdArr.getString(i)
-                        createdList.add(File(baseDir, relPath))
+                        val pathStr = createdArr.getString(i)
+                        val file = if (pathStr.startsWith("/") ||
+                            pathStr.contains(":\\")
+                        ) {
+                            File(pathStr)
+                        } else {
+                            File(targetBaseDir, pathStr)
+                        }
+                        createdList.add(file)
                     }
                 }
                 val backedUpList = mutableListOf<Pair<File, File>>()
                 if (backedUpArr != null) {
                     for (i in 0 until backedUpArr.length()) {
                         val item = backedUpArr.getJSONObject(i)
-                        val target = File(baseDir, item.getString("target"))
-                        val backup = File(backupDir, item.getString("backup"))
+                        val tStr = item.getString("target")
+                        val bStr = item.getString("backup")
+                        val target = if (tStr.startsWith("/") ||
+                            tStr.contains(":\\")
+                        ) {
+                            File(tStr)
+                        } else {
+                            File(targetBaseDir, tStr)
+                        }
+                        val backup = if (bStr.startsWith("/") ||
+                            bStr.contains(":\\")
+                        ) {
+                            File(bStr)
+                        } else {
+                            File(backupDir, bStr)
+                        }
                         backedUpList.add(target to backup)
                     }
                 }
                 rollbackAcapela(
-                    baseDir = baseDir,
+                    baseDir = targetBaseDir,
                     createdTargets = createdList,
                     backups = backedUpList,
                     backupDir = backupDir,
@@ -1435,6 +1646,13 @@ object AcapelaVoiceImporter {
                 )
             }
             runCatching { jf.delete() }
+        }
+
+        // حذف مجلدات .backup_acapela_ القديمة المتبقية من baseDir
+        if (baseDir.exists() && baseDir.isDirectory) {
+            baseDir.listFiles { f ->
+                f.isDirectory && f.name.startsWith(".backup_acapela_")
+            }?.forEach { runCatching { it.deleteRecursively() } }
         }
     }
 }

@@ -271,6 +271,11 @@ object AcapelaVoiceManifest {
                     .getOrDefault(f.absolutePath)
                 if (!fPath.startsWith(rootPath)) continue
                 if (f.isDirectory) {
+                    if (f.name.startsWith(".") ||
+                        f.name.equals("userdicos", true)
+                    ) {
+                        continue
+                    }
                     walk(f, depth + 1)
                 } else if (f.isFile &&
                     f.extension.equals("ini", ignoreCase = true)
@@ -927,6 +932,25 @@ object AcapelaVoiceManifest {
     }
 
     /**
+     * استبعاد المجلدات المخفية (.backup_acapela_ و.journal_)
+     * والمجلدات التي ليست أصواتاً مثل voice وuserdicos وfiles.
+     */
+    fun isIgnoredOrNonVoiceDirectory(dir: File): Boolean {
+        val name = dir.name
+        if (name.startsWith(".")) return true
+        val lower = name.lowercase(Locale.ROOT)
+        if (lower == "voice" || lower == "userdicos" || lower == "files") {
+            return true
+        }
+        var curr: File? = dir
+        while (curr != null) {
+            if (curr.name.startsWith(".")) return true
+            curr = curr.parentFile
+        }
+        return false
+    }
+
+    /**
      * يعيد مجلدات حزم الصوت المكتملة (كلاسيكية أصلية أو HD ممتدة).
      */
     fun completeVoiceDirs(baseDir: File): List<File> {
@@ -943,6 +967,7 @@ object AcapelaVoiceManifest {
             val c = classifyIniCandidate(ini, "")
             if (c.state != IniDiscoveryState.AUTHENTIC) continue
             val vDir = ini.parentFile ?: continue
+            if (isIgnoredOrNonVoiceDirectory(vDir)) continue
             val hint = voiceHintFromIni(ini, vDir)
             val d = discoverVoiceConfig(
                 vDir,
@@ -959,12 +984,16 @@ object AcapelaVoiceManifest {
         val hdCandidates = linkedSetOf<File>()
         runCatching {
             baseDir.walkTopDown().maxDepth(5).forEach { f ->
-                if (f.isDirectory) hdCandidates.add(f)
+                if (f.isDirectory && !isIgnoredOrNonVoiceDirectory(f)) {
+                    hdCandidates.add(f)
+                }
             }
         }
-        hdCandidates.add(baseDir)
+        if (!isIgnoredOrNonVoiceDirectory(baseDir)) {
+            hdCandidates.add(baseDir)
+        }
         for (d in hdCandidates) {
-            if (isHdExtendedVoiceDir(d)) {
+            if (!isIgnoredOrNonVoiceDirectory(d) && isHdExtendedVoiceDir(d)) {
                 result.add(d)
             }
         }
@@ -2483,6 +2512,7 @@ object AcapelaVoiceManifest {
         val dirs = completeVoiceDirs(baseDir)
         val result = mutableListOf<VoiceInfo>()
         for (dir in dirs) {
+            if (isIgnoredOrNonVoiceDirectory(dir)) continue
             val discovery = discoverVoiceConfig(
                 dir, expectedSpeakerHint = dir.name, maxDepth = 4
             )

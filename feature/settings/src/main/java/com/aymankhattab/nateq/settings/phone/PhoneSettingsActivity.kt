@@ -39,7 +39,15 @@ class PhoneSettingsActivity : AppCompatActivity() {
     private val defaultDialerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        updateDefaultDialerStatus()
+        try {
+            updateDefaultDialerStatus()
+        } catch (t: Throwable) {
+            Log.e(
+                "PhoneSettingsActivity",
+                "فشل معالجة نتيجة تعيين المشغل الافتراضي",
+                t
+            )
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -39,18 +39,22 @@ class CallPlacer(
         activity.registerForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { isGranted ->
-            val pending = pendingCall
-            pendingCall = null
-            if (isGranted) {
-                if (pending != null) {
-                    executeCall(
-                        pending.number,
-                        pending.simSlot,
-                        pending.source
-                    )
+            try {
+                val pending = pendingCall
+                pendingCall = null
+                if (isGranted) {
+                    if (pending != null) {
+                        executeCall(
+                            pending.number,
+                            pending.simSlot,
+                            pending.source
+                        )
+                    }
+                } else {
+                    handlePermissionDenied()
                 }
-            } else {
-                handlePermissionDenied()
+            } catch (t: Throwable) {
+                Log.e("CallPlacer", "فشل معالجة نتيجة إذن الاتصال", t)
             }
         }
 

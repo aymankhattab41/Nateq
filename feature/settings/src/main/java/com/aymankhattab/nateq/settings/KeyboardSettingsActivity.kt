@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.RadioButton
@@ -37,19 +38,27 @@ class KeyboardSettingsActivity : AppCompatActivity() {
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        updateMicPermissionUi()
-        if (isGranted) {
-            Toast.makeText(
-                this,
-                R.string.keyboard_mic_granted_toast,
-                Toast.LENGTH_SHORT
-            ).show()
-        } else {
-            Toast.makeText(
-                this,
-                R.string.keyboard_mic_denied_toast,
-                Toast.LENGTH_LONG
-            ).show()
+        try {
+            updateMicPermissionUi()
+            if (isGranted) {
+                Toast.makeText(
+                    this,
+                    R.string.keyboard_mic_granted_toast,
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                Toast.makeText(
+                    this,
+                    R.string.keyboard_mic_denied_toast,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        } catch (t: Throwable) {
+            Log.e(
+                "KeyboardSettingsActivity",
+                "فشل معالجة نتيجة إذن الميكروفون",
+                t
+            )
         }
     }
 
