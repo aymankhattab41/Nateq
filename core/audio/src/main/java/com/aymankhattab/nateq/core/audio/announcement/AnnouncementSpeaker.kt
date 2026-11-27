@@ -204,15 +204,6 @@ class AnnouncementSpeaker(
                 }
             }
 
-        /** منفّذ للاستطلاع المسبق (warmup polling) — خيط خلفي وحيد
-         *  لتجنب حجب Main thread أثناء انتظار جاهزية المحرك. */
-        private val warmupExecutor =
-            java.util.concurrent.Executors.newSingleThreadExecutor { r ->
-                Thread(r, "nateq-warmup-poll").apply {
-                    isDaemon = true
-                    priority = Thread.NORM_PRIORITY - 1
-                }
-            }
 
         // **قفل النطق العابر:** مهلة قصوى لانتظار هدوء تخليق قارئ الشاشة
         // (رفعَهُ محركُ :tts عبر content://…/speaking) قبل نطق الإعلانات
@@ -222,6 +213,9 @@ class AnnouncementSpeaker(
         /** مهلة تهيئة TextToSpeech للإعلانات: إن لم يصل onInit يُفشل
          *  الربط ويُجرَّب المحرك الاحتياطي التالي (لا تعليق للأبد). */
         private const val INIT_TIMEOUT_MS = 8000L
+
+        /** بند 25: سقف مسبح مثيلات TTS الدافئة (2-3 لتقليل ذاكرة المحركات). */
+        private const val WARM_TTS_POOL_MAX = 3
 
         // إعادة جدولة طلب التركيز المرفوض (AUDIOFOCUS_REQUEST_FAILED):
         // محاولات بفاصل وجيز، ثم إسقاطٌ صامت صريح (لا حلقة لا نهائية فوق
@@ -476,6 +470,15 @@ class AnnouncementSpeaker(
     private val mainHandler = android.os.Handler(
         android.os.Looper.getMainLooper()
     )
+    /** منفّذ للاستطلاع المسبق (warmup polling) — خيط خلفي وحيد لكل
+     *  مثيل لتجنب حجب Main thread وانتظار جاهزية المحرك. */
+    private val warmupExecutor =
+        java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "nateq-warmup-poll").apply {
+                isDaemon = true
+                priority = Thread.NORM_PRIORITY - 1
+            }
+        }
     private var audioFocusRequest: AudioFocusRequest? = null
     private var lastFocusGain: Int? = null
     private var lastAudioAttributes: AudioAttributes? = null
@@ -633,6 +636,20 @@ class AnnouncementSpeaker(
      *  لفئةٍ معيّنة فيُعاد الربط عند الاختلاف (تبديل حي بين فئات الوظائف). */
     private var boundEngine: String? = null
 
+    /** بند 25: مسبح مثيلات TextToSpeech دافئة لمحركات مختلفة (سقف 2-3)
+     *  لتجنب كلفة shutdown/rebind عند تبديل محرك الإعلان بين الفئات. */
+    private data class WarmTtsEntry(
+        val engine: String,
+        val tts: TextToSpeech,
+        @Volatile var warmupDone: Boolean = false,
+        @Volatile var lastUsedMs: Long = SystemClock.elapsedRealtime()
+    )
+
+    private val warmTtsPool = LinkedHashMap<String, WarmTtsEntry>()
+    private val warmTtsPoolLock = Any()
+    private val warmupReadyLanguages =
+        java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     /** مقسم النصوص المختلطة الكتابات داخل إعلانات
      * التطبيق (منطق نقي بلا حالة). */
     private val languageSegmenter = LanguageSegmenter()
@@ -713,6 +730,14 @@ class AnnouncementSpeaker(
 
     @VisibleForTesting
     internal fun getTtsForTesting(): TextToSpeech? = tts
+
+    @VisibleForTesting
+    internal fun boundEngineForTesting(): String? = boundEngine
+
+    @VisibleForTesting
+    internal fun setBoundEngineForTesting(engine: String?) {
+        boundEngine = engine
+    }
 
     @VisibleForTesting
     internal fun setSimulatedVoicesEmpty(empty: Boolean) {
@@ -1024,11 +1049,6 @@ class AnnouncementSpeaker(
         fallbackEngine: String?,
         locale: Locale
     ) {
-        // محرك مختلف للفئة القادمة (أو تهيئة أولى): أُغلق الربط القديم
-        // كاملاً ثم أُهيّئ الجديد (لا تبقى مثيلات معلقة على محرك آخر).
-        if (tts != null) {
-            shutdownSafely()
-        }
         val engine = safeEngineForAnnouncement(
             appContext,
             finalEngine,
@@ -1042,11 +1062,39 @@ class AnnouncementSpeaker(
                 TAG,
                 "[Speaker] لا يوجد محرك صريح للإعلانات — إنهاء فوري ونغمة خطأ"
             )
-            boundEngine = null
-            tts = null
+            shutdownCurrentTts(removeFromPool = true)
             playNoEngineCue()
             val completion = initGate.complete(false)
             completion.served.forEach { cb -> cb(false) }
+            if (completion.hasNext) {
+                val nextLanguageEngine = runCatching {
+                    settings?.getEngineForLanguage(locale.language)
+                }.getOrNull()
+                val nextFallbackEngine = runCatching {
+                    settings?.getAnnouncementFallbackEngine()
+                }.getOrNull()
+                startInit(
+                    completion.nextEngine,
+                    nextLanguageEngine,
+                    nextFallbackEngine,
+                    locale
+                )
+            }
+            return
+        }
+        // بند 25: تبديل محرك — احتفظ بالمثيل الدافئ الحالي في المسبح بدل
+        // shutdown/rebind عند كل تبديل، وأعد استخدام مثيل دافئ إن وُجد.
+        val currentNormalized = HostProtocol.normalizeEngineId(
+            boundEngine.orEmpty()
+        )
+        val targetNormalized = HostProtocol.normalizeEngineId(engine)
+        if (tts != null && currentNormalized != targetNormalized) {
+            parkCurrentTtsForReuse()
+        } else if (tts != null && currentNormalized == targetNormalized) {
+            boundEngine = engine
+            markWarmupDoneForEngine(engine, true)
+            val completion = initGate.complete(true)
+            completion.served.forEach { cb -> cb(true) }
             if (completion.hasNext) {
                 val nextLanguageEngine = runCatching {
                     settings?.getEngineForLanguage(locale.language)
@@ -1097,14 +1145,41 @@ class AnnouncementSpeaker(
             }
             return
         }
+        if (restoreTtsFromPool(engine)) {
+            Log.d(
+                TAG,
+                "[Speaker] reused warm TTS engine=$engine " +
+                    "poolSize=${warmTtsPoolSizeForTesting()}"
+            )
+            val completion = initGate.complete(true)
+            completion.served.forEach { cb -> cb(true) }
+            if (completion.hasNext) {
+                val nextLanguageEngine = runCatching {
+                    settings?.getEngineForLanguage(locale.language)
+                }.getOrNull()
+                val nextFallbackEngine = runCatching {
+                    settings?.getAnnouncementFallbackEngine()
+                }.getOrNull()
+                startInit(
+                    completion.nextEngine,
+                    nextLanguageEngine,
+                    nextFallbackEngine,
+                    locale
+                )
+            }
+            return
+        }
         var newTts: TextToSpeech? = null
         val initSettled = AtomicBoolean(false)
+        val initSuccess = AtomicBoolean(false)
         val timeoutRunnable = Runnable {
             if (!initSettled.compareAndSet(false, true)) return@Runnable
             Log.w(TAG, "[Speaker] Engine $engine init timed out")
             runCatching { newTts?.shutdown() }
             if (tts === newTts) tts = null
-            boundEngine = null
+            if (boundEngine == engine) boundEngine = null
+            removeFromWarmPool(engine)
+            resetWarmupFlag(engine)
             val completion = initGate.complete(false)
             completion.served.forEach { cb -> cb(false) }
             val nextLanguageEngine = runCatching {
@@ -1200,10 +1275,16 @@ class AnnouncementSpeaker(
             if (success) {
                 // لا تُخزَّن إلا المثيلات الناجحة؛ المثيل الفاشل يُهمَل ولا
                 // يظل "جاهزاً" للدورات اللاحقة (كان يفسد المتحدث مسبقاً).
+                initSuccess.set(true)
                 tts = newTts
+                boundEngine = engine
+                markWarmupDoneForEngine(engine, true)
             } else {
-                tts = null
-                newTts?.shutdown()
+                if (tts === newTts) tts = null
+                if (boundEngine == engine) boundEngine = null
+                removeFromWarmPool(engine)
+                resetWarmupFlag(engine)
+                runCatching { newTts?.shutdown() }
             }
             // تصفية البوابة خارجها: تُصرف النداءات المطابقة لمحرك هذه
             // التهيئة فقط، وما بقي بمحركٍ مختلف يُعاد تهيئته بعدها.
@@ -1224,6 +1305,13 @@ class AnnouncementSpeaker(
                 )
             }
         }, engine)
+        // Robolectric/بعض البيئات قد تستدعي onInit تزامناً أثناء المنشئ،
+        // قبل إسناد newTts؛ أصلح مرجع tts الفعلي هنا إن نجحت التهيئة.
+        if (initSettled.get() && initSuccess.get() && tts == null) {
+            tts = newTts
+            boundEngine = engine
+            markWarmupDoneForEngine(engine, true)
+        }
         newTts.apply {
             setOnUtteranceProgressListener(
                 object : UtteranceProgressListener() {
@@ -2028,8 +2116,9 @@ class AnnouncementSpeaker(
                 )
                 return@executeSpeech
             }
-            val needsWarmup = !HostProtocol.isEmbeddedEngine(boundEngine) &&
-                !warmupDoneForCurrentTts
+            val embedded = HostProtocol.isEmbeddedEngine(boundEngine)
+            val needsWarmup = !embedded &&
+                !isWarmupReadyForCurrentInstance(locale)
             if (needsWarmup) {
                 warmupExecutor.execute {
                     val ready = awaitWarmupReady(locale, gen)
@@ -2039,7 +2128,8 @@ class AnnouncementSpeaker(
                         return@execute
                     }
                     if (ready) {
-                        warmupDoneForCurrentTts = true
+                        markWarmupDoneForEngine(boundEngine, true)
+                        markWarmupReadyForCurrentInstance(locale)
                     } else {
                         Log.w(
                             TAG,
@@ -2062,19 +2152,15 @@ class AnnouncementSpeaker(
                 }
                 return@executeSpeech
             }
-            val delayMs = if (immediate) 60L else 80L
-            mainHandler.postDelayed({
-                if (gen != speechGeneration.get()) {
-                    releaseAudioFocus()
-                    notifySpeechComplete()
-                    return@postDelayed
-                }
-                doSpeakParts(
-                    gen,
-                    text, locale, speechRate, pitch, volume,
-                    emojiCfg, parts, attempt = 1
-                )
-            }, delayMs)
+            // بند 26: المحرك دافئ وجاهز (أو مدمج) — لا تأخير ثابت 60-80ms.
+            // أبقيناه سابقاً لاستقرار اتصال TTS؛ مع الجاهزية المؤكدة أو إعادة
+            // استخدام مثيل دافئ لا يوجد سبب فني. يُستثنى فقط أي مسار يحتاج
+            // تثبيت حالة صوت فعلية في طبقة الصوت نفسها (لا يوجد هنا).
+            doSpeakParts(
+                gen,
+                text, locale, speechRate, pitch, volume,
+                emojiCfg, parts, attempt = 1
+            )
         }
         ensureInit({ ready ->
             if (gen != speechGeneration.get()) {
@@ -2108,37 +2194,86 @@ class AnnouncementSpeaker(
         }, engineOverride, locale)
     }
 
-    // VZ2: Flag to track if warmup polling has been done for current TTS
-    @Volatile
-    private var warmupDoneForCurrentTts = false
+    // بند 27: تتبع الجاهزية لكل محرك/لغة لتجنب تكرار انتظار warmup لنفس
+    // المثيل بعد نجاح سابق، ولتقليص المهلة لمحرك نجحت تهيئته سابقاً.
+    private val warmupDoneEngines =
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    private fun warmupReadyKey(engine: String?, locale: Locale): String =
+        "${HostProtocol.normalizeEngineId(engine.orEmpty())}:" +
+            locale.toLanguageTag().lowercase(Locale.ROOT)
+
+    private fun isWarmupDoneForEngine(engine: String?): Boolean {
+        val key = HostProtocol.normalizeEngineId(engine.orEmpty())
+        return warmupDoneEngines[key] == true
+    }
+
+    private fun markWarmupDoneForEngine(engine: String?, done: Boolean) {
+        val key = HostProtocol.normalizeEngineId(engine.orEmpty())
+        if (key.isBlank()) return
+        if (done) {
+            warmupDoneEngines[key] = true
+        } else {
+            warmupDoneEngines.remove(key)
+        }
+    }
+
+    private fun isWarmupReadyForCurrentInstance(locale: Locale): Boolean {
+        val engine = boundEngine ?: return false
+        return warmupReadyLanguages.contains(warmupReadyKey(engine, locale))
+    }
+
+    private fun markWarmupReadyForCurrentInstance(locale: Locale) {
+        val engine = boundEngine ?: return
+        warmupReadyLanguages.add(warmupReadyKey(engine, locale))
+    }
 
     /** VZ2: استطلاع الجاهزية بعد onInit(SUCCESS) وقبل أول نطق حقيقي.
-     *  استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable
-     *  >= LANG_AVAILABLE، مهلة 1500ms — عند انتهائها يُنطق على أي حال
-     *  مرة واحدة + سجل بدون نص منطوق. */
-    /**
-     * جاهزية منتظَرة فعلية (محرك/أصوات/لغة متاحة) قبل النطق.
-     * تُستدعى على خيط خلفي: تستطلع بمهلة محدودة وترتبط بدورة النطق
-     * (جيل) لتكون قابلة للإلغاء دون حجب الواجهة. */
+     *  بند 27: استطلاع متدرج أبطأ تدريجياً، قراءة voices مرة واحدة قدر
+     *  الإمكان لكل دورة، مهلة أقصر لمحرك نجحت تهيئته سابقاً، وتخطي التكرار
+     *  عندما نجح المثيل نفسه مسبقاً لنفس اللغة. */
     private fun awaitWarmupReady(
         locale: Locale,
         gen: Long,
         timeoutMs: Long = 1500L
     ): Boolean {
         if (HostProtocol.isEmbeddedEngine(boundEngine)) return true
+        val engine = boundEngine
+        val readyKey = warmupReadyKey(engine, locale)
+        if (warmupReadyLanguages.contains(readyKey)) {
+            Log.d(
+                TAG,
+                "[Warmup] reused ready engine=${engine ?: "unknown"} " +
+                    "locale=$locale"
+            )
+            return true
+        }
+        val engineAlreadyInitialized = isWarmupDoneForEngine(engine)
+        val effectiveTimeoutMs =
+            if (engineAlreadyInitialized) minOf(timeoutMs, 300L) else timeoutMs
         val startTime = SystemClock.elapsedRealtime()
-        val pollIntervalMs = 50L
-        while (SystemClock.elapsedRealtime() - startTime < timeoutMs) {
+        var pollIntervalMs = 50L
+        var voices: Collection<Voice>? = null
+        while (SystemClock.elapsedRealtime() - startTime < effectiveTimeoutMs) {
             if (gen != speechGeneration.get()) return false
             val ttsInstance = tts ?: return false
-            val voicesOk = ttsInstance.voices?.isNotEmpty() == true
-            val langAvail = runCatching {
-                ttsInstance.isLanguageAvailable(locale)
-            }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+            if (voices.isNullOrEmpty()) {
+                voices = ttsInstance.voices
+            }
+            val voicesOk = !voices.isNullOrEmpty()
+            val langAvail = if (voicesOk) {
+                runCatching {
+                    ttsInstance.isLanguageAvailable(locale)
+                }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+            } else {
+                TextToSpeech.LANG_NOT_SUPPORTED
+            }
             if (voicesOk && langAvail >= TextToSpeech.LANG_AVAILABLE) {
+                warmupReadyLanguages.add(readyKey)
+                markWarmupDoneForEngine(engine, true)
                 Log.d(
                     TAG,
-                    "[Warmup] ready engine=${boundEngine ?: "unknown"} " +
+                    "[Warmup] ready engine=${engine ?: "unknown"} " +
                         "dtMs=${SystemClock.elapsedRealtime() - startTime}"
                 )
                 return true
@@ -2149,17 +2284,53 @@ class AnnouncementSpeaker(
                 Thread.currentThread().interrupt()
                 return false
             }
+            pollIntervalMs = (pollIntervalMs + 50L).coerceAtMost(300L)
         }
         Log.w(
             TAG,
-            "[Warmup] timeout engine=${boundEngine ?: "unknown"} " +
-                "locale=$locale (proceeding)"
+            "[Warmup] timeout engine=${engine ?: "unknown"} " +
+                "locale=$locale timeoutMs=$effectiveTimeoutMs (proceeding)"
         )
         return gen == speechGeneration.get() && tts != null
     }
 
-    private fun resetWarmupFlag() {
-        warmupDoneForCurrentTts = false
+    private fun resetWarmupFlag(engine: String? = boundEngine) {
+        val key = HostProtocol.normalizeEngineId(engine.orEmpty())
+        if (key.isBlank()) return
+        warmupDoneEngines.remove(key)
+        val prefix = "$key:"
+        warmupReadyLanguages.removeAll { it.startsWith(prefix) }
+    }
+
+    @VisibleForTesting
+    internal fun awaitWarmupReadyForTesting(
+        locale: Locale,
+        gen: Long,
+        timeoutMs: Long = 1500L
+    ): Boolean = awaitWarmupReady(locale, gen, timeoutMs)
+
+    @VisibleForTesting
+    internal fun isWarmupReadyForLanguageForTesting(
+        locale: Locale
+    ): Boolean = isWarmupReadyForCurrentInstance(locale)
+
+    @VisibleForTesting
+    internal fun markWarmupDoneForEngineForTesting(
+        engine: String,
+        done: Boolean
+    ) {
+        markWarmupDoneForEngine(engine, done)
+    }
+
+    @VisibleForTesting
+    internal fun markWarmupReadyForLanguageForTesting(
+        engine: String,
+        locale: Locale
+    ) {
+        val old = boundEngine
+        boundEngine = engine
+        markWarmupReadyForCurrentInstance(locale)
+        boundEngine = old
     }
 
     /** يُشغّل نغمة خطأ قصيرة (CueSynth.NO_ENGINE) عند عدم وجود محرك للإعلانات.
@@ -3350,7 +3521,7 @@ speechCycle.incrementAndGet()
             lastAudioAttributes = null
         }
         initGate.reset()
-        shutdownSafely()
+        shutdownAllTts()
         nowSpeaking = false
         currentCategory = null
     }
@@ -3685,16 +3856,128 @@ speechCycle.incrementAndGet()
     }
 
     private fun shutdownSafely() {
+        shutdownCurrentTts(removeFromPool = true)
+    }
+
+    /** بند 25: إيقاف مثيل TTS النشط الحالي فقط (مع إزالة اختياري من المسبح). */
+    private fun shutdownCurrentTts(removeFromPool: Boolean) {
         embeddedSpeechJob?.cancel()
         embeddedSpeechJob = null
         stopEmbeddedAudioTrack()
+        val currentEngine = boundEngine
+        val currentTts = tts
+        if (removeFromPool && !currentEngine.isNullOrBlank()) {
+            removeFromWarmPool(currentEngine)
+        }
         try {
-            tts?.shutdown()
+            currentTts?.shutdown()
         } catch (ignored: Throwable) {
         }
-        tts = null
-        resetWarmupFlag()
+        if (tts === currentTts) {
+            tts = null
+        }
+        if (boundEngine == currentEngine) {
+            boundEngine = null
+        }
+        resetWarmupFlag(currentEngine)
     }
+
+    /** بند 25: إيقاف كامل المسبح والمثيل النشط (عند إغلاق المتحدث). */
+    private fun shutdownAllTts() {
+        shutdownCurrentTts(removeFromPool = true)
+        val pooled = synchronized(warmTtsPoolLock) {
+            val entries = warmTtsPool.values.toList()
+            warmTtsPool.clear()
+            entries
+        }
+        pooled.forEach { entry ->
+            if (entry.tts !== tts) {
+                runCatching { entry.tts.shutdown() }
+            }
+            resetWarmupFlag(entry.engine)
+        }
+        warmupReadyLanguages.clear()
+    }
+
+    private fun removeFromWarmPool(engine: String) {
+        val normalized = HostProtocol.normalizeEngineId(engine)
+        synchronized(warmTtsPoolLock) {
+            val it = warmTtsPool.entries.iterator()
+            while (it.hasNext()) {
+                val key = HostProtocol.normalizeEngineId(it.next().key)
+                if (key == normalized) {
+                    it.remove()
+                }
+            }
+        }
+    }
+
+    /** بند 25: حفظ المثيل النشط الحالي في المسبح بدل إغلاقه عند تبديل محرك. */
+    private fun parkCurrentTtsForReuse() {
+        embeddedSpeechJob?.cancel()
+        embeddedSpeechJob = null
+        stopEmbeddedAudioTrack()
+        val engine = boundEngine
+        val currentTts = tts
+        if (engine.isNullOrBlank() ||
+            HostProtocol.isEmbeddedEngine(engine) ||
+            currentTts == null
+        ) {
+            shutdownCurrentTts(removeFromPool = true)
+            return
+        }
+        val entry = WarmTtsEntry(
+            engine = engine,
+            tts = currentTts,
+            warmupDone = isWarmupDoneForEngine(engine),
+            lastUsedMs = SystemClock.elapsedRealtime()
+        )
+        synchronized(warmTtsPoolLock) {
+            warmTtsPool.remove(engine)
+            warmTtsPool[engine] = entry
+            trimWarmTtsPoolLocked()
+        }
+        if (tts === currentTts) {
+            tts = null
+        }
+        boundEngine = null
+    }
+
+    private fun trimWarmTtsPoolLocked() {
+        while (warmTtsPool.size > WARM_TTS_POOL_MAX) {
+            val lruKey = warmTtsPool.entries
+                .minByOrNull { it.value.lastUsedMs }
+                ?.key ?: return
+            val evicted = warmTtsPool.remove(lruKey) ?: return
+            runCatching { evicted.tts.shutdown() }
+            resetWarmupFlag(evicted.engine)
+        }
+    }
+
+    /** بند 25: استعادة مثيل دافئ من المسبح للمحرك المطلوب إن وجد. */
+    private fun restoreTtsFromPool(engine: String): Boolean {
+        if (HostProtocol.isEmbeddedEngine(engine)) return false
+        val normalized = HostProtocol.normalizeEngineId(engine)
+        val entry = synchronized(warmTtsPoolLock) {
+            val key = warmTtsPool.keys.firstOrNull {
+                HostProtocol.normalizeEngineId(it) == normalized
+            } ?: return false
+            warmTtsPool.remove(key)
+        } ?: return false
+        tts = entry.tts
+        boundEngine = entry.engine
+        entry.lastUsedMs = SystemClock.elapsedRealtime()
+        markWarmupDoneForEngine(entry.engine, entry.warmupDone)
+        return true
+    }
+
+    @VisibleForTesting
+    internal fun warmTtsPoolSizeForTesting(): Int =
+        synchronized(warmTtsPoolLock) { warmTtsPool.size }
+
+    @VisibleForTesting
+    internal fun warmTtsPoolEnginesForTesting(): List<String> =
+        synchronized(warmTtsPoolLock) { warmTtsPool.keys.toList() }
 
     /** بوابة التهيئة (بند [5] المحكم): تحسم بذرّيةٍ تامة بدء التهيئة أو
      *  الانضمام، وتصفّي النداءات ضدّ محرك التهيئة الجارية — فلا ينضمّ
