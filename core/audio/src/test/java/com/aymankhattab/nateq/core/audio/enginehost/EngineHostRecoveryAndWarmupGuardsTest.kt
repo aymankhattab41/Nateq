@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.enginehost
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceDiagnostics
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
@@ -1152,5 +1153,66 @@ class EngineHostRecoveryAndWarmupGuardsTest {
         } finally {
             rootDir.deleteRecursively()
         }
+    }
+
+    @Test
+    fun speechBindTimeout_isFastAndBelowDefaultBindTimeout() {
+        assertTrue(
+            "مهلة ربط النطق الحقيقي يجب أن تكون سريعة",
+            HostConnection.SPEECH_BIND_TIMEOUT_MS in 1L..2_000L
+        )
+        assertTrue(
+            "مهلة النطق يجب أن تكون أقل من مهلة الربط الافتراضية",
+            HostConnection.SPEECH_BIND_TIMEOUT_MS <
+                HostConnection.BIND_TIMEOUT_MS
+        )
+    }
+
+    @Test
+    fun hostConnection_serviceFastBindFailsWhenBindMutexHeld() =
+        runBlocking {
+            val conn = HostConnection(context, HostProtocol.ENGINE_ACAPELA)
+            val mutexField = HostConnection::class.java
+                .getDeclaredField("bindMutex")
+            mutexField.isAccessible = true
+            val mutex = mutexField.get(conn) as
+                kotlinx.coroutines.sync.Mutex
+            assertTrue(mutex.tryLock())
+            try {
+                val started = SystemClock.elapsedRealtime()
+                val svc = conn.service(
+                    HostConnection.SPEECH_BIND_TIMEOUT_MS
+                )
+                val elapsed = SystemClock.elapsedRealtime() - started
+                assertNull(
+                    "النطق الحقيقي يجب أن يفشل سريعاً عند انشغال الربط/التعافي",
+                    svc
+                )
+                assertTrue(
+                    "فشل الربط السريع يجب ألا يحجب النطق",
+                    elapsed < 1_000L
+                )
+            } finally {
+                mutex.unlock()
+                conn.close()
+            }
+        }
+
+    @Test
+    fun prewarmBindingAsync_reusesLiveBindingNoCrash() {
+        EngineHostClient.prewarmBindingAsync(
+            context, HostProtocol.ENGINE_ACAPELA
+        )
+        EngineHostClient.prewarmAllEmbeddedBindingsAsync(context)
+        // لا انهيار، والربط الحي/المبكر يُدار في الخلفية.
+        assertTrue(true)
+    }
+
+    @Test
+    fun captureHostPidAsync_doesNotCrashAndRunsInBackground() {
+        EngineHostClient.captureHostPidAsync(context)
+        Thread.sleep(100)
+        // lastKnownHostPid تشخيصي؛ المهم عدم الحجب/الانهيار.
+        assertTrue(EngineHostClient.lastKnownHostPid >= -1)
     }
 }

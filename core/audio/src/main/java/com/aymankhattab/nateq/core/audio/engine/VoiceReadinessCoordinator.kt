@@ -144,6 +144,15 @@ object VoiceReadinessCoordinator {
             "${HostProtocol.normalizeEngineId(it.first)}:${it.second.trim()}"
         }
 
+        // ربط مضيف المحركات المدمجة مبكراً في الخلفية (بند 19).
+        distinctTargets
+            .map { HostProtocol.normalizeEngineId(it.first) }
+            .filter { isEmbeddedEngine(it) }
+            .distinct()
+            .forEach { engineId ->
+                EngineHostClient.prewarmBindingAsync(appCtx, engineId)
+            }
+
         for ((engineId, voiceId) in distinctTargets) {
             if (isRealSpeechActive.get()) {
                 Log.d(TAG, "نطق حقيقي جارٍ؛ إيقاف التجهيز الاستباقي")

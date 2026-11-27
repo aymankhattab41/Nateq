@@ -498,6 +498,7 @@ class NateqTtsService : TextToSpeechService() {
     override fun onCreate() {
         settings = SettingsRepository.create(applicationContext)
         EngineHostClient.setContext(applicationContext)
+        EngineHostClient.prewarmAllEmbeddedBindingsAsync(applicationContext)
         VoiceResolutionPolicy.init(applicationContext)
 
         val providers = listOf(

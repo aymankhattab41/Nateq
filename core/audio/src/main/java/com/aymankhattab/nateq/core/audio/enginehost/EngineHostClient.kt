@@ -107,6 +107,23 @@ object EngineHostClient {
     var lastKnownHostPid: Int = -1
         internal set
 
+    /** التقاط PID المضيف للتشخيص على خلفية كي لا يحجب الخيط الرئيسي/الحرج. */
+    internal fun captureHostPidAsync(context: Context) {
+        val ctx = context.applicationContext ?: context
+        background.execute {
+            runCatching {
+                val am = ctx.getSystemService(Context.ACTIVITY_SERVICE)
+                    as? ActivityManager
+                val hostProc = am?.runningAppProcesses?.firstOrNull {
+                    it.processName.endsWith(":engine_host")
+                }
+                if (hostProc != null) {
+                    lastKnownHostPid = hostProc.pid
+                }
+            }
+        }
+    }
+
     private fun recordCallSent(call: String) {
         lastCallSentTimeMs = System.currentTimeMillis()
         lastCallSent = call
@@ -274,20 +291,15 @@ object EngineHostClient {
                 "text=<${SpeechTextRedactor.describe(text)}>, " +
                 "rate=$rate, pitch=$pitch, volume=$volume)"
         )
-        runCatching {
-            val am = context.getSystemService(Context.ACTIVITY_SERVICE)
-                as? ActivityManager
-            val hostProc = am?.runningAppProcesses?.firstOrNull {
-                it.processName.endsWith(":engine_host")
-            }
-            if (hostProc != null) {
-                lastKnownHostPid = hostProc.pid
-            }
-        }
+        captureHostPidAsync(context)
         if (text.isEmpty()) {
             return HostResult.failure("EMPTY_TEXT", "نصّ فارغ")
         }
-        val call = callHost(context, id) { svc ->
+        val call = callHost(
+            context,
+            id,
+            bindTimeoutMs = HostConnection.SPEECH_BIND_TIMEOUT_MS
+        ) { svc ->
             val (readFd, writeFd) = ParcelFileDescriptor.createPipe()
             val raw = try {
                 svc.synthesize(
@@ -575,6 +587,7 @@ object EngineHostClient {
     private suspend fun <T> callHost(
         context: Context,
         engineId: String,
+        bindTimeoutMs: Long = HostConnection.BIND_TIMEOUT_MS,
         body: suspend (IEmbeddedEngineHost) -> T
     ): HostCall<T> {
         val id = HostProtocol.normalizeEngineId(engineId)
@@ -585,14 +598,18 @@ object EngineHostClient {
                 "HOST_UNAVAILABLE",
                 "تعذّر الوصول إلى مضيف $id"
             )
-            while (attempt < 2) {
+            val fastSpeechBind =
+                bindTimeoutMs <= HostConnection.SPEECH_BIND_TIMEOUT_MS
+            val maxAttempts = if (fastSpeechBind) 1 else 2
+            while (attempt < maxAttempts) {
                 attempt++
-                val svc = connection(context, id).service()
+                val svc = connection(context, id).service(bindTimeoutMs)
                 if (svc == null) {
                     last = HostCall.Failure(
                         "HOST_UNAVAILABLE",
                         "تعذّر ربط مضيف $id"
                     )
+                    if (fastSpeechBind) break
                     continue
                 }
                 val result: HostCall<T> = try {
@@ -807,6 +824,39 @@ object EngineHostClient {
         }
     }
 
+    /**
+     * ربط مضيف المحرك مبكراً في الخلفية (تدفئة/بدء خدمة) بلا حجب للنطق.
+     * يعيد استخدام الربط الحي إن وُجد، ويترك التعافي/الربط الفعلي بالخلفية.
+     */
+    fun prewarmBindingAsync(context: Context, engineId: String) {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        val app = context.applicationContext ?: context
+        setContext(app)
+        if (!VisibleEngines.isVisible(id)) return
+        if (connection(app, id).current() != null) return
+        background.execute {
+            runCatching {
+                kotlinx.coroutines.runBlocking {
+                    connection(app, id).service(
+                        HostConnection.BIND_TIMEOUT_MS
+                    )
+                }
+            }.onFailure { t ->
+                Log.w(TAG, "فشل الربط المبكر لمضيف $id: ${t.message}")
+            }
+        }
+    }
+
+    /** ربط كل مضيفات المحركات المدمجة مبكراً في الخلفية. */
+    fun prewarmAllEmbeddedBindingsAsync(context: Context) {
+        val app = context.applicationContext ?: context
+        listOf(
+            HostProtocol.ENGINE_ACAPELA,
+            HostProtocol.ENGINE_VOCALIZER,
+            HostProtocol.ENGINE_MICROSOFT
+        ).forEach { prewarmBindingAsync(app, it) }
+    }
+
     internal fun connection(
         context: Context,
         engineId: String
@@ -831,8 +881,11 @@ internal class HostConnection(
     companion object {
         private const val TAG = "EngineHostConn"
 
-        /** مهلة بناء الربط المحلي (الخدمة في نفس الجهاز). */
-        private const val BIND_TIMEOUT_MS = 10_000L
+        /** مهلة بناء الربط للتدفئة/الخلفية (الخدمة في نفس الجهاز). */
+        internal const val BIND_TIMEOUT_MS = 10_000L
+
+        /** مهلة ربط سريعة للنطق الحقيقي: فشل سريع ثم تراجع للمحرك الاحتياطي. */
+        internal const val SPEECH_BIND_TIMEOUT_MS = 1_500L
     }
 
     private val app = context.applicationContext
@@ -885,16 +938,8 @@ internal class HostConnection(
                 SystemClock.uptimeMillis()
             EngineHostClient.hostConnectedAtWallMs =
                 System.currentTimeMillis()
-            runCatching {
-                val am = app.getSystemService(Context.ACTIVITY_SERVICE)
-                    as? ActivityManager
-                val hostProc = am?.runningAppProcesses?.firstOrNull {
-                    it.processName.endsWith(":engine_host")
-                }
-                if (hostProc != null) {
-                    EngineHostClient.lastKnownHostPid = hostProc.pid
-                }
-            }
+            // بند 23: التقاط PID تشخيصي على خلفية دون حجب الخيط الرئيسي.
+            EngineHostClient.captureHostPidAsync(app)
             val recipient = IBinder.DeathRecipient { onBinderDied(thisGen) }
             try {
                 unlinkDeathRecipient()
@@ -934,10 +979,21 @@ internal class HostConnection(
     fun current(): IEmbeddedEngineHost? = service
 
     /** خدمة صالحة: البناء لا يعلّق Mutex أثناء انتظار Binder. */
-    suspend fun service(): IEmbeddedEngineHost? {
+    suspend fun service(
+        bindTimeoutMs: Long = BIND_TIMEOUT_MS
+    ): IEmbeddedEngineHost? {
         service?.let { return it }
         val mySignal: CompletableDeferred<IEmbeddedEngineHost>
-        bindMutex.withLock {
+        val locked = bindMutex.tryLock()
+        if (!locked) {
+            // النطق الحقيقي يفشل سريعاً بدلاً من الانتظار خلف تعافٍ/ربط.
+            if (bindTimeoutMs <= SPEECH_BIND_TIMEOUT_MS) {
+                Log.w(TAG, "تجاوز انتظار قفل الربط للنطق: $engineId")
+                return null
+            }
+            bindMutex.lock()
+        }
+        try {
             service?.let { return it }
             if (bound && !signal.isCompleted) {
                 mySignal = signal
@@ -974,9 +1030,11 @@ internal class HostConnection(
                 if (!asked) return null
                 bound = true
             }
+        } finally {
+            bindMutex.unlock()
         }
         return try {
-            withTimeoutOrNull(BIND_TIMEOUT_MS) { mySignal.await() }
+            withTimeoutOrNull(bindTimeoutMs) { mySignal.await() }
         } catch (t: CancellationException) {
             throw t
         } catch (_: Throwable) {
