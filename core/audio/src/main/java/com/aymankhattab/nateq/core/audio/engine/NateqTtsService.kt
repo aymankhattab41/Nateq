@@ -111,6 +111,10 @@ class NateqTtsService : TextToSpeechService() {
          *  إنشاء لعملية :tts التي تُقتل بين الجلسات غالباً. */
         private const val DISCOVERY_TTL_MS = 60 * 60 * 1000L
 
+        /** بند 31: مهلة التهدئة لمنع إطلاق الاكتشاف
+         *  المتكرر من نداءات النظام. */
+        private const val MIN_DISCOVERY_TRIGGER_INTERVAL_MS = 60_000L
+
         private const val PCM_16BIT = AudioFormat.ENCODING_PCM_16BIT
         private const val EMPTY_TEXT_SAMPLE_RATE = 16_000
 
@@ -347,6 +351,12 @@ class NateqTtsService : TextToSpeechService() {
      *  على منفّذ الكوروتين وموارد المحركات. */
     @Volatile private var warmupJob: kotlinx.coroutines.Job? = null
 
+    /** عملية الاكتشاف الخلفية الجارية (بند 31). */
+    @Volatile private var discoveryJob: kotlinx.coroutines.Job? = null
+
+    /** وقت آخر محاولة إطلاق اكتشاف (بند 31). */
+    @Volatile private var lastDiscoveryTriggerAttemptMs = 0L
+
     /** حارس تشغيل–واحد لاكتشاف اللغات الخلفي: يمنع تداخل
      *  [maybeRefreshDiscovery] من الإقلاع واستدعاءات القراءة المتزامنة
      *  أن تُنفّذ الاكتشافَ مرتين وتكتبا ذاكرة الكتالوج في وقتٍ واحد. */
@@ -449,6 +459,8 @@ class NateqTtsService : TextToSpeechService() {
             if (!shouldWarmNumbers && !shouldWarmEngines) return
 
             warmupJob?.cancel()
+            discoveryJob?.cancel()
+            VoiceCatalog.cancelActiveDiscovery()
             warmupJob = serviceScope.launch(AppDispatchers.io) {
                 try {
                     delay(NUMBER_WARM_DEBOUNCE_MS)
@@ -604,6 +616,8 @@ class NateqTtsService : TextToSpeechService() {
             contentResolver.unregisterContentObserver(settingsChangeObserver)
         }
         warmupJob?.cancel()
+        discoveryJob?.cancel()
+        VoiceCatalog.cancelActiveDiscovery()
         VoiceReadinessCoordinator.onSpeechCompleted()
         serviceScope.cancel()
         synthesisScope.cancel()
@@ -886,6 +900,8 @@ class NateqTtsService : TextToSpeechService() {
         // اللغات/كاش كلمات التنقل) حتى تتفرغ منافذُها وأعمدتُها لهذا
         // النطق ولا تزاحمه على المحركات/المسبح (بند ب.txt 3.5-1).
         warmupJob?.cancel()
+        discoveryJob?.cancel()
+        VoiceCatalog.cancelActiveDiscovery()
         val speechToken = VoiceReadinessCoordinator.onSpeechRequested()
         // سجلّ مجرّد: طول النص واللغة فقط
         // (النص قد يحوي OTP/حساسيات يقرؤها TalkBack).
@@ -3365,17 +3381,64 @@ class NateqTtsService : TextToSpeechService() {
         }
     }
 
+    @androidx.annotation.VisibleForTesting
+    internal fun shouldTriggerDiscovery(
+        now: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!catalog.needsRefresh(DISCOVERY_TTL_MS)) return false
+        if (now - lastDiscoveryTriggerAttemptMs <
+            MIN_DISCOVERY_TRIGGER_INTERVAL_MS
+        ) {
+            return false
+        }
+        if (discoveryJob?.isActive == true) return false
+        return true
+    }
+
     /** إطلاق تحديث الاكتشاف دون انتظار
-     * (يُستدعى من دوال الاستعلام المتزامنة). */
+     * (يُستدعى من دوال الاستعلام المتزامنة، مع تهدئة التكرار بند 31). */
     private fun refreshDiscoveryIfNeeded() {
-        if (!catalog.needsRefresh(DISCOVERY_TTL_MS)) return
-        serviceScope.launch {
+        val now = System.currentTimeMillis()
+        if (!shouldTriggerDiscovery(now)) return
+        lastDiscoveryTriggerAttemptMs = now
+        VoiceCatalog.resetDiscoveryCancellation()
+        discoveryJob = serviceScope.launch(AppDispatchers.io) {
             try {
                 maybeRefreshDiscovery()
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                // إلغاء طبيعي عند وصول طلب نطق حقيقي
             } catch (t: Throwable) {
                 Log.w(TAG, "تحديث اللغات الخلفي فشل", t)
             }
         }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun getDiscoveryJobForTesting(): kotlinx.coroutines.Job? =
+        discoveryJob
+
+    @androidx.annotation.VisibleForTesting
+    internal fun setDiscoveryJobForTesting(job: kotlinx.coroutines.Job?) {
+        discoveryJob = job
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun getLastDiscoveryTriggerAttemptMsForTesting(): Long =
+        lastDiscoveryTriggerAttemptMs
+
+    @androidx.annotation.VisibleForTesting
+    internal fun setLastDiscoveryTriggerAttemptMsForTesting(ms: Long) {
+        lastDiscoveryTriggerAttemptMs = ms
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun invalidateCatalogDiscoveryForTesting() {
+        catalog.invalidateDiscovery()
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun triggerRefreshDiscoveryForTesting() {
+        refreshDiscoveryIfNeeded()
     }
 
     /** إعداد هدف فئة نطق الإيموجي للمقطع ذي الدور EMOJI. */

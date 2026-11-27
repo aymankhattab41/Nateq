@@ -29,6 +29,12 @@ class SystemTtsEngineControllerTest {
         context = ApplicationProvider.getApplicationContext()
         app = context as Application
         shadowOf(app).denyPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
+        AccessibilityBridge.resetForTesting()
+    }
+
+    @org.junit.After
+    fun tearDown() {
+        AccessibilityBridge.resetForTesting()
     }
 
     @Test

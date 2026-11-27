@@ -130,6 +130,15 @@ object AccessibilityBridge {
         cachedResolvedPackageTime = 0L
     }
 
+    @androidx.annotation.VisibleForTesting
+    fun resetForTesting() {
+        activeServiceRef.set(null)
+        foregroundPackageRef.set(null)
+        foregroundActivityRef.set(null)
+        lastScreenTextsBuffer.clear()
+        resetCallCountsForTesting()
+    }
+
     /**
      * حسم الحزمة الأمامية مع المصدر بدقة (عقدة مفوكسة، نافذة، احتياط)
      * — الجولة 48 (الأمر 5).

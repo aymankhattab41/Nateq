@@ -8,6 +8,7 @@ import android.speech.tts.TextToSpeech
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -163,10 +164,21 @@ class SystemVoiceProviderGroup3Test {
         val provider = SystemVoiceProvider(context)
 
         val stopCalled = AtomicInteger(0)
+        val synthCalls = AtomicInteger(0)
         val tts = object : TextToSpeech(context, {}, TEST_ENGINE) {
             override fun stop(): Int {
                 stopCalled.incrementAndGet()
                 return super.stop()
+            }
+
+            override fun synthesizeToFile(
+                text: CharSequence?,
+                params: android.os.Bundle?,
+                file: java.io.File?,
+                utteranceId: String?
+            ): Int {
+                synthCalls.incrementAndGet()
+                return super.synthesizeToFile(text, params, file, utteranceId)
             }
         }
 
@@ -174,76 +186,74 @@ class SystemVoiceProviderGroup3Test {
         pool[TEST_ENGINE] = tts
 
         runBlocking {
-            val deadline = System.currentTimeMillis() + 5000L
-            // نبدأ جلسة أولى
-            val job1 = async(Dispatchers.Default) {
-                provider.synthesize(
-                    text = "نص طويل للجلسة الأولى الملغاة",
-                    voice = voiceDesc(),
-                    speechRate = 1.0f,
-                    pitch = 1.0f,
-                    volume = 1.0f,
-                    onFormatInfo = { _, _ -> },
-                    onAudioChunk = { _, _ -> },
-                    enginePackage = TEST_ENGINE
+            withTimeout(15_000L) {
+                // نبدأ جلسة أولى
+                val job1 = async(Dispatchers.Default) {
+                    provider.synthesize(
+                        text = "نص طويل للجلسة الأولى الملغاة",
+                        voice = voiceDesc(),
+                        speechRate = 1.0f,
+                        pitch = 1.0f,
+                        volume = 1.0f,
+                        onFormatInfo = { _, _ -> },
+                        onAudioChunk = { _, _ -> },
+                        enginePackage = TEST_ENGINE
+                    )
+                }
+
+                val deadline1 = System.currentTimeMillis() + 5000L
+                while (System.currentTimeMillis() < deadline1 &&
+                    synthCalls.get() < 1
+                ) {
+                    Thread.sleep(10)
+                }
+                // نلغي الجلسة الأولى بعد وصولها لمحرك التخليق
+                job1.cancel()
+                runCatching { job1.await() }
+
+                // التحقق من استدعاء stop فور الإلغاء
+                val stopDeadline = System.currentTimeMillis() + 3000L
+                while (System.currentTimeMillis() < stopDeadline &&
+                    stopCalled.get() < 1
+                ) {
+                    Thread.sleep(10)
+                }
+                assertTrue(
+                    "stop must be invoked upon cancellation",
+                    stopCalled.get() >= 1
+                )
+
+                // الجلسة التالية لنفس المحرك يجب أن تنفذ
+                // وتكتمل بنجاح دون حجز القفل
+                val job2 = async(Dispatchers.Default) {
+                    provider.synthesize(
+                        text = "نص الجلسة الثانية",
+                        voice = voiceDesc(),
+                        speechRate = 1.0f,
+                        pitch = 1.0f,
+                        volume = 1.0f,
+                        onFormatInfo = { _, _ -> },
+                        onAudioChunk = { _, _ -> },
+                        enginePackage = TEST_ENGINE
+                    )
+                    true
+                }
+
+                val deadline2 = System.currentTimeMillis() + 5000L
+                while (System.currentTimeMillis() < deadline2 &&
+                    synthCalls.get() < 2
+                ) {
+                    Thread.sleep(10)
+                }
+                shadowOf(tts).getUtteranceProgressListener()?.onDone("second")
+                val secondCompleted = job2.await()
+
+                assertTrue(
+                    "Second request must complete cleanly after first" +
+                        " is cancelled",
+                    secondCompleted
                 )
             }
-            while (System.currentTimeMillis() < deadline) {
-                val file = runCatching {
-                    shadowOf(tts).getLastSynthesizeToFile()
-                }.getOrNull()
-                if (file != null && file.exists() && file.length() > 44L) {
-                    break
-                }
-                Thread.sleep(10)
-            }
-            // نلغي الجلسة الأولى
-            job1.cancel()
-            runCatching { job1.await() }
-
-            // التحقق من استدعاء stop فور الإلغاء
-            val stopDeadline = System.currentTimeMillis() + 3000L
-            while (System.currentTimeMillis() < stopDeadline
-                && stopCalled.get() < 1
-            ) {
-                Thread.sleep(10)
-            }
-            assertTrue(
-                "stop must be invoked upon cancellation",
-                stopCalled.get() >= 1
-            )
-
-            // الجلسة التالية لنفس المحرك يجب أن تنفذ وتكتمل بنجاح دون حجز القفل
-            val job2 = async(Dispatchers.Default) {
-                provider.synthesize(
-                    text = "نص الجلسة الثانية",
-                    voice = voiceDesc(),
-                    speechRate = 1.0f,
-                    pitch = 1.0f,
-                    volume = 1.0f,
-                    onFormatInfo = { _, _ -> },
-                    onAudioChunk = { _, _ -> },
-                    enginePackage = TEST_ENGINE
-                )
-                true
-            }
-            val secondDeadline = System.currentTimeMillis() + 5000L
-            while (System.currentTimeMillis() < secondDeadline) {
-                val file2 = runCatching {
-                    shadowOf(tts).getLastSynthesizeToFile()
-                }.getOrNull()
-                if (file2 != null && file2.exists() && file2.length() > 44L) {
-                    break
-                }
-                Thread.sleep(10)
-            }
-            shadowOf(tts).getUtteranceProgressListener()?.onDone("second")
-            val secondCompleted = job2.await()
-
-            assertTrue(
-                "Second request must complete cleanly after first is cancelled",
-                secondCompleted
-            )
         }
     }
 }

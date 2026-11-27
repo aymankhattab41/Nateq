@@ -20,7 +20,10 @@ import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.VoiceIdContract
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -79,6 +82,9 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
          *  من تأثير المحركات البطيئة. */
         private const val ENGINE_PROBE_TIMEOUT_MS = 5_000L
 
+        /** بند 30: مهلة أطول للمحاولة الثانية عند بطء المحرك. */
+        private const val ENGINE_PROBE_RETRY_TIMEOUT_MS = 8_000L
+
         /** سقف عدد استعلامات المحركات المتزامنة لمنع إغراق الموارد. */
         internal const val MAX_CONCURRENT_ENGINE_PROBES = 3
 
@@ -93,7 +99,52 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         )
 
         private val engineVoicesCache =
-            java.util.concurrent.ConcurrentHashMap<String, CachedVoiceEntry>()
+            ConcurrentHashMap<String, CachedVoiceEntry>()
+
+        private const val PREFS_BLACKLIST = "nateq_engine_blacklist"
+        private const val PREFS_VOICE_CACHE = "nateq_cached_engine_voices"
+
+        @Volatile
+        private var discoveryCancelled = false
+
+        fun cancelActiveDiscovery() {
+            discoveryCancelled = true
+        }
+
+        fun resetDiscoveryCancellation() {
+            discoveryCancelled = false
+        }
+
+        fun isDiscoveryCancelled(): Boolean = discoveryCancelled
+
+        private val simulatedTimeoutEngines =
+            ConcurrentHashMap.newKeySet<String>()
+        private val simulatedDefinitiveFailureEngines =
+            ConcurrentHashMap.newKeySet<String>()
+
+        @androidx.annotation.VisibleForTesting
+        internal fun simulateProbeTimeoutForTesting(
+            pkg: String,
+            simulate: Boolean
+        ) {
+            if (simulate) {
+                simulatedTimeoutEngines.add(pkg)
+            } else {
+                simulatedTimeoutEngines.remove(pkg)
+            }
+        }
+
+        @androidx.annotation.VisibleForTesting
+        internal fun simulateDefinitiveFailureForTesting(
+            pkg: String,
+            simulate: Boolean
+        ) {
+            if (simulate) {
+                simulatedDefinitiveFailureEngines.add(pkg)
+            } else {
+                simulatedDefinitiveFailureEngines.remove(pkg)
+            }
+        }
 
         fun getCachedEngineVoices(enginePackage: String): List<Voice>? {
             val entry = engineVoicesCache[enginePackage] ?: return null
@@ -106,16 +157,218 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             return entry.voices
         }
 
-        fun cacheEngineVoices(enginePackage: String, voices: List<Voice>) {
+        fun cacheEngineVoices(
+            enginePackage: String,
+            voices: List<Voice>,
+            context: Context? = null
+        ) {
+            val now = System.currentTimeMillis()
             engineVoicesCache[enginePackage] = CachedVoiceEntry(
-                System.currentTimeMillis(),
+                now,
                 voices
             )
+            if (context != null && voices.isNotEmpty()) {
+                saveEngineVoicesToDisk(context, enginePackage, voices, now)
+            }
+        }
+
+        fun getLastKnownEngineVoices(
+            context: Context?,
+            enginePackage: String
+        ): List<Voice>? {
+            engineVoicesCache[enginePackage]?.voices?.let { return it }
+            if (context != null) {
+                loadEngineVoicesFromDisk(context, enginePackage)?.let {
+                    return it
+                }
+            }
+            return null
+        }
+
+        private fun saveEngineVoicesToDisk(
+            context: Context,
+            enginePackage: String,
+            voices: List<Voice>,
+            timestampMs: Long
+        ) {
+            runCatching {
+                val arr = JSONArray()
+                for (v in voices) {
+                    val obj = JSONObject()
+                    obj.put("name", v.name)
+                    obj.put("locale", v.locale?.toLanguageTag().orEmpty())
+                    obj.put("quality", v.quality)
+                    obj.put("latency", v.latency)
+                    obj.put("requiresNetwork", v.isNetworkConnectionRequired)
+                    val featArr = JSONArray()
+                    v.features?.forEach { featArr.put(it) }
+                    obj.put("features", featArr)
+                    arr.put(obj)
+                }
+                val prefs = context.getSharedPreferences(
+                    PREFS_VOICE_CACHE, Context.MODE_PRIVATE
+                )
+                prefs.edit()
+                    .putString(enginePackage, arr.toString())
+                    .putLong("${enginePackage}_ts", timestampMs)
+                    .apply()
+            }
+        }
+
+        private fun loadEngineVoicesFromDisk(
+            context: Context,
+            enginePackage: String
+        ): List<Voice>? {
+            return runCatching {
+                val prefs = context.getSharedPreferences(
+                    PREFS_VOICE_CACHE, Context.MODE_PRIVATE
+                )
+                val json = prefs.getString(enginePackage, null)
+                    ?: return null
+                val ts = prefs.getLong("${enginePackage}_ts", 0L)
+                val arr = JSONArray(json)
+                val result = mutableListOf<Voice>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    val name = obj.getString("name")
+                    val localeTag = obj.optString("locale")
+                    val locale = if (localeTag.isNotEmpty()) {
+                        Locale.forLanguageTag(localeTag)
+                    } else {
+                        Locale.ROOT
+                    }
+                    val quality = obj.optInt(
+                        "quality", Voice.QUALITY_NORMAL
+                    )
+                    val latency = obj.optInt(
+                        "latency", Voice.LATENCY_NORMAL
+                    )
+                    val reqNet = obj.optBoolean(
+                        "requiresNetwork", false
+                    )
+                    val featArr = obj.optJSONArray("features")
+                    val features = mutableSetOf<String>()
+                    if (featArr != null) {
+                        for (j in 0 until featArr.length()) {
+                            features.add(featArr.getString(j))
+                        }
+                    }
+                    result.add(
+                        Voice(
+                            name, locale, quality, latency, reqNet, features
+                        )
+                    )
+                }
+                if (result.isNotEmpty()) {
+                    engineVoicesCache[enginePackage] =
+                        CachedVoiceEntry(ts, result)
+                }
+                result
+            }.getOrNull()
         }
 
         fun clearEngineVoicesCache() {
             engineVoicesCache.clear()
         }
+
+        enum class BlacklistReason {
+            DEFINITIVE_ERROR,
+            SLOW_TIMEOUT
+        }
+
+        data class BlacklistEntry(
+            val timestamp: Long,
+            val reason: BlacklistReason
+        )
+
+        private const val BLACKLIST_TTL_MS = 24 * 60 * 60 * 1000L // 24 ساعة
+        private const val SLOW_ENGINE_TTL_MS = 10 * 60 * 1000L     // 10 دقائق
+
+        @Volatile
+        private var engineBlacklist: Map<String, BlacklistEntry> = emptyMap()
+
+        fun isBlacklisted(pkg: String, context: Context? = null): Boolean {
+            val entry = engineBlacklist[pkg]
+                ?: loadBlacklistEntryFromDisk(context, pkg)
+            if (entry == null) return false
+            val now = System.currentTimeMillis()
+            val ttl = if (entry.reason == BlacklistReason.DEFINITIVE_ERROR) {
+                BLACKLIST_TTL_MS
+            } else {
+                SLOW_ENGINE_TTL_MS
+            }
+            val active = (now - entry.timestamp < ttl)
+            if (!active) {
+                engineBlacklist = engineBlacklist - pkg
+            }
+            return active
+        }
+
+        fun blacklistEngine(
+            pkg: String,
+            reason: BlacklistReason,
+            context: Context? = null
+        ) {
+            val entry = BlacklistEntry(System.currentTimeMillis(), reason)
+            engineBlacklist = engineBlacklist + (pkg to entry)
+            saveBlacklistEntryToDisk(context, pkg, entry)
+        }
+
+        private fun loadBlacklistEntryFromDisk(
+            context: Context?,
+            pkg: String
+        ): BlacklistEntry? {
+            if (context == null) return null
+            return runCatching {
+                val prefs = context.getSharedPreferences(
+                    PREFS_BLACKLIST, Context.MODE_PRIVATE
+                )
+                val typeStr = prefs.getString("${pkg}_reason", null)
+                    ?: return null
+                val time = prefs.getLong("${pkg}_time", 0L)
+                if (time == 0L) return null
+                val reason = runCatching {
+                    BlacklistReason.valueOf(typeStr)
+                }.getOrDefault(BlacklistReason.DEFINITIVE_ERROR)
+                val entry = BlacklistEntry(time, reason)
+                engineBlacklist = engineBlacklist + (pkg to entry)
+                entry
+            }.getOrNull()
+        }
+
+        private fun saveBlacklistEntryToDisk(
+            context: Context?,
+            pkg: String,
+            entry: BlacklistEntry
+        ) {
+            if (context == null) return
+            runCatching {
+                val prefs = context.getSharedPreferences(
+                    PREFS_BLACKLIST, Context.MODE_PRIVATE
+                )
+                prefs.edit()
+                    .putString("${pkg}_reason", entry.reason.name)
+                    .putLong("${pkg}_time", entry.timestamp)
+                    .apply()
+            }
+        }
+
+        @androidx.annotation.VisibleForTesting
+        internal fun clearBlacklistForTesting(context: Context? = null) {
+            engineBlacklist = emptyMap()
+            if (context != null) {
+                runCatching {
+                    context.getSharedPreferences(
+                        PREFS_BLACKLIST, Context.MODE_PRIVATE
+                    ).edit().clear().apply()
+                }
+            }
+        }
+
+        @androidx.annotation.VisibleForTesting
+        internal fun getBlacklistEntryForTesting(
+            pkg: String
+        ): BlacklistEntry? = engineBlacklist[pkg]
 
         suspend fun getVoicesForEngine(
             context: Context,
@@ -125,7 +378,7 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             if (!forceRefresh) {
                 getCachedEngineVoices(enginePackage)?.let { return it }
             }
-            if (isBlacklisted(enginePackage)) return emptyList()
+            if (isBlacklisted(enginePackage, context)) return emptyList()
             if (enginePackage == VocalizerEmbeddedVoiceProvider.PROVIDER_ID) {
                 val list = runCatching {
                     val vocalizer = EmbeddedProviders.vocalizer(context)
@@ -189,32 +442,10 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                 }
                 val voices = probeEngineVoices(context, enginePackage)
                 if (voices.isNotEmpty()) {
-                    cacheEngineVoices(enginePackage, voices)
+                    cacheEngineVoices(enginePackage, voices, context)
                 }
                 voices
             }
-        }
-
-        /**
-         * القائمة السوداء للمحركات التي فشلت تهيئتها —
-         *  تُحدّث ديناميكياً وتتجاوزها في محاولات الاكتشاف اللاحقة.
-         *  مفتاح: packageName، قيمة: timestamp آخر فشل
-         *  (لإمكانية إعادة المحاولة مستقبلاً).
-         */
-        @Volatile
-        private var engineBlacklist: Map<String, Long> = emptyMap()
-
-        private const val BLACKLIST_TTL_MS = 24 * 60 * 60 * 1000L // 24 ساعة
-
-        private fun isBlacklisted(pkg: String): Boolean {
-            val stamp = engineBlacklist[pkg]
-            return stamp != null &&
-                (System.currentTimeMillis() - stamp < BLACKLIST_TTL_MS)
-        }
-
-        private fun blacklistEngine(pkg: String) {
-            engineBlacklist = engineBlacklist +
-                (pkg to System.currentTimeMillis())
         }
 
         /**
@@ -252,7 +483,10 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             // يبقى الاختيار اليدوي صريحاً لهم.
             val engines = EnginePicker.installedEngines(context)
                 .filterNot { EnginePicker.isScreenReader(it.packageName) }
-                .filterNot { isBlacklisted(it.packageName) }
+                .filterNot { isBlacklisted(it.packageName, context) }
+            if (isDiscoveryCancelled()) {
+                return DiscoveryResult(emptyMap(), emptyList())
+            }
             val vocalizerPkg = VocalizerEmbeddedVoiceProvider.PROVIDER_ID
             val microsoftPkg = MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
             val acapelaPkg = AcapelaEmbeddedVoiceProvider.PROVIDER_ID
@@ -360,6 +594,13 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                     val externalResults = externalEngines
                         .map { engine ->
                             async(Dispatchers.IO) {
+                                if (isDiscoveryCancelled()) {
+                                    return@async engine.packageName to
+                                        (getLastKnownEngineVoices(
+                                            context,
+                                            engine.packageName
+                                        ) ?: emptyList())
+                                }
                                 if (engine.packageName !in toProbePkgs) {
                                     return@async engine.packageName to
                                         emptyList<Voice>()
@@ -640,13 +881,20 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
          * الافتراضي (فارغة) بدل المحرك المقصود فيتسرب غيابُ لغات.
          */
         @Suppress("DEPRECATION")
-        private suspend fun probeEngineVoices(
+        private suspend fun singleProbeAttempt(
             context: Context,
-            enginePackage: String
-        ): List<Voice> {
-            val result: List<Voice>? = withTimeoutOrNull(
-                ENGINE_PROBE_TIMEOUT_MS
-            ) {
+            enginePackage: String,
+            timeoutMs: Long,
+            onDefinitiveFailure: () -> Unit
+        ): List<Voice>? {
+            if (simulatedDefinitiveFailureEngines.contains(enginePackage)) {
+                onDefinitiveFailure()
+                return emptyList()
+            }
+            if (simulatedTimeoutEngines.contains(enginePackage)) {
+                return null
+            }
+            return withTimeoutOrNull(timeoutMs) {
                 suspendCancellableCoroutine<List<Voice>> { cont ->
                     @Suppress("DEPRECATION")
                     var probe: TextToSpeech? = null
@@ -661,15 +909,11 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                                 }
                                 try {
                                     if (status != TextToSpeech.SUCCESS) {
-                                        // وضع المحرك في القائمة السوداء
-                                        // لتجنّب إعادة المحاولة
-                                        blacklistEngine(enginePackage)
+                                        onDefinitiveFailure()
                                         Log.w(
                                             TAG,
-                                            "محرك $enginePackage " +
-                                                "فشل في التهيئة " +
-                                                "(status=$status) — " +
-                                                "أُضيف للقائمة السوداء"
+                                            "محرك $enginePackage فشل في " +
+                                                "التهيئة (status=$status)"
                                         )
                                         if (cont.isActive) {
                                             cont.resume(emptyList())
@@ -690,12 +934,9 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                         }, enginePackage)
                     }
                     if (created.isFailure) {
-                        // محرك غير قابل للربط (حزمة غير صالحة
-                        // أو منزوعة): لا أصوات.
-                        blacklistEngine(enginePackage)
+                        onDefinitiveFailure()
                         cont.resume(emptyList())
                     }
-                    // إن أُغلق الاكتشاف (مهلة/إلغاء) نغلق النسخة المعلقة.
                     cont.invokeOnCancellation {
                         if (finished.getAndSet(true)) {
                             return@invokeOnCancellation
@@ -704,18 +945,80 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                     }
                 }
             }
-            val voices = result ?: run {
-                // مهلة أو إلغاء: أضف المحرك للقائمة السوداء
-                blacklistEngine(enginePackage)
-                Log.w(
-                    TAG,
-                    "محرك $enginePackage تجاوز المهلة "
-                        + "(${ENGINE_PROBE_TIMEOUT_MS}ms) — أُضيف "
-                        + "للقائمة السوداء"
-                )
-                emptyList<Voice>()
+        }
+
+        @Suppress("DEPRECATION")
+        private suspend fun probeEngineVoices(
+            context: Context,
+            enginePackage: String
+        ): List<Voice> {
+            if (isDiscoveryCancelled()) {
+                return getLastKnownEngineVoices(context, enginePackage)
+                    ?: emptyList()
             }
-            return voices
+            var definitiveFailure = false
+            val firstAttempt = singleProbeAttempt(
+                context,
+                enginePackage,
+                ENGINE_PROBE_TIMEOUT_MS,
+                onDefinitiveFailure = {
+                    definitiveFailure = true
+                    blacklistEngine(
+                        enginePackage,
+                        BlacklistReason.DEFINITIVE_ERROR,
+                        context
+                    )
+                }
+            )
+            if (definitiveFailure) {
+                return emptyList()
+            }
+            if (firstAttempt != null) {
+                return firstAttempt
+            }
+            if (isDiscoveryCancelled()) {
+                return getLastKnownEngineVoices(context, enginePackage)
+                    ?: emptyList()
+            }
+            Log.w(
+                TAG,
+                "محرك $enginePackage بطيء في الفحص الأول " +
+                    "(${ENGINE_PROBE_TIMEOUT_MS}ms) — إعادة المحاولة بمهلة " +
+                    "${ENGINE_PROBE_RETRY_TIMEOUT_MS}ms"
+            )
+            var retryDefinitiveFailure = false
+            val retryAttempt = singleProbeAttempt(
+                context,
+                enginePackage,
+                ENGINE_PROBE_RETRY_TIMEOUT_MS,
+                onDefinitiveFailure = {
+                    retryDefinitiveFailure = true
+                    blacklistEngine(
+                        enginePackage,
+                        BlacklistReason.DEFINITIVE_ERROR,
+                        context
+                    )
+                }
+            )
+            if (retryDefinitiveFailure) {
+                return emptyList()
+            }
+            if (retryAttempt != null) {
+                return retryAttempt
+            }
+            // تجاوز المهلة للمرة الثانية: محرك بطيء (10 دقائق)
+            blacklistEngine(
+                enginePackage,
+                BlacklistReason.SLOW_TIMEOUT,
+                context
+            )
+            Log.w(
+                TAG,
+                "محرك $enginePackage تجاوز مهلة الإعادة — تم تعليمه " +
+                    "كمحرك بطيء لمدة ${SLOW_ENGINE_TTL_MS / 60000} دقيقة"
+            )
+            return getLastKnownEngineVoices(context, enginePackage)
+                ?: emptyList()
         }
 
         /**
