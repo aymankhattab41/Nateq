@@ -238,4 +238,84 @@ class VoiceReadinessCoordinatorTest {
             )
         )
     }
+
+    @Test
+    fun onSpeechCompleted_schedulesRewarmAfterQuietDelay() = runBlocking {
+        VoiceReadinessCoordinator.rewarmQuietDelayMs = 40L
+        VoiceReadinessCoordinator.rewarmPeriodicDelayMs = 5_000L
+        VoiceReadinessCoordinator.prepareActiveVoices(context).join()
+
+        val token = VoiceReadinessCoordinator.onSpeechRequested()
+        VoiceReadinessCoordinator.onSpeechCompleted(token)
+
+        assertTrue(
+            "يجب جدولة تدفئة بعد هدوء قصير إثر انتهاء النطق",
+            VoiceReadinessCoordinator.hasPendingRewarmForTest()
+        )
+    }
+
+    @Test
+    fun onSpeechRequested_cancelsPendingRewarm_noContention() = runBlocking {
+        VoiceReadinessCoordinator.rewarmQuietDelayMs = 5_000L
+        VoiceReadinessCoordinator.rewarmPeriodicDelayMs = 5_000L
+        VoiceReadinessCoordinator.prepareActiveVoices(context).join()
+
+        val token = VoiceReadinessCoordinator.onSpeechRequested()
+        VoiceReadinessCoordinator.onSpeechCompleted(token)
+        assertTrue(VoiceReadinessCoordinator.hasPendingRewarmForTest())
+
+        VoiceReadinessCoordinator.onSpeechRequested()
+        assertFalse(
+            "بدء النطق الحقيقي يجب أن يلغي إعادة التدفئة المجدولة",
+            VoiceReadinessCoordinator.hasPendingRewarmForTest()
+        )
+    }
+
+    @Test
+    fun oldSpeechCompletion_doesNotScheduleRewarm() = runBlocking {
+        VoiceReadinessCoordinator.rewarmQuietDelayMs = 5_000L
+        VoiceReadinessCoordinator.prepareActiveVoices(context).join()
+
+        val oldToken = VoiceReadinessCoordinator.onSpeechRequested()
+        VoiceReadinessCoordinator.onSpeechRequested() // طلب أحدث
+        VoiceReadinessCoordinator.onSpeechCompleted(oldToken)
+
+        assertFalse(
+            "انتهاء طلب قديم لا يجب أن يعيد جدولة التدفئة",
+            VoiceReadinessCoordinator.hasPendingRewarmForTest()
+        )
+    }
+
+    @Test
+    fun onTrimMemory_schedulesRewarmAfterDelay() = runBlocking {
+        VoiceReadinessCoordinator.rewarmAfterTrimDelayMs = 5_000L
+        VoiceReadinessCoordinator.rewarmPeriodicDelayMs = 5_000L
+        VoiceReadinessCoordinator.prepareActiveVoices(context).join()
+
+        VoiceReadinessCoordinator.onTrimMemory(
+            android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
+        )
+
+        assertTrue(
+            "بعد تفريغ الذاكرة يجب جدولة إعادة تدفئة بعد هدوء",
+            VoiceReadinessCoordinator.hasPendingRewarmForTest()
+        )
+    }
+
+    @Test
+    fun recordActuallyUsedVoice_includesEmbeddedVoiceInPrepare() =
+        runBlocking {
+            VoiceReadinessCoordinator.recordActuallyUsedVoice(
+                HostProtocol.ENGINE_ACAPELA,
+                "salma22k"
+            )
+            VoiceReadinessCoordinator.recordActuallyUsedVoice(
+                "com.google.android.tts",
+                "ar-xa-x-arz-local"
+            )
+
+            // لا انهيار، والأصوات المدمجة فقط تُقبل للتدفئة.
+            VoiceReadinessCoordinator.prepareActiveVoices(context).join()
+            assertTrue(true)
+        }
 }

@@ -2642,6 +2642,10 @@ class NateqTtsService : TextToSpeechService() {
         }
         onResolved?.invoke(params.engine, params.voiceName ?: params.voice.id)
         recordLastUsedEngine(params.engine)
+        VoiceReadinessCoordinator.recordActuallyUsedVoice(
+            params.engine,
+            params.voiceName ?: params.voice.id
+        )
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0
         var nativeChannels = 1
@@ -2928,6 +2932,10 @@ class NateqTtsService : TextToSpeechService() {
                     "الصوت='${params.voiceName ?: params.voice.id}'"
             )
             recordLastUsedEngine(params.engine)
+            VoiceReadinessCoordinator.recordActuallyUsedVoice(
+                params.engine,
+                params.voiceName ?: params.voice.id
+            )
             var nativeRate = 0
             var nativeChannels = 1
             val phase = LongArray(4)

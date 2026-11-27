@@ -60,13 +60,33 @@ object VoiceReadinessCoordinator {
     private val inFlightDeferreds =
         ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private val readyVoices = ConcurrentHashMap<String, Boolean>()
+    private val actuallyUsedEmbeddedVoices =
+        ConcurrentHashMap.newKeySet<String>()
 
     private val speechRequestSeq = AtomicLong(0L)
     private val activeSpeechRequestId = AtomicLong(0L)
     private val isRealSpeechActive = AtomicBoolean(false)
+    private val lastSpeechCompletedAtMs = AtomicLong(0L)
+
+    @Volatile
+    private var appContext: Context? = null
+    private val rescheduleJob = java.util.concurrent.atomic.AtomicReference<Job?>(
+        null
+    )
+
+    @androidx.annotation.VisibleForTesting
+    internal var rewarmQuietDelayMs: Long = 8_000L
+
+    @androidx.annotation.VisibleForTesting
+    internal var rewarmAfterTrimDelayMs: Long = 60_000L
+
+    @androidx.annotation.VisibleForTesting
+    internal var rewarmPeriodicDelayMs: Long = 30 * 60_000L
 
     /**
      * تجهيز الأصوات النشطة المعينة في الإعدادات في الخلفية على IO.
+     * يشمل أيضاً الأصوات المدمجة المستخدمة فعلاً (لا المسماة فقط) حتى لا
+     * تبدأ باردة بعد خمول/تفريغ ذاكرة، مع عدم المزاحمة أثناء النطق الحقيقي.
      */
     fun prepareActiveVoices(
         context: Context,
@@ -74,6 +94,7 @@ object VoiceReadinessCoordinator {
         priorityEngineId: String? = null
     ): Job = coordinatorScope.launch {
         val appCtx = context.applicationContext ?: context
+        appContext = appCtx
         val settings = runCatching {
             SettingsRepository.create(appCtx)
         }.getOrNull() ?: return@launch
@@ -108,7 +129,20 @@ object VoiceReadinessCoordinator {
             targets.add(enEngine to enVoice)
         }
 
-        val distinctTargets = targets.distinctBy { "${it.first}:${it.second}" }
+        // الأصوات المدمجة المستخدمة فعلاً: تمنع البدء البارد بعد خمول/trim.
+        for (key in actuallyUsedEmbeddedVoices) {
+            val split = key.indexOf(':')
+            if (split <= 0 || split >= key.lastIndex) continue
+            val engine = key.substring(0, split)
+            val voice = key.substring(split + 1)
+            if (isEmbeddedEngine(engine)) {
+                targets.add(engine to voice)
+            }
+        }
+
+        val distinctTargets = targets.distinctBy {
+            "${HostProtocol.normalizeEngineId(it.first)}:${it.second.trim()}"
+        }
 
         for ((engineId, voiceId) in distinctTargets) {
             if (isRealSpeechActive.get()) {
@@ -120,6 +154,66 @@ object VoiceReadinessCoordinator {
             }
         }
     }
+
+    private fun isEmbeddedEngine(engineId: String): Boolean =
+        when (HostProtocol.normalizeEngineId(engineId)) {
+            HostProtocol.ENGINE_ACAPELA,
+            HostProtocol.ENGINE_VOCALIZER,
+            HostProtocol.ENGINE_MICROSOFT -> true
+            else -> false
+        }
+
+    /**
+     * يسجّل صوتاً مدمجاً استُخدم فعلياً ليُدرج في التدفئة اللاحقة بعد
+     * الخمول/التفريغ، فلا تبدأ أول جملة باردة لصوت استُخدم سابقاً.
+     */
+    fun recordActuallyUsedVoice(engineId: String?, voiceId: String?) {
+        val e = engineId?.trim().orEmpty()
+        val v = voiceId?.trim().orEmpty()
+        if (e.isBlank() || v.isBlank()) return
+        if (!isEmbeddedEngine(e)) return
+        actuallyUsedEmbeddedVoices.add(
+            "${HostProtocol.normalizeEngineId(e)}:$v"
+        )
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun scheduleRewarmIfIdle(
+        delayMs: Long = rewarmQuietDelayMs
+    ) {
+        val ctx = appContext ?: return
+        val next = coordinatorScope.launch {
+            val current = kotlin.coroutines.coroutineContext[Job]
+            try {
+                kotlinx.coroutines.delay(delayMs)
+                if (isRealSpeechActive.get()) return@launch
+                prepareActiveVoices(ctx).join()
+                // دورية معقولة أثناء الخمول الطويل دون استنزاف البطارية.
+                if (!isRealSpeechActive.get()) {
+                    rescheduleJob.compareAndSet(current, null)
+                    scheduleRewarmIfIdle(rewarmPeriodicDelayMs)
+                }
+            } catch (_: CancellationException) {
+                // أُلغي لأن نطقاً حقيقياً بدأ أو أُعيدت الجدولة.
+            } catch (t: Throwable) {
+                Log.w(TAG, "فشلت إعادة جدولة تدفئة الأصوات", t)
+            } finally {
+                rescheduleJob.compareAndSet(current, null)
+            }
+        }
+        val prev = rescheduleJob.getAndSet(next)
+        if (prev != null && prev !== next) {
+            prev.cancel()
+        }
+    }
+
+    private fun cancelReschedule() {
+        rescheduleJob.getAndSet(null)?.cancel()
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun hasPendingRewarmForTest(): Boolean =
+        rescheduleJob.get()?.isActive == true
 
     /**
      * تجهيز صوت محدد بصمت مع دمج الطلبات المتزامنة (Single-Flight آمن).
@@ -369,6 +463,8 @@ object VoiceReadinessCoordinator {
         val reqId = speechRequestSeq.incrementAndGet()
         activeSpeechRequestId.set(reqId)
         isRealSpeechActive.set(true)
+        cancelReschedule()
+        recordActuallyUsedVoice(engineId, voiceId)
         val activeTarget = if (!engineId.isNullOrBlank() &&
             !voiceId.isNullOrBlank()
         ) {
@@ -389,16 +485,26 @@ object VoiceReadinessCoordinator {
 
     /**
      * إشعار بانتهاء النطق الحقيقي مع ربطه بمعرف الطلب.
+     * بعد هدوء قصير يعيد جدولة تدفئة الأصوات المدمجة في الخلفية دون
+     * مزاحمة أي نطق حقيقي وارد.
      */
     fun onSpeechCompleted(requestId: Long? = null) {
-        if (requestId == null) {
+        val ended = if (requestId == null) {
             activeSpeechRequestId.set(0L)
             isRealSpeechActive.set(false)
-            return
+            true
+        } else {
+            // لا تجعل انتهاء طلب قديم يخفض علم طلب أحدث
+            if (activeSpeechRequestId.compareAndSet(requestId, 0L)) {
+                isRealSpeechActive.set(false)
+                true
+            } else {
+                false
+            }
         }
-        // لا تجعل انتهاء طلب قديم يخفض علم طلب أحدث
-        if (activeSpeechRequestId.compareAndSet(requestId, 0L)) {
-            isRealSpeechActive.set(false)
+        if (ended) {
+            lastSpeechCompletedAtMs.set(System.currentTimeMillis())
+            scheduleRewarmIfIdle(rewarmQuietDelayMs)
         }
     }
 
@@ -482,11 +588,13 @@ object VoiceReadinessCoordinator {
 
     /**
      * التعامل مع نقص الذاكرة وإفراغ الجلسات غير النشطة.
+     * بعد التفريغ يُعاد جدولة تدفئة خفيفة بعد هدوء لتجنب بدء بارد لاحق.
      */
     fun onTrimMemory(level: Int) {
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
             level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
         ) {
+            cancelReschedule()
             for ((_, deferred) in inFlightDeferreds) {
                 deferred.cancel()
             }
@@ -494,18 +602,26 @@ object VoiceReadinessCoordinator {
             readyVoices.clear()
             MicrosoftHostSession.trimResources()
             VocalizerHostSession.trimResources()
+            scheduleRewarmIfIdle(rewarmAfterTrimDelayMs)
         }
     }
 
     fun resetForTest() {
+        cancelReschedule()
         for ((_, deferred) in inFlightDeferreds) {
             deferred.cancel()
         }
         inFlightDeferreds.clear()
         readyVoices.clear()
+        actuallyUsedEmbeddedVoices.clear()
         isRealSpeechActive.set(false)
         activeSpeechRequestId.set(0L)
         speechRequestSeq.set(0L)
+        lastSpeechCompletedAtMs.set(0L)
+        appContext = null
+        rewarmQuietDelayMs = 8_000L
+        rewarmAfterTrimDelayMs = 60_000L
+        rewarmPeriodicDelayMs = 30 * 60_000L
         HostWarmStatusRegistry.resetForTests()
     }
 }
