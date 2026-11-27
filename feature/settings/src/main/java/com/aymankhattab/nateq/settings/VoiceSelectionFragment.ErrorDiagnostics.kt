@@ -47,6 +47,7 @@ import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.data.UpdateChecker
 import androidx.recyclerview.widget.RecyclerView
+import com.aymankhattab.nateq.feature.settings.BuildConfig
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.engine.NumberSpeech
@@ -428,19 +429,192 @@ internal fun VoiceSelectionFragment.writeLogToCacheFile(
         logFile
     }.getOrNull()
 
+internal object WhatsAppDiagnosticsSharing {
+    const val WHATSAPP_PACKAGE = "com.whatsapp"
+    const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"
+
+    fun normalizeNumber(number: String?): String {
+        return number?.filter { it.isDigit() }.orEmpty()
+    }
+
+    fun isNumberConfigured(number: String?): Boolean {
+        return normalizeNumber(number).isNotEmpty()
+    }
+
+    fun buildJid(number: String?): String? {
+        val digits = normalizeNumber(number)
+        return if (digits.isNotEmpty()) "$digits@s.whatsapp.net" else null
+    }
+
+    fun buildWaMeUrl(number: String?, greeting: String): String? {
+        val digits = normalizeNumber(number)
+        return if (digits.isNotEmpty()) {
+            "https://wa.me/$digits?text=${Uri.encode(greeting)}"
+        } else {
+            null
+        }
+    }
+
+    fun isPackageInstalled(
+        context: Context,
+        packageName: String
+    ): Boolean {
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(packageName, 0)
+            }
+            true
+        }.getOrDefault(false)
+    }
+
+    fun performShare(
+        context: Context,
+        reportText: String,
+        logFile: File?,
+        developerNumber: String = BuildConfig.DEVELOPER_WHATSAPP_NUMBER,
+        onAnnounce: (String) -> Unit = {},
+        onFallbackChooser: (Context, String, File?) -> Unit
+    ) {
+        val cleanNumber = normalizeNumber(developerNumber)
+        if (cleanNumber.isEmpty()) {
+            val msg = context.getString(
+                R.string.whatsapp_number_not_configured
+            )
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            onAnnounce(msg)
+            onFallbackChooser(context, reportText, logFile)
+            return
+        }
+
+        val redacted =
+            AcapelaVoiceDiagnostics.redactSensitiveText(reportText)
+        val jid = buildJid(cleanNumber)
+
+        var jidSent = false
+        if (jid != null) {
+            val packages = listOf(
+                WHATSAPP_PACKAGE,
+                WHATSAPP_BUSINESS_PACKAGE
+            )
+            for (pkg in packages) {
+                if (!isPackageInstalled(context, pkg)) {
+                    continue
+                }
+                val jidIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = if (logFile != null && logFile.exists()) {
+                        "application/octet-stream"
+                    } else {
+                        "text/plain"
+                    }
+                    `package` = pkg
+                    putExtra("jid", jid)
+                    putExtra(Intent.EXTRA_TEXT, redacted)
+                    if (logFile != null && logFile.exists()) {
+                        val uri = runCatching {
+                            FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                logFile
+                            )
+                        }.getOrNull()
+                        if (uri != null) {
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        }
+                    }
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                val launched = runCatching {
+                    context.startActivity(jidIntent)
+                    true
+                }.getOrDefault(false)
+
+                if (launched) {
+                    jidSent = true
+                    break
+                }
+            }
+        }
+
+        if (jidSent) {
+            return
+        }
+
+        // إشعار المستخدم بأن الملف لم يُرفَق ومحفوظ يدوياً
+        val notAttachedMsg = context.getString(
+            R.string.whatsapp_file_not_attached
+        )
+        Toast.makeText(context, notAttachedMsg, Toast.LENGTH_LONG).show()
+        onAnnounce(notAttachedMsg)
+
+        val greeting = context.getString(
+            R.string.whatsapp_support_generic_greeting
+        )
+        val waUrl = buildWaMeUrl(cleanNumber, greeting)
+        var waOpened = false
+        if (waUrl != null) {
+            val waIntent = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse(waUrl)
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            waOpened = runCatching {
+                context.startActivity(waIntent)
+                true
+            }.getOrDefault(false)
+        }
+
+        if (!waOpened) {
+            onFallbackChooser(context, reportText, logFile)
+        }
+    }
+}
+
+internal fun VoiceSelectionFragment.shareReportToWhatsApp(
+    context: android.content.Context,
+    reportText: String,
+    logFile: File?,
+    developerNumber: String = BuildConfig.DEVELOPER_WHATSAPP_NUMBER
+) {
+    WhatsAppDiagnosticsSharing.performShare(
+        context = context,
+        reportText = reportText,
+        logFile = logFile,
+        developerNumber = developerNumber,
+        onAnnounce = { msg -> view?.announceCompat(msg) },
+        onFallbackChooser = { ctx, text, file ->
+            shareErrorReport(ctx, text, file)
+        }
+    )
+}
+
 internal fun VoiceSelectionFragment.showErrorReportDialog(
     context: android.content.Context,
     reportText: String,
     logFile: File?
 ) {
+    val options = arrayOf(
+        getString(R.string.error_report_send_whatsapp),
+        getString(R.string.error_report_send_telegram),
+        getString(R.string.error_report_share_file)
+    )
     val dialog = MaterialAlertDialogBuilder(context)
         .setTitle(R.string.error_report_dialog_title)
-        .setMessage(R.string.error_report_dialog_message)
-        .setPositiveButton(R.string.error_report_send_telegram) { _, _ ->
-            sendReportToTelegram(context, reportText)
-        }
-        .setNeutralButton(R.string.error_report_share_file) { _, _ ->
-            shareErrorReport(context, reportText, logFile)
+        .setItems(options) { _, which ->
+            when (which) {
+                0 -> shareReportToWhatsApp(context, reportText, logFile)
+                1 -> sendReportToTelegram(context, reportText)
+                2 -> shareErrorReport(context, reportText, logFile)
+            }
         }
         .setNegativeButton(android.R.string.cancel, null)
         .create()

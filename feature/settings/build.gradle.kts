@@ -1,3 +1,5 @@
+import java.util.Properties
+
 // البند 4 — :feature:settings: شاشات الإعدادات والـ ViewModels. يقرأ البيانات
 // عبر :core:data ويدير النطق عبر :core:audio بلا اعتماد على :app.
 plugins {
@@ -9,8 +11,23 @@ plugins {
 android {
     namespace = "com.aymankhattab.nateq.feature.settings"
     compileSdk = 37
+    val localProps = Properties().apply {
+        val localPropFile = rootProject.file("local.properties")
+        if (localPropFile.exists()) {
+            localPropFile.inputStream().use { load(it) }
+        }
+    }
+    val devWhatsApp = (localProps.getProperty("DEVELOPER_WHATSAPP_NUMBER") ?: "")
+        .trim()
+        .replace("\"", "\\\"")
+
     defaultConfig {
         minSdk = 24
+        buildConfigField(
+            "String",
+            "DEVELOPER_WHATSAPP_NUMBER",
+            "\"$devWhatsApp\""
+        )
     }
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -23,6 +40,7 @@ android {
     buildFeatures {
         viewBinding = true
         dataBinding = false
+        buildConfig = true
     }
     // Disable data binding tasks by matching task names
     tasks.all {

@@ -482,9 +482,13 @@
 <string name="report_error_started">بدأ تسجيل السجل التقني — أعد إنتاج المشكلة الآن ثم اضغط «تم — إنهاء وجمع التقرير»</string>
 <string name="report_error_finish">تم — إنهاء وجمع التقرير</string>
 <string name="error_report_dialog_title">سجل الأخطاء والتشخيص</string>
-<string name="error_report_dialog_message">تم تجميع تقرير التشخيص وسجل التطبيق بنجاح.\nيمكنك إرسال السجل مباشرة إلى بوت الدعم في تليجرام أو مشاركته كملف.</string>
+<string name="error_report_dialog_message">تم تجميع تقرير التشخيص وسجل التطبيق بنجاح.\nيمكنك إرسال السجل عبر واتساب أو تليجرام أو مشاركته كملف.</string>
+<string name="error_report_send_whatsapp">إرسال إلى واتساب</string>
 <string name="error_report_send_telegram">إرسال إلى بوت التليجرام</string>
 <string name="error_report_share_file">مشاركة كملف أو نص</string>
+<string name="whatsapp_support_generic_greeting">مرحباً، أحتاج مساعدة في Lord TTS</string>
+<string name="whatsapp_file_not_attached">تعذر إرفاق ملف السجل مباشرة في واتساب؛ الملف محفوظ ويمكنك مشاركته يدوياً.</string>
+<string name="whatsapp_number_not_configured">رقم الدعم غير متوفر، سيتم فتح قائمة المشاركة.</string>
 <string name="error_report_copied_telegram_hint">تم نسخ السجل للحافظة وجاري فتح بوت التليجرام لإرفاق السجل أو لصقه</string>
 <string name="error_report_header_title">سجل أخطاء وتشخيص — Lord TTS</string>
 <string name="error_report_version">الإصدار: %1$s (%2$d)</string>
@@ -745,6 +749,8 @@
     <string name="read_later_back">رجوع</string>
     <string name="read_later_item_actions_title">إجراءات النص</string>
     <string name="changelog_text">
+• مشاركة تقارير الأخطاء والتشخيص عبر واتساب: دعم الإرسال المباشر برقم JID والملف المحجوب مع التحقق من تثبيت واتساب، والانتقال الآمن إلى رابط wa.me بنص تحية عام قصير دون إرفاق أو تشفير أي جزء من السجل، مع إشعار المستخدم بحفظ الملف يدوياً، واستدعاء قائمة المشاركة العامة عند غياب الرقم، وقراءة رقم المطور من إعداد محلي غير متتبع لحماية الخصوصية.
+
 • تحسين فحص المحركات واكتشاف اللغات: التمييز بين الفشل النهائي وبطء المحركات مع مهلة أطول وإعادة محاولة وتعليمها لفترة قصيرة، واسترجاع آخر أصوات مخزنة للمحركات البطيئة، وحفظ النتائج على القرص بين الجلسات، وتهدئة تكرار استعلامات النظام وإلغاء الفحص فور وصول طلب نطق حقيقي.
 
 • معالجة قفل النطق العالق ومهلات التركيز الصوتي: نبض زمني وانتهاء صلاحية تلقائي لقفل النطق العالق وتقليص مهلات إعلانات الأحداث العاجلة وبدء النطق فور منح التركيز المؤجل عبر OnAudioFocusChangeListener.

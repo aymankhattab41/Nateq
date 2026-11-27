@@ -480,9 +480,13 @@
 <string name="report_error_started">Log recording started — reproduce the problem now, then press “Done — Finish and Collect the Report”</string>
 <string name="report_error_finish">Done — Finish and Collect the Report</string>
 <string name="error_report_dialog_title">Error and Diagnostic Log</string>
-<string name="error_report_dialog_message">Diagnostic report and app logs have been collected successfully.\nYou can send the log directly to the Telegram support bot or share it as a file.</string>
+<string name="error_report_dialog_message">Diagnostic report and app logs have been collected successfully.\nYou can send the log via WhatsApp, Telegram, or share it as a file.</string>
+<string name="error_report_send_whatsapp">Send via WhatsApp</string>
 <string name="error_report_send_telegram">Send to Telegram Bot</string>
 <string name="error_report_share_file">Share as file or text</string>
+<string name="whatsapp_support_generic_greeting">Hello, I need help with Lord TTS</string>
+<string name="whatsapp_file_not_attached">Could not attach the log file directly in WhatsApp; the file is saved and can be shared manually.</string>
+<string name="whatsapp_number_not_configured">Support number is not configured, opening share menu.</string>
 <string name="error_report_copied_telegram_hint">Log copied to clipboard, opening Telegram bot to attach or paste</string>
 <string name="error_report_header_title">Error and Diagnostic Log — Lord TTS</string>
 <string name="error_report_version">Version: %1$s (%2$d)</string>
@@ -735,6 +739,8 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Diagnostic error report sharing via WhatsApp: direct JID dispatch with redacted log file verified against installed packages, safe fallback to wa.me with generic greeting only without encoding log text, user notice on unattached file saved to cache, graceful chooser fallback when number is unconfigured, and untracked local property configuration to safeguard developer privacy.
+
 • Engine probe and language discovery improvements: differentiated definitive failure from slow engines with extended retry and short 10-minute slow marking, preserved last known voices on disk for slow engines, throttled repeated system queries, and cancelled active discovery immediately upon real speech requests.
 
 • Stale speech lock recovery and audio focus timeout optimization: heartbeat timestamps with short expiration for stale speaking flags, reduced deferred focus timeouts for urgent events, and immediate playback upon focus grant via OnAudioFocusChangeListener.
