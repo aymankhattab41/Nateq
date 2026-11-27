@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.telecom.Call
 import android.telecom.CallAudioState
+import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
@@ -410,7 +411,13 @@ class LordInCallActivity : AppCompatActivity() {
         mainHandler.removeCallbacks(durationRunnable)
         try {
             unregisterReceiver(callReceiver)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "LordInCallActivity",
+                "فشل إلغاء تسجيل مستقبل أحداث المكالمة: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
         tts?.stop()
         tts?.shutdown()
         tts = null

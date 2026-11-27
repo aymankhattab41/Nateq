@@ -157,7 +157,16 @@ internal class SoundPoolCueSink(
         completionRunnable?.let { handler.removeCallbacks(it) }
         completionRunnable = null
         if (activeStreamId != 0) {
-            try { soundPool.stop(activeStreamId) } catch (_: Throwable) {}
+            try {
+                soundPool.stop(activeStreamId)
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                Log.w(
+                    TAG,
+                    "استثناء إيقاف دفق SoundPool: " +
+                        "${t.javaClass.simpleName}: ${t.message}"
+                )
+            }
             activeStreamId = 0
         }
         // نداءات التحميل المعلَّقة كانت تُنفَّذ مهما حدث بعد stop/play أحدث:
@@ -208,7 +217,16 @@ internal class SoundPoolCueSink(
         completionRunnable?.let { handler.removeCallbacks(it) }
         completionRunnable = null
         if (activeStreamId != 0) {
-            try { soundPool.stop(activeStreamId) } catch (_: Throwable) {}
+            try {
+                soundPool.stop(activeStreamId)
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                Log.w(
+                    TAG,
+                    "استثناء إيقاف دفق SoundPool: " +
+                        "${t.javaClass.simpleName}: ${t.message}"
+                )
+            }
             activeStreamId = 0
         }
         if (activeGuard.compareAndSet(true, false)) {

@@ -548,6 +548,10 @@ internal class AcapelaHostSession(
     @Volatile
     private var lastWarmupFailure: HostResult? = null
 
+    // خيط التنفيذ: يعمل على خيط Binder IPC التابع
+    // للمضيف (وليس خيط الواجهة Main).
+    // الحجب بـ runBlocking مقصود لالتزام واجهة
+    // EngineHostSession.init() المتزامنة مع حماية Mutex.
     override fun init(dataDir: String): HostResult = runBlocking {
         sessionMutex.withLock {
             doInit(dataDir)
@@ -633,6 +637,10 @@ internal class AcapelaHostSession(
                     TAG,
                     "بدء إحماء Acapela الموحد بعد نجاح التهيئة..."
                 )
+                // خيط التنفيذ: يعمل على خيط Binder IPC التابع
+                // للمضيف (وليس خيط الواجهة Main).
+                // الحجب بـ runBlocking مقصود لأن دالة
+                // performUnifiedWarmup معلقة بينما init() متزامنة.
                 val warmupRes = runBlocking {
                     performUnifiedWarmup(candidateVoice)
                 }
@@ -859,7 +867,8 @@ internal class AcapelaHostSession(
         if (currentFp != managed.voiceDirFingerprint) {
             Log.i(
                 TAG,
-                "تغيّرت بصمة ملفات الصوت؛ إزالة عزل الخدمة المسمومة وإعادة المحاولة"
+                "تغيّرت بصمة ملفات الصوت؛ " +
+                    "إزالة عزل الخدمة المسمومة وإعادة المحاولة"
             )
             closeExtended()
             return
@@ -867,7 +876,8 @@ internal class AcapelaHostSession(
         if (managed.poisonRetryCount >= MAX_POISON_RETRIES) {
             Log.w(
                 TAG,
-                "الخدمة المسمومة بلغت حد إعادة المحاولة (${managed.poisonRetryCount})"
+                "الخدمة المسمومة بلغت حد إعادة المحاولة " +
+                    "(${managed.poisonRetryCount})"
             )
         }
     }
@@ -2053,7 +2063,8 @@ internal class AcapelaHostSession(
             if (poisoned.poisonRetryCount >= MAX_POISON_RETRIES) {
                 return HostResult.failure(
                     "VOICE_POISONED",
-                    "عُزل صوت Acapela بعد ${poisoned.poisonRetryCount} محاولات فاشلة: " +
+                    "عُزل صوت Acapela بعد " +
+                        "${poisoned.poisonRetryCount} محاولات فاشلة: " +
                         (poisoned.poisonReason ?: "سبب غير معروف") +
                         ". غيّر ملفات الصوت/أعد تثبيته لإزالة العزل."
                 )

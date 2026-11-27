@@ -174,14 +174,14 @@ object SystemTtsEngineController {
         } else if (!hasPermission(context)) {
             A11ySpeechCoordinator.speakAnnouncement(
                 context = context,
-                text = "فعّل خدمة إمكانية الوصول أولاً",
+                text = "يتطلب منح إذن الإعدادات الآمنة عبر ADB لتبديل المحرك",
                 isInterruptAllowed = true
             )
-            openAccessibilitySettings(context)
+            NextEngineSwitcher.openGuideActivity(context)
             return SetEngineResult(
                 success = false,
                 packageName = pkg,
-                reason = "خدمة إمكانية الوصول غير متصلة"
+                reason = "إذن WRITE_SECURE_SETTINGS غير ممنوح"
             )
         }
 
@@ -197,14 +197,6 @@ object SystemTtsEngineController {
             packageName = pkg,
             reason = "تعذّر التبديل التلقائي، تم فتح شاشة إعدادات النطق"
         )
-    }
-
-    /** نسخة متزامنة للاختبارات الآلية واستدعاءات التوافق. */
-    fun setSystemEngineBlocking(
-        context: Context,
-        pkg: String
-    ): SetEngineResult = kotlinx.coroutines.runBlocking {
-        setSystemEngine(context, pkg)
     }
 
     private suspend fun verifySystemEngine(
@@ -243,7 +235,14 @@ object SystemTtsEngineController {
             } catch (_: Throwable) {
                 try {
                     proc?.destroyForcibly()
-                } catch (_: Throwable) {}
+                } catch (t: Throwable) {
+                    if (t is kotlinx.coroutines.CancellationException) throw t
+                    Log.w(
+                        TAG,
+                        "استثناء إنهاء عملية su: " +
+                            "${t.javaClass.simpleName}: ${t.message}"
+                    )
+                }
                 false
             }
         }
@@ -285,7 +284,14 @@ object SystemTtsEngineController {
                     resolver, KEY_TTS_DEFAULT_RATE, rate
                 )
             }
-        } catch (_: Throwable) {}
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            Log.w(
+                TAG,
+                "استثناء استعادة سرعة النطق: " +
+                    "${t.javaClass.simpleName}: ${t.message}"
+            )
+        }
 
         try {
             val curPitch = Settings.Secure.getString(
@@ -296,7 +302,14 @@ object SystemTtsEngineController {
                     resolver, KEY_TTS_DEFAULT_PITCH, pitch
                 )
             }
-        } catch (_: Throwable) {}
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            Log.w(
+                TAG,
+                "استثناء استعادة نبرة النطق: " +
+                    "${t.javaClass.simpleName}: ${t.message}"
+            )
+        }
 
         try {
             val curLocale = Settings.Secure.getString(
@@ -307,6 +320,13 @@ object SystemTtsEngineController {
                     resolver, KEY_TTS_DEFAULT_LOCALE, locale
                 )
             }
-        } catch (_: Throwable) {}
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            Log.w(
+                TAG,
+                "استثناء استعادة لغة النطق: " +
+                    "${t.javaClass.simpleName}: ${t.message}"
+            )
+        }
     }
 }

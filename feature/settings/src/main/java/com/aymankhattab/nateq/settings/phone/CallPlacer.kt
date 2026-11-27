@@ -286,7 +286,14 @@ class CallPlacer(
                                 ) {
                                     return h
                                 }
-                            } catch (_: Exception) {}
+                            } catch (e: Exception) {
+                                Log.w(
+                                    TAG,
+                                    "فشل مطابقة حساب الهاتف للشريحة: " +
+                                        "${e.javaClass.simpleName}: " +
+                                        "${e.message}"
+                                )
+                            }
                         }
                     }
 

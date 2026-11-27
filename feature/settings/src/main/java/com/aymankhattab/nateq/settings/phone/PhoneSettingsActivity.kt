@@ -307,13 +307,25 @@ class PhoneSettingsActivity : AppCompatActivity() {
             }
             defaultDialerLauncher.launch(intent)
             return
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "PhoneSettingsActivity",
+                "فشل طلب تعيين تطبيق الهاتف الافتراضي عبر تيليكوم: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
 
         try {
             val intent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
             defaultDialerLauncher.launch(intent)
             return
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "PhoneSettingsActivity",
+                "فشل فتح إعدادات التطبيقات الافتراضية: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
 
         try {
             val intent = Intent(
@@ -322,7 +334,13 @@ class PhoneSettingsActivity : AppCompatActivity() {
                 data = Uri.fromParts("package", packageName, null)
             }
             defaultDialerLauncher.launch(intent)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "PhoneSettingsActivity",
+                "فشل فتح تفاصيل التطبيق في الإعدادات: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     private fun setupModeSection() {

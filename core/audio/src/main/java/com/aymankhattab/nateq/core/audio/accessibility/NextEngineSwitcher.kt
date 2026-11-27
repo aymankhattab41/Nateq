@@ -6,14 +6,17 @@ import android.util.Log
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import java.util.ArrayList
+import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * يبدّل محرك TTS الافتراضي على مستوى النظام بالكامل.
@@ -29,6 +32,16 @@ object NextEngineSwitcher {
         CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private var activeSwitchJob: Job? = null
     private val accumulatedSteps = AtomicInteger(0)
+    private val pendingCallbacks =
+        Collections.synchronizedList(mutableListOf<(SwitchResult?) -> Unit>())
+
+    private fun drainCallbacks(): List<(SwitchResult?) -> Unit> {
+        synchronized(pendingCallbacks) {
+            val list = ArrayList(pendingCallbacks)
+            pendingCallbacks.clear()
+            return list
+        }
+    }
 
     data class SwitchResult(
         val packageName: String,
@@ -67,30 +80,60 @@ object NextEngineSwitcher {
     }
 
     /**
+     * مطابقة أسماء الحزم مع اعتبار اسم Lord TTS الافتراضي واسم حزمته مترادفين.
+     */
+    internal fun isSameEngine(pkg1: String?, pkg2: String?): Boolean {
+        if (pkg1 == null || pkg2 == null) return false
+        if (pkg1 == pkg2) return true
+        val isLord1 = pkg1 == LORD_TTS_PACKAGE ||
+            pkg1 == "com.aymankhattab.nateq"
+        val isLord2 = pkg2 == LORD_TTS_PACKAGE ||
+            pkg2 == "com.aymankhattab.nateq"
+        return isLord1 && isLord2
+    }
+
+    /**
+     * البحث عن فهرس المحرك الحالي في القائمة.
+     */
+    internal fun findEngineIndex(
+        engines: List<EnginePicker.InstalledEngine>,
+        currentPackage: String?
+    ): Int {
+        val effective = currentPackage ?: LORD_TTS_PACKAGE
+        return engines.indexOfFirst { isSameEngine(it.packageName, effective) }
+    }
+
+    /**
+     * حساب المحرك المستهدف حسب الخطوات
+     * (التالي للأول والسابق للأخير عند الغياب).
+     */
+    internal fun resolveTargetEngine(
+        engines: List<EnginePicker.InstalledEngine>,
+        currentPackage: String?,
+        steps: Int
+    ): EnginePicker.InstalledEngine? {
+        if (engines.isEmpty()) return null
+        val curIndex = findEngineIndex(engines, currentPackage)
+        val targetIndex = if (curIndex in engines.indices) {
+            (curIndex + steps).mod(engines.size)
+        } else {
+            if (steps >= 0) {
+                (steps - 1).mod(engines.size)
+            } else {
+                (engines.size + steps).mod(engines.size)
+            }
+        }
+        return engines[targetIndex]
+    }
+
+    /**
      * يختار المحرك التالي في الترتيب الدائري.
      */
     internal fun nextEngine(
         engines: List<EnginePicker.InstalledEngine>,
         currentPackage: String?
-    ): EnginePicker.InstalledEngine? {
-        if (engines.isEmpty()) return null
-        val effective = currentPackage ?: LORD_TTS_PACKAGE
-        val currentIndex = engines.indexOfFirst {
-            it.packageName == effective ||
-                (effective == LORD_TTS_PACKAGE &&
-                    (it.packageName == LORD_TTS_PACKAGE ||
-                        it.packageName == "com.aymankhattab.nateq")) ||
-                (effective == "com.aymankhattab.nateq" &&
-                    (it.packageName == LORD_TTS_PACKAGE ||
-                        it.packageName == "com.aymankhattab.nateq"))
-        }
-        val nextIndex = if (currentIndex < 0) {
-            0
-        } else {
-            (currentIndex + 1).mod(engines.size)
-        }
-        return engines[nextIndex]
-    }
+    ): EnginePicker.InstalledEngine? =
+        resolveTargetEngine(engines, currentPackage, 1)
 
     /**
      * يختار المحرك السابق في الترتيب الدائري.
@@ -98,25 +141,8 @@ object NextEngineSwitcher {
     internal fun previousEngine(
         engines: List<EnginePicker.InstalledEngine>,
         currentPackage: String?
-    ): EnginePicker.InstalledEngine? {
-        if (engines.isEmpty()) return null
-        val effective = currentPackage ?: LORD_TTS_PACKAGE
-        val currentIndex = engines.indexOfFirst {
-            it.packageName == effective ||
-                (effective == LORD_TTS_PACKAGE &&
-                    (it.packageName == LORD_TTS_PACKAGE ||
-                        it.packageName == "com.aymankhattab.nateq")) ||
-                (effective == "com.aymankhattab.nateq" &&
-                    (it.packageName == LORD_TTS_PACKAGE ||
-                        it.packageName == "com.aymankhattab.nateq"))
-        }
-        val prevIndex = if (currentIndex <= 0) {
-            engines.size - 1
-        } else {
-            currentIndex - 1
-        }
-        return engines[prevIndex]
-    }
+    ): EnginePicker.InstalledEngine? =
+        resolveTargetEngine(engines, currentPackage, -1)
 
     /**
      * يبدّل محرك النطق الافتراضي للنظام إلى المحرك التالي بشكل غير متزامن.
@@ -148,9 +174,6 @@ object NextEngineSwitcher {
         }
     }
 
-    fun switchToNextBlocking(context: Context): SwitchResult? =
-        kotlinx.coroutines.runBlocking { switchToNext(context) }
-
     /**
      * يبدّل محرك النطق الافتراضي للنظام إلى المحرك السابق بشكل غير متزامن.
      */
@@ -181,9 +204,6 @@ object NextEngineSwitcher {
         }
     }
 
-    fun switchToPreviousBlocking(context: Context): SwitchResult? =
-        kotlinx.coroutines.runBlocking { switchToPrevious(context) }
-
     /**
      * تشغيل عملية التبديل بجلسة قابلة للإلغاء وتجميع الضغطات المتلاحقة.
      * تضمن عدم حجز خيط الواجهة أو خدمة إمكانية الوصول.
@@ -196,50 +216,56 @@ object NextEngineSwitcher {
         val appContext = context.applicationContext
         val step = if (isNext) 1 else -1
         accumulatedSteps.addAndGet(step)
+        if (onComplete != null) {
+            pendingCallbacks.add(onComplete)
+        }
 
         activeSwitchJob?.cancel()
         activeSwitchJob = switchScope.launch {
-            delay(120L)
-            val steps = accumulatedSteps.getAndSet(0)
-            if (steps == 0) return@launch
+            try {
+                delay(120L)
+                val steps = accumulatedSteps.getAndSet(0)
+                if (steps == 0) return@launch
 
-            val engines = availableEngines(appContext)
-            if (engines.isEmpty()) {
-                announce(appContext, "لا يوجد محرك نطق مثبت")
-                onComplete?.invoke(null)
-                return@launch
+                val engines = availableEngines(appContext)
+                if (engines.isEmpty()) {
+                    announce(appContext, "لا يوجد محرك نطق مثبت")
+                    drainCallbacks().forEach { it.invoke(null) }
+                    return@launch
+                }
+
+                val current =
+                    SystemTtsEngineController.currentSystemEngine(appContext)
+                        ?: appContext.packageName
+
+                val target = resolveTargetEngine(engines, current, steps)
+                if (target == null) {
+                    drainCallbacks().forEach { it.invoke(null) }
+                    return@launch
+                }
+
+                val result = withContext(NonCancellable) {
+                    SystemTtsEngineController.setSystemEngine(
+                        appContext,
+                        target.packageName
+                    )
+                }
+                val switchRes = if (result.success) {
+                    announce(appContext, "محرك الهاتف الآن: ${target.label}")
+                    SwitchResult(
+                        target.packageName,
+                        target.label,
+                        engines.size
+                    )
+                } else {
+                    val reason = result.reason ?: "خطأ غير معروف"
+                    announce(appContext, "فشل تبديل المحرك: $reason")
+                    null
+                }
+                drainCallbacks().forEach { it.invoke(switchRes) }
+            } finally {
+                drainCallbacks().forEach { it.invoke(null) }
             }
-
-            val current =
-                SystemTtsEngineController.currentSystemEngine(appContext)
-                    ?: appContext.packageName
-
-            val curIndex = engines.indexOfFirst {
-                it.packageName == current ||
-                    (current == LORD_TTS_PACKAGE &&
-                        (it.packageName == LORD_TTS_PACKAGE ||
-                            it.packageName == "com.aymankhattab.nateq")) ||
-                    (current == "com.aymankhattab.nateq" &&
-                        (it.packageName == LORD_TTS_PACKAGE ||
-                            it.packageName == "com.aymankhattab.nateq"))
-            }.let { if (it < 0) 0 else it }
-
-            val targetIndex = (curIndex + steps).mod(engines.size)
-            val target = engines[targetIndex]
-
-            val result = SystemTtsEngineController.setSystemEngine(
-                appContext,
-                target.packageName
-            )
-            val switchRes = if (result.success) {
-                announce(appContext, "محرك الهاتف الآن: ${target.label}")
-                SwitchResult(target.packageName, target.label, engines.size)
-            } else {
-                val reason = result.reason ?: "خطأ غير معروف"
-                announce(appContext, "فشل تبديل المحرك: $reason")
-                null
-            }
-            onComplete?.invoke(switchRes)
         }
     }
 
@@ -252,9 +278,11 @@ object NextEngineSwitcher {
             SystemTtsEngineController.currentSystemEngine(appContext)
                 ?: appContext.packageName
         return availableEngines(appContext)
-            .firstOrNull { it.packageName == currentPkg }
+            .firstOrNull { isSameEngine(it.packageName, currentPkg) }
             ?.label
-            ?: if (currentPkg == appContext.packageName) {
+            ?: if (isSameEngine(currentPkg, LORD_TTS_PACKAGE) ||
+                isSameEngine(currentPkg, appContext.packageName)
+            ) {
                 "Lord TTS"
             } else {
                 currentPkg
@@ -277,7 +305,7 @@ object NextEngineSwitcher {
         }
     }
 
-    private fun openGuideActivity(context: Context) {
+    internal fun openGuideActivity(context: Context) {
         try {
             val guideClass = "com.aymankhattab.nateq.settings." +
                 "WriteSecureSettingsGuideActivity"

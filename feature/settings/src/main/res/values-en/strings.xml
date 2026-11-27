@@ -739,6 +739,8 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• TTS Engine Switching, Accessibility &amp; Thread Safety Enhancements: Unified next and previous engine resolution when the current engine is unlisted, recognized Lord TTS package synonyms consistently for accurate label display, redirected users to the ADB secure settings guide activity with clear instructions when permissions are missing, removed unused blocking methods, coalesced rapid engine switch requests with guaranteed callback dispatch and non-cancellable commit, connected protected app exit handling asynchronously, documented host session execution threading off the main UI thread, fixed generation timeout phrasing, and introduced comprehensive privacy-safe warning logs for empty catch blocks.
+
 • Diagnostic error report sharing via WhatsApp: direct JID dispatch with redacted log file verified against installed packages, safe fallback to wa.me with generic greeting only without encoding log text, user notice on unattached file saved to cache, graceful chooser fallback when number is unconfigured, and untracked local property configuration to safeguard developer privacy.
 
 • Engine probe and language discovery improvements: differentiated definitive failure from slow engines with extended retry and short 10-minute slow marking, preserved last known voices on disk for slow engines, throttled repeated system queries, and cancelled active discovery immediately upon real speech requests.

@@ -269,58 +269,67 @@ class ProtectedAppRound48Test {
     }
 
     @Test
-    fun partialSuspend_togglesStateCorrectly() {
-        assertFalse(ProtectedAppManager.isPartiallySuspended)
+    fun partialSuspend_togglesStateCorrectly() =
+        kotlinx.coroutines.test.runTest {
+            assertFalse(ProtectedAppManager.isPartiallySuspended)
 
-        val app = ProtectedApp(
-            packageName = "com.banking.app",
-            label = "بنك مصر",
-            mode = ProtectedApp.MODE_PARTIAL_SUSPEND
-        )
-        ProtectedAppManager.handleAppEntry(context, null, app)
-
-        assertTrue(ProtectedAppManager.isPartiallySuspended)
-        assertEquals(
-            "com.banking.app",
-            ProtectedAppManager.partiallySuspendedPkg
-        )
-
-        ProtectedAppManager.handleAppExit(context, "com.banking.app", "بنك مصر")
-        assertFalse(ProtectedAppManager.isPartiallySuspended)
-    }
-
-    @Test
-    fun fullDisable_recordsSuspendedAppAndRestoresState() {
-        applyTestingReadiness()
-        val service = org.robolectric.Robolectric.buildService(
-            NateqAccessibilityService::class.java
-        ).create().get()
-        AccessibilityBridge.registerService(service)
-        try {
             val app = ProtectedApp(
-                packageName = "com.instapay",
-                label = "إنستاباي",
-                mode = ProtectedApp.MODE_FULL_DISABLE
+                packageName = "com.banking.app",
+                label = "بنك مصر",
+                mode = ProtectedApp.MODE_PARTIAL_SUSPEND
             )
-            settings.setSuspendedProtectedApp(null)
             ProtectedAppManager.handleAppEntry(context, null, app)
-            shadowOf(Looper.getMainLooper()).idle()
 
-            assertEquals("com.instapay", settings.getSuspendedProtectedApp())
-            assertTrue(settings.getSuspendedProtectedAppTimestamp() > 0L)
+            assertTrue(ProtectedAppManager.isPartiallySuspended)
+            assertEquals(
+                "com.banking.app",
+                ProtectedAppManager.partiallySuspendedPkg
+            )
 
-            AccessibilityBridge.registerService(service)
             ProtectedAppManager.handleAppExit(
                 context,
-                "com.instapay",
-                "إنستاباي"
+                "com.banking.app",
+                "بنك مصر"
             )
-            shadowOf(Looper.getMainLooper()).idle()
-            assertEquals(null, settings.getSuspendedProtectedApp())
-        } finally {
-            AccessibilityBridge.unregisterService(service)
+            assertFalse(ProtectedAppManager.isPartiallySuspended)
         }
-    }
+
+    @Test
+    fun fullDisable_recordsSuspendedAppAndRestoresState() =
+        kotlinx.coroutines.test.runTest {
+            applyTestingReadiness()
+            val service = org.robolectric.Robolectric.buildService(
+                NateqAccessibilityService::class.java
+            ).create().get()
+            AccessibilityBridge.registerService(service)
+            try {
+                val app = ProtectedApp(
+                    packageName = "com.instapay",
+                    label = "إنستاباي",
+                    mode = ProtectedApp.MODE_FULL_DISABLE
+                )
+                settings.setSuspendedProtectedApp(null)
+                ProtectedAppManager.handleAppEntry(context, null, app)
+                shadowOf(Looper.getMainLooper()).idle()
+
+                assertEquals(
+                    "com.instapay",
+                    settings.getSuspendedProtectedApp()
+                )
+                assertTrue(settings.getSuspendedProtectedAppTimestamp() > 0L)
+
+                AccessibilityBridge.registerService(service)
+                ProtectedAppManager.handleAppExit(
+                    context,
+                    "com.instapay",
+                    "إنستاباي"
+                )
+                shadowOf(Looper.getMainLooper()).idle()
+                assertEquals(null, settings.getSuspendedProtectedApp())
+            } finally {
+                AccessibilityBridge.unregisterService(service)
+            }
+        }
 
     @Test
     fun fullDisable_recentSuspension_isNotHandledTwice() {

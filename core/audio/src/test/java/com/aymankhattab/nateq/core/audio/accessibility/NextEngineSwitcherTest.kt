@@ -1,14 +1,19 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
+import android.app.Application
 import android.content.Context
+import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 
 @RunWith(RobolectricTestRunner::class)
 class NextEngineSwitcherTest {
@@ -134,4 +139,84 @@ class NextEngineSwitcherTest {
             fromOne?.packageName
         )
     }
+
+    @Test
+    fun resolveTargetEngine_unknownEngineWithNext_returnsFirstEngine() {
+        val target = NextEngineSwitcher.resolveTargetEngine(
+            engines = engines,
+            currentPackage = "unknown.package",
+            steps = 1
+        )
+        assertEquals("one", target?.packageName)
+    }
+
+    @Test
+    fun resolveTargetEngine_unknownEngineWithPrevious_returnsLastEngine() {
+        val target = NextEngineSwitcher.resolveTargetEngine(
+            engines = engines,
+            currentPackage = "unknown.package",
+            steps = -1
+        )
+        assertEquals("three", target?.packageName)
+    }
+
+    @Test
+    fun isSameEngine_recognizesLordTtsAndDefaultSynonyms() {
+        assertTrue(
+            NextEngineSwitcher.isSameEngine(
+                "com.aymankhattab.nateq.default",
+                "com.aymankhattab.nateq"
+            )
+        )
+        assertTrue(
+            NextEngineSwitcher.isSameEngine(
+                "com.aymankhattab.nateq",
+                "com.aymankhattab.nateq.default"
+            )
+        )
+        assertFalse(
+            NextEngineSwitcher.isSameEngine(
+                "com.google.android.tts",
+                "com.aymankhattab.nateq"
+            )
+        )
+    }
+
+    @Test
+    fun selectedEngineLabel_returnsLordTtsForDefaultSynonym() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        android.provider.Settings.Secure.putString(
+            context.contentResolver,
+            android.provider.Settings.Secure.TTS_DEFAULT_SYNTH,
+            "com.aymankhattab.nateq.default"
+        )
+        val labelDefault = NextEngineSwitcher.selectedEngineLabel(context)
+        assertEquals("Lord TTS", labelDefault)
+
+        android.provider.Settings.Secure.putString(
+            context.contentResolver,
+            android.provider.Settings.Secure.TTS_DEFAULT_SYNTH,
+            NextEngineSwitcher.LORD_TTS_PACKAGE
+        )
+        val labelDirect = NextEngineSwitcher.selectedEngineLabel(context)
+        assertEquals("Lord TTS", labelDirect)
+    }
+
+    @Test
+    fun setSystemEngine_missingPermission_opensGuideActivity() =
+        kotlinx.coroutines.test.runTest {
+            val app = ApplicationProvider.getApplicationContext<Application>()
+            val result = SystemTtsEngineController.setSystemEngine(
+                app,
+                "com.google.android.tts"
+            )
+            assertFalse(result.success)
+
+            val startedIntent = shadowOf(app).nextStartedActivity
+            assertEquals(
+                "com.aymankhattab.nateq.settings." +
+                    "WriteSecureSettingsGuideActivity",
+                startedIntent?.component?.className
+            )
+        }
 }

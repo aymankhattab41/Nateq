@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.enginehost
 import android.content.Context
 import android.os.FileObserver
 import android.system.Os
+import android.util.Log
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 object NativeFileProbe {
 
+    private const val TAG = "NativeFileProbe"
     private const val PROBE_SECTION = "--- ملفات لمستها المكتبة ---"
 
     /** أحداث inotify المرصودة مجمعة. */
@@ -143,7 +145,12 @@ object NativeFileProbe {
                     try {
                         obs.startWatching()
                         observers.add(obs)
-                    } catch (_: Throwable) {
+                    } catch (t: Throwable) {
+                        Log.w(
+                            TAG,
+                            "استثناء بدء مراقبة inotify: " +
+                                "${t.javaClass.simpleName}: ${t.message}"
+                        )
                     }
                 }
             }
@@ -155,7 +162,12 @@ object NativeFileProbe {
                     capturedFdTargets.addAll(current)
                     try {
                         Thread.sleep(1)
-                    } catch (_: InterruptedException) {
+                    } catch (e: InterruptedException) {
+                        Log.d(
+                            TAG,
+                            "مقاطعة نوم خيط فحص fd: " +
+                                "${e.javaClass.simpleName}: ${e.message}"
+                        )
                         break
                     }
                 }
@@ -170,12 +182,24 @@ object NativeFileProbe {
             try {
                 pollingThread?.interrupt()
                 pollingThread?.join(200)
-            } catch (_: Throwable) {
+            } catch (e: Throwable) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                Log.w(
+                    TAG,
+                    "فشل إيقاف خيط فحص الملفات: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
             }
             for (obs in observers) {
                 try {
                     obs.stopWatching()
-                } catch (_: Throwable) {
+                } catch (e: Throwable) {
+                    if (e is java.util.concurrent.CancellationException) throw e
+                    Log.w(
+                        TAG,
+                        "فشل إيقاف مراقب الملفات: " +
+                            "${e.javaClass.simpleName}: ${e.message}"
+                    )
                 }
             }
             observers.clear()

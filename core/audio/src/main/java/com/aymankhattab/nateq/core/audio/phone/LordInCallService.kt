@@ -181,7 +181,13 @@ class LordInCallService : InCallService(), SensorEventListener {
             if (proximityWakeLock != null && !proximityWakeLock!!.isHeld) {
                 proximityWakeLock?.acquire()
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "LordInCallService",
+                "فشل حيازة قفل مستشعر التقارب: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     private fun releaseProximityWakeLock() {
@@ -189,7 +195,13 @@ class LordInCallService : InCallService(), SensorEventListener {
             if (proximityWakeLock != null && proximityWakeLock!!.isHeld) {
                 proximityWakeLock?.release()
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "LordInCallService",
+                "فشل تحرير قفل مستشعر التقارب: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     fun selectPrimaryCall(): Call? {
@@ -327,7 +339,13 @@ class LordInCallService : InCallService(), SensorEventListener {
                 if (!userMuteIntent && prevState != Call.STATE_HOLDING) {
                     try {
                         setMuted(false)
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        Log.w(
+                            "LordInCallService",
+                            "فشل إلغاء كتم الصوت عند استئناف المكالمة: " +
+                                "${e.javaClass.simpleName}: ${e.message}"
+                        )
+                    }
                 }
 
                 acquireProximityWakeLock()
@@ -445,7 +463,13 @@ class LordInCallService : InCallService(), SensorEventListener {
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
             startActivity(intent)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "LordInCallService",
+                "فشل فتح واجهة المكالمة الجارية: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     fun answerCall(targetCall: Call? = null) {
@@ -454,7 +478,13 @@ class LordInCallService : InCallService(), SensorEventListener {
         } ?: currentCall
         try {
             call?.answer(VideoProfile.STATE_AUDIO_ONLY)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "LordInCallService",
+                "فشل الرد على المكالمة: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     fun rejectCall(targetCall: Call? = null) {
@@ -467,14 +497,26 @@ class LordInCallService : InCallService(), SensorEventListener {
             } else {
                 call.disconnect()
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "LordInCallService",
+                "فشل رفض أو إنهاء المكالمة: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     fun disconnectCall(targetCall: Call? = null) {
         val call = targetCall ?: currentCall ?: return
         try {
             call.disconnect()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "LordInCallService",
+                "فشل قطع المكالمة: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     fun sendDtmf(digit: Char, targetCall: Call? = null) {
@@ -486,7 +528,13 @@ class LordInCallService : InCallService(), SensorEventListener {
             val stopRunnable = Runnable {
                 try {
                     call.stopDtmfTone()
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Log.w(
+                        "LordInCallService",
+                        "فشل إيقاف نغمة DTMF: " +
+                            "${e.javaClass.simpleName}: ${e.message}"
+                    )
+                }
             }
             pendingDtmfStop = stopRunnable
             dtmfHandler.postDelayed(stopRunnable, 160L)

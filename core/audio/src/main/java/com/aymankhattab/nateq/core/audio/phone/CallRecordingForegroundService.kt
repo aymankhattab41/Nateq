@@ -42,7 +42,14 @@ class CallRecordingForegroundService : Service() {
                 } else {
                     context.startService(intent)
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                android.util.Log.w(
+                    "CallRecordingForegroundService",
+                    "فشل تشغيل خدمة تسجيل المكالمات: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
         }
 
         fun stop(context: Context) {
@@ -52,7 +59,14 @@ class CallRecordingForegroundService : Service() {
             )
             try {
                 context.stopService(intent)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                android.util.Log.w(
+                    "CallRecordingForegroundService",
+                    "فشل إيقاف خدمة تسجيل المكالمات: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
         }
     }
 

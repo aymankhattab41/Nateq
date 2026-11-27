@@ -970,7 +970,13 @@ class LordKeyboardService : InputMethodService(),
             recognitionListener = null
             try {
                 speechRecognizer?.cancel()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                android.util.Log.w(
+                    "LordKeyboardService",
+                    "فشل إلغاء التعرف الصوتي: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
             }
             if (announce) {
                 vibrateFeedback(40L)

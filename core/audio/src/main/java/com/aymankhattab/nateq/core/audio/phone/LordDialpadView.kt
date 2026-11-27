@@ -600,13 +600,25 @@ class LordDialpadView @JvmOverloads constructor(
         if (!soundEnabled) return
         try {
             toneGenerator?.startTone(tone, 120)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "فشل تشغيل نغمة لوحة الاتصال: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     private fun stopTone() {
         try {
             toneGenerator?.stopTone()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "فشل إيقاف نغمة لوحة الاتصال: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     private fun triggerHaptic(isStrong: Boolean) {

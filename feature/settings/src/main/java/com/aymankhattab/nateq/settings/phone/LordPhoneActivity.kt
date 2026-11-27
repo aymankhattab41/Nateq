@@ -439,13 +439,25 @@ class LordPhoneActivity : AppCompatActivity() {
             }
             defaultDialerLauncher.launch(intent)
             return
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "LordPhoneActivity",
+                "فشل طلب تعيين تطبيق الهاتف الافتراضي عبر تيليكوم: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
 
         try {
             val intent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
             defaultDialerLauncher.launch(intent)
             return
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "LordPhoneActivity",
+                "فشل فتح إعدادات التطبيقات الافتراضية: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
 
         try {
             val intent = Intent(
@@ -454,7 +466,13 @@ class LordPhoneActivity : AppCompatActivity() {
                 data = Uri.fromParts("package", packageName, null)
             }
             defaultDialerLauncher.launch(intent)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                "LordPhoneActivity",
+                "فشل فتح صفحة تفاصيل التطبيق في الإعدادات: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     private fun makeCall(
@@ -995,7 +1013,13 @@ class LordPhoneActivity : AppCompatActivity() {
                         getString(R.string.phone_open_recordings_folder)
                     )
                 )
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(
+                    "LordPhoneActivity",
+                    "فشل فتح مجلد التسجيلات عبر منتقي التطبيقات: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
         }
     }
 
@@ -1560,7 +1584,13 @@ class LordPhoneActivity : AppCompatActivity() {
                                 0,
                                 0
                             )
-                        } catch (_: Exception) {}
+                        } catch (e: Exception) {
+                            Log.w(
+                                "LordPhoneActivity",
+                                "فشل بدء مرسل نية حذف التسجيل: " +
+                                    "${e.javaClass.simpleName}: ${e.message}"
+                            )
+                        }
                     }
                     is CallRecordManager.DeleteRecordResult
                         .PermissionDenied -> {

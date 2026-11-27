@@ -304,7 +304,13 @@ object CallRecordManager {
         try {
             raf.seek(0)
             raf.write(initialHeader)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "فشل كتابة رأس wav الأولي: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
 
         val shortBuffer = ShortArray(bufferSize / 2)
         val byteBuffer = ByteArray(bufferSize)
@@ -406,10 +412,24 @@ object CallRecordManager {
                                 )
                                 try {
                                     activeRecord.stop()
-                                } catch (_: Exception) {}
+                                } catch (e: Exception) {
+                                    Log.w(
+                                        TAG,
+                                        "فشل إيقاف التسجيل الصامت: " +
+                                            "${e.javaClass.simpleName}: " +
+                                            "${e.message}"
+                                    )
+                                }
                                 try {
                                     activeRecord.release()
-                                } catch (_: Exception) {}
+                                } catch (e: Exception) {
+                                    Log.w(
+                                        TAG,
+                                        "فشل تحرير مسجل الصوت الصامت: " +
+                                            "${e.javaClass.simpleName}: " +
+                                            "${e.message}"
+                                    )
+                                }
                                 synchronized(stateLock) {
                                     activeAudioRecord = null
                                 }
@@ -495,10 +515,22 @@ object CallRecordManager {
             }
             try {
                 activeRecord?.stop()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(
+                    TAG,
+                    "فشل إيقاف مسجل الصوت في finally: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
             try {
                 activeRecord?.release()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(
+                    TAG,
+                    "فشل تحرير مسجل الصوت في finally: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
 
             try {
                 if (totalAudioLen == 0L && raf.length() > 44L) {
@@ -507,7 +539,13 @@ object CallRecordManager {
                 raf.seek(0)
                 raf.write(buildWavHeader(totalAudioLen, SAMPLE_RATE, 1, 16))
                 raf.close()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(
+                    TAG,
+                    "فشل إنهاء كتابة ملف التسجيل: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
 
             var copySucceeded = false
             try {
@@ -547,7 +585,13 @@ object CallRecordManager {
             } finally {
                 try {
                     target.tempFile.delete()
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Log.w(
+                        TAG,
+                        "فشل حذف ملف التسجيل المؤقت: " +
+                            "${e.javaClass.simpleName}: ${e.message}"
+                    )
+                }
             }
 
             var actualSize = 0L
@@ -562,7 +606,13 @@ object CallRecordManager {
                         )?.use {
                             actualSize = it.statSize
                         }
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        Log.w(
+                            TAG,
+                            "فشل قراءة حجم ملف التسجيل: " +
+                                "${e.javaClass.simpleName}: ${e.message}"
+                        )
+                    }
                 }
             }
 
@@ -587,11 +637,23 @@ object CallRecordManager {
                 if (target.uri != null) {
                     try {
                         context.contentResolver.delete(target.uri, null, null)
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        Log.w(
+                            TAG,
+                            "فشل حذف التسجيل الفارغ من الوسائط: " +
+                                "${e.javaClass.simpleName}: ${e.message}"
+                        )
+                    }
                 } else if (target.file != null && target.file.exists()) {
                     try {
                         target.file.delete()
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        Log.w(
+                            TAG,
+                            "فشل حذف ملف التسجيل الفارغ: " +
+                                "${e.javaClass.simpleName}: ${e.message}"
+                        )
+                    }
                 }
             }
 
@@ -604,7 +666,13 @@ object CallRecordManager {
                         .TtsSettingsAutomation
                         .checkAndRunPendingSwitch(appCtx)
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(
+                    TAG,
+                    "فشل فحص التبديل المؤجل في نهاية التسجيل: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
 
             synchronized(stateLock) {
                 recordingState = RecordingState.IDLE
@@ -632,7 +700,13 @@ object CallRecordManager {
                 String::class.java
             )
             method.invoke(null, context, warning)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "فشل نطق تحذير حظر الصوت عبر الانعكاس: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     /**
@@ -660,7 +734,13 @@ object CallRecordManager {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             try {
                 threadToWait?.join(5000L)
-            } catch (_: InterruptedException) {}
+            } catch (e: InterruptedException) {
+                Log.w(
+                    TAG,
+                    "مقاطعة انتظار خيط التسجيل: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
         }
 
         return item
@@ -740,7 +820,13 @@ object CallRecordManager {
                         )
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(
+                    TAG,
+                    "فشل قراءة سجل التسجيلات من الملف: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
         }
 
         list.sortByDescending { it.timestamp }
@@ -905,7 +991,13 @@ object CallRecordManager {
                 Log.e(TAG, "Failed atomic index save: ${e.message}")
                 try {
                     tempFile.delete()
-                } catch (_: Exception) {}
+                } catch (delEx: Exception) {
+                    Log.w(
+                        TAG,
+                        "فشل حذف الملف المؤقت لفهرس التسجيلات: " +
+                            "${delEx.javaClass.simpleName}: ${delEx.message}"
+                    )
+                }
                 false
             }
         }

@@ -249,7 +249,11 @@ class EmbeddedEngineHostService : Service() {
                                 Thread.sleep(20)
                                 continue
                             }
-                            if (speakGate.tryAcquire(25, TimeUnit.MILLISECONDS)) {
+                            if (speakGate.tryAcquire(
+                                    25,
+                                    TimeUnit.MILLISECONDS
+                                )
+                            ) {
                                 gateHeld = true
                                 break
                             }
@@ -326,6 +330,10 @@ class EmbeddedEngineHostService : Service() {
                         HostWatchdog.DEFAULT_POLL_MS,
                         TimeUnit.MILLISECONDS
                     )
+                    // خيط التنفيذ: يعمل على خيط خلفي من مسبح executor
+                    // التابع للمضيف (وليس خيط الواجهة Main).
+                    // الحجب بـ runBlocking مقصود لانتظار دالة
+                    // session.speak المعلقة قبل إغلاق sink.
                     var res = try {
                         runBlocking {
                             session.speak(request, sink, cancelled)
@@ -341,7 +349,8 @@ class EmbeddedEngineHostService : Service() {
                     if (timedOut.get() && res.ok) {
                         res = HostResult.failure(
                             "GENERATION_TIMEOUT",
-                            "خمل نطق $id ${budgetMs}ms بلا تقدّم"
+                            "خمول نطق $id " +
+                                "${budgetMs}ms بلا تقدّم"
                         )
                     }
                     sink.end(

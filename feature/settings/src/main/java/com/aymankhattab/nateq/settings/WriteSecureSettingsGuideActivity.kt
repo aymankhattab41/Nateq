@@ -71,7 +71,14 @@ class WriteSecureSettingsGuideActivity : AppCompatActivity() {
             Log.w(TAG, "Failed to open development settings", t)
             try {
                 startActivity(Intent(Settings.ACTION_SETTINGS))
-            } catch (_: Throwable) {}
+            } catch (t2: Throwable) {
+                if (t2 is java.util.concurrent.CancellationException) throw t2
+                Log.w(
+                    TAG,
+                    "فشل فتح إعدادات النظام البديلة: " +
+                        "${t2.javaClass.simpleName}: ${t2.message}"
+                )
+            }
         }
     }
 
@@ -86,7 +93,16 @@ class WriteSecureSettingsGuideActivity : AppCompatActivity() {
             } catch (_: Throwable) {
                 try {
                     startActivity(Intent(Settings.ACTION_SETTINGS))
-                } catch (_: Throwable) {}
+                } catch (t2: Throwable) {
+                    if (t2 is java.util.concurrent.CancellationException) {
+                        throw t2
+                    }
+                    Log.w(
+                        TAG,
+                        "فشل فتح إعدادات النظام البديلة لـ TTS: " +
+                            "${t2.javaClass.simpleName}: ${t2.message}"
+                    )
+                }
             }
         }
     }

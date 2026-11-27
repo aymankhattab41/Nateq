@@ -3966,7 +3966,13 @@ speechCycle.incrementAndGet()
         }
         try {
             currentTts?.shutdown()
-        } catch (ignored: Throwable) {
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            Log.w(
+                TAG,
+                "استثناء إغلاق محرك النطق: " +
+                    "${t.javaClass.simpleName}: ${t.message}"
+            )
         }
         if (tts === currentTts) {
             tts = null

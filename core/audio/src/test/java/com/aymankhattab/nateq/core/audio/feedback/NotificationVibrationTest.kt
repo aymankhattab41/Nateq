@@ -78,40 +78,43 @@ class NotificationVibrationTest {
     }
 
     @Test
-    fun protectedAppNotificationChannel_vibrationDisabled() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val nm = context.getSystemService(NotificationManager::class.java)
+    fun protectedAppNotificationChannel_vibrationDisabled() =
+        kotlinx.coroutines.test.runTest {
+            val context = ApplicationProvider.getApplicationContext<Context>()
+            val nm = context.getSystemService(NotificationManager::class.java)
 
-        // محاكاة وجود القناة القديمة للتحقق من حذفها
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val oldChannel = android.app.NotificationChannel(
-                "protected_app_channel",
-                "Old Channel",
-                NotificationManager.IMPORTANCE_HIGH
+            // محاكاة وجود القناة القديمة للتحقق من حذفها
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val oldChannel = android.app.NotificationChannel(
+                    "protected_app_channel",
+                    "Old Channel",
+                    NotificationManager.IMPORTANCE_HIGH
+                )
+                nm.createNotificationChannel(oldChannel)
+                assertTrue(
+                    nm.notificationChannels.any {
+                        it.id == "protected_app_channel"
+                    }
+                )
+            }
+
+            // إطلاق إشعار إعادة التفعيل
+            ProtectedAppManager.handleAppExit(
+                context,
+                "com.example.protected",
+                "تطبيق محمي"
             )
-            nm.createNotificationChannel(oldChannel)
-            assertTrue(
-                nm.notificationChannels.any { it.id == "protected_app_channel" }
-            )
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = nm.getNotificationChannel(
+                    ProtectedAppManager.CHANNEL_ID_PROTECTED
+                )
+                assertEquals("protected_app_channel_v2", channel.id)
+                assertFalse(channel.shouldVibrate())
+                assertNull(channel.vibrationPattern)
+
+                // التأكد من حذف القناة القديمة
+                assertNull(nm.getNotificationChannel("protected_app_channel"))
+            }
         }
-
-        // إطلاق إشعار إعادة التفعيل
-        ProtectedAppManager.handleAppExit(
-            context,
-            "com.example.protected",
-            "تطبيق محمي"
-        )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = nm.getNotificationChannel(
-                ProtectedAppManager.CHANNEL_ID_PROTECTED
-            )
-            assertEquals("protected_app_channel_v2", channel.id)
-            assertFalse(channel.shouldVibrate())
-            assertNull(channel.vibrationPattern)
-
-            // التأكد من حذف القناة القديمة
-            assertNull(nm.getNotificationChannel("protected_app_channel"))
-        }
-    }
 }

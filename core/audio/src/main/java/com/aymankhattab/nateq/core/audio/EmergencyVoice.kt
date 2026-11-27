@@ -119,7 +119,14 @@ object EmergencyVoice {
                     )
                     .putBoolean(KEY_EMERGENCY_SAVED, config.isSaved)
                     .commit()
-            } catch (_: Throwable) {}
+            } catch (e: Throwable) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                android.util.Log.w(
+                    "EmergencyVoice",
+                    "فشل حفظ إعدادات صوت الطوارئ: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
         }
     }
 }

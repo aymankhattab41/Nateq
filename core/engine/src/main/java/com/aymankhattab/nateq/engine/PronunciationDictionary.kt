@@ -1360,8 +1360,22 @@ open class PronunciationDictionary(private val context: Context) {
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING
                     )
                     return true
-                } catch (_: Throwable) {}
-            } catch (_: Throwable) {}
+                } catch (e: Throwable) {
+                    if (e is java.util.concurrent.CancellationException) throw e
+                    android.util.Log.w(
+                        LOG_TAG,
+                        "فشل النقل البديل لملف القاموس: " +
+                            "${e.javaClass.simpleName}: ${e.message}"
+                    )
+                }
+            } catch (e: Throwable) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                android.util.Log.w(
+                    LOG_TAG,
+                    "فشل النقل الذري لملف القاموس: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
         }
         if (target.exists()) {
             val bak = File(target.parentFile, "${target.name}.swap.bak")

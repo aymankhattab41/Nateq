@@ -1132,8 +1132,9 @@ class NateqAccessibilityService : AccessibilityService() {
                 ProtectedAppTimelineTracker.startQuietPeriod(
                     matched.packageName
                 )
-                // النافذة ظهرت أصلاً: التعطيل يأتي متأخراً عن شاشة
-                // البداية، فنعيد فتح التطبيق بعد التعطيل حتى لا ينهار.
+                // النافذة ظهرت أصلاً: التعطيل يأتي متأخراً عن
+                // شاشة البداية، فنعيد فتح التطبيق بعد التعطيل
+                // حتى لا ينهار.
                 ProtectedAppManager.handleAppEntry(
                     context = this,
                     service = this,
@@ -1141,6 +1142,18 @@ class NateqAccessibilityService : AccessibilityService() {
                     relaunchIfForeground = true
                 )
                 return
+            } else if (ProtectedAppManager.isPartiallySuspended) {
+                val suspendedPkg =
+                    ProtectedAppManager.partiallySuspendedPkg
+                if (eventPkg != null && eventPkg != suspendedPkg) {
+                    serviceScope.launch {
+                        ProtectedAppManager.handleAppExit(
+                            context = this@NateqAccessibilityService,
+                            pkg = suspendedPkg.orEmpty(),
+                            label = ""
+                        )
+                    }
+                }
             }
         }
 

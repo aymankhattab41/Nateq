@@ -132,7 +132,14 @@ object TtsSettingsAutomation {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && am != null) {
             try {
                 if (am.activeRecordingConfigurations.isNotEmpty()) return true
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(
+                    TAG,
+                    "استثناء فحص تسجيل الصوت النشط: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
         }
         return false
     }
@@ -203,7 +210,14 @@ object TtsSettingsAutomation {
                 }
             }
             tts.shutdown()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(
+                TAG,
+                "استثناء إغلاق tts أثناء استعلام التسمية: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
 
         // 2. PackageManager label
         try {
@@ -211,7 +225,14 @@ object TtsSettingsAutomation {
             val appInfo = pm.getApplicationInfo(targetPackage, 0)
             val appLabel = pm.getApplicationLabel(appInfo).toString()
             if (appLabel.isNotBlank()) labels.add(appLabel)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(
+                TAG,
+                "استثناء استعلام تسمية التطبيق من PackageManager: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
 
         // 3. SystemTtsEngineController
         try {
@@ -222,7 +243,14 @@ object TtsSettingsAutomation {
                     if (item.label.isNotBlank()) labels.add(item.label)
                 }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(
+                TAG,
+                "استثناء جلب المحركات المثبتة: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
 
         return labels.distinct()
     }
@@ -1335,7 +1363,14 @@ object TtsSettingsAutomation {
                 String::class.java
             )
             method.invoke(null, context, text)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(
+                TAG,
+                "استثناء استدعاء speakImmediate عبر الانعكاس: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     /**
@@ -1498,7 +1533,14 @@ object TtsSettingsAutomation {
             try {
                 wm.addView(view, params)
                 overlayView = view
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(
+                    TAG,
+                    "استثناء إضافة عرض التعتيم: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
         }
 
         fun hide(service: AccessibilityService) {
@@ -1508,7 +1550,14 @@ object TtsSettingsAutomation {
             ) as? WindowManager
             try {
                 wm?.removeView(v)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(
+                    TAG,
+                    "استثناء إزالة عرض التعتيم: " +
+                        "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
             overlayView = null
         }
     }

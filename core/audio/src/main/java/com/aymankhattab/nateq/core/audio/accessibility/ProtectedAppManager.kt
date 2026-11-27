@@ -1086,28 +1086,32 @@ object ProtectedAppManager {
     }
 
     /**
-     * معالجة الخروج من التطبيق المحمي واستعادة الخدمة.
+     * معالجة الخروج من التطبيق المحمي واستعادة الخدمة بشكل غير حاجز (suspend).
      */
-    fun handleAppExit(context: Context, pkg: String, label: String) {
+    suspend fun handleAppExit(
+        context: Context,
+        pkg: String,
+        label: String = ""
+    ) {
         Log.i(TAG, "handleAppExit: pkg=$pkg, label=$label")
 
-        if (isPartiallySuspended && partiallySuspendedPkg == pkg) {
+        if (isPartiallySuspended &&
+            (partiallySuspendedPkg == pkg || pkg.isEmpty())
+        ) {
             isPartiallySuspended = false
             partiallySuspendedPkg = null
             return
         }
 
         ProtectedAppWatcherService.stopService(context)
-        kotlinx.coroutines.runBlocking {
-            checkAndRestore(
-                context = context,
-                reason = "exit",
-                pollIntervalMs = 50L,
-                maxWaitMs = 200L,
-                nudgeWaitMs = 50L,
-                targetPkg = pkg
-            )
-        }
+        checkAndRestore(
+            context = context,
+            reason = "exit",
+            pollIntervalMs = 50L,
+            maxWaitMs = 200L,
+            nudgeWaitMs = 50L,
+            targetPkg = pkg
+        )
     }
 
     /**
