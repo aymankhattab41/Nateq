@@ -69,6 +69,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 
@@ -217,6 +218,10 @@ class AnnouncementSpeaker(
         // (رفعَهُ محركُ :tts عبر content://…/speaking) قبل نطق الإعلانات
         // المؤجلة — بعدها يُنطق الإعلان على أي حال (لا ضياع).
         private const val SPEAKING_WAIT_TIMEOUT_MS = 5000L
+
+        /** مهلة تهيئة TextToSpeech للإعلانات: إن لم يصل onInit يُفشل
+         *  الربط ويُجرَّب المحرك الاحتياطي التالي (لا تعليق للأبد). */
+        private const val INIT_TIMEOUT_MS = 8000L
 
         // إعادة جدولة طلب التركيز المرفوض (AUDIOFOCUS_REQUEST_FAILED):
         // محاولات بفاصل وجيز، ثم إسقاطٌ صامت صريح (لا حلقة لا نهائية فوق
@@ -1093,19 +1098,45 @@ class AnnouncementSpeaker(
             return
         }
         var newTts: TextToSpeech? = null
+        val initSettled = AtomicBoolean(false)
         val timeoutRunnable = Runnable {
+            if (!initSettled.compareAndSet(false, true)) return@Runnable
             Log.w(TAG, "[Speaker] Engine $engine init timed out")
+            runCatching { newTts?.shutdown() }
+            if (tts === newTts) tts = null
+            boundEngine = null
             val completion = initGate.complete(false)
             completion.served.forEach { cb -> cb(false) }
+            val nextLanguageEngine = runCatching {
+                settings?.getEngineForLanguage(locale.language)
+            }.getOrNull()
+            val nextFallbackEngine = runCatching {
+                settings?.getAnnouncementFallbackEngine()
+            }.getOrNull()
+            val fallback = nextFallbackEngine
+                ?.takeIf { it.isNotBlank() && it != engine }
+                ?: fallbackEngine?.takeIf { it.isNotBlank() && it != engine }
             if (completion.hasNext) {
-                val nextLanguageEngine = runCatching {
-                    settings?.getEngineForLanguage(locale.language)
-                }.getOrNull()
-                val nextFallbackEngine = runCatching {
-                    settings?.getAnnouncementFallbackEngine()
-                }.getOrNull()
+                val next = completion.nextEngine
+                if (fallback != null && (next == null || next == engine)) {
+                    startInit(
+                        fallback,
+                        nextLanguageEngine,
+                        nextFallbackEngine,
+                        locale
+                    )
+                } else {
+                    startInit(
+                        next,
+                        nextLanguageEngine,
+                        nextFallbackEngine,
+                        locale
+                    )
+                }
+            } else if (fallback != null) {
+                // جرّب محرك الإعلانات الاحتياطي التالي بلا تعليق.
                 startInit(
-                    completion.nextEngine,
+                    fallback,
                     nextLanguageEngine,
                     nextFallbackEngine,
                     locale
@@ -1115,6 +1146,11 @@ class AnnouncementSpeaker(
         // **المنشئ الثلاثي الصريح** TextToSpeech(context, listener, engine):
         // الربط المباشر بحزمة المحرك المحسومة صراحة يمنع الحلقات الذاتية.
         newTts = TextToSpeech(appContext, { status ->
+            if (!initSettled.compareAndSet(false, true)) {
+                mainHandler.removeCallbacks(timeoutRunnable)
+                runCatching { newTts?.shutdown() }
+                return@TextToSpeech
+            }
             mainHandler.removeCallbacks(timeoutRunnable)
             var success = status == TextToSpeech.SUCCESS
             // ع٢٧-A1 بند 3: فحص EngineBindVerifier بعد onInit
@@ -1329,6 +1365,7 @@ class AnnouncementSpeaker(
             // يُربط المحرك مباشرةً عبر المنشئ الثلاثي أعلاه — لا داعٍ
             // لـ setEngineByPackageName (مُهملٍ ويُعاد ربطه بالكائن قسراً).
         }
+        mainHandler.postDelayed(timeoutRunnable, INIT_TIMEOUT_MS)
     }
 
     /**
