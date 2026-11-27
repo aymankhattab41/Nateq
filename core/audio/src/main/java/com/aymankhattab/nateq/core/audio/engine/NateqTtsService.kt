@@ -19,6 +19,7 @@ import com.aymankhattab.nateq.core.audio.accessibility.AccessibilityBridge
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
 import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.accessibility.SelectorPacks
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
 import com.aymankhattab.nateq.core.audio.announcement.prepareArabicForEngine
 import com.aymankhattab.nateq.core.audio.CategoryFailureTracker
@@ -44,6 +45,7 @@ import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceRepository
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
@@ -272,6 +274,7 @@ class NateqTtsService : TextToSpeechService() {
     private lateinit var catalog: VoiceCatalog
     private lateinit var requestHandler: SynthesisRequestHandler
     private var systemVoiceProvider: SystemVoiceProvider? = null
+    private val sessionFallbackAlertEmitted = AtomicBoolean(false)
     // معالج النصوص والقاموس (Keystore I/O + JSON + مصفوفة المطابقة):
     // تُبنى في خيط خلفي عند onCreate عبر warmupJob دون حجب الرئيسي، وأي
     // طلب نطق مبكر ينتظر اكتمال البناء نفسه على خيط التخليق لا على الرئيسي.
@@ -2093,6 +2096,35 @@ class NateqTtsService : TextToSpeechService() {
                     fallbackReason = fbReason
                 )
                 fallbackRecorded = true
+                val reqDesc = effVoice ?: finalVoiceName ?: "المطلوب"
+                val actualDesc = fallbackVoiceName
+                Handler(Looper.getMainLooper()).post {
+                    runCatching {
+                        android.widget.Toast.makeText(
+                            applicationContext,
+                            "تعذر الصوت $reqDesc وتم استخدام البديل: " +
+                                actualDesc,
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+                if (settings.isFallbackVoiceSpokenAlertEnabled() &&
+                    sessionFallbackAlertEmitted.compareAndSet(false, true)
+                ) {
+                    runCatching {
+                        AnnouncementSpeaker.getInstance(
+                            applicationContext
+                        ).speak(
+                            text = "تعذر الصوت المطلوب وتم استعمال صوت بديل",
+                            locale = Locale.forLanguageTag("ar"),
+                            speechRate = 1.0f,
+                            pitch = 1.0f,
+                            volume = 1.0f,
+                            category = SettingsRepository
+                                .VOICE_CATEGORY_LORD_SYSTEM
+                        )
+                    }
+                }
                 // البند ١٧: يُسجَّل الصوت الفعلي المنطوق بعد التحويل.
                 Log.i(
                     TAG,
@@ -3542,13 +3574,22 @@ class NateqTtsService : TextToSpeechService() {
                 )
             } ?: true
         }
+        val isAcapelaFailed = engine?.contains("acapela", true) == true &&
+            SpeechFallbackTracker.isAcapelaFallbackActive()
+        val isVoiceMarkedFailed = voiceId != null && engine != null &&
+            EngineStatusRegistry.getVoiceStatus(
+                engine, voiceId
+            )?.isReady == false
+        val isFailedVoice = isAcapelaFailed || isVoiceMarkedFailed
+        val targetEngine = if (isFailedVoice) null else engine
+        val targetVoice = if (isFailedVoice) null else voiceId
         return ConvertTarget(
-            convertEngine = if (matches) engine else null,
+            convertEngine = if (matches) targetEngine else null,
             convertLocale = locale,
             convertRate = rate,
             convertPitch = pitch,
             convertVolume = volume,
-            convertVoiceName = if (matches) voiceId else null
+            convertVoiceName = if (matches) targetVoice else null
         )
     }
 

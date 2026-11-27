@@ -56,6 +56,9 @@ class SettingsRepository(context: Context) :
         const val KEY_ANDROID17_BANKING_HARDENING =
             "android17_banking_hardening"
 
+        const val KEY_FALLBACK_VOICE_SPOKEN_ALERT =
+            "fallback_voice_spoken_alert"
+
         /** **بند V3:** فئاتُ الإعلانات التي عُطّل فيها مؤثر الصوت. */
         internal const val KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES =
             "audio_effects_disabled_categories"
@@ -104,7 +107,9 @@ class SettingsRepository(context: Context) :
         const val VOICE_CATEGORY_LORD_SYSTEM = "lord_system"
         const val ENGINE_LORD_TTS = "lord_tts"
 
-        /** آخر محركات TTS التي استُخدمت فعلياً (لتدفئتها عند الجلسة التالية). */
+        /**
+         * آخر محركات TTS التي استُخدمت فعلياً (لتدفئتها عند الجلسة التالية).
+         */
         private const val KEY_LAST_USED_TTS_ENGINES = "last_used_tts_engines"
         private const val MAX_LAST_USED_TTS_ENGINES = 8
 
@@ -3967,6 +3972,15 @@ class SettingsRepository(context: Context) :
     fun setAndroid17BankingHardeningEnabled(enabled: Boolean) {
         prefs.edit()
             .putBoolean(KEY_ANDROID17_BANKING_HARDENING, enabled)
+            .apply()
+    }
+
+    fun isFallbackVoiceSpokenAlertEnabled(): Boolean =
+        prefs.getBoolean(KEY_FALLBACK_VOICE_SPOKEN_ALERT, true)
+
+    fun setFallbackVoiceSpokenAlertEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_FALLBACK_VOICE_SPOKEN_ALERT, enabled)
             .apply()
     }
 

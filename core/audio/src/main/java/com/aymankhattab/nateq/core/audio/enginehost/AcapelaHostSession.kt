@@ -439,7 +439,7 @@ internal class AcapelaHostSession(
             return if (chunks.isEmpty()) listOf(text) else chunks
         }
 
-        private fun matchesVoice(
+        internal fun matchesVoice(
             v: AcapelaVoiceManifest.VoiceInfo,
             query: String
         ): Boolean {
@@ -448,6 +448,8 @@ internal class AcapelaHostSession(
                 (v.rawSpeaker?.contains("salma", ignoreCase = true) == true ||
                     v.voiceName.contains("salma", ignoreCase = true) ||
                     v.id.contains("salma", ignoreCase = true))
+            val isAaronMatch = query.contains("aaron", ignoreCase = true) &&
+                v.locale.language.equals("en", ignoreCase = true)
             return v.rawSpeaker.equals(query, ignoreCase = true) ||
                 v.rawSpeaker.equals(clean, ignoreCase = true) ||
                 v.voiceName.equals(query, ignoreCase = true) ||
@@ -456,7 +458,8 @@ internal class AcapelaHostSession(
                 v.dir.name.equals(query, ignoreCase = true) ||
                 v.displayName.startsWith(query, ignoreCase = true) ||
                 v.displayName.startsWith(clean, ignoreCase = true) ||
-                isSalmaMatch
+                isSalmaMatch ||
+                isAaronMatch
         }
     }
 
@@ -641,17 +644,58 @@ internal class AcapelaHostSession(
                 // للمضيف (وليس خيط الواجهة Main).
                 // الحجب بـ runBlocking مقصود لأن دالة
                 // performUnifiedWarmup معلقة بينما init() متزامنة.
-                val warmupRes = runBlocking {
-                    performUnifiedWarmup(candidateVoice)
+                var successfulWarmup = false
+                val warmCandidates = listOfNotNull(candidateVoice) +
+                    voices.filter { it.id != candidateVoice.id }
+                var lastErr: HostResult? = null
+                for (v in warmCandidates) {
+                    val warmupRes = runBlocking {
+                        performUnifiedWarmup(v)
+                    }
+                    if (warmupRes.ok) {
+                        EngineStatusRegistry.recordVoiceStatus(
+                            engineId = HostProtocol.ENGINE_ACAPELA,
+                            voiceId = v.id,
+                            isReady = true
+                        )
+                        successfulWarmup = true
+                        warmupState.set(WarmupState.SUCCESS)
+                        lastWarmupFailure = null
+                        break
+                    } else {
+                        EngineStatusRegistry.recordVoiceStatus(
+                            engineId = HostProtocol.ENGINE_ACAPELA,
+                            voiceId = v.id,
+                            isReady = false,
+                            code = warmupRes.code,
+                            errorMessage = warmupRes.message
+                        )
+                        lastErr = warmupRes
+                        Log.w(
+                            TAG,
+                            "تعذر إحماء الصوت ${v.id} " +
+                                "(${warmupRes.code}): ${warmupRes.message}"
+                        )
+                    }
                 }
-                if (!warmupRes.ok) {
-                    warmupState.set(WarmupState.FAILED)
-                    lastWarmupFailure = warmupRes
-                    releaseEngine()
-                    return warmupRes
+                if (!successfulWarmup) {
+                    if (voices.any { it.registration.isNotEmpty() }) {
+                        Log.w(
+                            TAG,
+                            "لم تنجح الحزمة الأولى، المحرك يبقى متاحاً " +
+                                "لتجربة باقي الأصوات"
+                        )
+                        warmupState.set(WarmupState.IDLE)
+                    } else {
+                        warmupState.set(WarmupState.FAILED)
+                        lastWarmupFailure = lastErr
+                        releaseEngine()
+                        return lastErr ?: HostResult.failure(
+                            "WARMUP_FAILED",
+                            "فشل إحماء محرك Acapela"
+                        )
+                    }
                 }
-                warmupState.set(WarmupState.SUCCESS)
-                lastWarmupFailure = null
             } else if (warmupState.get() == WarmupState.FAILED) {
                 return lastWarmupFailure ?: HostResult.failure(
                     "WARMUP_FAILED",
@@ -1154,6 +1198,20 @@ internal class AcapelaHostSession(
         if (cleanVoiceId.isNotBlank() &&
             !cleanVoiceId.equals("default", ignoreCase = true)
         ) {
+            val isAaron = cleanVoiceId.contains("aaron", ignoreCase = true)
+            if (isAaron) {
+                val englishMatch = voices.firstOrNull { v ->
+                    v.locale.language.equals("en", ignoreCase = true) &&
+                        (v.registration.isNotEmpty() ||
+                            v.dir.listFiles()?.any {
+                                it.name.endsWith(".nuul", true)
+                            } == true)
+                } ?: voices.firstOrNull { v ->
+                    v.locale.language.equals("en", ignoreCase = true)
+                } ?: voices.firstOrNull { it.registration.isNotEmpty() }
+                if (englishMatch != null) return englishMatch
+            }
+
             val matched = voices.firstOrNull { v ->
                 matchesVoice(v, cleanVoiceId) || matchesVoice(v, cleanSpeaker)
             }
@@ -1263,7 +1321,7 @@ internal class AcapelaHostSession(
             "بعد nSpeak الكلاسيكي: عينات=$samples، بايتات=$bytes"
         )
 
-        if (!audioReceived.get() || bytes == 0L) {
+        if (!audioReceived.get() || bytes == 0L || samples == 0L) {
             Log.e(
                 TAG,
                 "SPEAK_NO_AUDIO: path=classic, " +
@@ -1301,10 +1359,12 @@ internal class AcapelaHostSession(
         val candidates = candidateNames(voice)
         var loadRes = -1
         var loadedName: String? = null
+        val candidateAttempts = linkedMapOf<String, Int>()
         sink.enterNativeCall(nativeCapMs)
         try {
             for (cand in candidates) {
                 loadRes = inst.nLoadVoice(cand)
+                candidateAttempts[cand] = loadRes
                 Log.i(TAG, "كود عودة nLoadVoice($cand): $loadRes")
                 if (loadRes > 0) {
                     loadedName = cand
@@ -1319,10 +1379,55 @@ internal class AcapelaHostSession(
                 runCatching { inst.nGetVoiceList(voicePaths) }
                 for (cand in candidates) {
                     loadRes = inst.nLoadVoice(cand)
+                    candidateAttempts[cand] = loadRes
                     Log.i(
                         TAG,
                         "كود عودة nLoadVoice($cand) بعد " +
                             "nGetVoiceList: $loadRes"
+                    )
+                    if (loadRes > 0) {
+                        loadedName = cand
+                        break
+                    }
+                }
+            }
+
+            // البند 6: عند فشل nLoadVoice بأي كود: إعادة تسجيل الصوت
+            // مرة واحدة (إعادة قراءة param وتسجيله ثم إعادة المحاولة)
+            if (loadedName == null) {
+                Log.w(
+                    TAG,
+                    "فشل nLoadVoice لجميع المرشحات، محاولة إعادة " +
+                        "تسجيل الصوت لـ ${voice.id}..."
+                )
+                val rawParam = AcapelaVoiceManifest
+                    .findConfigYamlWithParam(voice.dir)?.second
+                    ?: AcapelaVoiceManifest.readParamFromConfigYaml(voice.dir)
+                if (!rawParam.isNullOrBlank()) {
+                    runCatching {
+                        val parsed = AcapelaVoiceManifest
+                            .splitConfigYamlParam(rawParam)
+                        if (parsed != null) {
+                            val hexLic = parsed.third.trim()
+                            inst.setLicense(hexLic)
+                        } else {
+                            inst.setLicense(rawParam)
+                        }
+                    }
+                }
+                loadRuntimeLicense(inst)
+                val voicePaths = arrayOf(
+                    withTrailingSlash(voice.dir.canonicalPath),
+                    withTrailingSlash(voice.dir.absolutePath)
+                )
+                runCatching { inst.nGetVoiceList(voicePaths) }
+                for (cand in candidates) {
+                    loadRes = inst.nLoadVoice(cand)
+                    candidateAttempts["$cand(retry)"] = loadRes
+                    Log.i(
+                        TAG,
+                        "كود عودة nLoadVoice($cand) بعد إعادة " +
+                            "التسجيل: $loadRes"
                     )
                     if (loadRes > 0) {
                         loadedName = cand
@@ -1336,16 +1441,25 @@ internal class AcapelaHostSession(
 
         if (loadedName == null) {
             val dir = dataDirectory ?: voice.dir
+            val attemptsSummary = candidateAttempts.entries
+                .joinToString(", ") { (c, r) ->
+                    val errName =
+                        AcapelaVoiceDiagnostics.babileErrorName(r)
+                    "$c: $r ($errName)"
+                }
+            val lastErr = lastErrorOf(inst)
+            val lang = lastLanguageOf(inst)
             Log.e(
                 TAG,
                 "فشل تحميل صوت Acapela (${voice.id}): كود $loadRes, " +
-                    "مرشحات=$candidates, lastError=${lastErrorOf(inst)}, " +
-                    "lang=${lastLanguageOf(inst)}, ملفات=${dirFiles(dir)}"
+                    "محاولات=[$attemptsSummary], lastError=$lastErr, " +
+                    "lang=$lang, ملفات=${dirFiles(dir)}"
             )
             return HostResult.failure(
                 "VOICE_LOAD_FAILED",
-                "تعذر تحميل الصوت: ${voice.rawSpeaker ?: voice.id}" +
-                    " (كود $loadRes)"
+                "تعذر تحميل الصوت: ${voice.rawSpeaker ?: voice.id} " +
+                    "(كود $loadRes، محاولات: [$attemptsSummary]، " +
+                    "lastError=$lastErr، lang=$lang)"
             )
         }
 
@@ -1604,7 +1718,7 @@ internal class AcapelaHostSession(
             "بعد nSpeak الممتد: عينات=$samples، بايتات=$bytes"
         )
 
-        if (!audioReceived.get() || bytes == 0L) {
+        if (!audioReceived.get() || bytes == 0L || samples == 0L) {
             Log.w(
                 TAG,
                 "SPEAK_NO_AUDIO: path=extended, " +
@@ -1868,9 +1982,19 @@ internal class AcapelaHostSession(
         forgetRegistration(voice)
         closeExtended()
 
-        val errSummary = "فشل nSpeak ($speakRes) | عينات=$samples | " +
-            "أول خطأ: ${firstErr?.first ?: "لم تُرصد"}"
-        return HostResult.failure("SPEAK_ERROR", errSummary)
+        val errSummary = if (speakRes == 0 && samples == 0L) {
+            "فشل نطق Acapela: لم تصدر أي عينات صوتية (0 samples) " +
+                "لـ ${voice.rawSpeaker ?: voice.id}"
+        } else {
+            "فشل nSpeak ($speakRes) | عينات=$samples | " +
+                "أول خطأ: ${firstErr?.first ?: "لم تُرصد"}"
+        }
+        val errCode = if (speakRes == 0 && samples == 0L) {
+            "SPEAK_EMPTY_AUDIO"
+        } else {
+            "SPEAK_ERROR"
+        }
+        return HostResult.failure(errCode, errSummary)
     }
 
     private fun recordTrialFailure(
@@ -4715,7 +4839,7 @@ internal class AcapelaHostSession(
         return fresh
     }
 
-    private fun isHdPackageWithoutRegistration(
+    internal fun isHdPackageWithoutRegistration(
         voice: AcapelaVoiceManifest.VoiceInfo
     ): Boolean {
         if (voice.registration.isNotEmpty()) return false
@@ -4729,6 +4853,13 @@ internal class AcapelaHostSession(
                 ignoreCase = true
             ) == true
         ) return true
+        val speaker = AcapelaVoiceManifest.cleanAcapelaSpeaker(
+            voice.rawSpeaker ?: voice.id
+        ).lowercase(Locale.ROOT)
+        val isArabic = voice.locale.language.equals("ar", ignoreCase = true) ||
+            voice.id.startsWith("ara", ignoreCase = true) ||
+            speaker in AcapelaVoiceManifest.ARABIC_VOICE_NAMES
+        if (isArabic) return true
         return false
     }
 

@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.UUID
 import java.util.zip.ZipEntry
@@ -190,51 +191,229 @@ object AcapelaVoiceImporter {
         }
     }
 
+    private val CONFIG_YAML_PARAM_REGEX = Regex(
+        """(?:^|\n)\s*"?param"?\s*[:=]\s*"?([^"\r\n#]+)"?""",
+        setOf(RegexOption.MULTILINE)
+    )
+
+    /**
+     * قراءة قيمة param مباشرة من ملف config.yaml محدد.
+     */
+    fun readParamFromFile(yamlFile: File): String? {
+        if (!yamlFile.isFile || !yamlFile.exists() || yamlFile.length() <= 0L) {
+            return null
+        }
+        if (yamlFile.length() > 512 * 1024L) return null
+        return runCatching {
+            val content = yamlFile.readText(StandardCharsets.UTF_8)
+            CONFIG_YAML_PARAM_REGEX.find(content)
+                ?.groupValues?.getOrNull(1)?.trim()
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * التحقق من صلاحية ملف config.yaml:
+     * صالح فقط إذا كان طوله أكبر من صفر، ويحوي سطر param صالحاً،
+     * ويطابق المتحدث المطلوب.
+     */
+    fun isValidConfigYaml(
+        yamlFile: File,
+        expectedSpeaker: String? = null
+    ): Boolean {
+        if (!yamlFile.isFile || !yamlFile.exists() || yamlFile.length() <= 0L) {
+            return false
+        }
+        val rawParam = readParamFromFile(yamlFile) ?: return false
+        if (expectedSpeaker.isNullOrBlank()) return true
+        val targetSpeaker = AcapelaVoiceManifest
+            .cleanAcapelaSpeaker(expectedSpeaker)
+            .lowercase(Locale.ROOT)
+        if (targetSpeaker.isBlank()) return true
+        val parsed = AcapelaVoiceManifest.splitConfigYamlParam(rawParam)
+        val speakerCandidate = parsed?.first ?: rawParam
+        val speaker = AcapelaVoiceManifest
+            .cleanAcapelaSpeaker(speakerCandidate)
+            .lowercase(Locale.ROOT)
+        if (speaker.isBlank()) return false
+        val pToken = AcapelaVoiceManifest.tokenOfIdentity(speaker)
+        val tToken = AcapelaVoiceManifest.tokenOfIdentity(targetSpeaker)
+        if (pToken != null && tToken != null) {
+            return pToken == tToken
+        }
+        return speaker == targetSpeaker ||
+            targetSpeaker.contains(speaker) ||
+            speaker.contains(targetSpeaker)
+    }
+
+    /**
+     * نسخ ملف تهيئة بأمان عبر ملف مؤقت ثم إعادة تسمية، والتحقق من تطابق الحجم.
+     */
+    fun copyConfigFileSafely(
+        source: File,
+        destination: File
+    ): Boolean {
+        if (!source.isFile || !source.exists() || source.length() <= 0L) {
+            Log.e(TAG, "الملف المصدر غير موجود أو فارغ: ${source.absolutePath}")
+            return false
+        }
+        val destDir = destination.parentFile
+        if (destDir != null && !destDir.exists()) {
+            destDir.mkdirs()
+        }
+        val tempFile = File(
+            destDir ?: destination.parentFile,
+            "${destination.name}.tmp_${UUID.randomUUID().toString().take(8)}"
+        )
+        return try {
+            source.copyTo(tempFile, overwrite = true)
+            if (tempFile.length() != source.length()) {
+                Log.e(
+                    TAG,
+                    "حجم الملف المؤقت (${tempFile.length()}) لا يطابق " +
+                        "المصدر (${source.length()}): ${source.absolutePath}"
+                )
+                tempFile.delete()
+                return false
+            }
+            if (destination.exists()) {
+                destination.delete()
+            }
+            val renamed = tempFile.renameTo(destination)
+            if (!renamed) {
+                tempFile.copyTo(destination, overwrite = true)
+                tempFile.delete()
+            }
+            if (!destination.exists() ||
+                destination.length() != source.length()
+            ) {
+                Log.e(
+                    TAG,
+                    "حجم الوجهة (${destination.length()}) لا يطابق " +
+                        "المصدر (${source.length()}): " +
+                        destination.absolutePath
+                )
+                destination.delete()
+                false
+            } else {
+                true
+            }
+        } catch (t: Throwable) {
+            Log.e(
+                TAG,
+                "استثناء أثناء نسخ ${source.absolutePath} إلى " +
+                    destination.absolutePath,
+                t
+            )
+            tempFile.delete()
+            false
+        }
+    }
+
     /**
      * إيجاد ملف config.yaml المطابق حصراً لهوية المتحدث المطلوب
      * دون نسخ ملف متحدث آخر (مثل Salma) إلى صوت مختلف (مثل Leila).
+     * لا يُرجع ملفاً فارغاً أو بلا param.
      */
     fun findMatchingConfigYamlForVoice(
         voiceDir: File,
         candidateYamls: List<File>
     ): File? {
-        val direct = File(voiceDir, "config.yaml")
-        if (direct.isFile) {
-            val param = AcapelaVoiceManifest.findConfigYamlWithParam(voiceDir)
-            if (param != null) return direct
-        }
         val targetSpeaker = AcapelaVoiceManifest
             .cleanAcapelaSpeaker(voiceDir.name)
             .lowercase(Locale.ROOT)
+        val direct = File(voiceDir, "config.yaml")
+        if (isValidConfigYaml(direct, targetSpeaker)) {
+            return direct
+        }
 
         for (yaml in candidateYamls) {
-            if (!yaml.isFile || yaml.length() > 512 * 1024L) continue
-            val param = runCatching {
-                AcapelaVoiceManifest.readParamFromConfigYaml(
-                    yaml.parentFile ?: yaml
-                )
-            }.getOrNull()
-            if (param != null) {
-                val parsed = AcapelaVoiceManifest.splitConfigYamlParam(param)
-                if (parsed != null) {
-                    val speaker = AcapelaVoiceManifest
-                        .cleanAcapelaSpeaker(parsed.first)
-                        .lowercase(Locale.ROOT)
-                    if (speaker.isNotBlank() && (
-                        speaker == targetSpeaker ||
-                        voiceDir.name.lowercase(Locale.ROOT).contains(speaker)
-                    )) {
-                        return yaml
-                    }
-                }
-            } else if (yaml.parentFile == voiceDir ||
-                yaml.parentFile?.name?.lowercase(Locale.ROOT)
-                    ?.contains(targetSpeaker) == true
-            ) {
+            if (isValidConfigYaml(yaml, targetSpeaker)) {
                 return yaml
             }
         }
         return null
+    }
+
+    /**
+     * التحقق من وجود config.yaml صالح لكل صوت من Salma وLeila وNizar وغيرها
+     * بعد الاستيراد وعند بدء التشغيل. وإن فُقد فأعد استنساخه من مصدر
+     * الاستيراد الأصلي أو من الحزمة المطابقة.
+     */
+    fun ensureValidConfigYamlForVoices(
+        context: Context,
+        baseDir: File = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+    ): Int {
+        if (!baseDir.exists() || !baseDir.isDirectory) return 0
+        val voiceDirs = baseDir.listFiles { f -> f.isDirectory }
+            ?: return 0
+        var repairedCount = 0
+        val searchDirs = EmbeddedStorage.allSearchDirs(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        val stageDir = File(context.cacheDir, "acapela_stage")
+        val allCandidateYamls = (searchDirs + listOf(stageDir, baseDir))
+            .filter { it.isDirectory }
+            .flatMap { d ->
+                d.walkTopDown().maxDepth(4).filter {
+                    it.isFile && it.name.equals("config.yaml", true)
+                }.toList()
+            }.distinctBy { it.absolutePath }
+
+        for (vd in voiceDirs) {
+            val targetYaml = File(vd, "config.yaml")
+            if (isValidConfigYaml(targetYaml, vd.name)) {
+                continue
+            }
+            Log.w(
+                TAG,
+                "ملف config.yaml مفقود أو غير صالح للصوت ${vd.name}؛ " +
+                    "جارٍ البحث عن نسخة مطابقة لاستعادتها..."
+            )
+            val resolvedPkg = runCatching {
+                AcapelaPackageResolver.resolvePackage(vd)
+            }.getOrNull()
+            val pkgYaml = resolvedPkg?.metadataYaml
+            if (pkgYaml != null && isValidConfigYaml(pkgYaml, vd.name)) {
+                if (copyConfigFileSafely(pkgYaml, targetYaml)) {
+                    Log.i(
+                        TAG,
+                        "تم استعادة config.yaml للصوت ${vd.name} " +
+                            "من الحزمة المطابقة: ${pkgYaml.absolutePath}"
+                    )
+                    repairedCount++
+                    continue
+                }
+            }
+
+            val matchedYaml = allCandidateYamls.firstOrNull { candidate ->
+                isValidConfigYaml(candidate, vd.name)
+            }
+            if (matchedYaml != null) {
+                if (copyConfigFileSafely(matchedYaml, targetYaml)) {
+                    Log.i(
+                        TAG,
+                        "تم استنساخ config.yaml للصوت ${vd.name} " +
+                            "من المصدر: ${matchedYaml.absolutePath}"
+                    )
+                    repairedCount++
+                } else {
+                    Log.e(
+                        TAG,
+                        "فشل استنساخ config.yaml للصوت ${vd.name}"
+                    )
+                }
+            } else {
+                Log.w(
+                    TAG,
+                    "لم يُعثر على config.yaml مطابق للصوت ${vd.name}"
+                )
+            }
+        }
+        return repairedCount
     }
 
     /**
@@ -517,16 +696,26 @@ object AcapelaVoiceImporter {
                     candidateYamls = allConfigYamls
                 )
                 if (yamlToCopy != null && yamlToCopy.isFile) {
-                    runCatching {
-                        yamlToCopy.copyTo(
-                            File(targetDir, "config.yaml"),
-                            overwrite = true
-                        )
-                    }.onSuccess {
-                        Log.i(
-                            TAG,
-                            "نسخ config.yaml المطابق إلى ${targetDir.name}"
-                        )
+                    val destYaml = File(targetDir, "config.yaml")
+                    if (!destYaml.exists() ||
+                        !isValidConfigYaml(destYaml, targetDir.name)
+                    ) {
+                        val copied = copyConfigFileSafely(yamlToCopy, destYaml)
+                        if (copied) {
+                            Log.i(
+                                TAG,
+                                "نسخ config.yaml المطابق بأمان إلى " +
+                                    targetDir.name
+                            )
+                        } else {
+                            val msg =
+                                "فشل نسخ config.yaml إلى ${targetDir.name}"
+                            Log.e(TAG, msg)
+                            return@withContext ImportResult(
+                                success = false,
+                                errorMessage = msg
+                            )
+                        }
                     }
                 }
 
@@ -765,13 +954,19 @@ object AcapelaVoiceImporter {
                             it, vd.name
                         ) == true
                     }
-                    if (matchingYaml != null &&
-                        !File(vd, "config.yaml").isFile
-                    ) {
-                        runCatching {
-                            matchingYaml.copyTo(
-                                File(vd, "config.yaml"),
-                                overwrite = true
+                    val targetYaml = File(vd, "config.yaml")
+                    if (matchingYaml != null && (
+                        !targetYaml.isFile ||
+                        !isValidConfigYaml(targetYaml, vd.name)
+                    )) {
+                        val copied = copyConfigFileSafely(
+                            matchingYaml,
+                            targetYaml
+                        )
+                        if (!copied) {
+                            Log.e(
+                                TAG,
+                                "فشل نسخ config.yaml إلى ${vd.name}"
                             )
                         }
                     }
@@ -811,6 +1006,7 @@ object AcapelaVoiceImporter {
     ): ImportResult {
         // تصفير سجل التعثر لإلغاء أي حظر طوارئ قائم فوراً
         CategoryFailureTracker.reset()
+        ensureValidConfigYamlForVoices(context, baseDir)
         // الكتابة والقراءة معاً على IO: الاستيراد ينتهي بنسخ ملفات،
         // وقارئ المانيفست لا يُشغَّل على الخيط الرئيسي هنا إطلاقاً.
         val voices = withContext(Dispatchers.IO) {
@@ -1050,25 +1246,35 @@ object AcapelaVoiceImporter {
                     }
                 }
                 val candidateYaml = File(vd, "config.yaml")
-                    .takeIf { it.isFile }
-                    ?: allDirYamls.firstOrNull { it.parentFile == vd }
+                    .takeIf { isValidConfigYaml(it, vd.name) }
+                    ?: allDirYamls.firstOrNull {
+                        it.parentFile == vd && isValidConfigYaml(it, vd.name)
+                    }
                     ?: allDirYamls.firstOrNull {
                         it.parentFile == vd.parentFile &&
-                            AcapelaPackageResolver.checkYamlSpeakerMatch(
-                                it, vd.name
-                            ) == true
+                            isValidConfigYaml(it, vd.name)
                     }
-                val yamlToCopy = candidateYaml?.takeIf {
-                    AcapelaPackageResolver.checkYamlSpeakerMatch(
-                        it, vd.name
-                    ) != false
-                }
-                if (yamlToCopy != null && yamlToCopy.isFile) {
-                    runCatching {
-                        yamlToCopy.copyTo(
-                            File(target, "config.yaml"),
-                            overwrite = true
+                    ?: allDirYamls.firstOrNull {
+                        isValidConfigYaml(it, vd.name)
+                    }
+                if (candidateYaml != null && candidateYaml.isFile) {
+                    val targetYaml = File(target, "config.yaml")
+                    if (!targetYaml.exists() ||
+                        !isValidConfigYaml(targetYaml, vd.name)
+                    ) {
+                        val copied = copyConfigFileSafely(
+                            candidateYaml,
+                            targetYaml
                         )
+                        if (!copied) {
+                            val msg =
+                                "فشل نسخ config.yaml المطابق إلى ${target.name}"
+                            Log.e(TAG, msg)
+                            return@withContext ImportResult(
+                                success = false,
+                                errorMessage = msg
+                            )
+                        }
                     }
                 }
             }
@@ -1082,12 +1288,17 @@ object AcapelaVoiceImporter {
                 }
             }
 
-            if (dirYamlSource != null) {
-                runCatching {
-                    dirYamlSource.copyTo(
-                        File(baseDir, "config.yaml"),
-                        overwrite = true
-                    )
+            // سطر 1088: لا تنسخ أول config.yaml عشوائياً إلى الجذر؛
+            // انسخ فقط إن وُجد ملف مطابق للمتحدث أو صوت معتمد.
+            val rootCandidate = allDirYamls.firstOrNull { y ->
+                voiceDirs.any { vd -> isValidConfigYaml(y, vd.name) }
+            }
+            if (rootCandidate != null) {
+                val baseRootYaml = File(baseDir, "config.yaml")
+                if (!baseRootYaml.exists() ||
+                    !isValidConfigYaml(baseRootYaml)
+                ) {
+                    copyConfigFileSafely(rootCandidate, baseRootYaml)
                 }
             }
 

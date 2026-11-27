@@ -883,83 +883,73 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
             val totalSize = searchDirs.sumOf { dirSize(it) }
             val sizeText = formatSize(totalSize)
 
-            var configYamlLine: String? = null
-            var salmaRegistrationLine: String? = null
+            val voiceReports = mutableListOf<String>()
             if (diag.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID) {
-                val foundYaml = AcapelaVoiceManifest
-                    .findConfigYamlWithParam(searchDirs)
-                val configYamlFile = foundYaml?.first
-                    ?: searchDirs.asSequence()
-                        .flatMap { dir ->
-                            sequenceOf(
-                                File(dir, "config.yaml"),
-                                File(dir, "Salma/config.yaml"),
-                                File(dir, "salma/config.yaml")
-                            ) + (dir.listFiles { f -> f.isDirectory }
-                                ?.asSequence()
-                                ?.map { File(it, "config.yaml") }
-                                ?: emptySequence())
-                        }
-                        .firstOrNull { it.isFile && it.exists() }
-                        ?: searchDirs.firstOrNull()?.let {
-                            File(it, "Salma/config.yaml")
-                        }
+                val voiceDirs = searchDirs.asSequence()
+                    .filter { it.isDirectory }
+                    .flatMap { dir ->
+                        dir.listFiles { f -> f.isDirectory }?.asSequence()
+                            ?: emptySequence()
+                    }
+                    .filter { vd ->
+                        !vd.name.equals("userdicos", ignoreCase = true)
+                    }
+                    .distinctBy { it.name.lowercase(Locale.ROOT) }
+                    .toList()
 
-                val exists = configYamlFile?.isFile == true &&
-                    configYamlFile.exists()
-                if (code == "HD_REGISTRATION_MISSING") {
-                    code = "CONFIG_YAML_MISSING"
+                val voiceFileCounts = voiceDirs.associateWith { vd ->
+                    vd.walkTopDown().filter { it.isFile }.count()
                 }
-                if (lastError.contains("HD_REGISTRATION_MISSING")) {
-                    lastError = lastError.replace(
-                        "HD_REGISTRATION_MISSING",
-                        "CONFIG_YAML_MISSING"
+                val maxFiles = voiceFileCounts.values.maxOrNull() ?: 0
+
+                for (vDir in voiceDirs) {
+                    val vName = vDir.name
+                    val count = voiceFileCounts[vDir] ?: 0
+                    val yamlFile = File(vDir, "config.yaml")
+                    val exists = yamlFile.isFile && yamlFile.exists()
+                    val yamlDesc = if (exists) {
+                        "${yamlFile.length()} بايت"
+                    } else {
+                        "غير موجود"
+                    }
+                    val regVal = AcapelaVoiceManifest.resolveRegistration(vDir)
+                    val masked = maskRegistration(regVal)
+                    val isRegValid = regVal.isNotBlank() &&
+                        AcapelaVoiceManifest.isRegistrationMetadata(regVal)
+                    val regDesc = when {
+                        isRegValid -> "مسجّل بنجاح ($masked)"
+                        regVal.isNotBlank() ->
+                            "مسجّل بقيمة غير قياسية ($masked)"
+                        else -> "غير مسجّل"
+                    }
+                    val vStatus = EngineStatusRegistry.getVoiceStatus(
+                        diag.id,
+                        vName
                     )
-                }
-                if (!exists && (code == "—" ||
-                        code == "REGISTRATION_MISSING" ||
-                        status?.state !=
-                        EngineStatusRegistry.State.READY)
-                ) {
-                    code = "CONFIG_YAML_MISSING"
-                    if (lastError == "لا يوجد") {
-                        lastError =
-                            "ملف config.yaml مفقود في مجلد الصوت"
+                    val loadableDesc = when {
+                        vStatus?.isReady == true -> "جاهز للتحميل"
+                        vStatus?.isReady == false ->
+                            "فشل التحميل (${vStatus.code ?: "خطأ"})"
+                        exists && isRegValid -> "قابل للتحميل"
+                        else -> "غير قابل للتحميل"
                     }
-                } else if (exists && code == "CONFIG_YAML_MISSING") {
-                    code = "READY"
-                    if (lastError ==
-                        "ملف config.yaml مفقود في مجلد الصوت"
-                    ) {
-                        lastError = "لا يوجد"
+                    val diffDesc = if (maxFiles > 0 && count < maxFiles) {
+                        "$count ملف (ناقص ${maxFiles - count} مقارنة " +
+                            "بالأصوات الكاملة: $count/$maxFiles)"
+                    } else {
+                        "$count ملف"
                     }
-                }
-                val size = if (exists) configYamlFile!!.length() else 0L
-                val path = configYamlFile?.absolutePath ?: "غير محدد"
-                val vDir = when {
-                    exists -> configYamlFile!!.parentFile ?: configYamlFile
-                    foundYaml != null -> foundYaml.first.parentFile
-                        ?: searchDirs.firstOrNull()
-                    else -> searchDirs.firstOrNull()
-                }
-                val regVal = if (vDir != null) {
-                    AcapelaVoiceManifest.resolveRegistration(vDir)
-                } else {
-                    ""
-                }
-                val masked = maskRegistration(regVal)
-                configYamlLine = "  config.yaml: موجود=" +
-                    (if (exists) "نعم" else "لا") +
-                    " | حجم=$size بايت | مسار=$path | التسجيل=$masked"
-
-                val isSalmaRegValid = regVal.isNotBlank() &&
-                    AcapelaVoiceManifest.isRegistrationMetadata(regVal)
-                salmaRegistrationLine = if (isSalmaRegValid) {
-                    "  حالة تسجيل Salma: مسجَّل بنجاح ($masked)"
-                } else if (regVal.isNotBlank()) {
-                    "  حالة تسجيل Salma: مسجَّل بقيمة غير قياسية ($masked)"
-                } else {
-                    "  حالة تسجيل Salma: غير مسجَّل"
+                    voiceReports.add(
+                        "  صوت $vName:\n" +
+                            "    - config.yaml: موجود=" +
+                            (if (exists) "نعم" else "لا") +
+                            " | حجم=$yamlDesc | " +
+                            "مسار=${yamlFile.absolutePath} | " +
+                            "التسجيل=$masked\n" +
+                            "    - حالة تسجيل $vName: $regDesc\n" +
+                            "    - اكتمال الملفات: $diffDesc\n" +
+                            "    - إمكانية التحميل: $loadableDesc"
+                    )
                 }
             }
 
@@ -1040,11 +1030,8 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
                     )
                 }
             }
-            if (configYamlLine != null) {
-                sb.appendLine(configYamlLine)
-            }
-            if (salmaRegistrationLine != null) {
-                sb.appendLine(salmaRegistrationLine)
+            voiceReports.forEach { rep ->
+                sb.appendLine(rep)
             }
             sb.appendLine("")
         }

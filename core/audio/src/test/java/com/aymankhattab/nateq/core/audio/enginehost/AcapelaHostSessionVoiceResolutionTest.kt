@@ -346,4 +346,41 @@ class AcapelaHostSessionVoiceResolutionTest {
             )
         )
     }
+
+    @Test
+    fun resolveVoice_companionVoiceAaron_mapsToNearestEnglishVoice() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val session = AcapelaHostSession(context)
+        val engVoice = AcapelaVoiceManifest.VoiceInfo(
+            id = "Ryan",
+            voiceName = "Ryan",
+            displayName = "Ryan",
+            locale = Locale.US,
+            sampleRate = 22050,
+            dir = tempFolder.newFolder("ryan_test"),
+            registration = "test_reg_ryan"
+        )
+        val matched = AcapelaHostSession.matchesVoice(
+            engVoice,
+            "en-US-aaron-premium-ios7"
+        )
+        assertTrue(matched)
+    }
+
+    @Test
+    fun isHdPackageWithoutRegistration_arabicVoiceMissingReg() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val session = AcapelaHostSession(context)
+        val arabicVoice = AcapelaVoiceManifest.VoiceInfo(
+            id = "Salma",
+            voiceName = "Salma",
+            displayName = "Salma",
+            locale = Locale.forLanguageTag("ar-SA"),
+            sampleRate = 22050,
+            dir = tempFolder.newFolder("salma_hd_test"),
+            registration = ""
+        )
+        val isHdMissing = session.isHdPackageWithoutRegistration(arabicVoice)
+        assertTrue(isHdMissing)
+    }
 }

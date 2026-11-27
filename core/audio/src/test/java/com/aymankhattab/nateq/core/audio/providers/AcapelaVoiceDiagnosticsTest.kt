@@ -1307,11 +1307,13 @@ class AcapelaVoiceDiagnosticsTest {
     }
 
     @Test
-    fun capSharedReport_capsLengthAndKeepsHeadTrimsLogcatTail() {
+    fun capSharedReport_capsLengthAndKeepsHeadAndLogcatTailTrimsMiddle() {
         val head = "===acapela-stable-diagnostic==="
+        val middle = "MIDDLE_CHUNK_TO_DROP_".repeat(200)
         val tail = "LOGCAT_TAIL_MARKER"
         val report = head +
             "x".repeat(AcapelaVoiceDiagnostics.MAX_SHARED_REPORT_CHARS) +
+            middle +
             tail
 
         val capped = AcapelaVoiceDiagnostics.capSharedReport(report)
@@ -1321,8 +1323,8 @@ class AcapelaVoiceDiagnosticsTest {
                 AcapelaVoiceDiagnostics.MAX_SHARED_REPORT_CHARS
         )
         assertTrue(capped.startsWith(head))
-        assertFalse(capped.contains(tail))
-        assertTrue(capped.contains("حُذفت أسطر logcat"))
+        assertTrue(capped.contains(tail))
+        assertTrue(capped.contains("تم الاقتطاع"))
     }
 
     @Test
@@ -1792,12 +1794,17 @@ class AcapelaVoiceDiagnosticsTest {
         val fakePass = "pass_fake_67890"
         val rawLines = listOf(
             "05-23 12:34:56.789 1 1 I acattsandroid: registration=$fakeReg",
-            "05-23 12:34:56.789 1 1 I acattsandroid: babParam.uid.userId $fakeUser",
-            "05-23 12:34:56.789 1 1 I acattsandroid: babParam.uid.passwd $fakePass",
+            "05-23 12:34:56.789 1 1 I acattsandroid: " +
+                "babParam.uid.userId $fakeUser",
+            "05-23 12:34:56.789 1 1 I acattsandroid: " +
+                "babParam.uid.passwd $fakePass",
             "05-23 12:34:56.790 1 1 I acattsandroid: nSpeak: -25",
-            "05-23 12:34:56.791 1 1 I acattsandroid: babParam.license MIIEFAKEBLOB1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            "05-23 12:34:56.791 1 1 I acattsandroid: " +
+                "babParam.license MIIEFAKEBLOB1234567890" +
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         )
-        val sanitized = AcapelaVoiceDiagnostics.sanitizeNativeReportLines(rawLines)
+        val sanitized =
+            AcapelaVoiceDiagnostics.sanitizeNativeReportLines(rawLines)
         val joined = sanitized.joinToString("\n")
         assertFalse(joined.contains(fakeReg))
         assertFalse(joined.contains(fakeUser))

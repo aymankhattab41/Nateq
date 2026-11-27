@@ -80,6 +80,42 @@ object EngineStatusRegistry {
 
     private val statuses = ConcurrentHashMap<String, EngineStatus>()
 
+    data class VoiceStatus(
+        val voiceId: String,
+        val isReady: Boolean,
+        val code: String? = null,
+        val errorMessage: String? = null,
+        val updatedAt: Long = System.currentTimeMillis()
+    )
+
+    private val voiceStatuses = ConcurrentHashMap<String, VoiceStatus>()
+
+    fun recordVoiceStatus(
+        engineId: String,
+        voiceId: String,
+        isReady: Boolean,
+        code: String? = null,
+        errorMessage: String? = null
+    ) {
+        val key = "${normalizeId(engineId)}:$voiceId"
+        voiceStatuses[key] = VoiceStatus(
+            voiceId = voiceId,
+            isReady = isReady,
+            code = code,
+            errorMessage = errorMessage,
+            updatedAt = nowProvider()
+        )
+    }
+
+    fun getVoiceStatus(engineId: String, voiceId: String): VoiceStatus? =
+        voiceStatuses["${normalizeId(engineId)}:$voiceId"]
+
+    fun getAllVoiceStatuses(engineId: String): List<VoiceStatus> {
+        val prefix = "${normalizeId(engineId)}:"
+        return voiceStatuses.filterKeys { it.startsWith(prefix) }
+            .values.toList()
+    }
+
     /** مجلد ملفات التطبيق لمطالعة ملفات الحالة الدائمة (ع٣٠-10). */
     @Volatile
     internal var defaultFilesDir: File? = null
@@ -482,6 +518,7 @@ object EngineStatusRegistry {
     /** إفراغ كامل — للاختبارات وإعادة التهيئة. */
     fun clear() {
         statuses.clear()
+        voiceStatuses.clear()
         defaultFilesDir?.let { dir ->
             val files = dir.listFiles { f ->
                 f.name.startsWith("engine_status_") &&
@@ -494,5 +531,6 @@ object EngineStatusRegistry {
     /** إفراغ الذاكرة فقط مع إبقاء ملفات القرص (للاختبارات فقط). */
     internal fun statusesClearOnly() {
         statuses.clear()
+        voiceStatuses.clear()
     }
 }

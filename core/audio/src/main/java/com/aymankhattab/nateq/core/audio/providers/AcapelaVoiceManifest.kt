@@ -797,7 +797,7 @@ object AcapelaVoiceManifest {
         "([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*\"([^\"]*)\""
     )
 
-    private val ARABIC_VOICE_NAMES = setOf(
+    internal val ARABIC_VOICE_NAMES = setOf(
         "mehdi", "salma", "leila", "nizar", "youssef", "tarik", "mariam"
     )
 
@@ -2087,9 +2087,10 @@ object AcapelaVoiceManifest {
             )
             return chosen.token
         } else {
-            // احتياطي آمن: بعض حزم Acapela الحقيقية (مثل Leila) تضع ملف تسجيل 0x
-            // ثنائي/معتم لا يحتوي رمزاً نصياً يطابق نمط metadata. نقبله فقط عندما
-            // يكون المحتوى غير نصي قابل للقراءة، لتجنب قبول محتوى نصي مرفوض صراحةً.
+            // احتياطي آمن: بعض حزم Acapela الحقيقية تضع ملف تسجيل 0x
+            // ثنائي/معتم لا يحتوي رمزاً نصياً يطابق نمط metadata. نقبله
+            // فقط عندما يكون المحتوى غير نصي قابل للقراءة، لتجنب قبول
+            // محتوى نصي مرفوض صراحةً.
             val printable = rawBytes.count { b ->
                 val c = b.toInt() and 0xFF
                 c == 0x09 || c == 0x0A || c == 0x0D || c in 0x20..0x7E
@@ -2105,7 +2106,8 @@ object AcapelaVoiceManifest {
                 ) {
                     diagLog(
                         "[فحص المفتاح] قبول احتياطي لملف 0x ثنائي/معتم " +
-                            "كبيانات تسجيل (hexEncoded length=${hexEncoded.length})"
+                            "كبيانات تسجيل (hexEncoded " +
+                            "length=${hexEncoded.length})"
                     )
                     return hexEncoded
                 }

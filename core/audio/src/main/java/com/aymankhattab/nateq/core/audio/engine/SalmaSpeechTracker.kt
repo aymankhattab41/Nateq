@@ -263,6 +263,9 @@ object SalmaSpeechTracker {
     private const val MAX_HISTORY = 100
     private val history = Collections.synchronizedList(mutableListOf<Record>())
 
+    @Volatile
+    private var currentActiveRequest: ActiveRequest? = null
+
     fun startRequest(
         correlationId: String? = null,
         category: Category = Category.REGULAR,
@@ -272,13 +275,15 @@ object SalmaSpeechTracker {
         val cid = correlationId?.takeIf { it.isNotBlank() }
             ?: "salma_${SystemClock.elapsedRealtime()}_" +
                 UUID.randomUUID().toString().take(6)
-        return ActiveRequest(
+        val active = ActiveRequest(
             correlationId = cid,
             category = category,
             voiceName = voiceName,
             textLength = textLength,
             requestStartRealtimeMs = SystemClock.elapsedRealtime()
         )
+        currentActiveRequest = active
+        return active
     }
 
     private fun recordCall(record: Record) {
@@ -315,12 +320,15 @@ object SalmaSpeechTracker {
             if (valueMs < 0.0) "غير مقاس" else "${"%.1f".format(valueMs)}ms"
     }
 
-    fun getStats(category: Category? = null): CategoryStats {
+    fun getStats(
+        category: Category? = null,
+        voiceFilter: String? = null
+    ): CategoryStats {
         val subset = synchronized(history) {
-            if (category == null) {
-                history.toList()
-            } else {
-                history.filter { it.category == category }
+            history.filter { rec ->
+                (category == null || rec.category == category) &&
+                    (voiceFilter == null ||
+                        rec.voiceName.equals(voiceFilter, ignoreCase = true))
             }
         }
         val total = subset.size
@@ -404,6 +412,10 @@ object SalmaSpeechTracker {
     }
 
     fun noteFirstTrackWrite() {
+        val active = currentActiveRequest
+        if (active != null && !active.isCompletedRequest) {
+            active.markFirstTrackWrite()
+        }
         synchronized(history) {
             val last = history.lastOrNull() ?: return
             if (last.firstTrackWriteMs < 0L) {
@@ -419,6 +431,10 @@ object SalmaSpeechTracker {
     }
 
     fun notePlaybackHeadAdvance() {
+        val active = currentActiveRequest
+        if (active != null && !active.isCompletedRequest) {
+            active.markPlaybackHeadStarted()
+        }
         synchronized(history) {
             val last = history.lastOrNull() ?: return
             if (last.playbackHeadStartMs < 0L) {
@@ -433,11 +449,22 @@ object SalmaSpeechTracker {
         }
     }
 
-    fun formatReport(): String {
-        val overall = getStats()
-        if (overall.totalCount == 0) return "لا توجد طلبات مسجلة لسلمى"
+    fun formatReport(voiceFilter: String? = null): String {
+        val overall = getStats(category = null, voiceFilter = voiceFilter)
+        val headerTitle = if (!voiceFilter.isNullOrBlank()) {
+            "=== إحصائيات زمن استجابة صوت $voiceFilter ==="
+        } else {
+            "=== إحصائيات زمن استجابة محرك Acapela ==="
+        }
+        if (overall.totalCount == 0) {
+            return if (!voiceFilter.isNullOrBlank()) {
+                "لا توجد طلبات مسجلة لصوت $voiceFilter"
+            } else {
+                "لا توجد طلبات مسجلة لمحرك Acapela"
+            }
+        }
         val sb = StringBuilder()
-        sb.appendLine("=== إحصائيات زمن استجابة سلمى ===")
+        sb.appendLine(headerTitle)
         sb.appendLine(
             "• الإجمالي: ${overall.totalCount} " +
                 "(نجاح: ${overall.successCount}، " +

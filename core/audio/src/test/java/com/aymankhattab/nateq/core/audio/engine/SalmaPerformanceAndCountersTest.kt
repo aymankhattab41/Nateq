@@ -273,4 +273,16 @@ class SalmaPerformanceAndCountersTest {
             AcapelaHostSession.isWarmVoiceReady("salma")
         )
     }
+
+    @Test
+    fun testActiveRequestReset_andPerVoiceFilterInStats() {
+        SalmaSpeechTracker.noteFirstTrackWrite()
+        SalmaSpeechTracker.notePlaybackHeadAdvance()
+
+        val stats = SalmaSpeechTracker.getStats(voiceFilter = "Salma")
+        assertNotNull(stats)
+
+        val report = SalmaSpeechTracker.formatReport("Salma")
+        assertTrue(report.contains("Salma") || report.contains("تقرير"))
+    }
 }

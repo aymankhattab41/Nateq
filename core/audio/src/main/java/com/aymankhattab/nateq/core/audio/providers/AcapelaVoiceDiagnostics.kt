@@ -307,9 +307,9 @@ object AcapelaVoiceDiagnostics {
     }.trimEnd()
 
     /**
-     * اقتطاع التقرير عند حد المشاركة الآمن مع تنقية كاملة: ينقل قسم
-     * Acapela المحصور بالعلامات إلى الصدارة (إن وُجد) ثم يقتطع من
-     * النهاية مع إشارة صريحة، بعد تنقية كل المحتوى.
+     * اقتطاع التقرير عند حد المشاركة الآمن (60 ألف حرف) مع تنقية كاملة:
+     * ينقل قسم Acapela إلى الصدارة ويقتطع التكرار من الوسط للحفاظ
+     * على صدارة التقرير ونهاية أسطر الـ logcat الحديثة.
      */
     fun capSharedReport(
         report: String,
@@ -319,9 +319,13 @@ object AcapelaVoiceDiagnostics {
         val ordered = moveAcapelaSectionFirst(redacted)
         if (ordered.length <= maxChars) return ordered
         val marker = "\n\n[تم الاقتطاع إلى $maxChars حرف: " +
-            "حُذفت أسطر logcat من النهاية]"
-        val keep = (maxChars - marker.length).coerceAtLeast(0)
-        return ordered.substring(0, keep) + marker
+            "تم اقتطاع الوسط وحفظ صدارة التقرير ونهاية logcat]\n\n"
+        val keepTotal = (maxChars - marker.length).coerceAtLeast(0)
+        val headKeep = keepTotal / 2
+        val tailKeep = keepTotal - headKeep
+        val head = ordered.take(headKeep)
+        val tail = ordered.takeLast(tailKeep)
+        return head + marker + tail
     }
 
     /**
@@ -1424,37 +1428,41 @@ object AcapelaVoiceDiagnostics {
     )
 
     /**
-     * تنقيح سطر مكتبة أصلية للتقارير بقائمة سماح لا منع: لا يُكتب أي سطر خام
-     * إلا إذا طابق نمطاً تشخيصياً آمناً وخلا من مفاتيح/حمولات حساسة.
+     * تنقيح سطر مكتبة أصلية للتقارير: يحجب الأجزاء الحساسة فقط
+     * (الرخصة/المفاتيح) ويعرض باقي السطر دون تسريب بيانات الترخيص.
      */
     fun sanitizeNativeReportLine(line: String): String {
         val redacted = redactSensitiveLine(line)
-        if (redacted.contains("[محجوب]") ||
-            redacted.contains("[REDACTED_") ||
-            redacted.contains("[حمولة ترخيص محجوبة]")
-        ) {
-            return "[محجوب: سطر مكتبة أصلي]"
-        }
         if (containsSensitiveMaterial(redacted)) {
-            return "[محجوب: سطر مكتبة أصلي]"
+            val further = redactSensitive(redacted)
+            return if (containsSensitiveMaterial(further)) {
+                "[محجوب: بيانات ترخيص]"
+            } else {
+                further
+            }
         }
-        val allowed = safeNativeReportPatterns.any { it.containsMatchIn(redacted) }
-        return if (allowed) redacted else "[محجوب: سطر مكتبة أصلي]"
+        return redacted
     }
 
-    fun sanitizeNativeReportLines(lines: List<String>): List<String> =
-        lines.map(::sanitizeNativeReportLine)
+    fun sanitizeNativeReportLines(lines: List<String>): List<String> {
+        val multilineRedacted = redactSensitiveLines(lines)
+        return multilineRedacted.map(::sanitizeNativeReportLine)
+    }
 
     private fun containsSensitiveMaterial(line: String): Boolean {
         if (sensitiveLogKeys.any { line.contains(it, ignoreCase = true) }) {
             return true
         }
-        if (Regex("""(?i)\b0x[0-9a-f]{8,}\b""").containsMatchIn(line)) return true
-        if (Regex("""(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{40,}={0,2}(?![A-Za-z0-9+/])""")
-                .containsMatchIn(line) && isLikelyBlob(
-                    Regex("""[A-Za-z0-9+/]{40,}={0,2}""")
-                        .find(line)?.value ?: ""
-                )
+        if (Regex("""(?i)\b0x[0-9a-f]{8,}\b""")
+                .containsMatchIn(line)
+        ) return true
+        if (Regex(
+                """(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{40,}""" +
+                    """={0,2}(?![A-Za-z0-9+/])"""
+            ).containsMatchIn(line) && isLikelyBlob(
+                Regex("""[A-Za-z0-9+/]{40,}={0,2}""")
+                    .find(line)?.value ?: ""
+            )
         ) {
             return true
         }
@@ -1650,11 +1658,14 @@ object AcapelaVoiceDiagnostics {
         sb.appendLine("- المعمارية الحالية: ${getArchInfo()}")
         sb.appendLine("- دعم المعماريتين: ${hasDualArchLibs(context)}")
         sb.appendLine(
-            "- مجلد الصوت: ${redactSensitiveLine(voiceDir?.absolutePath ?: "غير معروف")}"
+            "- مجلد الصوت: " +
+                redactSensitiveLine(voiceDir?.absolutePath ?: "غير معروف")
         )
         sb.appendLine(
             "- config.yaml: موجود=${if (yamlExists) "نعم" else "لا"} | " +
-                "حجم=$yamlSize بايت | مسار=${redactSensitiveLine(yamlPath)} | التسجيل=$maskedReg"
+                "حجم=$yamlSize بايت | " +
+                "مسار=${redactSensitiveLine(yamlPath)} | " +
+                "التسجيل=$maskedReg"
         )
         if (foundYaml != null) {
             val rawParam = foundYaml.second
@@ -1693,7 +1704,9 @@ object AcapelaVoiceDiagnostics {
         )
         sb.appendLine("- طول التسجيل: $registrationText")
         sb.appendLine("- ملفات مجلد الصوت:")
-        inventory(voiceDir).forEach { sb.appendLine("  - ${redactSensitiveLine(it)}") }
+        inventory(voiceDir).forEach { item ->
+            sb.appendLine("  - ${redactSensitiveLine(item)}")
+        }
         appendTail(sb, "سجل المحرك", voiceDir?.let {
             File(it, LOG_FILE_NAME)
         })
@@ -3106,7 +3119,9 @@ object AcapelaVoiceDiagnostics {
                         }
                         .distinctBy { it.absolutePath }
                     if (candidates.isEmpty()) {
-                        appendLine("السبب: لا توجد مجلدات أصوات مثبتة في مسارات البحث.")
+                        appendLine(
+                            "السبب: لا توجد مجلدات أصوات مثبتة في مسارات البحث."
+                        )
                     } else {
                         appendLine("تفصيل الأصوات/المجلدات المرشحة:")
                         candidates.forEach { cand ->
@@ -3122,17 +3137,21 @@ object AcapelaVoiceDiagnostics {
                             }
                             val reason = when {
                                 !hasConfig && !hasHex && !hasInf ->
-                                    "غير مثبّت/غير مكتمل (لا config.yaml ولا ملف تسجيل ولا .inf)"
+                                    "غير مثبّت/غير مكتمل (لا config.yaml " +
+                                        "ولا ملف تسجيل ولا .inf)"
                                 !hasConfig ->
-                                    "CONFIG_YAML_MISSING (ملف config.yaml ناقص بالاسم)"
+                                    "CONFIG_YAML_MISSING " +
+                                        "(ملف config.yaml ناقص بالاسم)"
                                 !hasHex ->
                                     "ملف التسجيل 0x* ناقص بالاسم"
                                 !hasInf ->
                                     "ملف .inf ناقص بالاسم"
                                 !hasEngines ->
-                                    "engines.yaml ناقص بالاسم (قد يُحتاج للتوافق)"
+                                    "engines.yaml ناقص بالاسم " +
+                                        "(قد يُحتاج للتوافق)"
                                 else ->
-                                    "مجلد موجود لكن لم يُعتمد كصوت صالح (تحقق من التسجيل/param)"
+                                    "مجلد موجود لكن لم يُعتمد كصوت صالح " +
+                                        "(تحقق من التسجيل/param)"
                             }
                             appendLine("  - $name: $reason")
                         }
@@ -5069,7 +5088,9 @@ object AcapelaVoiceDiagnostics {
         file: File?
     ) {
         sb.appendLine("- $title (${file?.name ?: "-"}):")
-        tailLines(file).forEach { sb.appendLine("  ${redactSensitiveLine(it)}") }
+        tailLines(file).forEach { line ->
+            sb.appendLine("  ${redactSensitiveLine(line)}")
+        }
     }
 
     fun babileErrorName(code: Int): String = when (code) {

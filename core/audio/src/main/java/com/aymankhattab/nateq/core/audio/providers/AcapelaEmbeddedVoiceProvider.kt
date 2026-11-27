@@ -61,6 +61,9 @@ class AcapelaEmbeddedVoiceProvider(
                 }
             } ?: snapshot.searchDirs.firstOrNull()
             if (candidate != null) {
+                AcapelaVoiceImporter.ensureValidConfigYamlForVoices(
+                    context, candidate
+                )
                 cachedResolvedDir = candidate
                 lastResolvedDirRevision = curRev
                 return candidate
@@ -83,6 +86,11 @@ class AcapelaEmbeddedVoiceProvider(
             search.firstOrNull {
                 AcapelaVoiceManifest.completeVoiceDirs(it).isNotEmpty()
             }
+        }
+        if (resolved != null) {
+            AcapelaVoiceImporter.ensureValidConfigYamlForVoices(
+                context, resolved
+            )
         }
         cachedResolvedDir = resolved
         lastResolvedDirRevision = curRev
@@ -365,10 +373,12 @@ class AcapelaEmbeddedVoiceProvider(
                             substituteVoice = null,
                             substituteEngine = null
                         )
-                    EngineStatusRegistry.noteFailure(
-                        PROVIDER_ID,
-                        result.code,
-                        result.message
+                    EngineStatusRegistry.recordVoiceStatus(
+                        engineId = PROVIDER_ID,
+                        voiceId = voice.id,
+                        isReady = false,
+                        code = result.code,
+                        errorMessage = result.message
                     )
                     EngineStatusRegistry.noteSpeakFailure(
                         PROVIDER_ID,
@@ -379,6 +389,11 @@ class AcapelaEmbeddedVoiceProvider(
                     tracker.complete(SalmaSpeechTracker.Status.SUCCESS)
                     com.aymankhattab.nateq.core.audio.engine
                         .SpeechFallbackTracker.clearAcapelaFallbackState()
+                    EngineStatusRegistry.recordVoiceStatus(
+                        engineId = PROVIDER_ID,
+                        voiceId = voice.id,
+                        isReady = true
+                    )
                     EngineStatusRegistry.noteReady(PROVIDER_ID)
                     EngineStatusRegistry.noteSpeakSuccess(PROVIDER_ID)
                 }

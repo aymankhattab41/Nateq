@@ -308,4 +308,45 @@ class AcapelaVoiceImporterTest {
             assertEquals(originalLen, liveIni.length())
             assertEquals(originalSha, sha256(liveIni))
         }
+
+    @Test
+    fun isValidConfigYaml_checksNonEmptyValidParamAndSpeakerMatch() {
+        val validYaml = File(tempFolder.root, "config_salma.yaml")
+        validYaml.writeText(
+            "param: \"salma22k_hq, test@example.com, 1234567890ABCDEF\"\n"
+        )
+
+        assertTrue(
+            AcapelaVoiceImporter.isValidConfigYaml(validYaml, "salma")
+        )
+        assertFalse(
+            AcapelaVoiceImporter.isValidConfigYaml(validYaml, "leila")
+        )
+
+        val emptyYaml = File(tempFolder.root, "config_empty.yaml")
+        emptyYaml.writeText("")
+        assertFalse(
+            AcapelaVoiceImporter.isValidConfigYaml(emptyYaml, "salma")
+        )
+
+        val noParamYaml = File(tempFolder.root, "config_no_param.yaml")
+        noParamYaml.writeText("voice: salma\nother: 123\n")
+        assertFalse(
+            AcapelaVoiceImporter.isValidConfigYaml(noParamYaml, "salma")
+        )
+    }
+
+    @Test
+    fun copyConfigFileSafely_copiesAndOverwritesEmptyTarget() {
+        val src = File(tempFolder.root, "src_config.yaml")
+        src.writeText("param: test_param\n")
+        val dst = File(tempFolder.root, "dst_config.yaml")
+        dst.writeText("")
+
+        val copied = AcapelaVoiceImporter.copyConfigFileSafely(src, dst)
+        assertTrue(copied)
+        assertTrue(dst.exists())
+        assertEquals(src.length(), dst.length())
+        assertEquals(src.readText(), dst.readText())
+    }
 }
