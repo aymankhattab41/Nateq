@@ -23,6 +23,7 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.runBlocking
 
@@ -66,6 +67,10 @@ class EmbeddedEngineHostService : Service() {
 
     /** معرّف الطلب الناطق فعلاً (لتمييز إلغاءه عن إلغاء منتظر). */
     private val speakingRequestId = AtomicLong(-1L)
+    /** هل الطلب الناطق حالياً خلفية/تدفئة (volume<=0)؟ */
+    private val speakingIsBackground = AtomicBoolean(false)
+    /** عدد الطلبات الحقيقية المنتظرة؛ يسبقها إيقاف التدفئة الجارية. */
+    private val pendingRealRequests = AtomicInteger(0)
 
     private lateinit var executor: ExecutorService
     private lateinit var watchdog: ScheduledExecutorService
@@ -215,17 +220,66 @@ class EmbeddedEngineHostService : Service() {
                 }
             }
             val budgetMs = SynthesisBudget.inactivityBudgetMs(content.length)
-            executor.execute {
-                var guard: ScheduledFuture<*>? = null
-                var gateHeld = false
-                try {
-                    // طابور واحد: ميزانية الطلب تبدأ بعد الدخول لا
-                    // بعد الانتظار، فلا تستهلك مهلتها في الطابور.
-                    speakGate.acquire()
-                    gateHeld = true
+            val isBackgroundRequest = volume <= 0f
+            if (!isBackgroundRequest) {
+                pendingRealRequests.incrementAndGet()
+                // بند 22: أوقف تدفئة/معاينة جارية فور وصول طلب حقيقي.
+                if (speakingIsBackground.get()) {
+                    val speaking = speakingRequestId.get()
+                    if (speaking > 0L) {
+                        val action = activeCancels[speaking]
+                        if (action != null) {
+                            runCatching { executor.execute(action) }
+                        }
+                    }
+                }
+            }
+            try {
+                executor.execute {
+                    var guard: ScheduledFuture<*>? = null
+                    var gateHeld = false
+                    try {
+                    // بند 22: طلبات حقيقية لها أولوية على التدفئة/المعاينة،
+                    // مع الحفاظ على قيد محرك واحد نشط في كل وقت.
+                    if (isBackgroundRequest) {
+                        while (true) {
+                            if (cancelled.get()) break
+                            if (pendingRealRequests.get() > 0) {
+                                if (cancelled.get()) break
+                                Thread.sleep(20)
+                                continue
+                            }
+                            if (speakGate.tryAcquire(25, TimeUnit.MILLISECONDS)) {
+                                gateHeld = true
+                                break
+                            }
+                        }
+                    } else {
+                        if (speakingIsBackground.get()) {
+                            val speaking = speakingRequestId.get()
+                            if (speaking > 0L) {
+                                activeCancels[speaking]?.run()
+                            }
+                        }
+                        speakGate.acquire()
+                        gateHeld = true
+                    }
+                    if (cancelled.get() || !gateHeld) {
+                        val code =
+                            if (cancelled.get()) "CANCELLED" else "CANCELLED"
+                        val skipped = HostResult.failure(
+                            "CANCELLED",
+                            "أُلغي الطلب قبل بدئه"
+                        )
+                        sink.end(
+                            HostProtocol.STATUS_ERROR,
+                            "CANCELLED",
+                            skipped.message ?: ""
+                        )
+                        return@execute
+                    }
                     // انتظار الطابور ليس خمولاً للمحرك: نبضةٌ فورية
-                    // تُعلم الطرفين (المضيف والعميل) ببدء الميزانية
-                    // من هنا لا من لحظة بناء الطلب.
+                    // تُعلم الطرفين ببدء الميزانية من هنا لا من البناء.
                     runCatching { sink.ping() }
                     if (cancelled.get()) {
                         val skipped = HostResult.failure(
@@ -240,6 +294,7 @@ class EmbeddedEngineHostService : Service() {
                         return@execute
                     }
                     speakingRequestId.set(requestId)
+                    speakingIsBackground.set(isBackgroundRequest)
                     // حارس الخمول لا الزمن الكلّي: ما دامت الشرائح
                     // تتوالى (تقدّمٌ حديث) لا يُقطع الطلب مهما طال؛
                     // وإن انقطع لمدّة الميزانية فهو خمولٌ حقيقي.
@@ -316,11 +371,33 @@ class EmbeddedEngineHostService : Service() {
                     guard?.cancel(false)
                     if (requestId == speakingRequestId.get()) {
                         speakingRequestId.set(-1L)
+                        speakingIsBackground.set(false)
                     }
                     if (gateHeld) speakGate.release()
+                    if (!isBackgroundRequest) {
+                        pendingRealRequests.decrementAndGet()
+                    }
                     activeCancels.remove(requestId)
                     sink.close()
                 }
+            }
+            } catch (t: Throwable) {
+                if (!isBackgroundRequest) {
+                    pendingRealRequests.decrementAndGet()
+                }
+                activeCancels.remove(requestId)
+                runCatching {
+                    sink.end(
+                        HostProtocol.STATUS_ERROR,
+                        "ENGINE_ERROR",
+                        t.message ?: "تعذّر جدولة النطق"
+                    )
+                }
+                sink.close()
+                return HostProtocol.error(
+                    "ENGINE_ERROR",
+                    t.message ?: "تعذّر جدولة النطق"
+                )
             }
             return HostProtocol.ok(requestId.toString())
         }

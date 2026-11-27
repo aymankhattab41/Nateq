@@ -56,9 +56,6 @@ object EngineHostClient {
 
     private const val TAG = "EngineHostClient"
 
-    /** دورة فحص خيط قراءة الأنبوب (يستجيب لانتهائه فوراً). */
-    private const val POLL_INTERVAL_MS = 50L
-
     private val connections = ConcurrentHashMap<String, HostConnection>()
 
     /** تذكر نجاح التهيئة لكل محرك (ع٣٠-9) لتفادي نداءات Binder المكررة. */
@@ -149,6 +146,12 @@ object EngineHostClient {
     private val background: ExecutorService =
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "engine-host-client")
+        }
+
+    /** منفذ قراءة إطارات الأنبوب مُعاد الاستخدام (بند 20). */
+    private val readerExecutor: ExecutorService =
+        Executors.newCachedThreadPool { runnable ->
+            Thread(runnable, "engine-host-read").apply { isDaemon = true }
         }
 
     // ----------------------------------------------------------------
@@ -672,18 +675,18 @@ object EngineHostClient {
     // ----------------------------------------------------------------
 
     /**
-     * قراءة إطارات الأنبوب على خيطٍ منفصل حتى إطار النهاية أو EOF،
-     * مع مهلة [deadlineAt]. لا نُغلق الـFD من خيط الانتظار وقت
-     * المهلة (سباق close/read يعلّق القراءة)؛ نكتفي بإرجاع الفشل
-     * فتُوقف النداء التاليُ في `finally` طلبَ المضيف.
+     * قراءة إطارات الأنبوب على منفذ قراءة مُعاد الاستخدام، مع إشارة
+     * اكتمال مباشرة عند End/EOF/خطأ (بلا استطلاع 50ms). يبقى حارس الخمول
+     * والسقف المطلق كمهل منفصلة تُقيَّم ديناميكياً مع تقدّم الإطارات.
      */
-    private suspend fun readFrames(
+    @VisibleForTesting
+    internal suspend fun readFrames(
         pfd: ParcelFileDescriptor,
         engineId: String,
         onFormatInfo: (Int, Int) -> Unit,
         onAudioChunk: (ByteArray, Int) -> Unit
     ): HostResult {
-        val captured = AtomicReference<HostResult?>(null)
+        val completion = CompletableDeferred<HostResult>()
         val lastProgressAt = AtomicLong(SystemClock.uptimeMillis())
         val lastPieceDurationMs = AtomicLong(0L)
         val sampleRateRef = AtomicInteger(22050)
@@ -691,7 +694,10 @@ object EngineHostClient {
         lastFrameReceived = "لم يُستلم أي إطار عبر الأنبوب (EOF فوري)"
         framesReceivedCount = 0
 
-        val reader = Thread({
+        val readerTask = Runnable {
+            fun complete(result: HostResult) {
+                completion.complete(result)
+            }
             try {
                 DataInputStream(
                     BufferedInputStream(FileInputStream(pfd.fileDescriptor))
@@ -732,9 +738,6 @@ object EngineHostClient {
                             }
                             is HostProtocol.HostFrame.Ping -> {
                                 lastFrameReceived = "Ping (نبضة تقدّم)"
-                                // نبضة تقدّم أثناء عملٍ أصليّ متزامن:
-                                // لا صوت فيها، لكنها تمنع حارس الخمول
-                                // من قطع نطقٍ سليم لا يبثّ إطارات.
                                 lastProgressAt.set(SystemClock.uptimeMillis())
                             }
                             is HostProtocol.HostFrame.End -> {
@@ -743,74 +746,82 @@ object EngineHostClient {
                                         "code=${frame.code}, " +
                                         "msg=${frame.message})"
                                 lastProgressAt.set(SystemClock.uptimeMillis())
-                                captured.set(frame.toResult())
-                                break
+                                complete(frame.toResult())
+                                return@Runnable
                             }
                         }
                     }
                 }
-                if (captured.get() == null) {
-                    captured.set(
+                complete(
+                    HostResult.failure(
+                        "HOST_EOF",
+                        "انتهى الأنبوب قبل إطار النهاية"
+                    )
+                )
+            } catch (t: Throwable) {
+                if (!completion.isCompleted) {
+                    complete(
                         HostResult.failure(
-                            "HOST_EOF",
-                            "انتهى الأنبوب قبل إطار النهاية"
+                            "HOST_ERROR",
+                            t.message ?: "فشل قراءة الأنبوب"
                         )
                     )
                 }
-            } catch (t: Throwable) {
-                captured.set(
-                    HostResult.failure(
-                        "PIPE_ERROR",
-                        t.message ?: "خطأ في أنبوب الصوت"
-                    )
-                )
             } finally {
                 runCatching { pfd.close() }
+                if (!completion.isCompleted) {
+                    complete(
+                        HostResult.failure(
+                            "HOST_EOF",
+                            "انتهى الأنبوب قبل تسجيل نتيجة"
+                        )
+                    )
+                }
             }
-        }, "engine-host-read")
-        reader.isDaemon = true
-        reader.start()
+        }
+        readerExecutor.execute(readerTask)
 
         val startAt = SystemClock.uptimeMillis()
-        var timedOut = false
-        while (reader.isAlive) {
-            delay(POLL_INTERVAL_MS)
+        while (true) {
+            if (completion.isCompleted) {
+                return completion.getCompleted()
+            }
             val now = SystemClock.uptimeMillis()
-            val idleElapsed = now - lastProgressAt.get()
-            val currentIdleLimit = SynthesisBudget.idleTimeoutMs(
+            val idleLimit = SynthesisBudget.idleTimeoutMs(
                 lastPieceDurationMs.get()
             )
-            if (idleElapsed > currentIdleLimit) {
+            val idleElapsed = now - lastProgressAt.get()
+            val idleRemaining = idleLimit - idleElapsed
+            val totalElapsed = now - startAt
+            val absRemaining =
+                SynthesisBudget.ABSOLUTE_REQUEST_TIMEOUT_MS - totalElapsed
+            if (idleRemaining <= 0L) {
                 HostLog.w(
                     engineId,
                     "خمول في استلام صوت المضيف: ${idleElapsed}ms > " +
-                        "${currentIdleLimit}ms"
+                        "${idleLimit}ms"
                 )
-                timedOut = true
                 runCatching { pfd.close() }
-                break
+                return HostResult.failure(
+                    "REQUEST_TIMEOUT",
+                    "انتهت مهلة قراءة صوت المضيف (غياب التقدّم)"
+                )
             }
-            val totalElapsed = now - startAt
-            if (totalElapsed > SynthesisBudget.ABSOLUTE_REQUEST_TIMEOUT_MS) {
+            if (absRemaining <= 0L) {
                 HostLog.w(
                     engineId,
                     "تجاوز السقف المطلق للتخليق: ${totalElapsed}ms"
                 )
-                timedOut = true
                 runCatching { pfd.close() }
-                break
+                return HostResult.failure(
+                    "REQUEST_TIMEOUT",
+                    "انتهت مهلة قراءة صوت المضيف (غياب التقدّم)"
+                )
             }
+            val waitMs = minOf(idleRemaining, absRemaining)
+            val result = withTimeoutOrNull(waitMs) { completion.await() }
+            if (result != null) return result
         }
-        if (timedOut) {
-            return HostResult.failure(
-                "REQUEST_TIMEOUT",
-                "انتهت مهلة قراءة صوت المضيف (غياب التقدّم)"
-            )
-        }
-        return captured.get() ?: HostResult.failure(
-            "HOST_EOF",
-            "انتهى الأنبوب قبل أن يسجّل القارئ نتيجة"
-        )
     }
 
     private fun HostProtocol.HostFrame.End.toResult(): HostResult {
