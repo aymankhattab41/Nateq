@@ -259,6 +259,34 @@ etCallerPrefix =
             }
         }
 
+        view.findViewById<SwitchMaterial>(
+            R.id.switch_caller_lock_screen_privacy
+        )?.apply {
+            isChecked = runCatching {
+                settings.isCallerLockScreenPrivacyEnabled()
+            }.getOrDefault(false)
+            setOnCheckedChangeListener { _, checked ->
+                runCatching {
+                    settings.setCallerLockScreenPrivacyEnabled(checked)
+                }
+                onStatusChanged()
+            }
+        }
+
+        view.findViewById<SwitchMaterial>(
+            R.id.switch_a11y_call_keys_swapped
+        )?.apply {
+            isChecked = runCatching {
+                settings.isA11yCallKeysSwapped()
+            }.getOrDefault(false)
+            setOnCheckedChangeListener { _, checked ->
+                runCatching {
+                    settings.setA11yCallKeysSwapped(checked)
+                }
+                onStatusChanged()
+            }
+        }
+
         // مربع نطق اسم المتصل الوارد أثناء مكالمة نشطة (مكالمة انتظار) —
         // غير محدد افتراضياً، مستقل عن مفتاح التفعيل.
         cbCallerAnnounceDuringCall?.isChecked =

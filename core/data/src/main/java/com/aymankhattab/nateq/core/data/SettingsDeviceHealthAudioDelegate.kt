@@ -50,56 +50,6 @@ internal class SettingsDeviceHealthAudioDelegate(
             .apply()
     }
 
-    fun getBatteryAnnouncementVoiceId(): String? =
-        repo.getPreferredVoiceIdForCategory(
-            SettingsRepository.VOICE_CATEGORY_BATTERY
-        )
-
-    fun setBatteryAnnouncementVoiceId(voiceId: String?) {
-        if (voiceId != null) {
-            repo.setPreferredVoiceIdForCategory(
-                SettingsRepository.VOICE_CATEGORY_BATTERY,
-                voiceId
-            )
-        }
-    }
-
-    fun getBatteryAnnouncementLanguage(): String? =
-        repo.getLanguageForCategory(
-            SettingsRepository.VOICE_CATEGORY_BATTERY
-        )
-
-    fun setBatteryAnnouncementLanguage(language: String?) {
-        repo.setLanguageForCategory(
-            SettingsRepository.VOICE_CATEGORY_BATTERY,
-            language
-        )
-    }
-
-    fun getBatteryAnnouncementRate(): Float =
-        repo.getSpeechRateForCategory(
-            SettingsRepository.VOICE_CATEGORY_BATTERY
-        )
-
-    fun setBatteryAnnouncementRate(rate: Float) {
-        repo.setSpeechRateForCategory(
-            SettingsRepository.VOICE_CATEGORY_BATTERY,
-            rate
-        )
-    }
-
-    fun getBatteryAnnouncementVolume(): Float =
-        repo.getVolumeForCategory(
-            SettingsRepository.VOICE_CATEGORY_BATTERY
-        )
-
-    fun setBatteryAnnouncementVolume(volume: Float) {
-        repo.setVolumeForCategory(
-            SettingsRepository.VOICE_CATEGORY_BATTERY,
-            volume
-        )
-    }
-
     fun validTimeChimeSounds(): Set<String> = setOf(
         "classic_bell", "digital_chime", "soft_ding"
     )

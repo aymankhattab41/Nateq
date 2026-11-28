@@ -231,6 +231,67 @@ internal class TextReadingController(
                 fragment.view?.announceCompat(msg)
             }
         }
+
+        val spinnerSingleLetter = view.findViewById<Spinner>(
+            R.id.spinner_single_letter_mode
+        )
+        if (spinnerSingleLetter != null) {
+            val modes = listOf(
+                fragment.getString(R.string.single_letter_mode_name),
+                fragment.getString(R.string.single_letter_mode_as_written),
+                fragment.getString(R.string.single_letter_mode_dictionary)
+            )
+            spinnerSingleLetter.adapter = ArrayAdapter(
+                fragment.requireContext(),
+                android.R.layout.simple_spinner_dropdown_item,
+                modes
+            )
+            val currentMode = runCatching {
+                settings.getSingleLetterMode()
+            }.getOrDefault("name")
+            val modeIdx = when (currentMode) {
+                "as_written" -> 1
+                "dictionary" -> 2
+                else -> 0
+            }
+            spinnerSingleLetter.setSelection(modeIdx)
+            spinnerSingleLetter.onItemSelectedListener =
+                object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(
+                        p: AdapterView<*>?,
+                        v: View?,
+                        pos: Int,
+                        id: Long
+                    ) {
+                        val selected = when (pos) {
+                            1 -> "as_written"
+                            2 -> "dictionary"
+                            else -> "name"
+                        }
+                        runCatching {
+                            settings.setSingleLetterMode(selected)
+                        }
+                        onStatusChanged()
+                    }
+
+                    override fun onNothingSelected(p: AdapterView<*>?) {}
+                }
+        }
+
+        val switchNumberSpelled = view.findViewById<SwitchMaterial>(
+            R.id.switch_number_voice_spelled_words
+        )
+        if (switchNumberSpelled != null) {
+            switchNumberSpelled.isChecked = runCatching {
+                settings.isNumberVoiceSpelledWordsEnabled()
+            }.getOrDefault(true)
+            switchNumberSpelled.setOnCheckedChangeListener { _, checked ->
+                runCatching {
+                    settings.setNumberVoiceSpelledWordsEnabled(checked)
+                }
+                onStatusChanged()
+            }
+        }
     }
 
     /** تحديث تسمية زر لغة نطق الأرقام. */

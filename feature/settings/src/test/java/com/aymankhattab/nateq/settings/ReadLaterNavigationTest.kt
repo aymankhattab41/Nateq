@@ -180,4 +180,15 @@ class ReadLaterNavigationTest {
         controller.restoreState(bundleSection)
         assertEquals(View.GONE, readLaterCard.visibility)
     }
+
+    @Test
+    fun readLaterPolicySpinner_existsInLayout() {
+        val spinner = rootView.findViewById<View>(
+            R.id.spinner_read_later_policy
+        )
+        assertNotNull(
+            "spinner_read_later_policy must exist in layout",
+            spinner
+        )
+    }
 }

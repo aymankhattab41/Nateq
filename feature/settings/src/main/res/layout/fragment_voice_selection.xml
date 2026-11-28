@@ -233,6 +233,25 @@
                 <androidx.appcompat.widget.AppCompatSpinner android:id="@+id/spinner_time_day_period_style" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:contentDescription="@string/spinner_time_day_period_style_content" />
             </com.google.android.material.textfield.TextInputLayout>
 
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_day_period_explicit_nun"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginTop="8dp"
+                android:text="@string/day_period_explicit_nun_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/day_period_explicit_nun_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_time_display_24h" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="16dp" android:text="@string/time_display_24h" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
@@ -453,6 +472,44 @@
 
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_caller_announcement" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/caller_announcement_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_caller_lock_screen_privacy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginTop="8dp"
+                android:text="@string/caller_lock_screen_privacy_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/caller_lock_screen_privacy_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_a11y_call_keys_swapped"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginTop="8dp"
+                android:text="@string/a11y_call_keys_swapped_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_call_keys_swapped_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
 
             
             <androidx.appcompat.widget.AppCompatCheckBox android:tag="cb_caller_announce_during_call" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/caller_announcement_during_call" android:importantForAccessibility="yes" />
@@ -845,6 +902,40 @@
                 android:textColor="@color/text_secondary"
                 android:importantForAccessibility="no" />
 
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_single_letter_mode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="@string/single_letter_mode_title">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_single_letter_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/single_letter_mode_title" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_number_voice_spelled_words"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/number_voice_spelled_words_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/number_voice_spelled_words_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
         </LinearLayout>
 
         <!-- بطاقة «اقرأ لاحقاً» (بعد قراءة النصوص مباشرة) -->
@@ -875,6 +966,20 @@
                 android:textSize="12sp"
                 android:textColor="@color/text_secondary"
                 android:importantForAccessibility="yes" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_read_later_policy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="@string/read_later_policy_title">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_read_later_policy"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/read_later_policy_title" />
+            </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_read_later_open"

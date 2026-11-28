@@ -210,4 +210,28 @@ class BankingCompatCheckActivityTest {
 
         controller.pause().stop().destroy()
     }
+
+    @Test
+    fun android17HardeningSwitch_togglesSetting() {
+        val controller = launch()
+        val activity = controller.get()
+        val repo = com.aymankhattab.nateq.core.data.SettingsRepository
+            .create(activity)
+
+        val switch = activity.findViewById<
+            com.google.android.material.switchmaterial.SwitchMaterial
+        >(R.id.switch_android17_banking_hardening)
+        org.junit.Assert.assertNotNull(switch)
+        org.junit.Assert.assertFalse(switch.isChecked)
+
+        switch.isChecked = true
+        assertTrue(repo.isAndroid17BankingHardeningEnabled())
+
+        switch.isChecked = false
+        org.junit.Assert.assertFalse(
+            repo.isAndroid17BankingHardeningEnabled()
+        )
+
+        controller.pause().stop().destroy()
+    }
 }

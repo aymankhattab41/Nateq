@@ -67,6 +67,23 @@
                 android:minHeight="48dp"
                 android:textAppearance="?attr/textAppearanceBody2" />
 
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_android17_banking_hardening"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/banking_android17_hardening_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/banking_android17_hardening_summary"
+                android:textAppearance="?attr/textAppearanceCaption"
+                android:textColor="@color/text_secondary" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

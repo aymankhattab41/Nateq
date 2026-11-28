@@ -3000,34 +3000,6 @@ class SettingsRepository(context: Context) :
         deviceHealthAudioDelegate.setBatteryAnnouncementLevels(levels)
     }
 
-    override fun getBatteryAnnouncementVoiceId(): String? =
-        deviceHealthAudioDelegate.getBatteryAnnouncementVoiceId()
-
-    override fun setBatteryAnnouncementVoiceId(voiceId: String?) {
-        deviceHealthAudioDelegate.setBatteryAnnouncementVoiceId(voiceId)
-    }
-
-    fun getBatteryAnnouncementLanguage(): String? =
-        deviceHealthAudioDelegate.getBatteryAnnouncementLanguage()
-
-    fun setBatteryAnnouncementLanguage(language: String?) {
-        deviceHealthAudioDelegate.setBatteryAnnouncementLanguage(language)
-    }
-
-    override fun getBatteryAnnouncementRate(): Float =
-        deviceHealthAudioDelegate.getBatteryAnnouncementRate()
-
-    override fun setBatteryAnnouncementRate(rate: Float) {
-        deviceHealthAudioDelegate.setBatteryAnnouncementRate(rate)
-    }
-
-    override fun getBatteryAnnouncementVolume(): Float =
-        deviceHealthAudioDelegate.getBatteryAnnouncementVolume()
-
-    override fun setBatteryAnnouncementVolume(volume: Float) {
-        deviceHealthAudioDelegate.setBatteryAnnouncementVolume(volume)
-    }
-
     internal fun validTimeChimeSounds(): Set<String> =
         deviceHealthAudioDelegate.validTimeChimeSounds()
 

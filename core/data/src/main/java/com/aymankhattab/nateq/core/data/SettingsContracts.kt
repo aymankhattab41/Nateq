@@ -589,24 +589,6 @@ interface AnnouncementPrefs {
     /** يعيّن مستويات البطارية المُعلنة. */
     fun setBatteryAnnouncementLevels(levels: Set<String>)
 
-    /** الصوت المفضّل لإعلان البطارية. */
-    fun getBatteryAnnouncementVoiceId(): String?
-
-    /** يعيّن صوت إعلان البطارية. */
-    fun setBatteryAnnouncementVoiceId(voiceId: String?)
-
-    /** معدل كلام إعلان البطارية. */
-    fun getBatteryAnnouncementRate(): Float
-
-    /** يعيّن معدل كلام إعلان البطارية. */
-    fun setBatteryAnnouncementRate(rate: Float)
-
-    /** مستوى صوت إعلان البطارية. */
-    fun getBatteryAnnouncementVolume(): Float
-
-    /** يعيّن مستوى صوت إعلان البطارية. */
-    fun setBatteryAnnouncementVolume(volume: Float)
-
     /** مستوى صوت التلميح الصوتي للبطارية. */
     fun getBatteryCueVolume(): Float
 

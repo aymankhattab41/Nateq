@@ -20,6 +20,7 @@ import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.feature.settings.R
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Locale
 
 /**
@@ -72,6 +73,17 @@ internal object EmergencyVoiceController {
         val btnSave = view.findViewById<View>(
             R.id.btn_emergency_save
         )
+        val switchSpokenAlert = view.findViewById<SwitchMaterial>(
+            R.id.switch_fallback_voice_spoken_alert
+        )
+        switchSpokenAlert?.isChecked = runCatching {
+            settings.isFallbackVoiceSpokenAlertEnabled()
+        }.getOrDefault(true)
+        switchSpokenAlert?.setOnCheckedChangeListener { _, checked ->
+            runCatching {
+                settings.setFallbackVoiceSpokenAlertEnabled(checked)
+            }
+        }
 
         val isSafe = CrashGuard.isSafeModeActive(context)
         if (isSafe) {
@@ -271,6 +283,9 @@ internal object EmergencyVoiceController {
             settings.setEmergencyRate(r)
             settings.setEmergencyPitch(p)
             settings.setEmergencyVolume(v)
+            switchSpokenAlert?.let {
+                settings.setFallbackVoiceSpokenAlertEnabled(it.isChecked)
+            }
 
             EmergencyVoice.save(
                 context,

@@ -15,6 +15,7 @@ import android.os.Looper
 import android.os.Trace
 import android.view.LayoutInflater
 import android.view.View
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.Spinner
@@ -1048,6 +1049,41 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         view.findViewById<View>(R.id.btn_read_later_open)
             .setOnClickListener { showReadLaterDialog() }
+
+        val spinnerReadLaterPolicy =
+            view.findViewById<Spinner>(R.id.spinner_read_later_policy)
+        if (spinnerReadLaterPolicy != null) {
+            val policies = listOf(
+                getString(R.string.read_later_policy_save_full),
+                getString(R.string.read_later_policy_truncate)
+            )
+            spinnerReadLaterPolicy.adapter = simpleAdapter(policies)
+            val currentPolicy = runCatching {
+                settings.getReadLaterLongTextPolicy()
+            }.getOrDefault(SettingsRepository.READ_LATER_POLICY_SAVE_FULL)
+            val policyIdx = if (currentPolicy ==
+                SettingsRepository.READ_LATER_POLICY_TRUNCATE
+            ) 1 else 0
+            spinnerReadLaterPolicy.setSelection(policyIdx)
+            spinnerReadLaterPolicy.onItemSelectedListener =
+                object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(
+                        p: AdapterView<*>?,
+                        v: View?,
+                        pos: Int,
+                        id: Long
+                    ) {
+                        val selected = if (pos == 1) {
+                            SettingsRepository.READ_LATER_POLICY_TRUNCATE
+                        } else {
+                            SettingsRepository.READ_LATER_POLICY_SAVE_FULL
+                        }
+                        settings.setReadLaterLongTextPolicy(selected)
+                    }
+
+                    override fun onNothingSelected(p: AdapterView<*>?) {}
+                }
+        }
 
         // زر دليل الميزات والإيماءات (ع٤١-ب14.3): شرح مختصر يقرؤه TalkBack
         view.findViewById<View>(R.id.btn_a11y_guide).setOnClickListener {

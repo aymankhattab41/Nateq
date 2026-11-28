@@ -24,9 +24,11 @@ import com.aymankhattab.nateq.core.audio.announcement.EventVoiceTrace
 import com.aymankhattab.nateq.settings.OemGuidanceController
 import com.aymankhattab.nateq.settings.WriteSecureSettingsGuideActivity
 import com.aymankhattab.nateq.settings.OemVendor
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.feature.settings.R
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.switchmaterial.SwitchMaterial
 import java.io.File
 
 /**
@@ -142,6 +144,20 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         findViewById<MaterialButton?>(R.id.btn_isolation_step)?.apply {
             contentDescription = getString(R.string.banking_isolation_step_btn)
             setOnClickListener { showIsolationStepDialog() }
+        }
+        val switchHardening = findViewById<SwitchMaterial?>(
+            R.id.switch_android17_banking_hardening
+        )
+        if (switchHardening != null) {
+            val repo = SettingsRepository.create(this)
+            switchHardening.isChecked = runCatching {
+                repo.isAndroid17BankingHardeningEnabled()
+            }.getOrDefault(false)
+            switchHardening.setOnCheckedChangeListener { _, checked ->
+                runCatching {
+                    repo.setAndroid17BankingHardeningEnabled(checked)
+                }
+            }
         }
         setupTimelineAndReadinessControls()
         initSpeaker()

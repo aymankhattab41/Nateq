@@ -561,10 +561,11 @@ class SettingsRepositoryTest {
 
     @Test
     fun batteryCallerSmsRateVolume_clamped() {
-        repo.setBatteryAnnouncementRate(4f)
-        assertEquals(2f, repo.getBatteryAnnouncementRate(), 0.0f)
-        repo.setBatteryAnnouncementVolume(4f)
-        assertEquals(1f, repo.getBatteryAnnouncementVolume(), 0.0f)
+        val batCat = SettingsRepository.VOICE_CATEGORY_BATTERY
+        repo.setSpeechRateForCategory(batCat, 4f)
+        assertEquals(2f, repo.getSpeechRateForCategory(batCat), 0.0f)
+        repo.setVolumeForCategory(batCat, 4f)
+        assertEquals(1f, repo.getVolumeForCategory(batCat), 0.0f)
         repo.setCallerAnnouncementRate(4f)
         assertEquals(2f, repo.getCallerAnnouncementRate(), 0.0f)
         repo.setCallerAnnouncementVolume(4f)
@@ -1062,22 +1063,24 @@ class SettingsRepositoryTest {
 
     @Test
     fun batteryAndSmsLanguage_defaultsNullAndRoundTrip() {
-        assertNull(repo.getBatteryAnnouncementLanguage())
+        val batCat = SettingsRepository.VOICE_CATEGORY_BATTERY
+        assertNull(repo.getLanguageForCategory(batCat))
         assertNull(repo.getSmsReadingLanguage())
-        repo.setBatteryAnnouncementLanguage("en")
+        repo.setLanguageForCategory(batCat, "en")
         repo.setSmsReadingLanguage("en")
-        assertEquals("en", repo.getBatteryAnnouncementLanguage())
+        assertEquals("en", repo.getLanguageForCategory(batCat))
         assertEquals("en", repo.getSmsReadingLanguage())
-        repo.setBatteryAnnouncementLanguage("ar")
+        repo.setLanguageForCategory(batCat, "ar")
         repo.setSmsReadingLanguage("ar")
-        assertEquals("ar", repo.getBatteryAnnouncementLanguage())
+        assertEquals("ar", repo.getLanguageForCategory(batCat))
         assertEquals("ar", repo.getSmsReadingLanguage())
     }
 
     @Test
     fun languageKeys_exportAndReset() {
+        val batCat = SettingsRepository.VOICE_CATEGORY_BATTERY
         repo.setLanguageForCategory("time", "en")
-        repo.setBatteryAnnouncementLanguage("en")
+        repo.setLanguageForCategory(batCat, "en")
         repo.setSmsReadingLanguage("en")
         val exported = repo.exportSettings()
         assertTrue(exported.containsKey("language_for_time"))
@@ -1085,7 +1088,7 @@ class SettingsRepositoryTest {
         assertTrue(exported.containsKey("sms_reading_language"))
         repo.resetAllToDefault()
         assertNull(repo.getLanguageForCategory("time"))
-        assertNull(repo.getBatteryAnnouncementLanguage())
+        assertNull(repo.getLanguageForCategory(batCat))
         assertNull(repo.getSmsReadingLanguage())
     }
 
@@ -1731,5 +1734,67 @@ class SettingsRepositoryTest {
         assertFalse(repo.isCallerLockScreenPrivacyEnabled())
         repo.setCallerLockScreenPrivacyEnabled(true)
         assertTrue(repo.isCallerLockScreenPrivacyEnabled())
+    }
+
+    @Test
+    fun a11yCallKeysSwapped_defaultsFalseAndRoundTrips() {
+        val repo = newRepository()
+        assertFalse(repo.isA11yCallKeysSwapped())
+        repo.setA11yCallKeysSwapped(true)
+        assertTrue(repo.isA11yCallKeysSwapped())
+        repo.setA11yCallKeysSwapped(false)
+        assertFalse(repo.isA11yCallKeysSwapped())
+    }
+
+    @Test
+    fun android17BankingHardening_defaultsFalseAndRoundTrips() {
+        val repo = newRepository()
+        assertFalse(repo.isAndroid17BankingHardeningEnabled())
+        repo.setAndroid17BankingHardeningEnabled(true)
+        assertTrue(repo.isAndroid17BankingHardeningEnabled())
+        repo.setAndroid17BankingHardeningEnabled(false)
+        assertFalse(repo.isAndroid17BankingHardeningEnabled())
+    }
+
+    @Test
+    fun fallbackVoiceSpokenAlert_defaultsTrueAndRoundTrips() {
+        val repo = newRepository()
+        assertTrue(repo.isFallbackVoiceSpokenAlertEnabled())
+        repo.setFallbackVoiceSpokenAlertEnabled(false)
+        assertFalse(repo.isFallbackVoiceSpokenAlertEnabled())
+        repo.setFallbackVoiceSpokenAlertEnabled(true)
+        assertTrue(repo.isFallbackVoiceSpokenAlertEnabled())
+    }
+
+    @Test
+    fun dayPeriodExplicitNun_defaultsTrueAndRoundTrips() {
+        val repo = newRepository()
+        assertTrue(repo.isDayPeriodExplicitNunEnabled())
+        repo.setDayPeriodExplicitNunEnabled(false)
+        assertFalse(repo.isDayPeriodExplicitNunEnabled())
+        repo.setDayPeriodExplicitNunEnabled(true)
+        assertTrue(repo.isDayPeriodExplicitNunEnabled())
+    }
+
+    @Test
+    fun singleLetterMode_defaultsNameAndRoundTrips() {
+        val repo = newRepository()
+        assertEquals("name", repo.getSingleLetterMode())
+        repo.setSingleLetterMode("as_written")
+        assertEquals("as_written", repo.getSingleLetterMode())
+        repo.setSingleLetterMode("dictionary")
+        assertEquals("dictionary", repo.getSingleLetterMode())
+        repo.setSingleLetterMode("invalid")
+        assertEquals("name", repo.getSingleLetterMode())
+    }
+
+    @Test
+    fun numberVoiceSpelledWords_defaultsTrueAndRoundTrips() {
+        val repo = newRepository()
+        assertTrue(repo.isNumberVoiceSpelledWordsEnabled())
+        repo.setNumberVoiceSpelledWordsEnabled(false)
+        assertFalse(repo.isNumberVoiceSpelledWordsEnabled())
+        repo.setNumberVoiceSpelledWordsEnabled(true)
+        assertTrue(repo.isNumberVoiceSpelledWordsEnabled())
     }
 }

@@ -162,6 +162,21 @@ internal class TimeAnnouncementController(
             else -> 0
         }
         spinnerTimeDayPeriodStyle?.setSelection(styleIndex)
+
+        view.findViewById<SwitchMaterial>(
+            R.id.switch_day_period_explicit_nun
+        )?.apply {
+            isChecked = runCatching {
+                settings.isDayPeriodExplicitNunEnabled()
+            }.getOrDefault(true)
+            setOnCheckedChangeListener { _, checked ->
+                runCatching {
+                    settings.setDayPeriodExplicitNunEnabled(checked)
+                }
+                onStatusChanged()
+            }
+        }
+
         switchTimeAnnouncement?.isChecked =
             runCatching { settings.isTimeAnnouncementEnabled() }
                 .getOrDefault(true)
