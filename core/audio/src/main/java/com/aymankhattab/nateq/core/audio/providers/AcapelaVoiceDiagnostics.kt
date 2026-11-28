@@ -3024,6 +3024,138 @@ object AcapelaVoiceDiagnostics {
     suspend fun runDiagnosticProbe(context: Context) {
         clearOldLogs(context)
         try {
+            val searchDirs = EmbeddedStorage.allSearchDirs(
+                context,
+                EmbeddedStorage.Engine.ACAPELA
+            )
+            val allVoiceInfos = searchDirs.flatMap {
+                AcapelaVoiceManifest.cachedVoices(it)
+            }.distinctBy { it.id }
+
+            val voicesToProbe = allVoiceInfos
+
+            if (voicesToProbe.isEmpty()) {
+                val file = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
+                val msg = buildString {
+                    appendLine("=== محاولة تشخيص Acapela (لا صوت) ===")
+                    appendLine("لا يوجد صوت مستورد")
+                    appendLine("لم يُعثر على أي صوت Acapela متاح.")
+                    appendLine("مجلدات البحث:")
+                    searchDirs.forEach { dir ->
+                        val exists = dir.exists()
+                        val count = dir.listFiles()
+                            ?.count { it.isDirectory } ?: 0
+                        appendLine(
+                            "  - ${redactSensitiveLine(dir.absolutePath)} | " +
+                                "exists=$exists | subdirs=$count"
+                        )
+                    }
+                    val candidates = searchDirs
+                        .filter { it.exists() }
+                        .flatMap { dir ->
+                            val complete = AcapelaVoiceManifest
+                                .completeVoiceDirs(dir)
+                            if (complete.isNotEmpty()) {
+                                complete
+                            } else {
+                                dir.walkTopDown().maxDepth(4).filter {
+                                    it.isDirectory &&
+                                        !AcapelaVoiceManifest
+                                            .isIgnoredOrNonVoiceDirectory(it) &&
+                                        (it.listFiles { f ->
+                                            f.isFile && (
+                                                f.extension.equals(
+                                                    "inf", ignoreCase = true
+                                                ) ||
+                                                f.extension.lowercase(
+                                                    Locale.ROOT
+                                                ) in AcapelaVoiceManifest
+                                                    .DATA_EXTENSIONS
+                                            )
+                                        }?.isNotEmpty() == true)
+                                }.toList().ifEmpty {
+                                    dir.listFiles()?.filter {
+                                        it.isDirectory &&
+                                            !AcapelaVoiceManifest
+                                                .isIgnoredOrNonVoiceDirectory(
+                                                    it
+                                                )
+                                    }.orEmpty()
+                                }
+                            }
+                        }
+                        .distinctBy { it.absolutePath }
+                    if (candidates.isEmpty()) {
+                        appendLine(
+                            "السبب: لا توجد مجلدات أصوات مثبتة في مسارات البحث."
+                        )
+                    } else {
+                        appendLine("تفصيل الأصوات/المجلدات المرشحة:")
+                        candidates.forEach { cand ->
+                            val infFile = cand.walkTopDown().maxDepth(2)
+                                .firstOrNull {
+                                    it.isFile &&
+                                        it.extension.equals("inf", true)
+                                }
+                            val effectiveName = if (infFile != null) {
+                                AcapelaVoiceManifest.cleanAcapelaSpeaker(
+                                    infFile.nameWithoutExtension
+                                )
+                            } else {
+                                val clean = AcapelaVoiceManifest
+                                    .cleanAcapelaSpeaker(cand.name)
+                                if (clean.isBlank() ||
+                                    clean.lowercase(Locale.ROOT) in setOf(
+                                        "voice", "files", "acapela"
+                                    )
+                                ) {
+                                    cand.name
+                                } else {
+                                    clean
+                                }
+                            }
+                            val name = redactSensitiveLine(effectiveName)
+                            val hasConfig = AcapelaVoiceManifest
+                                .findConfigYamlWithParam(cand) != null
+                            val hasEngines = File(cand, "engines.yaml").isFile
+                            val hexFile = cand.listFiles()?.firstOrNull {
+                                it.isFile && it.name.startsWith("0x")
+                            }
+                            val hasHex = hexFile != null
+                            val hasInf = infFile != null
+                            val reason = when {
+                                !hasConfig && !hasHex && !hasInf ->
+                                    "غير مثبّت/غير مكتمل (لا config.yaml " +
+                                        "ولا ملف تسجيل ولا .inf)"
+                                !hasConfig ->
+                                    "CONFIG_YAML_MISSING " +
+                                        "(ملف config.yaml أو param ناقص)"
+                                !hasHex ->
+                                    "ملف التسجيل 0x* ناقص بالاسم"
+                                !hasInf ->
+                                    "ملف .inf ناقص بالاسم"
+                                !hasEngines ->
+                                    "engines.yaml ناقص بالاسم " +
+                                        "(قد يُحتاج للتوافق)"
+                                else ->
+                                    "مجلد موجود لكن لم يُعتمد كصوت صالح " +
+                                        "(تحقق من التسجيل/param)"
+                            }
+                            appendLine("  - $name: $reason")
+                        }
+                    }
+                    appendLine("nSpeak: لم يُستدعَ (غير مقيس)")
+                    appendLine("PCM: غير مقيس")
+                }
+                runCatching {
+                    file.writeText(
+                        redactSensitiveText(msg),
+                        StandardCharsets.UTF_8
+                    )
+                }
+                return
+            }
+
             val provider = AcapelaEmbeddedVoiceProvider(context)
             val baseDir = provider.resolveDataDir()
             if (baseDir == null) {
@@ -3068,102 +3200,6 @@ object AcapelaVoiceDiagnostics {
                             StandardCharsets.UTF_8
                         )
                     }
-                }
-                return
-            }
-
-            val searchDirs = EmbeddedStorage.allSearchDirs(
-                context,
-                EmbeddedStorage.Engine.ACAPELA
-            )
-            val allVoiceInfos = searchDirs.flatMap {
-                AcapelaVoiceManifest.cachedVoices(it)
-            }.distinctBy { it.id }
-
-            val voicesToProbe = if (allVoiceInfos.isNotEmpty()) {
-                allVoiceInfos
-            } else {
-                val descList = provider.listVoices(Locale.ROOT)
-                descList.map { d ->
-                    AcapelaVoiceManifest.VoiceInfo(
-                        id = d.id,
-                        voiceName = d.displayName,
-                        displayName = d.displayName,
-                        locale = d.locale,
-                        dir = File(baseDir, d.id),
-                        sampleRate = 22050,
-                        rawSpeaker = d.displayName
-                    )
-                }
-            }
-
-            if (voicesToProbe.isEmpty()) {
-                val file = File(context.cacheDir, ACAPELA_FULL_DIAGNOSTIC_FILE)
-                val msg = buildString {
-                    appendLine("=== محاولة تشخيص Acapela (لا صوت) ===")
-                    appendLine("لم يُعثر على أي صوت Acapela متاح.")
-                    appendLine("مجلدات البحث:")
-                    searchDirs.forEach { dir ->
-                        val exists = dir.exists()
-                        val count = dir.listFiles()
-                            ?.count { it.isDirectory } ?: 0
-                        appendLine(
-                            "  - ${redactSensitiveLine(dir.absolutePath)} | " +
-                                "exists=$exists | subdirs=$count"
-                        )
-                    }
-                    val candidates = searchDirs
-                        .filter { it.exists() }
-                        .flatMap { dir ->
-                            dir.listFiles()?.filter { it.isDirectory }.orEmpty()
-                        }
-                        .distinctBy { it.absolutePath }
-                    if (candidates.isEmpty()) {
-                        appendLine(
-                            "السبب: لا توجد مجلدات أصوات مثبتة في مسارات البحث."
-                        )
-                    } else {
-                        appendLine("تفصيل الأصوات/المجلدات المرشحة:")
-                        candidates.forEach { cand ->
-                            val name = redactSensitiveLine(cand.name)
-                            val hasConfig = File(cand, "config.yaml").isFile
-                            val hasEngines = File(cand, "engines.yaml").isFile
-                            val hexFile = cand.listFiles()?.firstOrNull {
-                                it.isFile && it.name.startsWith("0x")
-                            }
-                            val hasHex = hexFile != null
-                            val hasInf = cand.walkTopDown().maxDepth(3).any {
-                                it.isFile && it.extension.equals("inf", true)
-                            }
-                            val reason = when {
-                                !hasConfig && !hasHex && !hasInf ->
-                                    "غير مثبّت/غير مكتمل (لا config.yaml " +
-                                        "ولا ملف تسجيل ولا .inf)"
-                                !hasConfig ->
-                                    "CONFIG_YAML_MISSING " +
-                                        "(ملف config.yaml ناقص بالاسم)"
-                                !hasHex ->
-                                    "ملف التسجيل 0x* ناقص بالاسم"
-                                !hasInf ->
-                                    "ملف .inf ناقص بالاسم"
-                                !hasEngines ->
-                                    "engines.yaml ناقص بالاسم " +
-                                        "(قد يُحتاج للتوافق)"
-                                else ->
-                                    "مجلد موجود لكن لم يُعتمد كصوت صالح " +
-                                        "(تحقق من التسجيل/param)"
-                            }
-                            appendLine("  - $name: $reason")
-                        }
-                    }
-                    appendLine("nSpeak: لم يُستدعَ (غير مقيس)")
-                    appendLine("PCM: غير مقيس")
-                }
-                runCatching {
-                    file.writeText(
-                        redactSensitiveText(msg),
-                        StandardCharsets.UTF_8
-                    )
                 }
                 return
             }

@@ -739,6 +739,12 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+• Fixes for Acapela extended and MultiTTS voice package discovery and folder scanning:
+- Content-based voice discovery: corrected directory filtering to exclude only hidden directories and userdicos without filtering out folders named voice or files, supported detecting voice packages in voice, voice/acapela, and any supported depth, resolved voice identity and speaker name from .inf and manifest rather than folder name, and deduplicated identical voices across multiple paths.
+- Cache invalidation and engine status update: invalidated complete directory and voice caches immediately after imports and file modifications ensuring EnginePicker detects voice presence and transitions engine state from NOT_INSTALLED to VOICES_PRESENT or ready.
+- Diagnostics cleanup and phantom voice elimination: removed fallback chain that fabricated phantom voice entries when no voices were imported, outputting "لا يوجد صوت مستورد" with accurate candidate folder evaluations avoiding contradictory reports.
+- Hardened SAF tree import and precise failure reporting: introduced atomic transaction handling for SAF folder imports with journaling, acapela_backups isolation, and full rollback upon failure preserving existing valid files, alongside pinpoint error messages specifying whether config.yaml/param, .inf, or data files are missing.
+
 • Fixes for Acapela extended HD voice imports, UI text encoding integrity, and activity result callbacks:
 - Acapela Extended HD Voice Import: Supported leila22k_hq extended packages in verbatim copy path with comprehensive package-wide scanning for matching config.yaml and registration param files, corrected extraction staging directory resolution (acapela_staging), excluded hidden directories and non-voice folders from scanning, provided detailed Arabic error feedback for missing configurations, safeguarded transaction journaling prior to file migrations, and relocated backups outside the Acapela base directory with cross-partition restore and legacy cleanup.
 - UI Text Encoding Safety: Decoded and restored double-UTF-8 mojibake strings across settings and contracts with a dedicated guard test ensuring zero encoding corruption.

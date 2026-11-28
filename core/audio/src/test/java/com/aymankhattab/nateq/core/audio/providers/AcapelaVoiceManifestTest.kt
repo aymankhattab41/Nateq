@@ -962,4 +962,100 @@ class AcapelaVoiceManifestTest {
         assertFalse(AcapelaVoiceManifest.isCompleteVoiceDir(dir))
     }
 
+    @Test
+    fun multiTtsPackageInVoiceAcapelaMehdi_withConfigInVoice_isDiscovered() {
+        val baseDir = tempFolder.newFolder("AcapelaMulti")
+        val voiceDir = File(baseDir, "voice").apply { mkdirs() }
+        val acapelaSub = File(voiceDir, "acapela").apply { mkdirs() }
+        val mehdiDir = File(acapelaSub, "Mehdi").apply { mkdirs() }
+
+        File(mehdiDir, "Mehdi.inf").writeText(
+            "[Voice]\nSpeaker=Mehdi\nIsoCode=ara\nSampleRate=22050\n"
+        )
+        File(mehdiDir, "mehdi.dat").writeBytes(ByteArray(20_000))
+        File(voiceDir, "config.yaml").writeText(
+            "param: \"Mehdi,user@example.com,0011223344556677\"\n"
+        )
+
+        AcapelaVoiceManifest.invalidateVoicesCache()
+        val complete = AcapelaVoiceManifest.completeVoiceDirs(baseDir)
+        assertEquals(1, complete.size)
+        assertEquals(mehdiDir.canonicalPath, complete[0].canonicalPath)
+
+        val voices = AcapelaVoiceManifest.listVoices(baseDir)
+        assertEquals(1, voices.size)
+        assertEquals("Mehdi", voices.first().id)
+        assertEquals("Mehdi", voices.first().voiceName)
+    }
+
+    @Test
+    fun packageWithFilesDirectlyInVoice_isDiscovered() {
+        val baseDir = tempFolder.newFolder("AcapelaDirectVoice")
+        val voiceDir = File(baseDir, "voice").apply { mkdirs() }
+
+        File(voiceDir, "Mehdi.inf").writeText(
+            "[Voice]\nSpeaker=Mehdi\nIsoCode=ara\nSampleRate=22050\n"
+        )
+        File(voiceDir, "mehdi.bvcu").writeBytes(ByteArray(20_000))
+        File(voiceDir, "config.yaml").writeText(
+            "param: \"Mehdi,user@example.com,0011223344556677\"\n"
+        )
+
+        AcapelaVoiceManifest.invalidateVoicesCache()
+        val complete = AcapelaVoiceManifest.completeVoiceDirs(baseDir)
+        assertEquals(1, complete.size)
+        assertEquals(voiceDir.canonicalPath, complete[0].canonicalPath)
+
+        val voices = AcapelaVoiceManifest.listVoices(baseDir)
+        assertEquals(1, voices.size)
+        assertEquals("Mehdi", voices.first().id)
+    }
+
+    @Test
+    fun hiddenFolderAndUserdicos_areIgnored() {
+        val baseDir = tempFolder.newFolder("AcapelaIgnored")
+        val tmpDir = File(baseDir, ".tmp_mehdi").apply { mkdirs() }
+        val userdicosDir = File(baseDir, "userdicos").apply { mkdirs() }
+        val subHidden = File(tmpDir, "voice").apply { mkdirs() }
+
+        assertTrue(AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(tmpDir))
+        assertTrue(
+            AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(userdicosDir)
+        )
+        assertTrue(
+            AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(subHidden)
+        )
+
+        val normalVoice = File(baseDir, "voice").apply { mkdirs() }
+        val normalFiles = File(baseDir, "files").apply { mkdirs() }
+        assertFalse(
+            AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(normalVoice)
+        )
+        assertFalse(
+            AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(normalFiles)
+        )
+    }
+
+    @Test
+    fun identicalVoiceInTwoPaths_isDeduplicated() {
+        val baseDir = tempFolder.newFolder("AcapelaDedup")
+        val v1 = File(baseDir, "voice/acapela/Mehdi").apply { mkdirs() }
+        val v2 = File(baseDir, "voice/backup/Mehdi").apply { mkdirs() }
+
+        listOf(v1, v2).forEach { d ->
+            File(d, "Mehdi.inf").writeText(
+                "[Voice]\nSpeaker=Mehdi\nIsoCode=ara\nSampleRate=22050\n"
+            )
+            File(d, "mehdi.dat").writeBytes(ByteArray(20_000))
+            File(d, "config.yaml").writeText(
+                "param: \"Mehdi,user@example.com,0011223344556677\"\n"
+            )
+        }
+
+        AcapelaVoiceManifest.invalidateVoicesCache()
+        val voices = AcapelaVoiceManifest.listVoices(baseDir)
+        assertEquals(1, voices.size)
+        assertEquals("Mehdi", voices.first().id)
+    }
+
 }

@@ -6,6 +6,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -431,13 +432,13 @@ class AcapelaVoiceImporterTest {
         assertTrue(
             AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(journalDir)
         )
-        assertTrue(
+        assertFalse(
             AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(voiceDir)
         )
         assertTrue(
             AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(userdicosDir)
         )
-        assertTrue(
+        assertFalse(
             AcapelaVoiceManifest.isIgnoredOrNonVoiceDirectory(filesDir)
         )
         assertFalse(
@@ -503,5 +504,72 @@ class AcapelaVoiceImporterTest {
         assertEquals(expectedSha, sha256(liveDat))
         assertFalse(backupDir.exists())
         assertFalse(journalFile.exists())
+    }
+
+    @Test
+    fun mockPackageInVoiceAcapelaMehdi_inventoryAndStatusNotNotInstalled() {
+        val baseDir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        val voiceDir = File(baseDir, "voice").apply { mkdirs() }
+        val acapelaSub = File(voiceDir, "acapela").apply { mkdirs() }
+        val mehdiDir = File(acapelaSub, "Mehdi").apply { mkdirs() }
+
+        File(mehdiDir, "Mehdi.inf").writeText(
+            "[Voice]\nSpeaker=Mehdi\nIsoCode=ara\nSampleRate=22050\n"
+        )
+        File(mehdiDir, "mehdi.dat").writeBytes(ByteArray(20_000))
+        File(voiceDir, "config.yaml").writeText(
+            "param: \"Mehdi,user@example.com,0011223344556677\"\n"
+        )
+
+        AcapelaVoiceManifest.invalidateVoicesCache()
+        val inv = EmbeddedStorage.inventory(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        assertTrue(inv.isCompleteVoicePresent)
+
+        val engines = EnginePicker.installedEngines(context)
+        val acapelaEngine = engines.firstOrNull {
+            it.packageName == AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+        }
+        assertNotNull(acapelaEngine)
+        val status = EngineStatusRegistry.statusOf(
+            context,
+            AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+        )
+        assertFalse(status.state == EngineStatusRegistry.State.NOT_INSTALLED)
+    }
+
+    @Test
+    fun failedSafImport_doesNotDeletePreviouslyValidFiles() = runBlocking {
+        val baseDir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        val voiceDir = File(baseDir, "voice").apply { mkdirs() }
+        val mehdiDir = File(voiceDir, "Mehdi").apply { mkdirs() }
+        val infFile = File(mehdiDir, "Mehdi.inf")
+        infFile.writeText(
+            "[Voice]\nSpeaker=Mehdi\nIsoCode=ara\nSampleRate=22050\n"
+        )
+        val datFile = File(mehdiDir, "mehdi.dat")
+        datFile.writeBytes(ByteArray(20_000) { 1 })
+        val yamlFile = File(mehdiDir, "config.yaml")
+        yamlFile.writeText(
+            "param: \"Mehdi,user@example.com,0011223344556677\"\n"
+        )
+
+        val invalidUri = android.net.Uri.parse("content://invalid/tree")
+        val res = AcapelaVoiceImporter.importFromTreeUri(context, invalidUri)
+        assertFalse(res.success)
+
+        // التحقق من بقاء الملفات الصالحة السابقة دون حذف
+        assertTrue(infFile.exists())
+        assertTrue(datFile.exists())
+        assertEquals(20_000L, datFile.length())
+        assertTrue(yamlFile.exists())
     }
 }

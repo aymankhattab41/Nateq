@@ -923,28 +923,30 @@ object AcapelaVoiceManifest {
      */
     fun isHdExtendedVoiceDir(dir: File): Boolean {
         if (!dir.exists() || !dir.isDirectory) return false
-        val hasInf = dir.listFiles()?.any { f ->
-            f.isFile && f.extension.equals("inf", ignoreCase = true)
+        val hasConfig = dir.listFiles()?.any { f ->
+            f.isFile && (
+                f.extension.equals("inf", ignoreCase = true) ||
+                f.extension.equals("ini", ignoreCase = true)
+            )
         } == true
-        if (!hasInf) return false
+        if (!hasConfig) return false
         if (!hasVoiceData(dir)) return false
         return findConfigYamlWithParam(dir) != null
     }
 
     /**
      * استبعاد المجلدات المخفية (.backup_acapela_ و.journal_)
-     * والمجلدات التي ليست أصواتاً مثل voice وuserdicos وfiles.
+     * ومجلد userdicos فقط.
      */
     fun isIgnoredOrNonVoiceDirectory(dir: File): Boolean {
-        val name = dir.name
-        if (name.startsWith(".")) return true
-        val lower = name.lowercase(Locale.ROOT)
-        if (lower == "voice" || lower == "userdicos" || lower == "files") {
-            return true
-        }
         var curr: File? = dir
         while (curr != null) {
-            if (curr.name.startsWith(".")) return true
+            val n = curr.name
+            if (n.startsWith(".") ||
+                n.equals("userdicos", ignoreCase = true)
+            ) {
+                return true
+            }
             curr = curr.parentFile
         }
         return false
@@ -2279,6 +2281,27 @@ object AcapelaVoiceManifest {
         val isGeneric = dir.name.lowercase(Locale.ROOT) in genericContainers ||
             (dirToken == null && dirSpeaker in genericContainers)
 
+        val inferredSpeaker = if (isGeneric) {
+            val inf = dir.listFiles { f ->
+                f.isFile && f.extension.equals("inf", ignoreCase = true)
+            }?.firstOrNull()
+            if (inf != null) {
+                inf.nameWithoutExtension
+            } else {
+                val data = dir.listFiles { f ->
+                    f.isFile && f.extension.lowercase(Locale.ROOT) in
+                        DATA_EXTENSIONS
+                }?.firstOrNull()
+                data?.nameWithoutExtension ?: dir.name
+            }
+        } else {
+            dir.name
+        }
+        val cleanSpeaker = cleanAcapelaSpeaker(inferredSpeaker)
+            .lowercase(Locale.ROOT)
+        val effectiveToken = tokenOfIdentity(inferredSpeaker)
+            ?: tokenOfIdentity(cleanSpeaker)
+
         fun isParamConflicting(rawParam: String): Boolean {
             val parsed = splitConfigYamlParam(rawParam)
             val pSpeaker = parsed?.first?.let {
@@ -2286,9 +2309,8 @@ object AcapelaVoiceManifest {
             }.orEmpty()
             if (pSpeaker.isBlank()) return false
             val pToken = tokenOfIdentity(pSpeaker) ?: return false
-            val explicitDirToken = dirToken ?: tokenOfIdentity(dirSpeaker)
-            if (explicitDirToken != null) {
-                return explicitDirToken != pToken
+            if (effectiveToken != null) {
+                return effectiveToken != pToken
             }
             return false
         }
@@ -2316,12 +2338,14 @@ object AcapelaVoiceManifest {
         }.getOrNull()
         if (localSub != null) return localSub
 
-        // 3. فحص المجلد الأب المباشر dir.parentFile
-        dir.parentFile?.let { parent ->
+        // 3. فحص المجلدات الأبوية صعوداً حتى الجذر
+        var ancestor = dir.parentFile
+        var levels = 0
+        while (ancestor != null && levels < 5) {
             listOf("config.yaml", "engines.yaml").forEach { name ->
-                val parentYaml = File(parent, name)
-                if (parentYaml.isFile) {
-                    val candidate = paramFrom(parentYaml)
+                val ancestorYaml = File(ancestor, name)
+                if (ancestorYaml.isFile) {
+                    val candidate = paramFrom(ancestorYaml)
                     if (candidate != null &&
                         !isParamConflicting(candidate.second)
                     ) {
@@ -2329,6 +2353,8 @@ object AcapelaVoiceManifest {
                     }
                 }
             }
+            ancestor = ancestor.parentFile
+            levels++
         }
 
         // 4. فحص المجلدات الفرعية في الأب المطابقة لهوية نفس المتحدث
@@ -2513,43 +2539,57 @@ object AcapelaVoiceManifest {
         val result = mutableListOf<VoiceInfo>()
         for (dir in dirs) {
             if (isIgnoredOrNonVoiceDirectory(dir)) continue
-            val discovery = discoverVoiceConfig(
-                dir, expectedSpeakerHint = dir.name, maxDepth = 4
-            )
-            val candidate: VoiceInfo? =
-                if (discovery.state == IniDiscoveryState.AUTHENTIC) {
-                    val ini = discovery.iniFile
-                    if (ini != null) {
-                        runCatching {
-                            val parsed = parseVoice(dir)
-                            parsed.copy(
-                                dir = ini.parentFile ?: dir,
-                                configFile = ini
-                            )
-                        }.getOrNull()
+            val infFiles = dir.listFiles { f ->
+                f.isFile && f.extension.equals("inf", ignoreCase = true)
+            }?.toList().orEmpty()
+
+            val candidates: List<VoiceInfo> = if (infFiles.size > 1) {
+                infFiles.mapNotNull { inf ->
+                    runCatching {
+                        val parsed = parseConfigFile(inf)
+                        parsed.copy(dir = dir, configFile = inf)
+                    }.getOrNull()
+                }
+            } else {
+                val discovery = discoverVoiceConfig(
+                    dir, expectedSpeakerHint = dir.name, maxDepth = 4
+                )
+                val c: VoiceInfo? =
+                    if (discovery.state == IniDiscoveryState.AUTHENTIC) {
+                        val ini = discovery.iniFile
+                        if (ini != null) {
+                            runCatching {
+                                val parsed = parseVoice(dir)
+                                parsed.copy(
+                                    dir = ini.parentFile ?: dir,
+                                    configFile = ini
+                                )
+                            }.getOrNull()
+                        } else if (isHdExtendedVoiceDir(dir)) {
+                            runCatching { parseVoice(dir) }.getOrNull()
+                        } else if (discovery.voiceDir != null &&
+                            isHdExtendedVoiceDir(discovery.voiceDir)
+                        ) {
+                            runCatching {
+                                parseVoice(discovery.voiceDir)
+                            }.getOrNull()
+                        } else {
+                            null
+                        }
                     } else if (isHdExtendedVoiceDir(dir)) {
                         runCatching { parseVoice(dir) }.getOrNull()
-                    } else if (discovery.voiceDir != null &&
-                        isHdExtendedVoiceDir(discovery.voiceDir)
-                    ) {
-                        runCatching {
-                            parseVoice(discovery.voiceDir)
-                        }.getOrNull()
                     } else {
                         null
                     }
-                } else if (isHdExtendedVoiceDir(dir)) {
-                    runCatching { parseVoice(dir) }.getOrNull()
-                } else {
-                    null
-                }
-            val info = candidate ?: continue
-            if (isNonVoiceConfig(info, dir)) continue
-            result.add(info)
+                listOfNotNull(c)
+            }
+
+            for (info in candidates) {
+                if (isNonVoiceConfig(info, dir)) continue
+                result.add(info)
+            }
         }
-        return result.distinctBy {
-            "${it.dir.absolutePath}|${it.id.lowercase(Locale.ROOT)}"
-        }
+        return result.distinctBy { it.id.lowercase(Locale.ROOT) }
     }
 
     /**

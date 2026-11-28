@@ -1819,4 +1819,28 @@ class AcapelaVoiceDiagnosticsTest {
             sanitized.count { it.contains("[محجوب") } >= 4
         )
     }
+
+    @Test
+    fun previewWithEmptyDisk_doesNotConstructPhantomMehdiFolder() =
+        kotlinx.coroutines.test.runTest {
+            val baseDir = EmbeddedStorage.baseDir(
+                context,
+                EmbeddedStorage.Engine.ACAPELA
+            )
+            if (baseDir.exists()) baseDir.deleteRecursively()
+            baseDir.mkdirs()
+            AcapelaVoiceManifest.invalidateVoicesCache()
+
+            AcapelaVoiceDiagnostics.runDiagnosticProbe(context)
+
+            val diagFile = File(
+                context.cacheDir,
+                AcapelaVoiceDiagnostics.ACAPELA_FULL_DIAGNOSTIC_FILE
+            )
+            assertTrue(diagFile.exists())
+            val text = diagFile.readText(StandardCharsets.UTF_8)
+            assertTrue(text.contains("لا يوجد صوت مستورد"))
+            assertFalse(text.contains("Mehdi [Mehdi]"))
+            assertFalse(text.contains("--- صوت (1/1): Mehdi"))
+        }
 }

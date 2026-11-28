@@ -239,6 +239,7 @@ object AcapelaVoiceImporter {
 
     /** إبطال الكاش وإظهار محرك Acapela بعد أي نسخ فعلي للملفات. */
     private fun notifyStorageChanged(context: Context) {
+        AcapelaVoiceManifest.invalidateVoicesCache()
         EmbeddedStorage.bumpVersion()
         EnginePicker.invalidateAfterStorageChange()
         val settings = SettingsRepository.create(context)
@@ -966,20 +967,49 @@ object AcapelaVoiceImporter {
         context: Context,
         treeUri: Uri
     ): ImportResult = withContext(Dispatchers.IO) {
+        val sessionId = System.currentTimeMillis().toString()
+        val backupParent = File(context.filesDir, "acapela_backups")
+        if (!backupParent.exists()) backupParent.mkdirs()
+        val backupDir = File(backupParent, "acapela_backup_$sessionId")
+        val journalFile = File(
+            backupParent,
+            ".journal_acapela_$sessionId.json"
+        )
+        val backups = mutableListOf<Pair<File, File>>()
+        val createdTargets = mutableListOf<File>()
+
+        val baseDir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        if (!baseDir.exists()) {
+            baseDir.mkdirs()
+        }
+
+        writeAcapelaJournal(
+            journalFile = journalFile,
+            sessionId = sessionId,
+            backupDir = backupDir,
+            createdTargets = createdTargets,
+            backups = backups,
+            baseDir = baseDir
+        )
+
         try {
             val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
-                ?: return@withContext ImportResult(
-                    success = false,
-                    errorMessage = "تعذر فتح مجلد الأصوات المحدد"
-                )
-
-            val baseDir = EmbeddedStorage.baseDir(
-                context,
-                EmbeddedStorage.Engine.ACAPELA
-            )
-            if (!baseDir.exists()) {
-                baseDir.mkdirs()
-            }
+                ?: run {
+                    rollbackAcapela(
+                        baseDir = baseDir,
+                        createdTargets = createdTargets,
+                        backups = backups,
+                        backupDir = backupDir,
+                        journalFile = journalFile
+                    )
+                    return@withContext ImportResult(
+                        success = false,
+                        errorMessage = "تعذر فتح مجلد الأصوات المحدد"
+                    )
+                }
 
             val children = rootDoc.listFiles()
             var copiedFilesCount = 0
@@ -997,10 +1027,32 @@ object AcapelaVoiceImporter {
                     }
             }
             if (voiceDoc != null) {
+                val targetVoiceDir = File(baseDir, "voice")
+                if (targetVoiceDir.exists()) {
+                    val backupVoiceDir = File(backupDir, "voice")
+                    if (!targetVoiceDir.renameTo(backupVoiceDir)) {
+                        targetVoiceDir.copyRecursively(
+                            backupVoiceDir,
+                            overwrite = true
+                        )
+                        targetVoiceDir.deleteRecursively()
+                    }
+                    backups.add(targetVoiceDir to backupVoiceDir)
+                } else {
+                    createdTargets.add(targetVoiceDir)
+                }
+                writeAcapelaJournal(
+                    journalFile = journalFile,
+                    sessionId = sessionId,
+                    backupDir = backupDir,
+                    createdTargets = createdTargets,
+                    backups = backups,
+                    baseDir = baseDir
+                )
                 copiedFilesCount += copyDocTreeVerbatim(
                     context,
                     voiceDoc,
-                    File(baseDir, "voice")
+                    targetVoiceDir
                 )
                 verbatimCopied = copiedFilesCount > 0
             }
@@ -1016,7 +1068,29 @@ object AcapelaVoiceImporter {
 
             if (!verbatimCopied && (hasDirectConfig || hasDirectData)) {
                 val voiceDirName = rootDoc.name?.ifBlank { "voice" } ?: "voice"
-                val targetDir = File(baseDir, voiceDirName).apply { mkdirs() }
+                val targetDir = File(baseDir, voiceDirName)
+                if (targetDir.exists()) {
+                    val backupSubDir = File(backupDir, targetDir.name)
+                    if (!targetDir.renameTo(backupSubDir)) {
+                        targetDir.copyRecursively(
+                            backupSubDir,
+                            overwrite = true
+                        )
+                        targetDir.deleteRecursively()
+                    }
+                    backups.add(targetDir to backupSubDir)
+                } else {
+                    createdTargets.add(targetDir)
+                }
+                targetDir.mkdirs()
+                writeAcapelaJournal(
+                    journalFile = journalFile,
+                    sessionId = sessionId,
+                    backupDir = backupDir,
+                    createdTargets = createdTargets,
+                    backups = backups,
+                    baseDir = baseDir
+                )
                 copiedFilesCount += copyDocFiles(context, children, targetDir)
                 AcapelaVoiceManifest.normalizeExtensionsCase(targetDir)
             } else if (!verbatimCopied) {
@@ -1031,9 +1105,32 @@ object AcapelaVoiceImporter {
                         if (isVoice) {
                             val subName = subDoc.name?.ifBlank { "voice" }
                                 ?: "voice"
-                            val targetDir = File(baseDir, subName).apply {
-                                mkdirs()
+                            val targetDir = File(baseDir, subName)
+                            if (targetDir.exists()) {
+                                val backupSubDir = File(
+                                    backupDir,
+                                    targetDir.name
+                                )
+                                if (!targetDir.renameTo(backupSubDir)) {
+                                    targetDir.copyRecursively(
+                                        backupSubDir,
+                                        overwrite = true
+                                    )
+                                    targetDir.deleteRecursively()
+                                }
+                                backups.add(targetDir to backupSubDir)
+                            } else {
+                                createdTargets.add(targetDir)
                             }
+                            targetDir.mkdirs()
+                            writeAcapelaJournal(
+                                journalFile = journalFile,
+                                sessionId = sessionId,
+                                backupDir = backupDir,
+                                createdTargets = createdTargets,
+                                backups = backups,
+                                baseDir = baseDir
+                            )
                             copiedFilesCount += copyDocFiles(
                                 context, subFiles, targetDir
                             )
@@ -1045,6 +1142,13 @@ object AcapelaVoiceImporter {
             }
 
             if (copiedFilesCount == 0) {
+                rollbackAcapela(
+                    baseDir = baseDir,
+                    createdTargets = createdTargets,
+                    backups = backups,
+                    backupDir = backupDir,
+                    journalFile = journalFile
+                )
                 return@withContext ImportResult(
                     success = false,
                     errorMessage =
@@ -1097,14 +1201,36 @@ object AcapelaVoiceImporter {
 
             notifyStorageChanged(context)
 
-            finishImport(
+            val finishResult = finishImport(
                 context = context,
                 baseDir = baseDir,
                 emptyMessage =
                     "تم نسخ الملفات ولكن لم تكتمل بنية صوت Acapela"
             )
+
+            if (!finishResult.success) {
+                rollbackAcapela(
+                    baseDir = baseDir,
+                    createdTargets = createdTargets,
+                    backups = backups,
+                    backupDir = backupDir,
+                    journalFile = journalFile
+                )
+                return@withContext finishResult
+            }
+
+            runCatching { backupDir.deleteRecursively() }
+            runCatching { journalFile.delete() }
+            finishResult
         } catch (t: Throwable) {
             Log.e(TAG, "فشل استيراد مجلد أصوات Acapela", t)
+            rollbackAcapela(
+                baseDir = baseDir,
+                createdTargets = createdTargets,
+                backups = backups,
+                backupDir = backupDir,
+                journalFile = journalFile
+            )
             ImportResult(
                 success = false,
                 errorMessage =
@@ -1145,19 +1271,51 @@ object AcapelaVoiceImporter {
                     d.listFiles { f ->
                         f.isFile && (
                             f.extension.equals("inf", ignoreCase = true) ||
+                            f.extension.equals("ini", ignoreCase = true) ||
                             f.extension.lowercase(Locale.ROOT) in
                                 AcapelaVoiceManifest.DATA_EXTENSIONS
                         )
                     }?.isNotEmpty() == true
             }.toList()
-            val rejected = candidateDirs.map { dir ->
-                AcapelaVoiceManifest.cleanAcapelaSpeaker(dir.name)
-                    .ifBlank { dir.name }
-            }.distinct()
-            val formattedMsg = if (rejected.isNotEmpty()) {
-                "ملف config.yaml أو التسجيل (param) للصوت " +
-                    "${rejected.joinToString("، ")} مفقود في الحزمة، " +
-                    "أضفه بجانب مجلد الصوت وأعد الاستيراد"
+
+            val formattedMsg = if (candidateDirs.isNotEmpty()) {
+                val reasons = candidateDirs.map { dir ->
+                    val inf = dir.walkTopDown().maxDepth(2).firstOrNull { f ->
+                        f.isFile && f.extension.equals("inf", true)
+                    }
+                    val data = dir.walkTopDown().maxDepth(2).firstOrNull { f ->
+                        f.isFile && f.extension.lowercase(Locale.ROOT) in
+                            AcapelaVoiceManifest.DATA_EXTENSIONS
+                    }
+                    val speaker = if (inf != null) {
+                        AcapelaVoiceManifest.cleanAcapelaSpeaker(
+                            inf.nameWithoutExtension
+                        )
+                    } else if (data != null) {
+                        AcapelaVoiceManifest.cleanAcapelaSpeaker(
+                            data.nameWithoutExtension
+                        )
+                    } else {
+                        AcapelaVoiceManifest.cleanAcapelaSpeaker(dir.name)
+                            .ifBlank { dir.name }
+                    }
+                    val hasConfigOrParam = AcapelaVoiceManifest
+                        .findConfigYamlWithParam(dir) != null
+                    val hasInf = inf != null
+                    val hasData = AcapelaVoiceManifest.hasVoiceData(dir)
+                    when {
+                        !hasInf ->
+                            "ملف التعريف (.inf) للصوت $speaker مفقود"
+                        !hasData ->
+                            "ملف البيانات (.dat/.bvcu) للصوت $speaker مفقود"
+                        !hasConfigOrParam ->
+                            "ملف config.yaml أو التسجيل (param) للصوت " +
+                                "$speaker مفقود في الحزمة، أضفه بجانب " +
+                                "مجلد الصوت وأعد الاستيراد"
+                        else -> "حزمة الصوت $speaker غير مكتملة"
+                    }
+                }.distinct()
+                reasons.joinToString("، ")
             } else {
                 emptyMessage
             }
