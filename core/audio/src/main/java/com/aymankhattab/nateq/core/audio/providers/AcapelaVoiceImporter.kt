@@ -176,7 +176,13 @@ object AcapelaVoiceImporter {
         }.toList()
 
         for (tvd in targetVoiceDirs) {
-            val speaker = AcapelaVoiceManifest.cleanAcapelaSpeaker(tvd.name)
+            val info = runCatching {
+                AcapelaVoiceManifest.parseVoice(tvd)
+            }.getOrNull()
+            val rawSpeaker = info?.rawSpeaker?.ifBlank { null }
+                ?: info?.voiceName?.ifBlank { null }
+                ?: tvd.name
+            val speaker = AcapelaVoiceManifest.cleanAcapelaSpeaker(rawSpeaker)
             val matchingYaml = allYamls.firstOrNull {
                 isValidConfigYaml(it, speaker)
             }
@@ -190,11 +196,18 @@ object AcapelaVoiceImporter {
                     }
                 }
             }
-            for (rf in allRegs) {
-                val destReg = File(tvd, rf.name)
+            val matchingReg = if (allRegs.size == 1) {
+                allRegs.first()
+            } else if (allRegs.size > 1) {
+                AcapelaPackageResolver.selectHexBySpeaker(allRegs, speaker)
+            } else {
+                null
+            }
+            if (matchingReg != null) {
+                val destReg = File(tvd, matchingReg.name)
                 if (!destReg.exists()) {
                     runCatching {
-                        rf.copyTo(destReg, overwrite = true)
+                        matchingReg.copyTo(destReg, overwrite = true)
                     }
                 }
             }
@@ -638,13 +651,17 @@ object AcapelaVoiceImporter {
                 }
             }
 
-            val hexFile = AcapelaVoiceManifest
-                .findHexRegistrationFile(tempUnpack)
-                ?: tempUnpack.walkTopDown().maxDepth(6).firstOrNull { f ->
-                    f.isFile && (f.name.matches(
-                        AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
-                    ) || f.name.equals("registration.txt", ignoreCase = true))
-                }
+            val allHexFiles = tempUnpack.walkTopDown().maxDepth(6).filter { f ->
+                f.isFile && (f.name.matches(
+                    AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
+                ) || f.name.equals("registration.txt", ignoreCase = true)) &&
+                    f.length() > 0L
+            }.toList()
+            val singleHexFile = if (allHexFiles.size == 1) {
+                allHexFiles.first()
+            } else {
+                null
+            }
 
             val allConfigYamls = tempUnpack.walkTopDown()
                 .filter { f ->
@@ -767,10 +784,19 @@ object AcapelaVoiceImporter {
                         }
                     }
                 }
-                if (hexFile != null) {
+                val voiceSpeaker = voiceName.ifBlank {
+                    AcapelaVoiceManifest.cleanAcapelaSpeaker(targetDir.name)
+                }
+                val voiceHex = singleHexFile ?: AcapelaPackageResolver
+                    .selectHexBySpeaker(allHexFiles, voiceSpeaker)
+                    ?: AcapelaVoiceManifest.findHexRegistrationFile(
+                        vd,
+                        voiceSpeaker
+                    )
+                if (voiceHex != null) {
                     runCatching {
-                        hexFile.copyTo(
-                            File(targetDir, hexFile.name),
+                        voiceHex.copyTo(
+                            File(targetDir, voiceHex.name),
                             overwrite = true
                         )
                     }
@@ -808,10 +834,10 @@ object AcapelaVoiceImporter {
                 AcapelaVoiceManifest.normalizeExtensionsCase(targetDir)
             }
 
-            if (hexFile != null) {
-                val targetHex = File(baseDir, hexFile.name)
+            for (hf in allHexFiles) {
+                val targetHex = File(baseDir, hf.name)
                 if (targetHex.exists()) {
-                    val backupHex = File(backupDir, hexFile.name)
+                    val backupHex = File(backupDir, hf.name)
                     if (!targetHex.renameTo(backupHex)) {
                         targetHex.copyTo(backupHex, overwrite = true)
                         targetHex.delete()
@@ -821,7 +847,7 @@ object AcapelaVoiceImporter {
                     createdTargets.add(targetHex)
                 }
                 runCatching {
-                    hexFile.copyTo(
+                    hf.copyTo(
                         targetHex,
                         overwrite = true
                     )
@@ -1200,9 +1226,18 @@ object AcapelaVoiceImporter {
                 )
             }
 
-            val hexFile = AcapelaVoiceManifest
-                .findHexRegistrationFile(sourceDir)
-                ?: AcapelaVoiceManifest.findHexRegistrationFile(baseDir)
+            val allDirHexFiles = sourceDir.walkTopDown().maxDepth(6).filter {
+                f ->
+                f.isFile && (f.name.matches(
+                    AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
+                ) || f.name.equals("registration.txt", ignoreCase = true)) &&
+                    f.length() > 0L
+            }.toList()
+            val singleDirHexFile = if (allDirHexFiles.size == 1) {
+                allDirHexFiles.first()
+            } else {
+                null
+            }
 
             val allDirYamls = sourceDir.walkTopDown()
                 .filter { f ->
@@ -1217,10 +1252,24 @@ object AcapelaVoiceImporter {
                 val target = File(baseDir, vd.name).apply { mkdirs() }
                 vd.copyRecursively(target, overwrite = true)
                 File(target, "userdicos").mkdirs()
-                if (hexFile != null) {
+                val info = runCatching {
+                    AcapelaVoiceManifest.parseVoice(vd)
+                }.getOrNull()
+                val rawSpeaker = info?.rawSpeaker?.ifBlank { null }
+                    ?: info?.voiceName?.ifBlank { null }
+                    ?: vd.name
+                val dirVoiceSpeaker = AcapelaVoiceManifest
+                    .cleanAcapelaSpeaker(rawSpeaker)
+                val voiceHex = singleDirHexFile ?: AcapelaPackageResolver
+                    .selectHexBySpeaker(allDirHexFiles, dirVoiceSpeaker)
+                    ?: AcapelaVoiceManifest.findHexRegistrationFile(
+                        vd,
+                        dirVoiceSpeaker
+                    )
+                if (voiceHex != null) {
                     runCatching {
-                        hexFile.copyTo(
-                            File(target, hexFile.name),
+                        voiceHex.copyTo(
+                            File(target, voiceHex.name),
                             overwrite = true
                         )
                     }
@@ -1259,10 +1308,10 @@ object AcapelaVoiceImporter {
                 }
             }
 
-            if (hexFile != null) {
+            for (hf in allDirHexFiles) {
                 runCatching {
-                    hexFile.copyTo(
-                        File(baseDir, hexFile.name),
+                    hf.copyTo(
+                        File(baseDir, hf.name),
                         overwrite = true
                     )
                 }

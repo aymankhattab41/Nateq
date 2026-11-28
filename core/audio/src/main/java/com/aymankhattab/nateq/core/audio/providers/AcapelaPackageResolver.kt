@@ -164,6 +164,109 @@ object AcapelaPackageResolver {
     }
 
     /**
+     * التحقق من تطابق ملف ترخيص سداسي (0x...) مع اسم المتحدث المطلوب.
+     * المطابقة غير حساسة لحالة الأحرف وتتجاهل اللواحق الشائعة
+     * عبر cleanAcapelaSpeaker.
+     */
+    fun hexFileMatchesSpeaker(
+        hexFile: File,
+        expectedSpeaker: String
+    ): Boolean {
+        if (!hexFile.isFile || !hexFile.exists() || hexFile.length() <= 0L) {
+            return false
+        }
+        if (hexFile.length() > 512 * 1024L) return false
+
+        val targetSpeaker = AcapelaVoiceManifest
+            .cleanAcapelaSpeaker(expectedSpeaker)
+            .lowercase(Locale.ROOT)
+        if (targetSpeaker.isBlank()) return false
+        val targetToken = AcapelaVoiceManifest.tokenOfIdentity(targetSpeaker)
+
+        // 1) فحص اسم الملف أولاً
+        val nameWithoutExt = hexFile.nameWithoutExtension
+        val cleanFileName = AcapelaVoiceManifest
+            .cleanAcapelaSpeaker(nameWithoutExt)
+            .lowercase(Locale.ROOT)
+        if (cleanFileName == targetSpeaker ||
+            (targetToken != null &&
+                AcapelaVoiceManifest.tokenOfIdentity(cleanFileName) ==
+                targetToken)
+        ) {
+            return true
+        }
+
+        val rawBytes = runCatching { hexFile.readBytes() }.getOrNull()
+            ?: return false
+        if (rawBytes.isEmpty()) return false
+        val (isUtf8, _) = AcapelaVoiceManifest.checkUtf8Validity(rawBytes)
+        val rawText = if (isUtf8) {
+            String(rawBytes, StandardCharsets.UTF_8)
+        } else {
+            String(rawBytes, StandardCharsets.ISO_8859_1)
+        }
+        if (rawText.isBlank()) return false
+
+        // 2) فحص الأسطر والرموز داخل الملف (مفاتيح، تعليقات، قيم، صيغة param)
+        for (line in rawText.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) continue
+
+            // صيغة param: speaker,email,hexCode
+            val withoutComment = trimmed.substringBefore('#').trim()
+            if (withoutComment.isNotEmpty()) {
+                val paramParts = AcapelaVoiceManifest
+                    .splitConfigYamlParam(withoutComment)
+                if (paramParts != null) {
+                    val pSpeaker = AcapelaVoiceManifest
+                        .cleanAcapelaSpeaker(paramParts.first)
+                        .lowercase(Locale.ROOT)
+                    if (pSpeaker == targetSpeaker ||
+                        (targetToken != null &&
+                            AcapelaVoiceManifest.tokenOfIdentity(pSpeaker) ==
+                            targetToken)
+                    ) {
+                        return true
+                    }
+                }
+            }
+
+            // فحص كافة الرموز في السطر بما فيها التعليقات (مثل # Salma HD)
+            val tokens = trimmed.split(Regex("[\\s,;:#=\"'()\\[\\]/\\\\]+"))
+            for (tok in tokens) {
+                if (tok.length < 2) continue
+                val cleanTok = AcapelaVoiceManifest
+                    .cleanAcapelaSpeaker(tok)
+                    .lowercase(Locale.ROOT)
+                if (cleanTok == targetSpeaker) {
+                    return true
+                }
+                if (targetToken != null &&
+                    AcapelaVoiceManifest.tokenOfIdentity(cleanTok) ==
+                    targetToken
+                ) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /**
+     * اختيار ملف الترخيص المطابق للصوت حصراً عند تعدد المرشحين.
+     * يُرجع الملف إذا طابق مرشح واحد فقط اسم الصوت، وإلا يُرجع null.
+     */
+    fun selectHexBySpeaker(
+        candidates: List<File>,
+        expectedSpeaker: String
+    ): File? {
+        val matches = candidates.filter {
+            hexFileMatchesSpeaker(it, expectedSpeaker)
+        }
+        return if (matches.size == 1) matches.first() else null
+    }
+
+    /**
      * التحقق من توثيق ملكية الحاوية الأب للصوت المطلوب (عبر voicelist
      * أو ملف YAML خاص بالصوت).
      */
@@ -213,13 +316,22 @@ object AcapelaPackageResolver {
             }
         }
 
-        // 3. فحص config.yaml/engines.yaml العام في الحاوية الأب (شرط تطابق الهوية)
+        // 3. فحص config.yaml/engines.yaml العام في الحاوية الأب
+        // (شرط تطابق الهوية)
         val defaultYaml = listOf("config.yaml", "engines.yaml")
             .map { File(parentDir, it) }
             .firstOrNull { it.isFile }
         if (defaultYaml != null) {
             return checkYamlSpeakerMatch(defaultYaml, expectedSpeaker) == true
         }
+
+        // 4. فحص وجود ملف ترخيص سداسي يطابق هوية الصوت في الحاوية الأب
+        val matchingHex = parentDir.listFiles { f ->
+            f.isFile && f.name.matches(
+                AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
+            ) && f.length() > 0L
+        }?.any { hexFileMatchesSpeaker(it, expectedSpeaker) } == true
+        if (matchingHex) return true
 
         return false
     }
@@ -842,69 +954,123 @@ object AcapelaPackageResolver {
                 relation = PackageRelation.CO_LOCATED
             }
             coLocatedHexList.size > 1 -> {
-                return ResolvedPackage(
-                    status = ResolutionStatus.MULTIPLE_CANDIDATES,
-                    packageContainerRoot = packageContainerRoot,
-                    authenticIni = authenticIni,
-                    iniDependencyBase = iniDependencyBase,
-                    nativeEngineSearchRoot = nativeEngineSearchRoot,
-                    expectedSpeaker = expectedSpeaker,
-                    resolvedSpeaker = resolvedSpeaker,
-                    infFile = infFile,
-                    metadataYaml = matchingYaml,
-                    hexFile = null,
-                    registration = "",
-                    relation = PackageRelation.CO_LOCATED,
-                    supportFiles = coLocatedHexList,
-                    diagnosticReason = "تعدد ملفات الترخيص " +
-                        "(${coLocatedHexList.size}) المتجاورة دون حسم"
+                val matched = selectHexBySpeaker(
+                    coLocatedHexList,
+                    expectedSpeaker
                 )
+                if (matched != null) {
+                    hexCandidate = matched
+                    relation = PackageRelation.CO_LOCATED
+                } else {
+                    val matchCount = coLocatedHexList.count {
+                        hexFileMatchesSpeaker(it, expectedSpeaker)
+                    }
+                    val cleanSpeaker = AcapelaVoiceManifest
+                        .cleanAcapelaSpeaker(expectedSpeaker)
+                    val rawReason = "تعدد ملفات الترخيص " +
+                        "(${coLocatedHexList.size}) المتجاورة: وُجد " +
+                        "$matchCount ملف يطابق الصوت " +
+                        "($cleanSpeaker) دون حسم"
+                    return ResolvedPackage(
+                        status = ResolutionStatus.MULTIPLE_CANDIDATES,
+                        packageContainerRoot = packageContainerRoot,
+                        authenticIni = authenticIni,
+                        iniDependencyBase = iniDependencyBase,
+                        nativeEngineSearchRoot = nativeEngineSearchRoot,
+                        expectedSpeaker = expectedSpeaker,
+                        resolvedSpeaker = resolvedSpeaker,
+                        infFile = infFile,
+                        metadataYaml = matchingYaml,
+                        hexFile = null,
+                        registration = "",
+                        relation = PackageRelation.CO_LOCATED,
+                        supportFiles = coLocatedHexList,
+                        diagnosticReason = AcapelaVoiceDiagnostics
+                            .redactSensitiveText(rawReason)
+                    )
+                }
             }
             nestedHexList.size == 1 -> {
                 hexCandidate = nestedHexList.first()
                 relation = PackageRelation.NESTED
             }
             nestedHexList.size > 1 -> {
-                return ResolvedPackage(
-                    status = ResolutionStatus.MULTIPLE_CANDIDATES,
-                    packageContainerRoot = packageContainerRoot,
-                    authenticIni = authenticIni,
-                    iniDependencyBase = iniDependencyBase,
-                    nativeEngineSearchRoot = nativeEngineSearchRoot,
-                    expectedSpeaker = expectedSpeaker,
-                    resolvedSpeaker = resolvedSpeaker,
-                    infFile = infFile,
-                    metadataYaml = matchingYaml,
-                    hexFile = null,
-                    registration = "",
-                    relation = PackageRelation.NESTED,
-                    supportFiles = nestedHexList,
-                    diagnosticReason = "تعدد ملفات الترخيص " +
-                        "(${nestedHexList.size}) المتداخلة دون حسم"
+                val matched = selectHexBySpeaker(
+                    nestedHexList,
+                    expectedSpeaker
                 )
+                if (matched != null) {
+                    hexCandidate = matched
+                    relation = PackageRelation.NESTED
+                } else {
+                    val matchCount = nestedHexList.count {
+                        hexFileMatchesSpeaker(it, expectedSpeaker)
+                    }
+                    val cleanSpeaker = AcapelaVoiceManifest
+                        .cleanAcapelaSpeaker(expectedSpeaker)
+                    val rawReason = "تعدد ملفات الترخيص " +
+                        "(${nestedHexList.size}) المتداخلة: وُجد " +
+                        "$matchCount ملف يطابق الصوت " +
+                        "($cleanSpeaker) دون حسم"
+                    return ResolvedPackage(
+                        status = ResolutionStatus.MULTIPLE_CANDIDATES,
+                        packageContainerRoot = packageContainerRoot,
+                        authenticIni = authenticIni,
+                        iniDependencyBase = iniDependencyBase,
+                        nativeEngineSearchRoot = nativeEngineSearchRoot,
+                        expectedSpeaker = expectedSpeaker,
+                        resolvedSpeaker = resolvedSpeaker,
+                        infFile = infFile,
+                        metadataYaml = matchingYaml,
+                        hexFile = null,
+                        registration = "",
+                        relation = PackageRelation.NESTED,
+                        supportFiles = nestedHexList,
+                        diagnosticReason = AcapelaVoiceDiagnostics
+                            .redactSensitiveText(rawReason)
+                    )
+                }
             }
             isParentDocumented && parentHexList.size == 1 -> {
                 hexCandidate = parentHexList.first()
                 relation = PackageRelation.PARENT_CONTAINER
             }
             isParentDocumented && parentHexList.size > 1 -> {
-                return ResolvedPackage(
-                    status = ResolutionStatus.MULTIPLE_CANDIDATES,
-                    packageContainerRoot = packageContainerRoot,
-                    authenticIni = authenticIni,
-                    iniDependencyBase = iniDependencyBase,
-                    nativeEngineSearchRoot = nativeEngineSearchRoot,
-                    expectedSpeaker = expectedSpeaker,
-                    resolvedSpeaker = resolvedSpeaker,
-                    infFile = infFile,
-                    metadataYaml = matchingYaml,
-                    hexFile = null,
-                    registration = "",
-                    relation = PackageRelation.PARENT_CONTAINER,
-                    supportFiles = parentHexList,
-                    diagnosticReason = "تعدد ملفات الترخيص " +
-                        "(${parentHexList.size}) في الحاوية الأب دون حسم"
+                val matched = selectHexBySpeaker(
+                    parentHexList,
+                    expectedSpeaker
                 )
+                if (matched != null) {
+                    hexCandidate = matched
+                    relation = PackageRelation.PARENT_CONTAINER
+                } else {
+                    val matchCount = parentHexList.count {
+                        hexFileMatchesSpeaker(it, expectedSpeaker)
+                    }
+                    val cleanSpeaker = AcapelaVoiceManifest
+                        .cleanAcapelaSpeaker(expectedSpeaker)
+                    val rawReason = "تعدد ملفات الترخيص " +
+                        "(${parentHexList.size}) في الحاوية الأب: وُجد " +
+                        "$matchCount ملف يطابق الصوت " +
+                        "($cleanSpeaker) دون حسم"
+                    return ResolvedPackage(
+                        status = ResolutionStatus.MULTIPLE_CANDIDATES,
+                        packageContainerRoot = packageContainerRoot,
+                        authenticIni = authenticIni,
+                        iniDependencyBase = iniDependencyBase,
+                        nativeEngineSearchRoot = nativeEngineSearchRoot,
+                        expectedSpeaker = expectedSpeaker,
+                        resolvedSpeaker = resolvedSpeaker,
+                        infFile = infFile,
+                        metadataYaml = matchingYaml,
+                        hexFile = null,
+                        registration = "",
+                        relation = PackageRelation.PARENT_CONTAINER,
+                        supportFiles = parentHexList,
+                        diagnosticReason = AcapelaVoiceDiagnostics
+                            .redactSensitiveText(rawReason)
+                    )
+                }
             }
             else -> {
                 hexCandidate = null

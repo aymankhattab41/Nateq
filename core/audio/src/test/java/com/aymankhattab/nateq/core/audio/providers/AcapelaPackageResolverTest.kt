@@ -551,4 +551,179 @@ class AcapelaPackageResolverTest {
             elapsedUs < 50_000L
         )
     }
+
+    @Test
+    fun resolvePackage_coLocatedMultipleHex_disambiguatesBySpeaker() {
+        val root = tempDir("colocated_multi")
+        val voiceDir = File(root, "leila22k_hq").apply { mkdirs() }
+        File(voiceDir, "ar_sa_hd_leila_22k_lf.bvcu.ini")
+            .writeText(sampleIni("leila"))
+        File(voiceDir, "ar_sa_hd_leila_22k_lf.bvcu.inf")
+            .writeText(sampleInf("Leila"))
+        val hexLeila = File(voiceDir, "0x00294994")
+        hexLeila.writeText("registration for leila22k_hq")
+        val hexMehdi = File(voiceDir, "0x00388492")
+        hexMehdi.writeText("registration for mehdi22k_ns")
+        File(voiceDir, "config.yaml").writeText(
+            "param: \"leila22k_hq,test@example.com,0123456789abcdef\""
+        )
+        File(voiceDir, "leila_lf").mkdirs()
+        File(voiceDir, "leila_lf/leila_22k_lf.bvcu")
+            .writeBytes(ByteArray(128))
+
+        val res = AcapelaPackageResolver.resolvePackage(voiceDir)
+        assertTrue(res.isSuccess)
+        assertEquals(
+            AcapelaPackageResolver.ResolutionStatus.SUCCESS,
+            res.status
+        )
+        assertEquals("0x00294994", res.hexFile?.name)
+    }
+
+    @Test
+    fun resolvePackage_nestedMultipleHex_disambiguatesBySpeaker() {
+        val root = tempDir("nested_multi")
+        val voiceDir = File(root, "mehdi22k_ns").apply { mkdirs() }
+        File(voiceDir, "ar_sa_hd_mehdi_22k_ns.bvcu.ini")
+            .writeText(sampleIni("mehdi"))
+        File(voiceDir, "ar_sa_hd_mehdi_22k_ns.bvcu.inf")
+            .writeText(sampleInf("Mehdi"))
+        val subDir = File(voiceDir, "mehdi_ns").apply { mkdirs() }
+        File(subDir, "mehdi_22k_ns.bvcu").writeBytes(ByteArray(128))
+        File(subDir, "0x00111111").writeText("leila speaker license")
+        File(subDir, "0x00222222").writeText("mehdi speaker license")
+
+        val res = AcapelaPackageResolver.resolvePackage(voiceDir)
+        assertTrue(res.isSuccess)
+        assertEquals("0x00222222", res.hexFile?.name)
+    }
+
+    @Test
+    fun resolvePackage_parentContainerMultipleHex_disambiguatesBySpeaker() {
+        val parent = tempDir("parent_multi")
+        val voiceDir = File(parent, "will22k").apply { mkdirs() }
+        File(voiceDir, "en_us_hd_will_22k.bvcu.ini")
+            .writeText(sampleIni("will"))
+        File(voiceDir, "en_us_hd_will_22k.bvcu.inf")
+            .writeText(sampleInf("WillSad"))
+        File(voiceDir, "will_lf").mkdirs()
+        File(voiceDir, "will_lf/will_22k.bvcu").writeBytes(ByteArray(128))
+
+        File(parent, "0x00888888").writeText("salma voice license")
+        File(parent, "0x00999999").writeText("willsad voice license")
+
+        val res = AcapelaPackageResolver.resolvePackage(voiceDir)
+        assertTrue(res.isSuccess)
+        assertEquals("0x00999999", res.hexFile?.name)
+        assertEquals(
+            AcapelaPackageResolver.PackageRelation.PARENT_CONTAINER,
+            res.relation
+        )
+    }
+
+    @Test
+    fun resolvePackage_multipleHex_noMatchReturnsMultipleCandidatesRedacted() {
+        val root = tempDir("no_match_multi")
+        val voiceDir = File(root, "nizar22k_hq").apply { mkdirs() }
+        File(voiceDir, "ar_sa_hd_nizar_22k_lf.bvcu.ini")
+            .writeText(sampleIni("nizar"))
+        File(voiceDir, "ar_sa_hd_nizar_22k_lf.bvcu.inf")
+            .writeText(sampleInf("Nizar"))
+        File(voiceDir, "nizar_lf").mkdirs()
+        File(voiceDir, "nizar_lf/nizar_22k_lf.bvcu").writeBytes(ByteArray(128))
+
+        val keySecret1 = "SECRET_123456789"
+        val keySecret2 = "SECRET_987654321"
+        File(voiceDir, "0x00333333").writeText("leila param $keySecret1")
+        File(voiceDir, "0x00444444").writeText("salma param $keySecret2")
+
+        val res = AcapelaPackageResolver.resolvePackage(voiceDir)
+        assertEquals(
+            AcapelaPackageResolver.ResolutionStatus.MULTIPLE_CANDIDATES,
+            res.status
+        )
+        assertFalse(res.diagnosticReason.contains(keySecret1))
+        assertFalse(res.diagnosticReason.contains(keySecret2))
+        assertFalse(res.diagnosticReason.contains("0x00333333"))
+        assertFalse(res.diagnosticReason.contains("0x00444444"))
+        assertTrue(res.diagnosticReason.contains("2"))
+    }
+
+    @Test
+    fun resolvePackage_multipleHex_multipleMatchesReturnsMultipleCandidates() {
+        val root = tempDir("multi_match_multi")
+        val voiceDir = File(root, "leila22k_hq").apply { mkdirs() }
+        File(voiceDir, "ar_sa_hd_leila_22k_lf.bvcu.ini")
+            .writeText(sampleIni("leila"))
+        File(voiceDir, "ar_sa_hd_leila_22k_lf.bvcu.inf")
+            .writeText(sampleInf("Leila"))
+        File(voiceDir, "leila_lf").mkdirs()
+        File(voiceDir, "leila_lf/leila_22k_lf.bvcu").writeBytes(ByteArray(128))
+
+        File(voiceDir, "0x00555555").writeText("leila v1 license")
+        File(voiceDir, "0x00666666").writeText("leila v2 license")
+
+        val res = AcapelaPackageResolver.resolvePackage(voiceDir)
+        assertEquals(
+            AcapelaPackageResolver.ResolutionStatus.MULTIPLE_CANDIDATES,
+            res.status
+        )
+    }
+
+    @Test
+    fun resolvePackage_multipleHex_orderAndTimestampDoNotAffectResult() {
+        val root = tempDir("order_multi")
+        val voiceDir = File(root, "leila22k_hq").apply { mkdirs() }
+        File(voiceDir, "ar_sa_hd_leila_22k_lf.bvcu.ini")
+            .writeText(sampleIni("leila"))
+        File(voiceDir, "ar_sa_hd_leila_22k_lf.bvcu.inf")
+            .writeText(sampleInf("Leila"))
+        File(voiceDir, "leila_lf").mkdirs()
+        File(voiceDir, "leila_lf/leila_22k_lf.bvcu").writeBytes(ByteArray(128))
+
+        val f1 = File(voiceDir, "0x00111111")
+        val f2 = File(voiceDir, "0x00999999")
+        f1.writeText("registration for mehdi")
+        f2.writeText("registration for leila")
+
+        // ضبط تواريخ مختلفة
+        f1.setLastModified(5000L)
+        f2.setLastModified(1000L)
+        val res1 = AcapelaPackageResolver.resolvePackage(voiceDir)
+        assertEquals("0x00999999", res1.hexFile?.name)
+
+        // عكس التواريخ
+        EmbeddedStorage.bumpVersion()
+        f1.setLastModified(1000L)
+        f2.setLastModified(5000L)
+        val res2 = AcapelaPackageResolver.resolvePackage(voiceDir)
+        assertEquals("0x00999999", res2.hexFile?.name)
+    }
+
+    @Test
+    fun resolvePackage_multiVoiceSharedParent_resolvesBothLeilaAndMehdi() {
+        val parent = tempDir("shared_multi_voices")
+        File(parent, "0x00aaaaaa").writeText("license leila22k_hq")
+        File(parent, "0x00bbbbbb").writeText("license mehdi22k_ns")
+
+        val leilaDir = File(parent, "leila").apply { mkdirs() }
+        File(leilaDir, "ar_sa_hd_leila.bvcu.ini").writeText(sampleIni("leila"))
+        File(leilaDir, "ar_sa_hd_leila.bvcu.inf").writeText(sampleInf("Leila"))
+        File(leilaDir, "leila_lf").mkdirs()
+        File(leilaDir, "leila_lf/leila.bvcu").writeBytes(ByteArray(128))
+
+        val mehdiDir = File(parent, "mehdi").apply { mkdirs() }
+        File(mehdiDir, "ar_sa_hd_mehdi.bvcu.ini").writeText(sampleIni("mehdi"))
+        File(mehdiDir, "ar_sa_hd_mehdi.bvcu.inf").writeText(sampleInf("Mehdi"))
+        File(mehdiDir, "mehdi_lf").mkdirs()
+        File(mehdiDir, "mehdi_lf/mehdi.bvcu").writeBytes(ByteArray(128))
+
+        val resLeila = AcapelaPackageResolver.resolvePackage(leilaDir)
+        assertTrue(resLeila.isSuccess)
+        assertEquals("0x00aaaaaa", resLeila.hexFile?.name)
+
+        val resMehdi = AcapelaPackageResolver.resolvePackage(mehdiDir)
+        assertTrue(resMehdi.isSuccess)
+        assertEquals("0x00bbbbbb", resMehdi.hexFile?.name)
+    }
 }

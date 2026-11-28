@@ -819,34 +819,60 @@ object AcapelaVoiceManifest {
     /**
      * البحث عن ملف ترخيص Acapela المسمى بصيغة 0x...
      * في مجلد الصوت أو المجلدات الأب حتى 4 مستويات.
+     * عند تعدد المرشحين يُعتمد الملف المطابق لهوية المتحدث.
      */
-    fun findHexRegistrationFile(dir: File): File? {
+    fun findHexRegistrationFile(
+        dir: File,
+        expectedSpeaker: String? = null
+    ): File? {
         if (!dir.exists()) return null
-        val direct = dir.listFiles { f ->
+        val speaker = expectedSpeaker
+            ?: cleanAcapelaSpeaker(dir.name).ifBlank { null }
+
+        val directList = dir.listFiles { f ->
             f.isFile && f.name.matches(HEX_REGISTRATION_REGEX) &&
                 f.length() > 0L
-        }?.firstOrNull()
-        if (direct != null) return direct
+        }?.toList().orEmpty()
+        if (directList.size == 1) return directList.first()
+        if (directList.size > 1) {
+            val matched = speaker?.let {
+                AcapelaPackageResolver.selectHexBySpeaker(directList, it)
+            }
+            if (matched != null) return matched
+            return null
+        }
 
         var cur = dir.parentFile
         var depth = 0
         while (cur != null && depth < 4) {
-            val parentFile = cur.listFiles { f ->
+            val parentList = cur.listFiles { f ->
                 f.isFile && f.name.matches(HEX_REGISTRATION_REGEX) &&
                     f.length() > 0L
-            }?.firstOrNull()
-            if (parentFile != null) return parentFile
+            }?.toList().orEmpty()
+            if (parentList.size == 1) return parentList.first()
+            if (parentList.size > 1) {
+                val matched = speaker?.let {
+                    AcapelaPackageResolver.selectHexBySpeaker(parentList, it)
+                }
+                if (matched != null) return matched
+            }
             cur = cur.parentFile
             depth++
         }
 
         val subFiles = dir.listFiles { f -> f.isDirectory } ?: emptyArray()
         for (sub in subFiles) {
-            val subHex = sub.listFiles { f ->
+            val subList = sub.listFiles { f ->
                 f.isFile && f.name.matches(HEX_REGISTRATION_REGEX) &&
                     f.length() > 0L
-            }?.firstOrNull()
-            if (subHex != null) return subHex
+            }?.toList().orEmpty()
+            if (subList.size == 1) return subList.first()
+            if (subList.size > 1) {
+                val matched = speaker?.let {
+                    AcapelaPackageResolver.selectHexBySpeaker(subList, it)
+                }
+                if (matched != null) return matched
+            }
         }
         return null
     }
@@ -1549,7 +1575,7 @@ object AcapelaVoiceManifest {
         return "$head...$tail (طول=${s.length})"
     }
 
-    private fun checkUtf8Validity(
+    internal fun checkUtf8Validity(
         bytes: ByteArray
     ): Pair<Boolean, String?> {
         val decoder = StandardCharsets.UTF_8.newDecoder()
@@ -1788,7 +1814,12 @@ object AcapelaVoiceManifest {
         }
 
         // 3. ملف المفتاح 0x... (احتياطي ثانوي أخير فقط — بنمط صالح)
-        findRegistrationInHexFile(dir)?.let { hexVal ->
+        val speaker = runCatching {
+            val info = parseVoice(dir)
+            info.rawSpeaker?.ifBlank { null } ?: info.voiceName
+        }.getOrNull()?.let { cleanAcapelaSpeaker(it).ifBlank { null } }
+            ?: cleanAcapelaSpeaker(dir.name).ifBlank { null }
+        findRegistrationInHexFile(dir, speaker)?.let { hexVal ->
             if (isRegistrationMetadata(hexVal)) {
                 diagLog(
                     "[نتيجة التسجيل] تم اعتماد التسجيل من محتوى " +
@@ -2021,8 +2052,11 @@ object AcapelaVoiceManifest {
         return selectBestKeyCandidate(candidates)?.token
     }
 
-    private fun findRegistrationInHexFile(dir: File): String? {
-        val hexFile = findHexRegistrationFile(dir)
+    private fun findRegistrationInHexFile(
+        dir: File,
+        expectedSpeaker: String? = null
+    ): String? {
+        val hexFile = findHexRegistrationFile(dir, expectedSpeaker)
         if (hexFile == null) {
             diagLog(
                 "[فحص المفتاح] findHexRegistrationFile أعاد null: " +
