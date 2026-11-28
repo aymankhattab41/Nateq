@@ -14,8 +14,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 internal data class MultiSelectItem(
     val id: String,
-    val label: String,
-    val isMandatory: Boolean = false
+    val label: String
 )
 
 /**
@@ -33,8 +32,6 @@ internal object MultiSelectFilterDialog {
         onSelected: (Set<String>) -> Unit
     ) {
         val selectedSet = initialSelected.toMutableSet()
-        // ضمان بقاء العناصر الإلزامية محددة
-        items.filter { it.isMandatory }.forEach { selectedSet.add(it.id) }
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -94,13 +91,10 @@ internal object MultiSelectFilterDialog {
             val cb = CheckBox(context).apply {
                 text = item.label
                 isChecked = selectedSet.contains(item.id)
-                if (item.isMandatory) {
-                    isEnabled = false
-                }
                 setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) {
                         selectedSet.add(item.id)
-                    } else if (!item.isMandatory) {
+                    } else {
                         selectedSet.remove(item.id)
                     }
                 }
@@ -121,13 +115,8 @@ internal object MultiSelectFilterDialog {
 
         btnDeselectAll.setOnClickListener {
             for ((item, cb) in checkBoxes) {
-                if (item.isMandatory) {
-                    cb.isChecked = true
-                    selectedSet.add(item.id)
-                } else {
-                    cb.isChecked = false
-                    selectedSet.remove(item.id)
-                }
+                cb.isChecked = false
+                selectedSet.remove(item.id)
             }
         }
 

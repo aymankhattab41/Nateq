@@ -20,14 +20,4 @@ internal class SettingsInstantSilenceDelegate(
     fun setProximitySilenceEnabled(enabled: Boolean) =
         repo.prefs.edit()
             .putBoolean("proximity_silence_enabled", enabled).apply()
-
-    fun isProactiveProtectedWatchEnabled(): Boolean =
-        repo.prefs.getBoolean(
-            "proactive_protected_watch_enabled", false
-        )
-
-    fun setProactiveProtectedWatchEnabled(enabled: Boolean) =
-        repo.prefs.edit()
-            .putBoolean("proactive_protected_watch_enabled", enabled)
-            .apply()
 }

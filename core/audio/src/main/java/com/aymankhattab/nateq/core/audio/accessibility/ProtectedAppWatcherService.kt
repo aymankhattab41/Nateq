@@ -3,8 +3,6 @@ package com.aymankhattab.nateq.core.audio.accessibility
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -220,41 +218,6 @@ class ProtectedAppWatcherService : Service() {
                 watcherJob = null
             }
         }
-    }
-
-    /**
-     * هل خرج تطبيقٌ محمي؟ يستعلم أحداث الاستخدام بنافذة.
-     */
-    private fun hasExited(
-        targetPkg: String,
-        startTime: Long,
-        endTime: Long
-    ): Boolean {
-        BatteryDiagnosticsTracker.recordUsageStatsPoll()
-        val usageManager =
-            getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-        val window = maxOf(endTime - startTime, 1000L)
-        val events = usageManager?.queryEvents(endTime - window, endTime)
-        if (events != null) {
-            val event = UsageEvents.Event()
-            while (events.hasNextEvent()) {
-                events.getNextEvent(event)
-                if (event.packageName == targetPkg) {
-                    if (event.eventType == UsageEvents.Event.ACTIVITY_PAUSED ||
-                        event.eventType ==
-                        UsageEvents.Event.ACTIVITY_STOPPED
-                    ) {
-                        return true
-                    }
-                } else if (event.eventType ==
-                    UsageEvents.Event.ACTIVITY_RESUMED &&
-                    event.packageName != packageName
-                ) {
-                    return true
-                }
-            }
-        }
-        return false
     }
 
     override fun onDestroy() {

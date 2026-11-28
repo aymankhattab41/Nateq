@@ -139,8 +139,27 @@ class BankingCompatCheckActivity : AppCompatActivity() {
             .setOnClickListener { resetWizard() }
         btnNext?.setOnClickListener { goToNextStep() }
         btnFinish?.setOnClickListener { finishWizard() }
+        findViewById<MaterialButton?>(R.id.btn_isolation_step)?.apply {
+            contentDescription = getString(R.string.banking_isolation_step_btn)
+            setOnClickListener { showIsolationStepDialog() }
+        }
         setupTimelineAndReadinessControls()
         initSpeaker()
+    }
+
+    private fun showIsolationStepDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.banking_isolation_step_title)
+            .setMessage(R.string.banking_isolation_step_message)
+            .setPositiveButton(R.string.permission_open_settings) { _, _ ->
+                runCatching {
+                    startActivity(
+                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    )
+                }
+            }
+            .setNegativeButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun initSpeaker() {

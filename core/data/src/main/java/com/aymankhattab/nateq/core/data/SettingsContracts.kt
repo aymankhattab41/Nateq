@@ -361,12 +361,6 @@ interface ReadingPrefs {
     /** يعيّن اتباع سرعة قارئ الشاشة. */
     fun setFollowReaderRateEnabled(enabled: Boolean)
 
-    /** تسريع نطق النصوص الطويلة تدريجياً بعد أول 300 حرف. */
-    fun isLongTextSpeedupEnabled(): Boolean
-
-    /** يعيّن تسريع نطق النصوص الطويلة تدريجياً. */
-    fun setLongTextSpeedupEnabled(enabled: Boolean)
-
     /** تفعيل نطق أسماء الإيموجي قبل إزالتها من النص. */
     fun isEmojiPronunciationEnabled(): Boolean
 
@@ -423,16 +417,6 @@ interface ReadingPrefs {
 
     /** يعيّن تفعيل الإسكات بمستشعر التقارب. */
     fun setProximitySilenceEnabled(enabled: Boolean)
-
-    /**
-     * مراقبةٌ استباقية للتطبيقات المحمية عبر UsageStats: تُعطّل خدمة
-     * إمكانية الوصول فور بدء التطبيق المحمي قبل أن يقرأ حالته.
-     * معطّلة افتراضياً لأنها تستهلك البطارية (استطلاع دوري).
-     */
-    fun isProactiveProtectedWatchEnabled(): Boolean
-
-    /** يعيّن تفعيل المراقبة الاستباقية للتطبيقات المحمية. */
-    fun setProactiveProtectedWatchEnabled(enabled: Boolean)
 }
 
 /**

@@ -191,4 +191,23 @@ class BankingCompatCheckActivityTest {
 
         controller.pause().stop().destroy()
     }
+
+    @Test
+    fun isolationStepButton_showsDialogAndHasContentDescription() {
+        val controller = launch()
+        val activity = controller.get()
+
+        val btn = activity.findViewById<View>(R.id.btn_isolation_step)
+        assertEquals(
+            activity.getString(R.string.banking_isolation_step_btn),
+            btn.contentDescription
+        )
+        assertTrue(btn.performClick())
+
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        org.junit.Assert.assertNotNull(dialog)
+        assertTrue(dialog.isShowing)
+
+        controller.pause().stop().destroy()
+    }
 }

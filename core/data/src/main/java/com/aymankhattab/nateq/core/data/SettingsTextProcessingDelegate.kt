@@ -108,15 +108,6 @@ internal class SettingsTextProcessingDelegate(
             .apply()
     }
 
-    fun isLongTextSpeedupEnabled(): Boolean =
-        prefs.getBoolean("long_text_speedup_enabled", false)
-
-    fun setLongTextSpeedupEnabled(enabled: Boolean) {
-        prefs.edit()
-            .putBoolean("long_text_speedup_enabled", enabled)
-            .apply()
-    }
-
     fun isEgyptianSpeechProcessingEnabled(): Boolean =
         prefs.getBoolean("egyptian_speech_processing", false)
 

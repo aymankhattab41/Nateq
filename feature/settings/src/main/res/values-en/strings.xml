@@ -745,6 +745,12 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+1.6.179
+• Bug fixes and cleanup of unused settings (Batch 1 of 3):
+- Interactive Banking Isolation Step: Connected isolation verification button in banking check to show instructional dialog with direct access to accessibility settings and added screen reader accessibility description.
+- Multi-Select Filter Dialog Cleanup: Removed unused isMandatory option and dead branches in multi-select engine filter dialog, streamlining item structure.
+- Deprecated Settings Removal: Removed inactive long-text speedup setting and proactive protected app watch setting from repository and contracts alongside unused methods superseded by reactive mechanisms.
+
 1.6.178
 • Standardized Acapela speech latency, PCM jitter, and system resource diagnostics:
 - Accurate and Privacy-Safe Tracking: Records voice ID, text character count, and encrypted text hash (first 8 chars of SHA-256) per utterance without storing or exporting raw text.
@@ -767,10 +773,10 @@
 - Fixed rollback in zip path: invalidated manifest cache upon restoring files, bumped storage version, updated engine picker, and aligned engine status with remaining files.
 
 • Fixes for Acapela extended and MultiTTS voice package discovery and folder scanning:
-- Content-based voice discovery: corrected directory filtering to exclude only hidden directories and userdicos without filtering out folders named voice or files, supported detecting voice packages in voice, voice/acapela, and any supported depth, resolved voice identity and speaker name from .inf and manifest rather than folder name, and deduplicated identical voices across multiple paths.
-- Cache invalidation and engine status update: invalidated complete directory and voice caches immediately after imports and file modifications ensuring EnginePicker detects voice presence and transitions engine state from NOT_INSTALLED to VOICES_PRESENT or ready.
-- Diagnostics cleanup and phantom voice elimination: removed fallback chain that fabricated phantom voice entries when no voices were imported, outputting "لا يوجد صوت مستورد" with accurate candidate folder evaluations avoiding contradictory reports.
-- Hardened SAF tree import and precise failure reporting: introduced atomic transaction handling for SAF folder imports with journaling, acapela_backups isolation, and full rollback upon failure preserving existing valid files, alongside pinpoint error messages specifying whether config.yaml/param, .inf, or data files are missing.
+- Content-based voice discovery: corrected directory filtering to exclude only hidden directories and userdicos, detecting voices in voice and voice/acapela at any depth by .inf identity without duplicates.
+- Cache invalidation and engine status update: invalidated directory and voice caches after imports to update EnginePicker and transition state to VOICES_PRESENT or ready.
+- Diagnostics cleanup: removed fallback chain creating phantom voices, reporting accurate candidate folder evaluations.
+- Hardened SAF tree import: added atomic transaction journaling and acapela_backups isolation with safe rollback and pinpoint missing file reporting.
 
 • Fixes for Acapela extended HD voice imports, UI text encoding integrity, and activity result callbacks:
 - Acapela Extended HD Voice Import: Supported leila22k_hq extended packages in verbatim copy path with config.yaml, param and registration scanning, staging resolution, transaction journaling, and safe backups.

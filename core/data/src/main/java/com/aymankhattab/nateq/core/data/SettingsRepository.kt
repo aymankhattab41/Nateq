@@ -213,9 +213,7 @@ class SettingsRepository(context: Context) :
          *  (المحور 6 — «إعداد آمن عند الاستيراد»). */
         internal val SAFE_DEFAULT_FALSE_KEYS = setOf(
             "shake_to_stop_enabled",
-            "proximity_silence_enabled",
-            "long_text_speedup_enabled",
-            "proactive_protected_watch_enabled"
+            "proximity_silence_enabled"
         )
 
         /** التطبيقات الافتراضية التي تُقرأ إشعاراتها قبل أي اختيار صريح. */
@@ -2852,13 +2850,6 @@ class SettingsRepository(context: Context) :
     override fun setFollowReaderRateEnabled(enabled: Boolean) =
         textProcessingDelegate.setFollowReaderRateEnabled(enabled)
 
-    /** تسريع النص الطويل تلقائياً (اختياري). */
-    override fun isLongTextSpeedupEnabled(): Boolean =
-        textProcessingDelegate.isLongTextSpeedupEnabled()
-
-    override fun setLongTextSpeedupEnabled(enabled: Boolean) =
-        textProcessingDelegate.setLongTextSpeedupEnabled(enabled)
-
     /** معالجة مصرية/تشكيل تلقائي خفيف للنص العربي (افتراضي مقفول). */
     override fun isEgyptianSpeechProcessingEnabled(): Boolean =
         textProcessingDelegate.isEgyptianSpeechProcessingEnabled()
@@ -2898,16 +2889,6 @@ class SettingsRepository(context: Context) :
 
     override fun setProximitySilenceEnabled(enabled: Boolean) =
         instantSilenceDelegate.setProximitySilenceEnabled(enabled)
-
-    /**
-     * المراقبة الاستباقية للتطبيقات المحمية (UsageStats). معطّلة
-     * افتراضياً: تستهلك طاقةً إضافيةً دون حاجة واضحة لمعظم المستخدمين.
-     */
-    override fun isProactiveProtectedWatchEnabled(): Boolean =
-        instantSilenceDelegate.isProactiveProtectedWatchEnabled()
-
-    override fun setProactiveProtectedWatchEnabled(enabled: Boolean) =
-        instantSilenceDelegate.setProactiveProtectedWatchEnabled(enabled)
 
     // ============ الإعدادات العامة (مفوّض) ============
     private val generalDelegate by lazy {

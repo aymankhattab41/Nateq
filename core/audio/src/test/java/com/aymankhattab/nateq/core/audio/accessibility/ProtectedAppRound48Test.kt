@@ -467,38 +467,6 @@ class ProtectedAppRound48Test {
     }
 
     @Test
-    fun proactiveWatch_defaultIsDisabled() {
-        // العقد المحرَس: المراقبة الاستباقية معطّلة افتراضياً لأنه
-        // تستهلك البطارية، فلا تُفعَّل من غير علم المستخدم.
-        assertFalse(settings.isProactiveProtectedWatchEnabled())
-    }
-
-    @Test
-    fun proactiveWatch_toggleRoundTrips() {
-        settings.setProactiveProtectedWatchEnabled(true)
-        assertTrue(settings.isProactiveProtectedWatchEnabled())
-        settings.setProactiveProtectedWatchEnabled(false)
-        assertFalse(settings.isProactiveProtectedWatchEnabled())
-    }
-
-    @Test
-    fun proactiveWatch_resetsToDisabled_onImport() {
-        // يُصفَّر عند الاستيراد لأنه حساس للبطارية: نسخةٌ مستوردة لا
-        // تُفعّل استطلاعاً دورياً من غير علم المستخدم.
-        settings.setProactiveProtectedWatchEnabled(true)
-        assertTrue(settings.isProactiveProtectedWatchEnabled())
-
-        val imported = settings.importSettings(
-            mapOf("proactive_protected_watch_enabled" to true)
-        )
-        assertTrue(imported)
-        assertFalse(
-            "Imported settings must not enable battery-hungry watch",
-            settings.isProactiveProtectedWatchEnabled()
-        )
-    }
-
-    @Test
     fun pickForegroundProtectedApp_ignoresProtectedAppLeftBehind() {
         // الكسر المحرَس: لو اكتفينا بأن يظهر محميٌّ ببن الأحداث لاخترناه
         // بعد أن غادر المستخدم إلى تطبيق آخر، فيُعطَّل غيرُ الأمامي.

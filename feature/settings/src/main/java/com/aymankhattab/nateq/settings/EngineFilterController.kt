@@ -94,8 +94,7 @@ internal class EngineFilterController(
         val items = allEngines.map { eng ->
             MultiSelectItem(
                 id = eng.packageName,
-                label = eng.label,
-                isMandatory = false
+                label = eng.label
             )
         }
 
