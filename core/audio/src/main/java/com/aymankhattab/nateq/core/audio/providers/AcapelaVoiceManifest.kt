@@ -1408,6 +1408,46 @@ object AcapelaVoiceManifest {
     }
 
     /**
+     * استخراج اسم المتحدث دون resolveRegistration
+     * لمنع أي حلقة دائرية.
+     */
+    fun parseSpeakerFromDir(dir: File): String? {
+        val configFiles = dir.listFiles { f ->
+            f.isFile && f.extension.lowercase(Locale.ROOT) in
+                CONFIG_EXTENSIONS
+        } ?: emptyArray()
+
+        val chosen = configFiles.firstOrNull {
+            it.extension.equals("inf", ignoreCase = true)
+        } ?: configFiles.firstOrNull()
+        if (chosen != null) {
+            val text = runCatching {
+                chosen.readText(StandardCharsets.ISO_8859_1)
+            }.getOrDefault("")
+            val pairs = readPairs(text)
+            val rawSpeaker = firstValue(pairs, "speaker")
+            val nameFromNameKey = pairs.firstOrNull {
+                it.first == "name" && !it.second.contains('.')
+            }?.second
+            val nameCandidate = firstValue(pairs, "voicename")
+                ?: nameFromNameKey
+                ?: firstValue(pairs, "voice")
+            val rawName = rawSpeaker ?: nameCandidate
+                ?: chosen.nameWithoutExtension
+            return cleanAcapelaSpeaker(rawName).ifBlank { null }
+        }
+
+        val dataFiles = dir.listFiles { f ->
+            f.isFile && f.extension.lowercase(Locale.ROOT) in
+                DATA_EXTENSIONS
+        } ?: emptyArray()
+
+        val rawName = dataFiles.firstOrNull()?.nameWithoutExtension
+            ?: dir.name
+        return cleanAcapelaSpeaker(rawName).ifBlank { null }
+    }
+
+    /**
      * استخراج بيانات الصوت من مجلد الصوت.
      */
     fun parseVoice(dir: File): VoiceInfo {
@@ -1814,10 +1854,8 @@ object AcapelaVoiceManifest {
         }
 
         // 3. ملف المفتاح 0x... (احتياطي ثانوي أخير فقط — بنمط صالح)
-        val speaker = runCatching {
-            val info = parseVoice(dir)
-            info.rawSpeaker?.ifBlank { null } ?: info.voiceName
-        }.getOrNull()?.let { cleanAcapelaSpeaker(it).ifBlank { null } }
+        val speaker = runCatching { parseSpeakerFromDir(dir) }
+            .getOrNull()?.ifBlank { null }
             ?: cleanAcapelaSpeaker(dir.name).ifBlank { null }
         findRegistrationInHexFile(dir, speaker)?.let { hexVal ->
             if (isRegistrationMetadata(hexVal)) {
