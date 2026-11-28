@@ -739,6 +739,11 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+1.6.175
+• Removed Acapela folder import (SAF) entirely in favor of zip packages, and fixed rollback:
+- Removed folder import (SAF): removed folder import launcher, buttons, and SAF logic, keeping only zip package and MultiTTS archive imports.
+- Fixed rollback in zip path: invalidated manifest cache upon restoring files, bumped storage version, updated engine picker, and aligned engine status with remaining files.
+
 • Fixes for Acapela extended and MultiTTS voice package discovery and folder scanning:
 - Content-based voice discovery: corrected directory filtering to exclude only hidden directories and userdicos without filtering out folders named voice or files, supported detecting voice packages in voice, voice/acapela, and any supported depth, resolved voice identity and speaker name from .inf and manifest rather than folder name, and deduplicated identical voices across multiple paths.
 - Cache invalidation and engine status update: invalidated complete directory and voice caches immediately after imports and file modifications ensuring EnginePicker detects voice presence and transitions engine state from NOT_INSTALLED to VOICES_PRESENT or ready.
@@ -1011,12 +1016,10 @@
     <string name="voice_provider_microsoft_embedded">Microsoft (Embedded)</string>
     <string name="voice_provider_acapela_embedded">Acapela (Embedded)</string>
     <string name="btn_import_acapela_voice">Import Acapela voice package (.zip)</string>
-    <string name="btn_import_acapela_folder">Import Acapela voice folder</string>
-    <string name="acapela_no_voices_found">No Acapela voices imported yet. Tap \"Import package (.zip)\" or \"Import folder\" to select an Acapela voice package from your device.</string>
+    <string name="acapela_no_voices_found">No Acapela voices imported yet. Tap \"Import package (.zip)\" to select an Acapela voice package from your device.</string>
     <string name="acapela_import_success">Voice imported successfully: %1$s</string>
     <string name="acapela_import_error">Failed to import voice: %1$s</string>
     <string name="acapela_import_select_file">Select Acapela voice file (.zip)</string>
-    <string name="acapela_import_folder_select">Select Acapela voice folder from device</string>
     <string name="zip_import_title">Import Voice Package</string>
     <string name="zip_import_review_title">Review Voice Package Import</string>
     <string name="zip_import_review_inspecting">Inspecting voice package and available space…</string>
@@ -1032,7 +1035,7 @@
     <string name="zip_import_unsupported_format">The selected file does not contain a supported voice package (such as Acapela or Vocalizer in ZIP format).</string>
     <string name="voice_package_zip_label">ZIP Voice Package</string>
     <string name="engine_state_awaiting_voices">Awaiting voice import</string>
-    <string name="acapela_engine_details_ready_note">64-bit/32-bit native runtime libraries are ready. The engine requires importing voice files (.zip or folder) to begin synthesis.</string>
+    <string name="acapela_engine_details_ready_note">64-bit/32-bit native runtime libraries are ready. The engine requires importing voice files (.zip) to begin synthesis.</string>
     <string name="acapela_delete_voice_confirm_title">Delete Acapela Voice</string>
     <string name="acapela_delete_voice_confirm_msg">Are you sure you want to delete voice \"%1$s\"?</string>
     <string name="embedded_download_confirm_title">Confirm Voice Download</string>

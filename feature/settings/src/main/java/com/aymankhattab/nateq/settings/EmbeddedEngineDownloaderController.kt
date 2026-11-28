@@ -176,14 +176,6 @@ internal class EmbeddedEngineDownloaderController(
             )
         }
 
-        val btnImportFolder = root.findViewById<MaterialButton>(
-            R.id.btn_import_acapela_folder
-        )
-        btnImportFolder?.setOnClickListener {
-            fragment.openAcapelaFolderLauncher.launch(null)
-        }
-
-
         renderVoicesList(root)
         warmAcapelaCache()
     }
@@ -278,9 +270,6 @@ internal class EmbeddedEngineDownloaderController(
         val isAcapela = activeEngine == "acapela"
         root.findViewById<MaterialButton>(
             R.id.btn_import_acapela_voice
-        )?.visibility = if (isAcapela) View.VISIBLE else View.GONE
-        root.findViewById<MaterialButton>(
-            R.id.btn_import_acapela_folder
         )?.visibility = if (isAcapela) View.VISIBLE else View.GONE
 
         when (activeEngine) {

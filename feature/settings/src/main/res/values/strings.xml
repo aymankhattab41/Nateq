@@ -749,6 +749,11 @@
     <string name="read_later_back">رجوع</string>
     <string name="read_later_item_actions_title">إجراءات النص</string>
     <string name="changelog_text">
+1.6.175
+• إيقاف استيراد مجلدات Acapela (SAF) بالكامل والاقتصار على حزم zip، وإصلاح التراجع:
+- إزالة استيراد المجلد (SAF): حذف مسارات استيراد المجلد نهائياً من شاشة الإعدادات والواجهة والمستورد، مع إبقاء دعم استيراد حزم zip وحزم MultiTTS.
+- إصلاح التراجع في مسار zip: إبطال كاش المانيفست وتحديث رقم التخزين والمنتقي، ومطابقة حالة المحرك للملفات الفعلية المتبقية بعد التراجع وتأمين العمل بلا سياق.
+
 • إصلاح اكتشاف حزم أصوات Acapela الممتدة وMultiTTS وتصحيح مسح المجلدات:
 - اكتشاف الأصوات بالبنية والمحتوى: تصحيح فحص المجلدات المستبعدة ليقتصر فقط على المجلدات المخفية ومجلد userdicos دون استبعاد voice أو files بالاسم، واكتشاف حزم الأصوات في مجلدات voice وvoice/acapela وأي عمق مدعوم، واعتماد هوية الصوت واسمه من ملفات .inf والمانيفست بدلاً من اسم المجلد، ومنع تكرار نفس الصوت في القائمة عند وجوده في أكثر من مسار.
 - إبطال الكاش وتحديث حالة المحرك: إبطال كاش الأصوات ومجلدات الحزم فور انتهاء الاستيراد أو تعديل الملفات لضمان تعرف EnginePicker فوراً على وجود الأصوات وتحويل حالة المحرك من NOT_INSTALLED إلى VOICES_PRESENT أو جاهز.
@@ -1011,12 +1016,10 @@
     <string name="voice_provider_microsoft_embedded">Microsoft (مدمج)</string>
     <string name="voice_provider_acapela_embedded">Acapela (مدمج)</string>
     <string name="btn_import_acapela_voice">استيراد حزمة صوت Acapela (.zip)</string>
-    <string name="btn_import_acapela_folder">استيراد مجلد أصوات Acapela</string>
-    <string name="acapela_no_voices_found">لم يتم استيراد أي صوت Acapela بعد. اضغط على «استيراد حزمة صوت (.zip)» أو «استيراد مجلد أصوات» لاختيار حزمة أصوات Acapela من هاتفك.</string>
+    <string name="acapela_no_voices_found">لم يتم استيراد أي صوت Acapela بعد. اضغط على «استيراد حزمة صوت (.zip)» لاختيار حزمة أصوات Acapela من هاتفك.</string>
     <string name="acapela_import_success">تم استيراد الصوت بنجاح: %1$s</string>
     <string name="acapela_import_error">فشل استيراد الصوت: %1$s</string>
     <string name="acapela_import_select_file">اختر ملف صوت Acapela (.zip)</string>
-    <string name="acapela_import_folder_select">اختر مجلد أصوات Acapela من جهازك</string>
     <string name="zip_import_title">استيراد حزمة الأصوات</string>
     <string name="zip_import_review_title">مراجعة استيراد حزمة الأصوات</string>
     <string name="zip_import_review_inspecting">جارٍ فحص حزمة الأصوات والمساحة…</string>
@@ -1032,7 +1035,7 @@
     <string name="zip_import_unsupported_format">الملف المحدد لا يحتوي على حزمة أصوات مدعومة (مثل أصوات Acapela أو Vocalizer بتنسيق ZIP).</string>
     <string name="voice_package_zip_label">حزمة أصوات ZIP</string>
     <string name="engine_state_awaiting_voices">بانتظار استيراد الأصوات</string>
-    <string name="acapela_engine_details_ready_note">المكتبات البرمجية الأصلية (64-bit / 32-bit) مدمجة وجاهزة. يتطلب المحرك استيراد ملفات صوتية (.zip أو مجلد) لبدء الاستخدام.</string>
+    <string name="acapela_engine_details_ready_note">المكتبات البرمجية الأصلية (64-bit / 32-bit) مدمجة وجاهزة. يتطلب المحرك استيراد ملفات صوتية (.zip) لبدء الاستخدام.</string>
     <string name="acapela_delete_voice_confirm_title">حذف صوت Acapela</string>
     <string name="acapela_delete_voice_confirm_msg">هل أنت متأكد من حذف صوت \"%1$s\"؟</string>
     <string name="embedded_download_confirm_title">تأكيد تنزيل الصوت</string>

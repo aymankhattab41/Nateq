@@ -546,53 +546,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
     }
 
-    /** منتقي مجلد أصوات Acapela عبر SAF */
-    internal val openAcapelaFolderLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        try {
-            if (uri != null) {
-                val ctx = context ?: return@registerForActivityResult
-                lifecycleScope.launch(AppDispatchers.main) {
-                    Toast.makeText(
-                        ctx,
-                        R.string.acapela_import_folder_select,
-                        Toast.LENGTH_SHORT
-                    ).show()
-
-                    val result = withContext(AppDispatchers.io) {
-                        AcapelaVoiceImporter.importFromTreeUri(ctx, uri)
-                    }
-
-                    if (!isAdded) return@launch
-                    if (result.success) {
-                        val voicesNames =
-                            result.importedVoices.joinToString("، ")
-                        val msg = getString(
-                            R.string.acapela_import_success,
-                            voicesNames
-                        )
-                        Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
-                    } else {
-                        val err = result.errorMessage ?: getString(
-                            R.string.acapela_import_error,
-                            ""
-                        )
-                        Toast.makeText(ctx, err, Toast.LENGTH_LONG).show()
-                    }
-                    refreshEmbeddedUiIfStorageChanged()
-                    refreshVoiceCatalogDiscovery()
-                }
-            }
-        } catch (t: Throwable) {
-            Log.e(
-                "VoiceSelectionFragment",
-                "فشل معالجة نتيجة اختيار مجلد Acapela",
-                t
-            )
-        }
-    }
-
     // طلب إذن قراءة الرسائل الواردة لحظة تفعيل قراءة الرسائل فقط (لا عند
     // أول تشغيل). الوضع المختار (full/source) لا يُحفظ إلا بعد المنح الفعلي —
     // مسؤولية الضابط (بند [9]).

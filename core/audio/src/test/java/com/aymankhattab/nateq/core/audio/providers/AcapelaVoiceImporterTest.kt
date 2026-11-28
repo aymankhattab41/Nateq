@@ -544,32 +544,108 @@ class AcapelaVoiceImporterTest {
     }
 
     @Test
-    fun failedSafImport_doesNotDeletePreviouslyValidFiles() = runBlocking {
+    fun rollback_failedZipImport_clearsCacheBumpsVersionAndAlignsStatus() =
+        runBlocking {
+            val baseDir = EmbeddedStorage.baseDir(
+                context,
+                EmbeddedStorage.Engine.ACAPELA
+            )
+            baseDir.mkdirs()
+
+            val voiceDir = File(baseDir, "voice").apply { mkdirs() }
+            val mehdiDir = File(voiceDir, "Mehdi").apply { mkdirs() }
+            val infFile = File(mehdiDir, "Mehdi.inf")
+            infFile.writeText(
+                "[Voice]\nSpeaker=Mehdi\nIsoCode=ara\nSampleRate=22050\n"
+            )
+            val datFile = File(mehdiDir, "mehdi.dat")
+            datFile.writeBytes(ByteArray(20_000) { 1 })
+            val yamlFile = File(mehdiDir, "config.yaml")
+            yamlFile.writeText(
+                "param: \"Mehdi,user@example.com,0011223344556677\"\n"
+            )
+
+            val initialVoices = AcapelaVoiceManifest.listVoices(baseDir)
+            assertEquals(1, initialVoices.size)
+            val initialVersion = EmbeddedStorage.version
+
+            val backupParent = File(context.filesDir, "acapela_backups")
+            backupParent.mkdirs()
+            val backupDir = File(backupParent, "acapela_backup_test_1")
+            backupDir.mkdirs()
+            val backupVoice = File(backupDir, "voice")
+            mehdiDir.parentFile?.copyRecursively(backupVoice, overwrite = true)
+
+            val badNewDir = File(voiceDir, "CorruptedNew")
+            badNewDir.mkdirs()
+            File(badNewDir, "broken.dat").writeBytes(ByteArray(100) { 0 })
+
+            val journalFile = File(backupParent, ".journal_acapela_test_1.json")
+            journalFile.writeText("{}")
+
+            AcapelaVoiceImporter.rollbackAcapela(
+                baseDir = baseDir,
+                createdTargets = listOf(badNewDir),
+                backups = listOf(voiceDir to backupVoice),
+                backupDir = backupDir,
+                journalFile = journalFile,
+                context = context
+            )
+
+            val currentVoices = AcapelaVoiceManifest.listVoices(baseDir)
+            assertEquals(1, currentVoices.size)
+            assertEquals("Mehdi", currentVoices[0].id)
+            assertFalse(badNewDir.exists())
+
+            assertTrue(EmbeddedStorage.version > initialVersion)
+
+            val status = EngineStatusRegistry.statusOf(
+                context,
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+            )
+            assertFalse(
+                status.state == EngineStatusRegistry.State.NOT_INSTALLED
+            )
+        }
+
+    @Test
+    fun rollback_withNoPreviousVoice_statusIsFilesAbsent() {
         val baseDir = EmbeddedStorage.baseDir(
             context,
             EmbeddedStorage.Engine.ACAPELA
         )
-        val voiceDir = File(baseDir, "voice").apply { mkdirs() }
-        val mehdiDir = File(voiceDir, "Mehdi").apply { mkdirs() }
-        val infFile = File(mehdiDir, "Mehdi.inf")
-        infFile.writeText(
-            "[Voice]\nSpeaker=Mehdi\nIsoCode=ara\nSampleRate=22050\n"
-        )
-        val datFile = File(mehdiDir, "mehdi.dat")
-        datFile.writeBytes(ByteArray(20_000) { 1 })
-        val yamlFile = File(mehdiDir, "config.yaml")
-        yamlFile.writeText(
-            "param: \"Mehdi,user@example.com,0011223344556677\"\n"
+        baseDir.mkdirs()
+
+        EngineStatusRegistry.noteFilesPresent(
+            AcapelaEmbeddedVoiceProvider.PROVIDER_ID
         )
 
-        val invalidUri = android.net.Uri.parse("content://invalid/tree")
-        val res = AcapelaVoiceImporter.importFromTreeUri(context, invalidUri)
-        assertFalse(res.success)
+        val backupParent = File(context.filesDir, "acapela_backups")
+        backupParent.mkdirs()
+        val backupDir = File(backupParent, "acapela_backup_test_empty")
+        backupDir.mkdirs()
+        val badDir = File(baseDir, "IncompleteVoice").apply { mkdirs() }
+        val journalFile = File(backupParent, ".journal_test_empty.json")
+        journalFile.writeText("{}")
 
-        // التحقق من بقاء الملفات الصالحة السابقة دون حذف
-        assertTrue(infFile.exists())
-        assertTrue(datFile.exists())
-        assertEquals(20_000L, datFile.length())
-        assertTrue(yamlFile.exists())
+        // اختبار التراجع بلا سياق Context للتأكد من عدم الانهيار
+        AcapelaVoiceImporter.rollbackAcapela(
+            baseDir = baseDir,
+            createdTargets = listOf(badDir),
+            backups = emptyList(),
+            backupDir = backupDir,
+            journalFile = journalFile,
+            context = null
+        )
+
+        val status = EngineStatusRegistry.statusOf(
+            context,
+            AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+        )
+        assertEquals(
+            EngineStatusRegistry.State.NOT_INSTALLED,
+            status.state
+        )
+        assertFalse(badDir.exists())
     }
 }
