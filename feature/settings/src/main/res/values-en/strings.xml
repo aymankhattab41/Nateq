@@ -745,6 +745,12 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+1.6.178
+• Standardized Acapela speech latency, PCM jitter, and system resource diagnostics:
+- Accurate and Privacy-Safe Tracking: Records voice ID, text character count, and encrypted text hash (first 8 chars of SHA-256) per utterance without storing or exporting raw text.
+- Latency &amp; PCM Jitter Metrics: Measures time to first PCM (TTFB), queue wait duration, inter-chunk PCM jitter, tracking maximum gaps and count of gaps exceeding 150ms with phrase offsets.
+- Statistical Summary &amp; Device Specs: Computes mean, p50, p95, and max for all latency metrics alongside the slowest 10 phrases and anonymous device hardware, RAM, and power saving status in diagnostics.
+
 1.6.177
 • Direct WhatsApp diagnostic report sharing with official flow and direct support number:
 - Direct Support Contact: Configured direct support WhatsApp number (201012659989) as default recipient with international number normalization and validation.
@@ -767,15 +773,15 @@
 - Hardened SAF tree import and precise failure reporting: introduced atomic transaction handling for SAF folder imports with journaling, acapela_backups isolation, and full rollback upon failure preserving existing valid files, alongside pinpoint error messages specifying whether config.yaml/param, .inf, or data files are missing.
 
 • Fixes for Acapela extended HD voice imports, UI text encoding integrity, and activity result callbacks:
-- Acapela Extended HD Voice Import: Supported leila22k_hq extended packages in verbatim copy path with comprehensive package-wide scanning for matching config.yaml and registration param files, corrected extraction staging directory resolution (acapela_staging), excluded hidden directories and non-voice folders from scanning, provided detailed Arabic error feedback for missing configurations, safeguarded transaction journaling prior to file migrations, and relocated backups outside the Acapela base directory with cross-partition restore and legacy cleanup.
-- UI Text Encoding Safety: Decoded and restored double-UTF-8 mojibake strings across settings and contracts with a dedicated guard test ensuring zero encoding corruption.
-- Activity Result Callback Safeguards: Wrapped all registerForActivityResult callbacks in explicit try-catch blocks with defensive null checks to prevent crashes during result delivery.
+- Acapela Extended HD Voice Import: Supported leila22k_hq extended packages in verbatim copy path with config.yaml, param and registration scanning, staging resolution, transaction journaling, and safe backups.
+- UI Text Encoding Safety: Decoded and restored double-UTF-8 mojibake strings across settings and contracts with a dedicated guard test.
+- Activity Result Callback Safeguards: Wrapped registerForActivityResult callbacks in explicit try-catch blocks with defensive null checks.
 
 • Comprehensive fixes for Acapela Arabic voices, licensing, diagnostics &amp; fallbacks:
-- Voice Import &amp; Licensing: Integrated strict config.yaml validation verifying non-empty content with a valid speaker-matching param line; safe file copy via temporary files with strict byte size verification; automated startup verification and restoration of lost/empty config.yaml files for Salma, Leila, and Nizar from matching packages and import sources.
-- Loading &amp; Speech Session: Automated re-registration retry upon nLoadVoice failure before reporting load errors; detailed candidate return codes and babileErrorName in VOICE_LOAD_FAILED messages; explicit identification of unregistered Arabic HD packages as CONFIG_YAML_MISSING; unified speech and preview evaluation treating zero PCM samples as explicit SPEAK_EMPTY_AUDIO failure; decoupled per-voice status in EngineStatusRegistry preventing a single voice failure from marking the overall engine failed when other voices succeed.
-- Diagnostics &amp; Shared Reports: Dynamic per-voice diagnostic inspection replacing forced missing codes with actual voice status, file diff counts, and loadability; expanded shared report limit to 60,000 characters with duplicate middle trimming while preserving report head and logcat tail; selective native license line redaction without masking entire lines; active request timestamp resets and per-voice speed metric filtering.
-- Fallback &amp; Companion Voices: Visual and spoken session notifications upon voice substitution with configurable toggle; excluded failed voices from numbers speech fallback; mapped companion voice aaron to nearest registered English voice preventing repeated VOICE_NOT_FOUND errors.
+- Voice Import &amp; Licensing: Integrated strict config.yaml validation verifying non-empty content with a valid speaker-matching param line, safe file copy, and automated startup verification and restoration of lost/empty config.yaml files.
+- Loading &amp; Speech Session: Automated re-registration retry upon nLoadVoice failure, detailed candidate return codes in VOICE_LOAD_FAILED messages, explicit identification of unregistered HD packages, and decoupled per-voice status in EngineStatusRegistry.
+- Diagnostics &amp; Shared Reports: Dynamic per-voice diagnostic inspection, expanded shared report limit to 60,000 characters with duplicate middle trimming, selective native license line redaction, and active timestamp resets.
+- Fallback &amp; Companion Voices: Visual and spoken session notifications upon voice substitution with configurable toggle, excluding failed voices from numbers speech fallback, and mapping companion voice aaron to nearest registered English voice.
 
 • TTS Engine Switching, Accessibility &amp; Thread Safety Enhancements: Unified next and previous engine resolution when the current engine is unlisted, recognized Lord TTS package synonyms consistently for accurate label display, redirected users to the ADB secure settings guide activity with clear instructions when permissions are missing, removed unused blocking methods, coalesced rapid engine switch requests with guaranteed callback dispatch and non-cancellable commit, connected protected app exit handling asynchronously, documented host session execution threading off the main UI thread, fixed generation timeout phrasing, and introduced comprehensive privacy-safe warning logs for empty catch blocks.
 

@@ -1,16 +1,19 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Build
+import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.engine.AcapelaPerformanceCounters
+import com.aymankhattab.nateq.core.audio.engine.SalmaSpeechTracker
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostCrashDiagnostics
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
@@ -1541,6 +1544,74 @@ object AcapelaVoiceDiagnostics {
     }
 
     /**
+     * مواصفات بيئة الجهاز وموارده وحالة تقييد الطاقة للمقارنة بين الأجهزة
+     * بلا أي معرّفات شخصية.
+     */
+    fun getDeviceProfile(context: Context?): String = buildString {
+        appendLine("=== مواصفات بيئة الجهاز وموارد النظام ===")
+        val mfr = Build.MANUFACTURER ?: "غير معروف"
+        val model = Build.MODEL ?: "غير معروف"
+        appendLine("• الشركة والطراز: $mfr $model")
+        val rel = Build.VERSION.RELEASE ?: "?"
+        appendLine("• نظام أندرويد: $rel (API ${Build.VERSION.SDK_INT})")
+        val abis = Build.SUPPORTED_ABIS?.joinToString(", ") ?: "غير معروف"
+        val cores = Runtime.getRuntime().availableProcessors()
+        appendLine("• المعالج والمعمارية: $abis ($cores أنوية)")
+
+        if (context != null) {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE)
+                as? ActivityManager
+            val memInfo = ActivityManager.MemoryInfo()
+            am?.getMemoryInfo(memInfo)
+            val availMb = memInfo.availMem / (1024 * 1024)
+            val totalMb = memInfo.totalMem / (1024 * 1024)
+            val isLowMem = if (memInfo.lowMemory) "نعم (تحذير)" else "لا"
+            appendLine(
+                "• الذاكرة (RAM): متاح ${availMb}MB / " +
+                    "إجمالي ${totalMb}MB (ذاكرة منخفضة: $isLowMem)"
+            )
+
+            val pm = context.getSystemService(Context.POWER_SERVICE)
+                as? PowerManager
+            val isPowerSave = pm?.isPowerSaveMode == true
+            appendLine(
+                "• وضع توفير الطاقة: " +
+                    if (isPowerSave) "مفعّل (Power Save ON)" else "معطّل"
+            )
+
+            val isIgnoring = if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+            ) {
+                pm?.isIgnoringBatteryOptimizations(
+                    context.packageName
+                ) == true
+            } else {
+                true
+            }
+            appendLine(
+                "• تحسين البطارية للتطبيق: " +
+                    if (isIgnoring) "مستثنى (بدون قيود / Unrestricted)"
+                    else "مقيّد (تحسين مفعّل / Optimized)"
+            )
+        } else {
+            appendLine("• الموارد وحالة الطاقة: غير متوفرة (سياق النظام null)")
+        }
+    }.trimEnd()
+
+    /**
+     * إلحاق مواصفات بيئة الجهاز وملخص زمن استجابة وفجوات نطق Acapela.
+     */
+    fun appendAcapelaLatencyAndDeviceProfile(
+        sb: StringBuilder,
+        context: Context?
+    ) {
+        sb.appendLine("")
+        sb.appendLine(getDeviceProfile(context))
+        sb.appendLine("")
+        sb.appendLine(SalmaSpeechTracker.formatAcapelaLatencySummary())
+    }
+
+    /**
      * مسار الرخصة المتوقع: المكتبة تستبدل آخر ثلاثة أحرف من مسار
      * الإعداد بـ`lic`، فتغدو `voice.bvcu.ini` → `voice.bvcu.lic`.
      */
@@ -1720,6 +1791,7 @@ object AcapelaVoiceDiagnostics {
         nativeTail.forEach {
             sb.appendLine("  ${redactSensitiveLine(it)}")
         }
+        appendAcapelaLatencyAndDeviceProfile(sb, context)
         return sb.toString().trimEnd()
     }
 

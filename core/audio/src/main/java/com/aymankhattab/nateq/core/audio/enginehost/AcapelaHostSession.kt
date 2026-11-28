@@ -10,6 +10,7 @@ import androidx.core.content.pm.PackageInfoCompat
 import com.acapelagroup.android.tts.AcattsandroidService
 import com.acapelagroup.android.tts.acattsandroid
 import com.aymankhattab.nateq.core.audio.engine.AcapelaPerformanceCounters
+import com.aymankhattab.nateq.core.audio.engine.SalmaSpeechTracker
 import com.aymankhattab.nateq.core.audio.engine.SpeechFallbackTracker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
@@ -42,6 +43,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
@@ -528,6 +530,12 @@ internal class AcapelaHostSession(
     private val totalAudioSamples = AtomicLong(0L)
     private val totalAudioBytes = AtomicLong(0L)
     private val lastAudioTime = AtomicLong(0L)
+    private val hostMaxGapMs = AtomicLong(0L)
+    private val hostGapsOver150Count = AtomicInteger(0)
+    @Volatile
+    private var currentTextLength = 0
+    @Volatile
+    private var currentTextHash = "00000000"
 
     @Volatile
     private var wasWarmAtSpeakStart = false
@@ -856,7 +864,17 @@ internal class AcapelaHostSession(
         }
         sink.writePcm(bytes, length)
         audioReceived.set(true)
-        lastAudioTime.set(SystemClock.uptimeMillis())
+        val nowUptime = SystemClock.uptimeMillis()
+        val prevAudioTime = lastAudioTime.getAndSet(nowUptime)
+        if (prevAudioTime > 0L) {
+            val gap = nowUptime - prevAudioTime
+            if (gap > hostMaxGapMs.get()) {
+                hostMaxGapMs.set(gap)
+            }
+            if (gap >= 150L) {
+                hostGapsOver150Count.incrementAndGet()
+            }
+        }
 
         if (!firstAudioChunkLogged.getAndSet(true) &&
             speakStartRealtimeMs > 0L
@@ -1036,6 +1054,10 @@ internal class AcapelaHostSession(
         totalAudioSamples.set(0L)
         totalAudioBytes.set(0L)
         lastAudioTime.set(SystemClock.uptimeMillis())
+        hostMaxGapMs.set(0L)
+        hostGapsOver150Count.set(0)
+        currentTextLength = req.text.length
+        currentTextHash = SalmaSpeechTracker.computeTextHash(req.text)
 
         try {
             val dir = dataDirectory ?: run {
@@ -1176,6 +1198,16 @@ internal class AcapelaHostSession(
             isSpeaking = false
             activeSink = null
             activeCancelled = null
+            val speakDur = SystemClock.elapsedRealtime() - speakStartRealtimeMs
+            val spk = currentSpeakerName ?: req.voiceId
+            val maxG = hostMaxGapMs.get()
+            val gaps150 = hostGapsOver150Count.get()
+            val completionLog = "[AcapelaLatency] اكتمال ($spk): " +
+                "طول=$currentTextLength | بصمة=#$currentTextHash | " +
+                "إجمالي=${speakDur}ms | أقصى فجوة=${maxG}ms | " +
+                "فجوات>150ms=$gaps150"
+            Log.i(TAG, completionLog)
+            HostLog.i(HostProtocol.ENGINE_ACAPELA, completionLog)
         }
     }
 

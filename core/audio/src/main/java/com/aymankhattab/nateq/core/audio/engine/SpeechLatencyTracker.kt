@@ -10,11 +10,20 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 object SpeechLatencyTracker {
 
-    private const val MAX_HISTORY = 50
+    private const val MAX_HISTORY = 200
 
     /** بند ١٢: قيمة بند TTFB حين لم يُسجَّل بايتٌ أول فعلاً. سالبةٌ
      *  كي لا تُخلط بقياسٍ صحيح ولا تُحتسب في المتوسط. */
     const val TTFB_NOT_MEASURED = -1L
+
+    fun computeTextHash(text: String): String {
+        if (text.isEmpty()) return "00000000"
+        return runCatching {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(text.toByteArray(Charsets.UTF_8))
+            digest.take(4).joinToString("") { "%02x".format(it) }
+        }.getOrDefault("00000000")
+    }
 
     data class SegmentMetric(
         val text: String,
@@ -25,7 +34,9 @@ object SpeechLatencyTracker {
         val durationMs: Long,
         val attempts: Int,
         val success: Boolean,
-        val gapBeforeMs: Long = 0L
+        val gapBeforeMs: Long = 0L,
+        val textHash: String = computeTextHash(text),
+        val textLength: Int = text.length
     )
 
     data class UtteranceMetric(
@@ -36,7 +47,9 @@ object SpeechLatencyTracker {
         val timeToFirstByteMs: Long,
         val totalDurationMs: Long,
         val queueWaitMs: Long = 0L,
-        val timestamp: Long = System.currentTimeMillis()
+        val timestamp: Long = System.currentTimeMillis(),
+        val textHash: String = computeTextHash(text),
+        val textLength: Int = text.length
     )
 
     private val history = ConcurrentLinkedDeque<UtteranceMetric>()
@@ -127,11 +140,7 @@ object SpeechLatencyTracker {
         if (top5.isNotEmpty()) {
             sb.appendLine("• أطول 5 عبارات زمنياً:")
             top5.forEachIndexed { idx, item ->
-                val preview = if (item.text.length > 30) {
-                    item.text.take(30) + "…"
-                } else {
-                    item.text
-                }
+                val preview = "#${item.textHash} (${item.textLength} حرفاً)"
                 val itemTtfb = if (item.timeToFirstByteMs ==
                     TTFB_NOT_MEASURED
                 ) {
@@ -140,7 +149,7 @@ object SpeechLatencyTracker {
                     "${item.timeToFirstByteMs}ms"
                 }
                 sb.appendLine(
-                    "  ${idx + 1}. \"$preview\" — إجمالي: " +
+                    "  ${idx + 1}. $preview — إجمالي: " +
                         "${item.totalDurationMs}ms (انتظار: " +
                         "${item.queueWaitMs}ms, معالجة: " +
                         "${item.preprocessDurationMs}ms, تخطيط: " +
@@ -160,13 +169,9 @@ object SpeechLatencyTracker {
         if (allSegmentsWithGap.isNotEmpty()) {
             sb.appendLine("• أطول الفجوات بين المقاطع:")
             allSegmentsWithGap.forEachIndexed { idx, (_, seg) ->
-                val segPreview = if (seg.text.length > 20) {
-                    seg.text.take(20) + "…"
-                } else {
-                    seg.text
-                }
+                val segPreview = "#${seg.textHash} (${seg.textLength} حرفاً)"
                 sb.appendLine(
-                    "  ${idx + 1}. \"$segPreview\" — فجوة: " +
+                    "  ${idx + 1}. $segPreview — فجوة: " +
                         "${seg.gapBeforeMs}ms (تخليق: ${seg.durationMs}ms)"
                 )
             }

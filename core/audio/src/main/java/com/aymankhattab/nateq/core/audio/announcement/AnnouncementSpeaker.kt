@@ -2814,6 +2814,14 @@ speechCycle.incrementAndGet()
                         ) {
                             delay(20L)
                         }
+                        if (android.os.Build.VERSION.SDK_INT >=
+                            android.os.Build.VERSION_CODES.N
+                        ) {
+                            val underruns = activeTrack.underrunCount
+                            if (underruns > 0) {
+                                SalmaSpeechTracker.noteUnderrun(underruns)
+                            }
+                        }
                     }
                     stopEmbeddedAudioTrack()
                     removePendingEmbeddedUnit(unit)

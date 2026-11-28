@@ -282,14 +282,17 @@ class AcapelaEmbeddedVoiceProvider(
             val tracker = SalmaSpeechTracker.startRequest(
                 category = callCategory,
                 voiceName = targetVoiceName,
-                textLength = text.length
+                textLength = text.length,
+                textHash = SalmaSpeechTracker.computeTextHash(text)
             )
 
             try {
                 tracker.markQueueWaitStart()
+                tracker.markEngineInitStart()
                 val initOk = withTimeoutOrNull(5000L) {
                     ensureInitialized()
                 } ?: false
+                tracker.markEngineInitEnd()
                 tracker.markQueueWaitEnd()
 
                 if (!initOk) {
@@ -318,7 +321,7 @@ class AcapelaEmbeddedVoiceProvider(
                     if (gainDb > 0f) {
                         { chunk, validLength ->
                             if (validLength > 0) {
-                                tracker.markFirstPcm()
+                                tracker.onPcmChunkReceived(validLength)
                                 LoudnessStage.processPcm16(
                                     chunk, 0, validLength, gainDb
                                 )
@@ -328,7 +331,7 @@ class AcapelaEmbeddedVoiceProvider(
                     } else {
                         { chunk, validLength ->
                             if (validLength > 0) {
-                                tracker.markFirstPcm()
+                                tracker.onPcmChunkReceived(validLength)
                             }
                             onAudioChunk(chunk, validLength)
                         }
@@ -336,7 +339,7 @@ class AcapelaEmbeddedVoiceProvider(
                 } else {
                     { chunk, validLength ->
                         if (validLength > 0) {
-                            tracker.markFirstPcm()
+                            tracker.onPcmChunkReceived(validLength)
                         }
                         onAudioChunk(chunk, validLength)
                     }

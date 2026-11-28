@@ -35,6 +35,7 @@ class TtsDiagnosticsProvider : ContentProvider() {
         const val KEY_ACAPELA_FALLBACK_ENGINE = "acapela_fallback_engine"
         const val KEY_ACAPELA_FALLBACK_REASON = "acapela_fallback_reason"
         const val KEY_SPEECHFLOW_REPORT = "speechflow_report"
+        const val KEY_ACAPELA_LATENCY_REPORT = "acapela_latency_report"
     }
 
     override fun onCreate(): Boolean = true
@@ -99,6 +100,10 @@ class TtsDiagnosticsProvider : ContentProvider() {
                 putString(
                     KEY_SPEECHFLOW_REPORT,
                     SpeechFlowDiagnostics.buildReport()
+                )
+                putString(
+                    KEY_ACAPELA_LATENCY_REPORT,
+                    SalmaSpeechTracker.formatAcapelaLatencySummary()
                 )
             }
         }

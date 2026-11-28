@@ -1098,6 +1098,9 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
                     AcapelaVoiceDiagnostics.ACAPELA_REPORT_START
                 )
                 sb.appendLine(fullReport)
+                AcapelaVoiceDiagnostics.appendAcapelaLatencyAndDeviceProfile(
+                    sb, context
+                )
                 sb.appendLine(AcapelaVoiceDiagnostics.ACAPELA_REPORT_END)
 
                 val isAcapelaFallback = (ttsSnapshot?.getBoolean(
@@ -1181,6 +1184,15 @@ internal suspend fun VoiceSelectionFragment.buildDiagnosticsInfo(
                 .SalmaSpeechTracker.formatReport()
         if (salmaPerfReport.isNotBlank()) {
             sb.appendLine(salmaPerfReport)
+        }
+        val remoteAcapelaLatency = ttsSnapshot?.getString(
+            TtsDiagnosticsProvider.KEY_ACAPELA_LATENCY_REPORT
+        )
+        if (!remoteAcapelaLatency.isNullOrBlank() &&
+            com.aymankhattab.nateq.core.audio.engine
+                .SalmaSpeechTracker.getAllRecords().isEmpty()
+        ) {
+            sb.appendLine(remoteAcapelaLatency)
         }
         sb.appendLine("")
 

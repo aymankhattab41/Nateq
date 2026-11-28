@@ -41,6 +41,7 @@ object SalmaSpeechTracker {
         val category: Category,
         val status: Status,
         val textLength: Int,
+        val textHash: String = "00000000",
         val voiceName: String,
         val queueWaitMs: Long,
         val voiceResolveMs: Long,
@@ -53,6 +54,11 @@ object SalmaSpeechTracker {
         val firstTrackWriteMs: Long,
         val playbackHeadStartMs: Long,
         val totalDurationMs: Long,
+        val maxGapMs: Long = 0L,
+        val gapCountOverThreshold: Int = 0,
+        val maxGapOffsetMs: Long = 0L,
+        val underrunCount: Int = 0,
+        val writeWaitMs: Long = 0L,
         val failureReason: String? = null
     )
 
@@ -61,6 +67,7 @@ object SalmaSpeechTracker {
         val category: Category,
         val voiceName: String,
         val textLength: Int,
+        val textHash: String = "00000000",
         val requestStartRealtimeMs: Long
     ) {
         var queueWaitMs: Long = 0L
@@ -158,11 +165,43 @@ object SalmaSpeechTracker {
             }
         }
 
-        fun markFirstPcm() {
+        var maxGapMs: Long = 0L
+        var gapCountOverThreshold: Int = 0
+        var maxGapOffsetMs: Long = 0L
+        var underrunCount: Int = 0
+        var writeWaitMs: Long = 0L
+
+        private var lastPcmUptimeMs: Long = -1L
+        private var pcmChunkCount: Int = 0
+
+        fun onPcmChunkReceived(validLength: Int = 0) {
+            val nowUptime = SystemClock.uptimeMillis()
+            val nowRealtime = SystemClock.elapsedRealtime()
             if (firstPcmMs < 0L) {
-                firstPcmMs =
-                    SystemClock.elapsedRealtime() - requestStartRealtimeMs
+                firstPcmMs = nowRealtime - requestStartRealtimeMs
             }
+            pcmChunkCount++
+            if (lastPcmUptimeMs > 0L) {
+                val gap = nowUptime - lastPcmUptimeMs
+                if (gap > maxGapMs) {
+                    maxGapMs = gap
+                    maxGapOffsetMs = nowRealtime - requestStartRealtimeMs
+                }
+                if (gap >= GAP_THRESHOLD_MS) {
+                    gapCountOverThreshold++
+                }
+            }
+            lastPcmUptimeMs = nowUptime
+        }
+
+        fun noteUnderrun(count: Int) {
+            if (count > underrunCount) {
+                underrunCount = count
+            }
+        }
+
+        fun markFirstPcm() {
+            onPcmChunkReceived(0)
         }
 
         fun markFirstTrackWrite() {
@@ -201,6 +240,7 @@ object SalmaSpeechTracker {
                 category = category,
                 status = finalStatus,
                 textLength = textLength,
+                textHash = textHash,
                 voiceName = voiceName,
                 queueWaitMs = queueWaitMs,
                 voiceResolveMs = voiceResolveMs,
@@ -213,6 +253,11 @@ object SalmaSpeechTracker {
                 firstTrackWriteMs = firstTrackWriteMs,
                 playbackHeadStartMs = playbackHeadStartMs,
                 totalDurationMs = total,
+                maxGapMs = maxGapMs,
+                gapCountOverThreshold = gapCountOverThreshold,
+                maxGapOffsetMs = maxGapOffsetMs,
+                underrunCount = underrunCount,
+                writeWaitMs = writeWaitMs,
                 failureReason = reason
             )
             recordCall(record)
@@ -260,17 +305,29 @@ object SalmaSpeechTracker {
         }
     }
 
-    private const val MAX_HISTORY = 100
+    const val GAP_THRESHOLD_MS = 150L
+    private const val MAX_HISTORY = 200
     private val history = Collections.synchronizedList(mutableListOf<Record>())
 
     @Volatile
-    private var currentActiveRequest: ActiveRequest? = null
+    var currentActiveRequest: ActiveRequest? = null
+        internal set
+
+    fun computeTextHash(text: String): String {
+        if (text.isEmpty()) return "00000000"
+        return runCatching {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(text.toByteArray(Charsets.UTF_8))
+            digest.take(4).joinToString("") { "%02x".format(it) }
+        }.getOrDefault("00000000")
+    }
 
     fun startRequest(
         correlationId: String? = null,
         category: Category = Category.REGULAR,
         voiceName: String = "salma",
-        textLength: Int = 0
+        textLength: Int = 0,
+        textHash: String = "00000000"
     ): ActiveRequest {
         val cid = correlationId?.takeIf { it.isNotBlank() }
             ?: "salma_${SystemClock.elapsedRealtime()}_" +
@@ -280,10 +337,31 @@ object SalmaSpeechTracker {
             category = category,
             voiceName = voiceName,
             textLength = textLength,
+            textHash = textHash,
             requestStartRealtimeMs = SystemClock.elapsedRealtime()
         )
         currentActiveRequest = active
         return active
+    }
+
+    fun startRequest(
+        correlationId: String? = null,
+        category: Category = Category.REGULAR,
+        voiceName: String = "salma",
+        text: String
+    ): ActiveRequest = startRequest(
+        correlationId = correlationId,
+        category = category,
+        voiceName = voiceName,
+        textLength = text.length,
+        textHash = computeTextHash(text)
+    )
+
+    fun noteUnderrun(count: Int) {
+        val active = currentActiveRequest
+        if (active != null && !active.isCompletedRequest) {
+            active.noteUnderrun(count)
+        }
     }
 
     private fun recordCall(record: Record) {
@@ -507,6 +585,145 @@ object SalmaSpeechTracker {
                     "متوسط=${cold.formatMetric(cold.avgFirstPcmMs)} | " +
                     "p95=${cold.formatMetric(cold.p95FirstPcmMs)}"
             )
+        }
+        sb.appendLine("")
+        sb.append(formatAcapelaLatencySummary())
+        return sb.toString().trimEnd()
+    }
+
+    fun percentile(sorted: List<Long>, pct: Double): Long {
+        if (sorted.isEmpty()) return 0L
+        val idx = (pct * (sorted.size - 1)).toInt()
+        return sorted[idx]
+    }
+
+    private fun formatMs(v: Double): String =
+        if (v < 0.0) "غير مقاس" else "${"%.1f".format(v)}ms"
+
+    private fun formatMs(v: Long): String =
+        if (v < 0L) "غير مقاس" else "${v}ms"
+
+    fun formatAcapelaLatencySummary(
+        records: List<Record> = getAllRecords()
+    ): String {
+        if (records.isEmpty()) {
+            return buildString {
+                appendLine("=== ملخص زمن استجابة وفجوات نطق Acapela ===")
+                append("لا عبارات مسجلة بعد")
+            }
+        }
+        val sb = StringBuilder()
+        sb.appendLine("=== ملخص زمن استجابة وفجوات نطق Acapela ===")
+        val count = records.size
+        sb.appendLine("• إجمالي العبارات المسجلة: $count (آخر $MAX_HISTORY)")
+
+        // 1) أول PCM
+        val pcmList = records.map { it.firstPcmMs }
+            .filter { it >= 0L }.sorted()
+        val pcmMeasured = pcmList.size
+        val pcmUnmeasured = count - pcmMeasured
+        val pcmAvg = if (pcmMeasured > 0) pcmList.average() else -1.0
+        val pcmP50 = if (pcmMeasured > 0) percentile(pcmList, 0.50) else -1L
+        val pcmP95 = if (pcmMeasured > 0) percentile(pcmList, 0.95) else -1L
+        val pcmMax = if (pcmMeasured > 0) pcmList.last() else -1L
+        sb.appendLine(
+            "• أول PCM (TTFB): متوسط=${formatMs(pcmAvg)} | " +
+                "p50=${formatMs(pcmP50)} | p95=${formatMs(pcmP95)} | " +
+                "أقصى=${formatMs(pcmMax)} " +
+                "(مقاس=$pcmMeasured، غير مقاس=$pcmUnmeasured)"
+        )
+
+        // 2) الزمن الكلي
+        val durList = records.map { it.totalDurationMs }
+            .filter { it >= 0L }.sorted()
+        val durAvg = if (durList.isNotEmpty()) durList.average() else -1.0
+        val durP50 = if (durList.isNotEmpty()) {
+            percentile(durList, 0.50)
+        } else -1L
+        val durP95 = if (durList.isNotEmpty()) {
+            percentile(durList, 0.95)
+        } else -1L
+        val durMax = if (durList.isNotEmpty()) durList.last() else -1L
+        sb.appendLine(
+            "• الزمن الكلي: متوسط=${formatMs(durAvg)} | " +
+                "p50=${formatMs(durP50)} | p95=${formatMs(durP95)} | " +
+                "أقصى=${formatMs(durMax)}"
+        )
+
+        // 3) أكبر فجوة داخلية
+        val gapList = records.map { it.maxGapMs }.sorted()
+        val gapAvg = if (gapList.isNotEmpty()) gapList.average() else 0.0
+        val gapP50 = if (gapList.isNotEmpty()) {
+            percentile(gapList, 0.50)
+        } else 0L
+        val gapP95 = if (gapList.isNotEmpty()) {
+            percentile(gapList, 0.95)
+        } else 0L
+        val gapMax = if (gapList.isNotEmpty()) gapList.last() else 0L
+        val totalGapsOver150 = records.sumOf { it.gapCountOverThreshold }
+        val phrasesWithGapsOver150 = records.count {
+            it.gapCountOverThreshold > 0
+        }
+        sb.appendLine(
+            "• أكبر فجوة داخلية: متوسط=${formatMs(gapAvg)} | " +
+                "p50=${formatMs(gapP50)} | p95=${formatMs(gapP95)} | " +
+                "أقصى=${formatMs(gapMax)} " +
+                "(فجوات>150ms: $totalGapsOver150 في " +
+                "$phrasesWithGapsOver150 عبارة)"
+        )
+
+        // 4) الانتظار في الطابور
+        val qList = records.map { it.queueWaitMs }.sorted()
+        val qAvg = if (qList.isNotEmpty()) qList.average() else 0.0
+        val qP50 = if (qList.isNotEmpty()) percentile(qList, 0.50) else 0L
+        val qP95 = if (qList.isNotEmpty()) percentile(qList, 0.95) else 0L
+        val qMax = if (qList.isNotEmpty()) qList.last() else 0L
+        sb.appendLine(
+            "• الانتظار في الطابور: متوسط=${formatMs(qAvg)} | " +
+                "p50=${formatMs(qP50)} | p95=${formatMs(qP95)} | " +
+                "أقصى=${formatMs(qMax)}"
+        )
+
+        // أبطأ 10 عبارات
+        val slowest10 = records.sortedByDescending { it.totalDurationMs }
+            .take(10)
+        if (slowest10.isNotEmpty()) {
+            sb.appendLine("• أبطأ 10 عبارات زمنياً:")
+            val sdf = java.text.SimpleDateFormat(
+                "HH:mm:ss", java.util.Locale.US
+            )
+            slowest10.forEachIndexed { idx, rec ->
+                val timeStr = sdf.format(
+                    java.util.Date(rec.requestStartTimeMs)
+                )
+                val stateStr = if (rec.category == Category.COLD) {
+                    "بارد (بعد خمول)"
+                } else {
+                    "دافئ"
+                }
+                val gapExtra = if (rec.gapCountOverThreshold > 0) {
+                    " (@+${rec.maxGapOffsetMs}ms، " +
+                        "${rec.gapCountOverThreshold} >150ms)"
+                } else if (rec.maxGapMs > 0L) {
+                    " (@+${rec.maxGapOffsetMs}ms)"
+                } else {
+                    ""
+                }
+                val firstPcmStr = if (rec.firstPcmMs < 0L) {
+                    "غير مقاس"
+                } else {
+                    "${rec.firstPcmMs}ms"
+                }
+                sb.appendLine(
+                    "  ${idx + 1}. [$timeStr] صوت: ${rec.voiceName} | " +
+                        "طول: ${rec.textLength} حرفاً | " +
+                        "بصمة: #${rec.textHash} | " +
+                        "إجمالي: ${rec.totalDurationMs}ms | " +
+                        "أول PCM: $firstPcmStr | " +
+                        "أكبر فجوة: ${rec.maxGapMs}ms$gapExtra | " +
+                        "انتظار: ${rec.queueWaitMs}ms | حالة: $stateStr"
+                )
+            }
         }
         return sb.toString().trimEnd()
     }
