@@ -432,24 +432,47 @@ internal fun VoiceSelectionFragment.writeLogToCacheFile(
 internal object WhatsAppDiagnosticsSharing {
     const val WHATSAPP_PACKAGE = "com.whatsapp"
     const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"
+    const val DEFAULT_SUPPORT_WHATSAPP_NUMBER = "201012659989"
 
+    /**
+     * تطبيع رقم الهاتف:
+     * - يُبقي الأرقام فقط.
+     * - يحذف الصفرين البادئين "00".
+     * - يرفض ما كان طوله خارج 8 إلى 15 رقماً (يُرجع نصاً فارغاً).
+     */
     fun normalizeNumber(number: String?): String {
-        return number?.filter { it.isDigit() }.orEmpty()
+        if (number.isNullOrBlank()) return ""
+        var digits = number.filter { it.isDigit() }
+        if (digits.startsWith("00")) {
+            digits = digits.removePrefix("00")
+        }
+        return if (digits.length in 8..15) digits else ""
     }
 
     fun isNumberConfigured(number: String?): Boolean {
         return normalizeNumber(number).isNotEmpty()
     }
 
-    fun buildJid(number: String?): String? {
-        val digits = normalizeNumber(number)
-        return if (digits.isNotEmpty()) "$digits@s.whatsapp.net" else null
+    /**
+     * استخراج رقم واتساب المعتمد:
+     * يستعمل overrideNumber إن كان صالحاً بعد التطبيع، وإلا الثابت الافتراضي.
+     */
+    fun resolveSupportNumber(overrideNumber: String?): String {
+        val clean = normalizeNumber(overrideNumber)
+        return if (clean.isNotEmpty()) {
+            clean
+        } else {
+            DEFAULT_SUPPORT_WHATSAPP_NUMBER
+        }
     }
 
+    /**
+     * بناء رابط wa.me مع تحية ورقم الدعم بدون نص السجل.
+     */
     fun buildWaMeUrl(number: String?, greeting: String): String? {
-        val digits = normalizeNumber(number)
-        return if (digits.isNotEmpty()) {
-            "https://wa.me/$digits?text=${Uri.encode(greeting)}"
+        val cleanNumber = resolveSupportNumber(number)
+        return if (cleanNumber.isNotEmpty()) {
+            "https://wa.me/$cleanNumber?text=${Uri.encode(greeting)}"
         } else {
             null
         }
@@ -473,108 +496,155 @@ internal object WhatsAppDiagnosticsSharing {
         }.getOrDefault(false)
     }
 
+    /**
+     * اختيار حزمة واتساب المثبتة بالترتيب: العادي ثم الأعمال.
+     */
+    fun findTargetWhatsAppPackage(
+        context: Context,
+        packageChecker: (Context, String) -> Boolean = ::isPackageInstalled
+    ): String? {
+        return if (packageChecker(context, WHATSAPP_PACKAGE)) {
+            WHATSAPP_PACKAGE
+        } else if (packageChecker(context, WHATSAPP_BUSINESS_PACKAGE)) {
+            WHATSAPP_BUSINESS_PACKAGE
+        } else {
+            null
+        }
+    }
+
+    /**
+     * إطلاق Intent إرسال الملف إلى واتساب دون أي إضافة jid.
+     */
+    fun launchSendFileToWhatsApp(
+        context: Context,
+        targetPackage: String,
+        logFile: File,
+        uriProvider: (Context, File) -> Uri? = { ctx, file ->
+            runCatching {
+                FileProvider.getUriForFile(
+                    ctx,
+                    "${ctx.packageName}.fileprovider",
+                    file
+                )
+            }.getOrNull()
+        },
+        activityLauncher: (Context, Intent) -> Boolean = { ctx, intent ->
+            runCatching {
+                ctx.startActivity(intent)
+                true
+            }.getOrDefault(false)
+        }
+    ): Boolean {
+        if (!logFile.exists() || logFile.length() <= 0L) return false
+        val uri = uriProvider(context, logFile) ?: return false
+
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            `package` = targetPackage
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return activityLauncher(context, sendIntent)
+    }
+
+    fun getAppVersionName(context: Context): String {
+        return runCatching {
+            val pInfo =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.packageManager.getPackageInfo(
+                        context.packageName,
+                        PackageManager.PackageInfoFlags.of(0)
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.packageManager.getPackageInfo(
+                        context.packageName,
+                        0
+                    )
+                }
+            pInfo.versionName ?: ""
+        }.getOrDefault("")
+    }
+
+    /**
+     * تنفيذ دورة مشاركة التشخيص عبر واتساب:
+     * 1) فتح محادثة wa.me الموجهة لرقم الدعم مع التحية ورقم الإصدار.
+     * 2) إتاحة إرفاق ملف السجل بعدها عبر حوار التأكيد أو استدعاء مباشر.
+     * 3) في حال غياب واتساب أو فشل الفتح، يتم التحويل لقائمة المشاركة العامة.
+     */
     fun performShare(
         context: Context,
         reportText: String,
         logFile: File?,
         developerNumber: String = BuildConfig.DEVELOPER_WHATSAPP_NUMBER,
+        appVersion: String = getAppVersionName(context),
+        packageChecker: (Context, String) -> Boolean = ::isPackageInstalled,
+        activityLauncher: (Context, Intent) -> Boolean = { ctx, intent ->
+            runCatching {
+                ctx.startActivity(intent)
+                true
+            }.getOrDefault(false)
+        },
+        onShowAttachDialog: ((targetPackage: String, logFile: File) -> Unit)? =
+            null,
         onAnnounce: (String) -> Unit = {},
         onFallbackChooser: (Context, String, File?) -> Unit
     ) {
-        val cleanNumber = normalizeNumber(developerNumber)
-        if (cleanNumber.isEmpty()) {
-            val msg = context.getString(
-                R.string.whatsapp_number_not_configured
+        val targetPackage = findTargetWhatsAppPackage(context, packageChecker)
+        if (targetPackage == null) {
+            val fallbackMsg = context.getString(
+                R.string.whatsapp_sharing_fallback_notice
             )
-            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-            onAnnounce(msg)
+            Toast.makeText(context, fallbackMsg, Toast.LENGTH_LONG).show()
+            onAnnounce(fallbackMsg)
             onFallbackChooser(context, reportText, logFile)
             return
         }
-
-        val redacted =
-            AcapelaVoiceDiagnostics.redactSensitiveText(reportText)
-        val jid = buildJid(cleanNumber)
-
-        var jidSent = false
-        if (jid != null) {
-            val packages = listOf(
-                WHATSAPP_PACKAGE,
-                WHATSAPP_BUSINESS_PACKAGE
-            )
-            for (pkg in packages) {
-                if (!isPackageInstalled(context, pkg)) {
-                    continue
-                }
-                val jidIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = if (logFile != null && logFile.exists()) {
-                        "application/octet-stream"
-                    } else {
-                        "text/plain"
-                    }
-                    `package` = pkg
-                    putExtra("jid", jid)
-                    putExtra(Intent.EXTRA_TEXT, redacted)
-                    if (logFile != null && logFile.exists()) {
-                        val uri = runCatching {
-                            FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                logFile
-                            )
-                        }.getOrNull()
-                        if (uri != null) {
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            addFlags(
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            )
-                        }
-                    }
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                val launched = runCatching {
-                    context.startActivity(jidIntent)
-                    true
-                }.getOrDefault(false)
-
-                if (launched) {
-                    jidSent = true
-                    break
-                }
-            }
-        }
-
-        if (jidSent) {
-            return
-        }
-
-        // إشعار المستخدم بأن الملف لم يُرفَق ومحفوظ يدوياً
-        val notAttachedMsg = context.getString(
-            R.string.whatsapp_file_not_attached
-        )
-        Toast.makeText(context, notAttachedMsg, Toast.LENGTH_LONG).show()
-        onAnnounce(notAttachedMsg)
 
         val greeting = context.getString(
-            R.string.whatsapp_support_generic_greeting
+            R.string.whatsapp_support_greeting,
+            appVersion
         )
-        val waUrl = buildWaMeUrl(cleanNumber, greeting)
-        var waOpened = false
-        if (waUrl != null) {
-            val waIntent = Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse(waUrl)
-            ).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            waOpened = runCatching {
-                context.startActivity(waIntent)
-                true
-            }.getOrDefault(false)
+        val waUrl = buildWaMeUrl(developerNumber, greeting)
+        if (waUrl == null) {
+            val fallbackMsg = context.getString(
+                R.string.whatsapp_sharing_fallback_notice
+            )
+            Toast.makeText(context, fallbackMsg, Toast.LENGTH_LONG).show()
+            onAnnounce(fallbackMsg)
+            onFallbackChooser(context, reportText, logFile)
+            return
         }
 
+        val waIntent = Intent(Intent.ACTION_VIEW, Uri.parse(waUrl)).apply {
+            `package` = targetPackage
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        val waOpened = activityLauncher(context, waIntent)
         if (!waOpened) {
+            val fallbackMsg = context.getString(
+                R.string.whatsapp_sharing_fallback_notice
+            )
+            Toast.makeText(context, fallbackMsg, Toast.LENGTH_LONG).show()
+            onAnnounce(fallbackMsg)
             onFallbackChooser(context, reportText, logFile)
+            return
+        }
+
+        // تم فتح محادثة wa.me بنجاح
+        if (logFile != null && logFile.exists()) {
+            if (onShowAttachDialog != null) {
+                onShowAttachDialog(targetPackage, logFile)
+            } else {
+                launchSendFileToWhatsApp(
+                    context = context,
+                    targetPackage = targetPackage,
+                    logFile = logFile,
+                    activityLauncher = activityLauncher
+                )
+            }
         }
     }
 }
@@ -590,11 +660,42 @@ internal fun VoiceSelectionFragment.shareReportToWhatsApp(
         reportText = reportText,
         logFile = logFile,
         developerNumber = developerNumber,
+        appVersion = WhatsAppDiagnosticsSharing.getAppVersionName(context),
+        onShowAttachDialog = { targetPackage, file ->
+            showAttachLogConfirmationDialog(targetPackage, file)
+        },
         onAnnounce = { msg -> view?.announceCompat(msg) },
         onFallbackChooser = { ctx, text, file ->
             shareErrorReport(ctx, text, file)
         }
     )
+}
+
+internal fun VoiceSelectionFragment.showAttachLogConfirmationDialog(
+    targetPackage: String,
+    logFile: File
+) {
+    val ctx = context ?: return
+    val title = getString(R.string.whatsapp_attach_log_dialog_title)
+    val message = getString(R.string.whatsapp_attach_log_dialog_message)
+    val btnAttach = getString(R.string.whatsapp_attach_log_btn_attach)
+    val btnCancel = getString(R.string.whatsapp_attach_log_btn_cancel)
+
+    val dialog = MaterialAlertDialogBuilder(ctx)
+        .setTitle(title)
+        .setMessage(message)
+        .setPositiveButton(btnAttach) { _, _ ->
+            WhatsAppDiagnosticsSharing.launchSendFileToWhatsApp(
+                context = ctx,
+                targetPackage = targetPackage,
+                logFile = logFile
+            )
+        }
+        .setNegativeButton(btnCancel, null)
+        .create()
+        .also(::trackDialog)
+    dialog.show()
+    view?.announceCompat(message)
 }
 
 internal fun VoiceSelectionFragment.showErrorReportDialog(

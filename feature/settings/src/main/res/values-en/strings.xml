@@ -485,6 +485,12 @@
 <string name="error_report_send_telegram">Send to Telegram Bot</string>
 <string name="error_report_share_file">Share as file or text</string>
 <string name="whatsapp_support_generic_greeting">Hello, I need help with Lord TTS</string>
+<string name="whatsapp_support_greeting">Hello, sending Lord TTS diagnostic report (v%1$s)</string>
+<string name="whatsapp_attach_log_dialog_title">Attach Log File</string>
+<string name="whatsapp_attach_log_dialog_message">Support chat opened in WhatsApp. Tap \"Attach Log File\" to select the chat and send the file.</string>
+<string name="whatsapp_attach_log_btn_attach">Attach Log File</string>
+<string name="whatsapp_attach_log_btn_cancel">Cancel</string>
+<string name="whatsapp_sharing_fallback_notice">Could not open WhatsApp, opening system share menu…</string>
 <string name="whatsapp_file_not_attached">Could not attach the log file directly in WhatsApp; the file is saved and can be shared manually.</string>
 <string name="whatsapp_number_not_configured">Support number is not configured, opening share menu.</string>
 <string name="error_report_copied_telegram_hint">Log copied to clipboard, opening Telegram bot to attach or paste</string>
@@ -739,10 +745,15 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+1.6.177
+• Direct WhatsApp diagnostic report sharing with official flow and direct support number:
+- Direct Support Contact: Configured direct support WhatsApp number (201012659989) as default recipient with international number normalization and validation.
+- Reliable Sharing Flow: Replaced undocumented jid extra with standard wa.me conversation initialization followed by log attachment confirmation dialog and graceful system share fallback.
+
 1.6.176
 • Disambiguated multiple Acapela license files (0x...) strictly by speaker matching without temporal bias:
 - License Selection by Voice Identity: When multiple license candidates exist in co-located, nested, or parent container folders, the license matching the target voice name is selected while ignoring standard suffixes, retaining MULTIPLE_CANDIDATES only when zero or multiple candidates match.
-- Hardened Voice Import & Re-verification: Copies only the matching license file alongside the voice during package unpacking, and enables seamless re-verification for previously imported voices (Leila, Mehdi, and WillSad) without requiring re-import.
+- Hardened Voice Import &amp; Re-verification: Copies only the matching license file alongside the voice during package unpacking, and enables seamless re-verification for previously imported voices (Leila, Mehdi, and WillSad) without requiring re-import.
 
 1.6.175
 • Removed Acapela folder import (SAF) entirely in favor of zip packages, and fixed rollback:
