@@ -53,13 +53,6 @@ interface LanguagePrefs {
     /** تعيين مجموعة معرّفات وحزم المحركات المسموح بإظهارها. */
     fun setEngineFilterSet(engines: Set<String>)
 
-    fun isFilterLanguagesEnabled(): Boolean = isLanguageFilterEnabled()
-    fun setFilterLanguagesEnabled(enabled: Boolean) =
-        setLanguageFilterEnabled(enabled)
-    fun getFilterLanguages(): Set<String> = getLanguageFilterSet()
-    fun setFilterLanguages(languages: Set<String>) =
-        setLanguageFilterSet(languages)
-
     fun isFilterEnginesEnabled(): Boolean = isEngineFilterEnabled()
     fun setFilterEnginesEnabled(enabled: Boolean) =
         setEngineFilterEnabled(enabled)

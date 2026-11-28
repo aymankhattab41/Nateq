@@ -276,15 +276,6 @@ open class PronunciationDictionary(private val context: Context) {
 
     private fun swapEntries(next: Map<String, String>) { _entries = next }
 
-    private fun swapLangEntries(
-        lang: String,
-        next: Map<String, String>
-    ) {
-        val base = LinkedHashMap(langEntries)
-        if (next.isEmpty()) base.remove(lang) else base[lang] = next
-        langEntries = base
-    }
-
     private val typeToken: Type = object :
         com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
 

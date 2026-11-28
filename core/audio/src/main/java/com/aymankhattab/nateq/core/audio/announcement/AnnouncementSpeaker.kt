@@ -88,13 +88,6 @@ internal data class EmojiSpeechConfig(
 /** إعدادات نطق فئة الأرقام للمقاطع الرقمية البحتة داخل الإعلانات —
  *  تُقرأ من الإعدادات مرة واحدة وتُطبق على الرقم فقط (نفس استعلامات فئة
  *  الأرقام في [TimeAnnouncementManager]). */
-internal data class NumbersCategorySpeech(
-    val voiceId: String,
-    val rate: Float,
-    val pitch: Float,
-    val volume: Float
-)
-
 /**
  * متحدث مستقل يستخدمه التطبيق للإعلانات الصوتية التلقائية
  * (مستوى البطارية، اسم المتصل، الرسائل الواردة) دون المرور عبر خدمة النظام.
@@ -3116,51 +3109,6 @@ speechCycle.incrementAndGet()
                 }
             }
         }
-    }
-
-    /** إعداد نطق فئة الأرقام للمقطع الرقمي البحت — صوتُ الفئة المحفوظ
-     *  وأشرطتها (يُطبَّق الصوت عبر [doSpeak]/voiceFor عند البث)؛ أو null
-     *  ليُسلك صوت اللغة العام للوحدة. استعلامات مطابقة لفئة الأرقام في
-     *  [TimeAnnouncementManager]. */
-    private fun numbersCategoryFor(segment: Segment): NumbersCategorySpeech? {
-        if (!segment.isNumericOnly()) return null
-        val repo = settings ?: return null
-        val voiceId = runCatching {
-            repo.getPreferredVoiceIdForCategory(
-                SettingsRepository.VOICE_CATEGORY_NUMBERS
-            )
-        }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
-        val engineId = runCatching {
-            repo.getEngineForCategory(SettingsRepository.VOICE_CATEGORY_NUMBERS)
-        }.getOrNull()
-        val usableVoiceId = if (engineId.isNullOrBlank() ||
-            VoiceIdContract.isVoiceBelongingToEngine(voiceId, engineId)
-        ) {
-            voiceId
-        } else {
-            android.util.Log.w(
-                "AnnouncementSpeaker",
-                "صوت الأرقام المحفوظ غير صالح للمحرك ($voiceId/$engineId)؛ " +
-                    "تراجع تلقائي إلى صوت عام"
-            )
-            return null
-        }
-        val rate = runCatching {
-            repo.getSpeechRateForCategory(
-                SettingsRepository.VOICE_CATEGORY_NUMBERS
-            )
-        }.getOrDefault(1.0f)
-        val pitch = runCatching {
-            repo.getPitchForCategory(
-                SettingsRepository.VOICE_CATEGORY_NUMBERS
-            )
-        }.getOrDefault(1.0f)
-        val volume = runCatching {
-            repo.getVolumeForCategory(
-                SettingsRepository.VOICE_CATEGORY_NUMBERS
-            )
-        }.getOrDefault(1.0f)
-        return NumbersCategorySpeech(usableVoiceId, rate, pitch, volume)
     }
 
     /** صوتُ الإنجليزية المفضّل لسقوط مقاطع «en» في الإعلانات المختلطة. */

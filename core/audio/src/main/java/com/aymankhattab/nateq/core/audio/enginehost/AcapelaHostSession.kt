@@ -2682,201 +2682,6 @@ internal class AcapelaHostSession(
         return null
     }
 
-    private fun findBvcuFile(
-        voice: AcapelaVoiceManifest.VoiceInfo
-    ): File? {
-        val roots = listOfNotNull(
-            voice.dir,
-            voice.dir.parentFile,
-            File(context.filesDir, "Acapela"),
-            File(context.filesDir, "acapela"),
-            context.filesDir,
-            dataDirectory,
-            context.cacheDir
-        ).distinctBy { it.absolutePath }
-
-        for (root in roots) {
-            if (!root.exists()) continue
-            val found = root.walkTopDown().firstOrNull { f ->
-                f.isFile &&
-                    f.extension.equals("bvcu", ignoreCase = true) &&
-                    f.length() > 50_000L
-            }
-            if (found != null) return found
-        }
-        return null
-    }
-
-    private fun buildNestedFileTree(
-        root: File,
-        label: String,
-        maxDepth: Int = 6
-    ): String {
-        val sb = StringBuilder()
-        sb.appendLine("=== شجرة مجلد $label: ${root.absolutePath} ===")
-        if (!root.exists()) {
-            sb.appendLine("  (المجلد غير موجود)")
-            return sb.toString()
-        }
-        if (!root.isDirectory) {
-            sb.appendLine("  - ${root.name} (${root.length()} بايت)")
-            return sb.toString()
-        }
-        fun walk(dir: File, indent: String, depth: Int) {
-            if (depth > maxDepth) {
-                sb.appendLine("$indent... [تجاوز أقصى عمق]")
-                return
-            }
-            val entries = dir.listFiles()?.sortedWith(
-                compareBy({ !it.isDirectory }, { it.name.lowercase() })
-            ) ?: return
-            if (entries.isEmpty()) {
-                sb.appendLine("$indent(مجلد فارغ)")
-                return
-            }
-            for (entry in entries) {
-                if (entry.isDirectory) {
-                    sb.appendLine("$indent[مجلد] ${entry.name}/")
-                    walk(entry, "$indent  ", depth + 1)
-                } else {
-                    val len = entry.length()
-                    val isBvcu = entry.extension
-                        .equals("bvcu", ignoreCase = true)
-                    val isBig = len >= 1_000_000L
-                    val tag = when {
-                        isBvcu && isBig ->
-                            " *** [ملف BVCU كبير: $len بايت] ***"
-                        isBvcu -> " * [ملف BVCU: $len بايت] *"
-                        isBig -> " * [ملف كبير: $len بايت] *"
-                        else -> ""
-                    }
-                    sb.appendLine("$indent- ${entry.name} ($len بايت)$tag")
-                }
-            }
-        }
-        walk(root, "  ", 1)
-        return sb.toString()
-    }
-
-    private fun logDiagnosticTrees(
-        voice: AcapelaVoiceManifest.VoiceInfo
-    ) {
-        val bvcuFile = findBvcuFile(voice)
-        val filesAcapela = File(context.filesDir, "Acapela")
-        val altAcapela = File(context.filesDir, "acapela")
-        val cacheStage = File(context.cacheDir, "acapela_stage")
-        val cacheDirect = File(context.cacheDir, "acapela_stage_direct")
-        val cacheParent = File(context.cacheDir, "acapela_stage_parent")
-
-        val sb = StringBuilder()
-        sb.appendLine("==================================================")
-        sb.appendLine("[تقرير جرد ملفات ومجلدات Acapela المتداخلة بالبايت]")
-        sb.appendLine("--------------------------------------------------")
-        sb.appendLine("[1] موقع ملف بيانات صوت Salma الكبير (.bvcu):")
-        if (bvcuFile != null) {
-            val parent = bvcuFile.parentFile
-            val grandParent = parent?.parentFile
-            val path = bvcuFile.absolutePath
-            sb.appendLine("  * المسار الكامل: $path")
-            sb.appendLine("  * اسم الملف: ${bvcuFile.name}")
-            sb.appendLine("  * الحجم: ${bvcuFile.length()} بايت")
-            sb.appendLine(
-                "  * المجلد الحاوي المباشر: ${parent?.name ?: "غير معروف"}"
-            )
-            sb.appendLine(
-                "  * المجلد الأب: ${grandParent?.name ?: "غير معروف"}"
-            )
-            sb.appendLine("  * داخل Salma: ${path.contains("Salma")}")
-            sb.appendLine("  * داخل salma_lf: ${path.contains("salma_lf")}")
-            sb.appendLine(
-                "  * داخل acapela_ara-SAU-Salma: " +
-                    path.contains("acapela_ara-SAU-Salma")
-            )
-        } else {
-            sb.appendLine(
-                "  * تنبيه: لم يُعثر على أي ملف .bvcu (>50KB) " +
-                    "في files أو cache!"
-            )
-        }
-        sb.appendLine("--------------------------------------------------")
-        sb.appendLine("[2] شجرة مجلد files/Acapela:")
-        sb.append(buildNestedFileTree(filesAcapela, "files/Acapela"))
-        if (altAcapela.exists() && altAcapela != filesAcapela) {
-            sb.append(buildNestedFileTree(altAcapela, "files/acapela"))
-        }
-        if (voice.dir.exists() &&
-            !voice.dir.absolutePath.startsWith(filesAcapela.absolutePath)
-        ) {
-            sb.append(
-                buildNestedFileTree(
-                    voice.dir,
-                    "voice.dir (${voice.dir.name})"
-                )
-            )
-        }
-        sb.appendLine("--------------------------------------------------")
-        sb.appendLine("[3] شجرة مجلدات cache/acapela_stage:")
-        val cacheDirs = listOf(cacheStage, cacheDirect, cacheParent)
-            .filter { it.exists() }
-        if (cacheDirs.isNotEmpty()) {
-            cacheDirs.forEach { dir ->
-                sb.append(buildNestedFileTree(dir, "cache/${dir.name}"))
-            }
-        } else {
-            sb.appendLine("  (لا توجد مجلدات مرحلية في cache)")
-        }
-        sb.appendLine("==================================================")
-
-        val fullText = sb.toString().trimEnd()
-        Log.i(TAG, fullText)
-        HostLog.i(HostProtocol.ENGINE_ACAPELA, fullText)
-    }
-
-    private fun checkAudioFilesIntegrity(
-        voiceDir: File
-    ): Boolean {
-        val files = voiceDir.listFiles() ?: emptyArray()
-        val bvcuFiles = files.filter {
-            it.isFile && it.extension.equals("bvcu", ignoreCase = true)
-        }
-        val datFiles = files.filter {
-            it.isFile && (
-                it.extension.equals("dat", ignoreCase = true) ||
-                it.extension.equals("bin", ignoreCase = true)
-            )
-        }
-        val zeroFiles = files.filter { it.isFile && it.length() == 0L }
-
-        val sb = StringBuilder()
-        sb.appendLine("[فحص سلامة ملفات الصوت]")
-        if (bvcuFiles.isNotEmpty()) {
-            sb.appendLine(
-                "  ملف الصوت الأساسي (.bvcu): " +
-                    bvcuFiles.joinToString { "${it.name}(${it.length()}B)" }
-            )
-        } else {
-            sb.appendLine("  ملف الصوت الأساسي (.bvcu): غير موجود!")
-        }
-        if (datFiles.isNotEmpty()) {
-            sb.appendLine(
-                "  ملفات .dat/.bin المرتبطة: " +
-                    datFiles.joinToString { "${it.name}(${it.length()}B)" }
-            )
-        } else {
-            sb.appendLine("  ملفات .dat/.bin: لا توجد ملفات بهذا الامتداد")
-        }
-        if (zeroFiles.isNotEmpty()) {
-            zeroFiles.forEach {
-                sb.appendLine("  ملف ناقص أو حجمه صفر: ${it.name} (0 بايت)")
-            }
-        } else {
-            sb.appendLine("  لا توجد ملفات ناقصة أو بحجم صفر")
-        }
-        val text = sb.toString().trimEnd()
-        Log.i(TAG, text)
-        HostLog.i(HostProtocol.ENGINE_ACAPELA, text)
-        return bvcuFiles.isNotEmpty() && zeroFiles.isEmpty()
-    }
 
     private fun recordAcapelaBreadcrumb(call: String) {
         val ts = SimpleDateFormat(
@@ -4264,6 +4069,8 @@ internal class AcapelaHostSession(
                                 targetHexInVoice,
                                 overwrite = false
                             )
+                        }.onFailure { e ->
+                            Log.w(TAG, "فشل نسخ ملف الترخيص الاحتياطي", e)
                         }
                     }
                 }
@@ -4285,6 +4092,8 @@ internal class AcapelaHostSession(
                                 targetYamlInVoice,
                                 overwrite = false
                             )
+                        }.onFailure { e ->
+                            Log.w(TAG, "فشل نسخ ملف yaml الاحتياطي", e)
                         }
                     }
                 }
@@ -4306,6 +4115,8 @@ internal class AcapelaHostSession(
                                 nlpInVoice,
                                 overwrite = false
                             )
+                        }.onFailure { e ->
+                            Log.w(TAG, "فشل نسخ مجلد NLP الاحتياطي", e)
                         }
                     }
                 }

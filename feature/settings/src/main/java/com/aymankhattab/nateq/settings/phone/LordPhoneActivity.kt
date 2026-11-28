@@ -1052,19 +1052,6 @@ class LordPhoneActivity : AppCompatActivity() {
 
     private var originalMusicVolume: Int? = null
 
-    private fun playRecordingAtMaxVolume(file: File) {
-        val item = CallRecordItem(
-            id = "",
-            phoneNumber = "",
-            callerName = "",
-            timestamp = file.lastModified(),
-            durationSeconds = 1L,
-            filePath = file.absolutePath,
-            fileSize = file.length()
-        )
-        playRecording(item)
-    }
-
     private fun playRecording(item: CallRecordItem) {
         if (item.isSilent) {
             val msg = getString(R.string.phone_record_silent_warning)

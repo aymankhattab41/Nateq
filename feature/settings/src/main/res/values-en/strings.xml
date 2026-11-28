@@ -745,6 +745,28 @@
     <string name="read_later_back">Back</string>
     <string name="read_later_item_actions_title">Text actions</string>
     <string name="changelog_text">
+1.6.181
+• Removed dead saveTimeVoice function in TimeAnnouncementController in favor of CategoryVoicePanelController.
+• Removed unused playRecordingAtMaxVolume helper in LordPhoneActivity.
+• Wired checkEntrypointVoicesConsistency into voice catalog discovery to detect and prompt fixes for mismatched entrypoint voices.
+• Confirmed repeatSchedule and announceIncomingCall retained as internal test entrypoints while production repeat uses runCountBasedRepeatLoop.
+• Wired prebuildDictionaryMatcher into background warmupJob in NateqTtsService.
+• Removed unused writeConvertPrefs while preserving legacy convert slot accessors for LegacySherpaMigrator.
+• Removed unused getVoiceForCategory in TimeAnnouncementManager.
+• Removed dead numbersCategoryFor and NumbersCategorySpeech in AnnouncementSpeaker.
+• Documented splitLongSentenceChunks retained as internal test proxy for SpeechPlannerTest.
+• Removed unused swapLangEntries helper in PronunciationDictionary.
+• Documented normalizeDigits retained as internal utility covered by ControllersBLogicTest.
+• Confirmed buildPreviewParams active usage across 4 announcement controllers.
+• Documented currentEnginePackage retained as fallback helper tested by NextEngineSwitcherTest.
+• Documented menuActions retained as internal accessor for AccessibilityButtonMenuTest.
+• Removed dead openAccessibilitySettings in SystemTtsEngineController.
+• Documented languageRowForLabel retained as internal helper tested by LanguageConvertDialogLogicTest.
+• Documented statusesClearOnly retained as test memory-clear utility in EngineStatusRegistry.
+• Removed unreferenced language filter aliases (isFilterLanguagesEnabled and siblings) from SettingsContracts.
+• Removed dead synthetic Acapela INI leftovers (directivesFromInf, entriesFromDataFiles, etc.) while preserving isAuthenticIni and registrationCandidates.
+• Removed uncalled diagnostic tree and checkAudioFilesIntegrity helpers in AcapelaHostSession and added Log.w for fallback copy exceptions.
+
 1.6.180
 • Bug fixes and UI controls for unwired settings (Batch 2 of 3):
 - Read Later Long Text Policy: Added policy selection spinner in Read Later settings supporting either full text storage in a separate file or truncating at character limit.
@@ -1024,6 +1046,7 @@
 • Applied engine filterin…
 • Added Emergency Voice f…
 • Protected number catego…
+    
     </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

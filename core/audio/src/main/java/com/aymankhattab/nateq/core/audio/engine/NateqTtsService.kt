@@ -551,6 +551,7 @@ class NateqTtsService : TextToSpeechService() {
                 // بناء القاموس/المعالج الكسول هنا على IO: فإن وصل طلب
                 // حقيقي أثناء البناء أُلغيت التدفئة وبناه الطلب بنفسه.
                 runCatching { textProcessor }
+                prebuildDictionaryMatcher()
                 maybeRefreshDiscovery()
                 prewarmEmbeddedHostIfNeeded()
                 warmNavigationCache()

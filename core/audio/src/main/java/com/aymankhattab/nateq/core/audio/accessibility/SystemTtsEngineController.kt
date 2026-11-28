@@ -247,17 +247,6 @@ object SystemTtsEngineController {
             }
         }
 
-    private fun openAccessibilitySettings(context: Context) {
-        try {
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-        } catch (t: Throwable) {
-            Log.e(TAG, "Failed to open accessibility settings", t)
-        }
-    }
-
     private fun openTtsSettings(context: Context) {
         try {
             val intent = Intent("com.android.settings.TTS_SETTINGS").apply {

@@ -3583,15 +3583,6 @@ class SettingsRepository(context: Context) :
         }
     }
 
-    private fun writeConvertPrefs(map: Map<String, LanguageSpeechPrefs>) {
-        prefs.edit()
-            .putString(
-                KEY_CONVERT_PREFS_JSON,
-                ConvertPreferencesCodec.toJson(map)
-            )
-            .commit()
-    }
-
     /**
      * ترحيل تلقائي لمرة واحدة من سلوتات «اللغة الأولى/اللغة الثانية» القديمة
      * إلى الخريطة الديناميكية، فلا يفقد من خزّن إعداداته قبل التحديث شيئاً.

@@ -1415,13 +1415,20 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     internal fun checkAndPromptVoiceMismatchFix() {
         if (!isAdded) return
         val mismatched = checkMismatchedCategoryVoices()
-        if (mismatched.isEmpty()) return
-        val msgList = mismatched.joinToString("\n") { (cat, voice, eng) ->
-            "فئة $cat: الصوت $voice لا يتبع المحرك $eng"
+        val entryMismatched = checkEntrypointVoicesConsistency()
+        if (mismatched.isEmpty() && entryMismatched.isEmpty()) return
+        val msgParts = mutableListOf<String>()
+        val announceParts = mutableListOf<String>()
+        for ((cat, voice, eng) in mismatched) {
+            msgParts.add("فئة $cat: الصوت $voice لا يتبع المحرك $eng")
+            announceParts.add("فئة $cat: الصوت $voice لا يتبع المحرك $eng")
         }
-        val announcement = "تنبيه: " + mismatched.joinToString("، ") {
-            (cat, voice, eng) -> "فئة $cat: الصوت $voice لا يتبع المحرك $eng"
+        for ((lang, voice, eng) in entryMismatched) {
+            msgParts.add("لغة $lang: الصوت $voice لا يتبع المحرك $eng")
+            announceParts.add("لغة $lang: الصوت $voice لا يتبع المحرك $eng")
         }
+        val msgList = msgParts.joinToString("\n")
+        val announcement = "تنبيه: " + announceParts.joinToString("، ")
         A11ySpeechCoordinator.speakAnnouncement(
             requireContext(),
             announcement
@@ -1432,6 +1439,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .setPositiveButton(R.string.voice_mismatch_fix) { _, _ ->
                 for ((cat, _, _) in mismatched) {
                     settings.setPreferredVoiceIdForCategory(cat, "")
+                }
+                for ((lang, _, _) in entryMismatched) {
+                    val p = settings.getEnginePreferenceForLanguage(lang)
+                    settings.setEnginePreferenceForLanguage(
+                        lang, p.engine, null, p.rate, p.pitch, p.volume
+                    )
+                    settings.setPreferredVoiceId(lang, "")
                 }
                 Toast.makeText(
                     requireContext(),

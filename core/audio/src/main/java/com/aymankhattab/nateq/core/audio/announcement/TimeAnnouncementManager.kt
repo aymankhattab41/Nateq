@@ -474,29 +474,6 @@ class TimeAnnouncementManager(
         }
     }
 
-    /** الحصول على الصوت المخصص لفئة معينة */
-    private suspend fun getVoiceForCategory(
-        category: String,
-        languageTag: String
-    ): VoiceDescriptor? {
-        val locale = Locale.forLanguageTag(languageTag)
-        val voices = catalog.allAvailableVoices(locale)
-
-        val voiceId = settings.getPreferredVoiceIdForCategory(category)
-            ?: settings.getPreferredVoiceId(languageTag)
-        if (voiceId != null) {
-            voices.find { it.id == voiceId }?.let { return it }
-        }
-
-        // تراجع للصوت الافتراضي للغة حتى لا يبقى الإعلان صامتاً
-        val defaultName = catalog.defaultVoiceNameForLanguage(locale.language)
-        defaultName?.let { name ->
-            voices.find { it.id == name }?.let { return it }
-        }
-
-        return voices.firstOrNull()
-    }
-
     /**
      * رنة الساعة: تُبنى عند أوقات أرباع الساعة المختارة من قِبل المستخدم
      * (رأس الساعة :00، الربع :15، النصف :30، والـ 45 دقيقة :45) بتفعيل الرنة.
